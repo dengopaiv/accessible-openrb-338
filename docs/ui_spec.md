@@ -1466,6 +1466,48 @@ mod's sound, mixed as the player mixes it, none with the preference off) and
   only after the button had been pressed, and never for a pattern section's on/off switch
   (`Panel::adopt`); both now follow the song, and the save needs them.
 
+### 18.2 The menu bar from the keyboard (task-184, A11Y-11)
+
+What egui 0.37 does by itself (`containers/menu.rs`, `popup.rs`; measured headless with the
+accessibility test harness, `crates/orb-ui/tests/a11y_menu_bar.rs`):
+
+- Nothing focuses the bar: no Alt, no F10. The four titles are focusable buttons, reached only
+  by Tab, and the panel's controls come before them in the tab order (the bar is drawn last),
+  so Tab from the start lands on a panel control.
+- On a focused title, Enter or Space opens the menu and leaves the focus on the title
+  (measured, `enter_on_a_title_opens_its_menu_...`, `space_opens_a_title_...`). Left and
+  Right move the focus to the neighboring title (spatial focus; no wrap: Left of File stays on
+  File, measured in `space_opens_a_title_and_left_of_file_does_not_wrap`). Down on a closed
+  bar title does not open the menu: it moves the focus to the panel control below, and, in
+  OpenRB-338, it also moved the row focus, because the panel reads every key.
+- In an open menu, Down and Up (`MenuState::handle_keyboard`) walk the items, Down from the
+  title focuses the first item, Left returns to the title, Right on a submenu item opens the
+  submenu and focuses its first item (these read from the egui source, not measured), Enter on
+  an item clicks it, Escape closes the menu (measured). After Enter on an item the focus is
+  not on the title but on the Window node (measured in `enter_on_an_item_runs_it`, for Help >
+  Keyboard Shortcuts, which opens a window; for an item that opens none this is read from
+  egui's close, not measured).
+
+What OpenRB-338 adds (`menu.rs`, `menu_bar_key`, `open_on_down`, `menu_has_keys`):
+
+- F10 focuses File, and Alt pressed and released alone does the same (no key press and no
+  mouse press between; Alt+key and Alt+click do not). Neither opens a menu; both work in every
+  mode (F10 and a lone Alt were unused). F10 is consumed. Not done: a second F10 or Alt does
+  not hand the focus back to where it was.
+- Down on a focused title opens its menu and focuses the first item (the opening frame takes
+  the Down away from the panel's focus move; the next frame sends egui the Down for the menu).
+  The focus reaches the item one frame later.
+- While a title has the focus or a menu is open (also one opened by mouse), all the panel's
+  keys are withheld, in both modes (`menu_has_keys`, like a text field, `App::show`), so Up and
+  Down are the menu's and do not move the row focus, and Enter on an item does not also press
+  Play (`keys.rs:188`). The user's decision of 2026-11-05, "Accept, in both modes", over "only
+  the menu's own keys" and "only in screen reader mode": task-202.
+- The tree: a title is a Button named File, Mods, Options or Help; an item is a Button named by
+  its text with the shortcut appended ("New Ctrl+N"); the Options checkboxes are CheckBox nodes
+  and the two key modes RadioButton nodes with the Toggled state. The Mods entries are
+  selectable labels: Button nodes without a checked state (the selected mod is not in the
+  tree; a follow-up).
+
 ## 19. OpenRB-338's own panel art and placement (task-115)
 
 Sections 3 to 9 give the original's rectangles; OpenRB-338 draws its own art and places a control

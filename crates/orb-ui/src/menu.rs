@@ -1110,12 +1110,18 @@ impl App {
     pub fn menu_bar(&mut self, ui: &mut Ui) {
         let mut cmd: Option<Cmd> = None;
         let enabled = !self.browsing() && !self.prompting() && !self.error_open();
+        // F10, or Alt pressed and released alone, focuses the File menu (task-184)
+        let focus_file = menu_bar_key(ui) && enabled;
+        let mut bar: Vec<(Id, Id)> = vec![];
+        if enabled {
+            open_on_down(ui);
+        }
         egui::Panel::top("orb_menu")
             .exact_size(MENU_H)
             .show(ui, |ui| {
                 ui.add_enabled_ui(enabled, |ui| {
                     egui::MenuBar::new().ui(ui, |ui| {
-                        ui.menu_button("File", |ui| {
+                        let file = ui.menu_button("File", |ui| {
                             if item(ui, "New", Some(&shortcuts::NEW)) {
                                 cmd = Some(Cmd::New);
                             }
@@ -1145,7 +1151,11 @@ impl App {
                                 ui.close();
                             }
                         });
-                        ui.menu_button("Mods", |ui| {
+                        if focus_file {
+                            file.response.request_focus();
+                        }
+                        note_button(&mut bar, &file.response);
+                        let mods = ui.menu_button("Mods", |ui| {
                             let (std_on, checked) = match &self.mod_list {
                                 Some(Ok(l)) => self.mod_checks(l),
                                 _ => self.mod_checks(&[]),
@@ -1222,7 +1232,8 @@ impl App {
                                 cmd = Some(Cmd::ModInfo);
                             }
                         });
-                        ui.menu_button("Options", |ui| {
+                        note_button(&mut bar, &mods.response);
+                        let options = ui.menu_button("Options", |ui| {
                             let mut v = self.panel.vintage;
                             if ui.checkbox(&mut v, "Vintage ReBirth Synth Sound").clicked() {
                                 cmd = Some(Cmd::ToggleVintage);
@@ -1264,21 +1275,104 @@ impl App {
                                 ui.close();
                             }
                         });
+                        note_button(&mut bar, &options.response);
                         // Last in the bar. An item is one line of `HELP_ITEMS`.
-                        ui.menu_button("Help", |ui| {
+                        let help = ui.menu_button("Help", |ui| {
                             for (text, c) in HELP_ITEMS {
                                 if item(ui, text, None) {
                                     cmd = Some(c.clone());
                                 }
                             }
                         });
+                        note_button(&mut bar, &help.response);
                     });
                 });
             });
+        ui.data_mut(|d| d.insert_temp(bar_id(), bar));
         if let Some(c) = cmd {
             self.command(c);
         }
     }
+}
+
+/// Where the bar's buttons and their menus' popups were last frame: (button id, popup id).
+fn bar_id() -> Id {
+    Id::unique("orb_menu_bar_buttons")
+}
+
+fn note_button(bar: &mut Vec<(Id, Id)>, button: &egui::Response) {
+    bar.push((button.id, egui::Popup::menu(button).get_id()));
+}
+
+/// True when the keyboard focus is on a button of the menu bar or a menu is open: the panel
+/// then takes no keys (Up and Down are the menu's, not the row focus).
+pub fn menu_has_keys(ctx: &Context) -> bool {
+    let focused = ctx.memory(|m| m.focused());
+    let bar: Vec<(Id, Id)> = ctx.data(|d| d.get_temp(bar_id())).unwrap_or_default();
+    egui::Popup::is_any_open(ctx) || bar.iter().any(|(b, _)| Some(*b) == focused)
+}
+
+/// Down on a focused menu button of the bar opens its menu in this frame; egui's own menu
+/// keys then move the focus to the first item (`MenuState::handle_keyboard`: the focus is on
+/// the anchor and the direction is Down). egui itself opens a menu from the keyboard only with
+/// Enter or Space and leaves the item focus to a second Down.
+fn open_on_down(ui: &Ui) {
+    let ctx = ui.ctx();
+    let pending_id = Id::unique("orb_menu_down_pending");
+    // the frame after the opening: the popup was shown once, so the Down reaches its items
+    let pending: bool = ctx.data(|d| d.get_temp(pending_id)).unwrap_or(false);
+    if pending {
+        ctx.data_mut(|d| d.insert_temp(pending_id, false));
+        if egui::Popup::is_any_open(ctx) {
+            ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::Down));
+        }
+        return;
+    }
+    let focused = ctx.memory(|m| m.focused());
+    let down = ui.input(|i| i.key_pressed(Key::ArrowDown));
+    if !down || egui::Popup::is_any_open(ctx) {
+        return;
+    }
+    let bar: Vec<(Id, Id)> = ctx.data(|d| d.get_temp(bar_id())).unwrap_or_default();
+    if let Some((_, popup)) = bar.iter().find(|(b, _)| Some(*b) == focused) {
+        egui::Popup::open_id(ctx, *popup);
+        // this Down is the opening, not a move to the panel's widget below the bar
+        ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
+        ctx.data_mut(|d| d.insert_temp(pending_id, true));
+        ctx.request_repaint();
+    }
+}
+
+/// True on the frame the user asks for the menu bar from the keyboard (task-184): F10, or Alt
+/// pressed and released alone (the Windows convention; no other key or mouse press between).
+/// F10 is consumed; the Alt state lives in egui's temporary data.
+fn menu_bar_key(ui: &Ui) -> bool {
+    let f10 = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F10));
+    let id = Id::unique("orb_menu_alt_alone");
+    let (alt, dirty) = ui.input(|i| {
+        let dirty = i.events.iter().any(|e| {
+            matches!(e, egui::Event::Key { pressed: true, .. })
+                || matches!(e, egui::Event::PointerButton { pressed: true, .. })
+        });
+        (i.modifiers.alt, dirty)
+    });
+    // None: Alt is up; Some(true): down and alone so far; Some(false): used by a key or click
+    let before: Option<bool> = ui.data(|d| d.get_temp(id));
+    let now = match (before, alt) {
+        (None, true) => Some(!dirty),
+        (Some(c), true) => Some(c && !dirty),
+        _ => None,
+    };
+    let alone_released = !alt && before == Some(true);
+    ui.data_mut(|d| {
+        match now {
+            Some(v) => {
+                d.insert_temp(id, v);
+            }
+            None => d.remove::<bool>(id),
+        };
+    });
+    f10 || alone_released
 }
 
 /// The items of the Help menu, in order.

@@ -641,9 +641,9 @@ impl App {
                 if shortcuts::consume(ui, &shortcuts::KEYS_PATTERNS) {
                     self.key_mode = KeyMode::Patterns;
                 }
-                if ui.ctx().text_edit_focused() {
-                    // typing in a text field (File > Info, task-117): the other keys are the
-                    // field's, not the panel's
+                if ui.ctx().text_edit_focused() || crate::menu::menu_has_keys(ui.ctx()) {
+                    // typing in a text field (File > Info, task-117), or walking the menu bar
+                    // (task-184): the other keys are the field's or the menu's, not the panel's
                     self.holds.clear();
                 } else {
                     self.keyboard(ui);

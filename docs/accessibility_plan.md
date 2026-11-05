@@ -65,8 +65,9 @@ reader), MIDI, and any web version: the fork is a local editor only and has none
 
 **Ground rules for every task of the milestone.**
 
-- With screen reader mode off, the app behaves exactly as upstream, key for key: the existing
-  tests of `crates/orb-ui/tests` (keyboard.rs in particular) pass unchanged.
+- With screen reader mode off, the app behaves exactly as upstream, key for key, except where
+  the user decided otherwise: the panel's keys wait while a menu is in use (TASK-202). The
+  existing tests of `crates/orb-ui/tests` (keyboard.rs in particular) pass unchanged.
 - Every accessible action goes through the same `model::Panel` method as the mouse or the
   original's key (`press`, `arrow`, `set_knob`, `set_fader`, `set_switch`,
   `select_instrument`, `set_step808`, `set_step909`, `tap_303`, `tap_drum`), so the events
