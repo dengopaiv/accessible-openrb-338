@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-05T19:32:00Z'
+updated_date: '2026-11-05T20:19:00Z'
 labels:
   - ui
   - tests
@@ -32,4 +33,5 @@ Planned in docs/accessibility_plan.md as A11Y-13; the analysis is docs/accessibi
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Each item of the checklist is marked as working or has a task filed for it.
+- [ ] #2 With NVDA closed (no screen reader running), Options > Screen Reader Mode set to Automatic leaves the mode off (TASK-185's deferred check)
 <!-- AC:END -->

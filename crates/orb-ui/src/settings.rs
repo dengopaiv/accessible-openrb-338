@@ -6,7 +6,8 @@
 //! (paths, absent until a file is chosen: the folder of the last song chosen in Open, Save As
 //! or Export, and of the last mod; task-144), `startup_sound` (a bool) and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
-//! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
+//! task-151) and `screen_reader` (`"auto"`, `"on"` or `"off"`; absent or unknown reads as
+//! `auto`; task-185), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
 //! `OpenRB-338/ui.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
 //! `~/.config` on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows).
 //! Reading never fails: a missing or damaged file gives the defaults (a damaged file stays as
@@ -23,6 +24,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+
+use crate::screen_reader::ScreenReaderSetting;
 
 /// How many recent folders are kept.
 pub const MAX_RECENT: usize = 8;
@@ -49,6 +52,9 @@ pub struct Settings {
     /// to file name. Stored as the table `preferred_mods`. Names are compared ignoring ASCII
     /// case ([`Settings::preferred_mod`]).
     pub preferred_mods: BTreeMap<String, String>,
+    /// Screen reader mode (task-185): `auto` (default), `on` or `off`. Stored as the string
+    /// `screen_reader`; an absent or unknown value reads as `auto`.
+    pub screen_reader: ScreenReaderSetting,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
 }
@@ -63,6 +69,7 @@ impl Default for Settings {
             last_song_dir: None,
             last_mod_dir: None,
             preferred_mods: BTreeMap::new(),
+            screen_reader: ScreenReaderSetting::Auto,
             file: None,
         }
     }
@@ -116,6 +123,7 @@ struct Stored<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     mods_dir: Option<&'a Path>,
     startup_sound: bool,
+    screen_reader: &'a str,
     recent: Vec<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_song_dir: Option<&'a Path>,
@@ -161,6 +169,13 @@ impl Settings {
         };
         if let Some(b) = table.get("startup_sound").and_then(|v| v.as_bool()) {
             s.startup_sound = b;
+        }
+        if let Some(v) = table
+            .get("screen_reader")
+            .and_then(|v| v.as_str())
+            .and_then(ScreenReaderSetting::from_key)
+        {
+            s.screen_reader = v;
         }
         s.songs_dir = table.get("songs_dir").and_then(path_of);
         s.mods_dir = table.get("mods_dir").and_then(path_of);
@@ -210,6 +225,7 @@ impl Settings {
             songs_dir: self.songs_dir.as_deref().and_then(storable),
             mods_dir: self.mods_dir.as_deref().and_then(storable),
             startup_sound: self.startup_sound,
+            screen_reader: self.screen_reader.key(),
             recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
             last_song_dir: self.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),

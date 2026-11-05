@@ -690,6 +690,9 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
 16. Close with unsaved changes: the prompt is spoken, the focus is on Save.
 17. Help > Keyboard Shortcuts: the list can be read line by line.
 18. Turn the mode off: the original keys behave as before (Tab taps the 303 while playing).
+19. With NVDA closed (no screen reader running), Options > Screen Reader Mode set to Automatic
+    leaves the mode off (the other half of A11Y-1's check; A11Y-1 verified only that Automatic
+    turns the mode on with NVDA running).
 
 ## Risks and how the plan meets them
 

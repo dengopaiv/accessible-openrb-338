@@ -212,3 +212,48 @@ fn orb_ui_config_names_the_settings_file() {
         assert_eq!(default.parent().unwrap().file_name().unwrap(), "OpenRB-338");
     }
 }
+
+/// task-185: the screen reader setting is the string `screen_reader`; an old file without the
+/// key, or a value that is not one of the three, reads as `auto`.
+#[test]
+fn the_screen_reader_setting_round_trips_and_defaults_to_auto() {
+    use orb_ui::screen_reader::ScreenReaderSetting::{Auto, Off, On};
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    assert_eq!(Settings::load_from(&file).screen_reader, Auto);
+    // an old file without the key
+    fs::write(&file, "startup_sound = false\nrecent = []\n").unwrap();
+    assert_eq!(Settings::load_from(&file).screen_reader, Auto);
+    for v in [On, Off, Auto] {
+        let mut s = Settings::load_from(&file);
+        s.screen_reader = v;
+        s.save().unwrap();
+        let t: toml::Table = fs::read_to_string(&file).unwrap().parse().unwrap();
+        assert_eq!(t["screen_reader"].as_str(), Some(v.key()));
+        assert_eq!(Settings::load_from(&file), s);
+    }
+    // a hand-edited value in another case is read; unknown or mistyped ones read as auto
+    fs::write(&file, "screen_reader = \"ON\"\n").unwrap();
+    assert_eq!(Settings::load_from(&file).screen_reader, On);
+    for bad in ["\"maybe\"", "true", "3"] {
+        fs::write(
+            &file,
+            format!("screen_reader = {bad}\nstartup_sound = false\n"),
+        )
+        .unwrap();
+        let s = Settings::load_from(&file);
+        assert_eq!(s.screen_reader, Auto);
+        assert!(!s.startup_sound);
+    }
+}
+
+/// task-185: the mode is on for `on`, off for `off`, and follows the system for `auto`.
+#[test]
+fn the_screen_reader_mode_combines_the_setting_and_the_system() {
+    use orb_ui::screen_reader::ScreenReaderSetting::{Auto, Off, On};
+    for sys in [false, true] {
+        assert!(On.active(sys));
+        assert!(!Off.active(sys));
+        assert_eq!(Auto.active(sys), sys);
+    }
+}

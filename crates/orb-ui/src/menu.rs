@@ -40,6 +40,7 @@ use crate::document::{self, Document};
 use crate::keys::KeyMode;
 use crate::link::Link;
 use crate::palette::{INK, INK_DIM, SLATE_DARK, SLATE_LINE};
+use crate::screen_reader::ScreenReaderSetting;
 use crate::session;
 use crate::shortcuts;
 
@@ -97,6 +98,8 @@ pub enum Cmd {
     ToggleVintage,
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
     ToggleStartupSound,
+    /// "Screen Reader Mode" of the Options menu (task-185).
+    SetScreenReader(ScreenReaderSetting),
     SetKeyMode(KeyMode),
 }
 
@@ -922,6 +925,14 @@ impl App {
                     self.fail(e);
                 }
             }
+            Cmd::SetScreenReader(v) => {
+                if self.settings.screen_reader != v {
+                    self.settings.screen_reader = v;
+                    if let Err(e) = self.settings.save() {
+                        self.fail(e);
+                    }
+                }
+            }
             Cmd::SetKeyMode(m) => self.key_mode = m,
         }
     }
@@ -1222,6 +1233,15 @@ impl App {
                                 cmd = Some(Cmd::ToggleStartupSound);
                                 ui.close();
                             }
+                            ui.menu_button("Screen Reader Mode", |ui| {
+                                for v in ScreenReaderSetting::ALL {
+                                    let on = self.settings.screen_reader == v;
+                                    if ui.radio(on, v.label()).clicked() {
+                                        cmd = Some(Cmd::SetScreenReader(v));
+                                        ui.close();
+                                    }
+                                }
+                            });
                             ui.separator();
                             let ctx = ui.ctx().clone();
                             let synth = format!(

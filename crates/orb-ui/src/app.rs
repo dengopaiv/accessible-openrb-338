@@ -123,6 +123,11 @@ pub struct App {
     pub samples: Option<Arc<SampleSet>>,
     /// The folders of the file browser (task-046).
     pub settings: Settings,
+    /// Whether the system reported a screen reader at the last check (at start and whenever the
+    /// window regains the focus; task-185). Read through `App::screen_reader_mode`.
+    system_screen_reader: bool,
+    /// The window's focus in the last frame, to see it regained.
+    was_focused: bool,
     /// The open file browser, if any (`open_browser`).
     browser: Option<Browser>,
     /// The open song: its file, its mod, whether it has unsaved changes (task-047).
@@ -211,6 +216,8 @@ impl App {
             link: None,
             samples: None,
             settings: Settings::default(),
+            system_screen_reader: crate::screen_reader::system_reports_screen_reader(),
+            was_focused: true,
             browser: None,
             doc: Document::new(),
             settled: false,
@@ -255,6 +262,23 @@ impl App {
             shot,
             frame_stats: FrameStats::from_env(),
         }
+    }
+
+    /// Whether screen reader mode is on: the setting is `on`, or `auto` and the system reported
+    /// a screen reader at the last check (task-185). Nothing reads it yet; later tasks do.
+    pub fn screen_reader_mode(&self) -> bool {
+        self.settings
+            .screen_reader
+            .active(self.system_screen_reader)
+    }
+
+    /// Asks the system again whether a screen reader runs, when the window has just regained
+    /// the focus (`focused` is this frame's state).
+    fn check_screen_reader(&mut self, focused: bool) {
+        if focused && !self.was_focused {
+            self.system_screen_reader = crate::screen_reader::system_reports_screen_reader();
+        }
+        self.was_focused = focused;
     }
 
     /// Opens the file browser for `mode` over the panel (the menu calls this). Ctrl/Cmd+O opens it
@@ -343,6 +367,8 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ui.ctx());
+        let focused = ui.input(|i| i.focused);
+        self.check_screen_reader(focused);
         self.close_check(&ui.ctx().clone());
         self.show(ui);
         self.screenshot(ui.ctx());
