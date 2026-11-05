@@ -48,6 +48,7 @@ import json
 import os
 import sys
 import tempfile
+import unicodedata
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -68,6 +69,14 @@ def sha256(data):
 
 def is_song_name(name):
     return ".rbs" in name.lower()
+
+
+def nfc(rel):
+    """REL as the manifest writes it: in Unicode NFC, as rb-songs' git stores its names. A file
+    system that decomposes names (NFD) returns them otherwise, and the thirdparty test compares
+    NFC forms (docs/rbm.md section 11.5, the run of 2026-11-05). Only the manifest's names are
+    normalized; the files are still opened by the path the file system gave."""
+    return unicodedata.normalize("NFC", rel)
 
 
 def song_files(folder):
@@ -216,9 +225,11 @@ def build_manifest(songs_dir, mods, renderer, only=None, previous=None, save=Non
     songs, skipped = [], []
     manifest = {"songs": songs, "skipped": skipped}
     done = 0
-    for h, files in distinct_songs(songs_dir):
+    only_nfc = None if only is None else {nfc(p) for p in only}
+    for h, paths in distinct_songs(songs_dir):
+        files = [nfc(p) for p in paths]   # the manifest's names; PATHS open the files
         e = prev.get(h)
-        wanted = bool(set(files) & set(only)) if only is not None else e is None
+        wanted = bool(set(files) & only_nfc) if only is not None else e is None
         if not wanted or (limit is not None and done >= limit):
             if e is not None:   # keep what an earlier run recorded
                 (skipped if "reason" in e else songs).append(dict(e, file=files[0], files=files))
@@ -226,7 +237,7 @@ def build_manifest(songs_dir, mods, renderer, only=None, previous=None, save=Non
         done += 1
         base = {"file": files[0], "files": files, "sha256": h}
         try:
-            entry, song = plan_song(os.path.join(songs_dir, files[0]), mods)
+            entry, song = plan_song(os.path.join(songs_dir, paths[0]), mods)
             messages(entry, song)
         except Refused as e:
             skipped.append(dict(base, reason="the original refuses it (sub_49F3B4): %s" % e))
@@ -262,8 +273,8 @@ def exclude(manifest, songs_dir, rel, reason):
         h = sha256(f.read())
     for k in ("songs", "skipped"):
         manifest[k] = [e for e in manifest[k] if e["sha256"] != h]
-    manifest["skipped"].append({"file": rel, "files": [rel], "sha256": h, "reason": reason,
-                                "excluded": True})
+    manifest["skipped"].append({"file": nfc(rel), "files": [nfc(rel)], "sha256": h,
+                                "reason": reason, "excluded": True})
     manifest["skipped"].sort(key=lambda e: e["file"])
     return manifest
 

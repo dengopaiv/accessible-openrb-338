@@ -310,6 +310,28 @@ fn songs_manifest() -> HashMap<String, (Value, bool)> {
     out
 }
 
+/// Whether two relative song paths name the same file: equal in their NFC form. The manifest
+/// holds 4 paths decomposed (NFD: `Lokfu\u{308}hrer`), but rb-songs stores them composed (NFC:
+/// `Lokf\u{fc}hrer`) and Windows and Linux check them out that way, so a byte comparison
+/// reported those 4 files as missing from the manifest.
+fn same_path(a: &str, b: &str) -> bool {
+    use unicode_normalization::UnicodeNormalization;
+    a == b || a.nfc().eq(b.nfc())
+}
+
+#[test]
+fn same_path_ignores_the_unicode_normal_form() {
+    assert!(same_path(
+        "Pack24/Der Lokfu\u{308}hrer.rbs",
+        "Pack24/Der Lokf\u{fc}hrer.rbs"
+    ));
+    assert!(same_path("a.rbs", "a.rbs"));
+    assert!(!same_path(
+        "Pack24/Der Lokfuhrer.rbs",
+        "Pack24/Der Lokf\u{fc}hrer.rbs"
+    ));
+}
+
 #[test]
 fn songs() {
     let Some(e) = env() else { return };
@@ -328,7 +350,7 @@ fn songs() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|f| f.as_str() == Some(rel.as_str()))
+                .any(|f| f.as_str().is_some_and(|f| same_path(f, &rel)))
         });
         if !listed {
             unlisted.push(rel.clone());

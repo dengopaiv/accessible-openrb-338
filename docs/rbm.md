@@ -618,6 +618,26 @@ by rbhost, 0 skipped** (the three refused songs of section 11.4 are repaired or 
 ReBirth 1.x and 842 RBS (464 of 4.2, 370 of 4.1, 8 of 4.0); 531 RBS play a mod, 43 mods in all
 (`yawn.rbs` plays `AXIOMpeace.rbm`); 311 play the built-in kit, all `Standard ReBirth`.
 
+**A run on Windows with the public collections (2026-11-05, the accessible-openrb-338 fork).**
+The collections cloned from github.com/pingw33n/rb-mods (fe08cb8, 2026-10-31: 320 recrypted
+mods, the 320 file names of `tests/refs/thirdparty_mods.json`) and github.com/pingw33n/rb-songs
+(4af1075, 2026-10-31: 1289 files, 1270 song files, 1268 distinct), checked out on Windows 11
+with git's defaults. `mods` passed. `songs` rendered all 1268 equal to rbhost's renders but
+failed: 4 song files "not in the manifest". Each has a letter with a diacritic in its path
+(`The Flipping HoneyBee (ÇoNaNbox 2.0 Edit).rbs`, `YelloMégane-TB Edit.RBS`, `Der Lokführer.rbs`,
+`Hard  révolution.rbs`; `Crusin´ over Sidney.rbs` has only a spacing accent and matched). The
+manifest holds these paths decomposed (NFD: `u` + U+0308), as a file system that decomposes
+names returns them, while rb-songs' git stores them composed (NFC: U+00FC), and git checks
+them out that way on Windows and Linux. The test compared the path strings byte for byte. It
+now compares their NFC forms (`same_path` in `crates/orb-cli/tests/thirdparty.rs`, with the
+dev-dependency `unicode-normalization`), which accepts either form on any system; the manifest
+is unchanged. After the change: 3 passed (`mods`, `songs`, `same_path`'s unit test), 473 s.
+`tools/rbhost/thirdparty_songs.py` now writes the manifest's paths in NFC (`nfc`; the files are
+still opened by the path the file system gives), so a regenerated manifest equals rb-songs'
+names: on the collection above it would write the same 1270 names as the manifest's in NFC,
+and differ from the committed raw strings in exactly those 4 paths (checked by importing the
+tool with its test-machine client stubbed, 2026-11-05).
+
 **The run of 2026-10-29.** 1242 song files (a name containing `.rbs`), 1242 distinct:
 - 426 ReBirth 1.x (built-in kit) and 813 RBS: 436 of 4.2, 369 of 4.1, 8 of 4.0. 510 RBS play a
   mod, 33 mods in all (each name matches one file). 303 play the built-in kit: 301 name `Standard ReBirth`, and 2

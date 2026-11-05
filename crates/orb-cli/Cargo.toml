@@ -32,3 +32,6 @@ cab = "=0.6.0"
 # The gated tests' external inputs (task-121); a dev-dependency cycle (it uses orb_cli::cd).
 orb-testkit = { path = "../orb-testkit" }
 tempfile = "3.27.0"
+# The thirdparty test compares song paths in their NFC form: the songs manifest holds 4 paths
+# decomposed (NFD), while rb-songs stores them composed (NFC).
+unicode-normalization = "0.1"
