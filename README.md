@@ -71,8 +71,12 @@ panel's own computer keyboard, which plays and programs the synths and selects p
 sections to move between with F6 and controls to Tab through, each with its name and value;
 knobs and faders as sliders; the 303's step editor spoken step by step; the drum machines as
 grids; keys that read a pattern, the transport or the levels aloud; spoken messages; the
-system's own file dialogs; and a searchable mod list. Nothing is spoken by itself while the
-music plays. With the mode off, OpenRB-338 behaves exactly as upstream. The sound engine is not
+system's own file dialogs; and a searchable mod list. Knob and fader values are spoken in
+physical units (hertz, milliseconds, decibels) worked out from the engine's code. The
+transport moves to the function keys (F5 Play/Stop, F9 Record, F11 Loop, F12 song/pattern
+mode; F2 to F4 read things aloud, F6 moves between sections), Space presses the focused
+control, and Enter keeps its ReBirth meaning. Nothing is spoken by itself while the music
+plays. With the mode off, OpenRB-338 behaves exactly as upstream. The sound engine is not
 touched, so the output stays identical to the original's.
 
 - [docs/accessibility.md](docs/accessibility.md): what a screen reader gets today (measured),

@@ -16,7 +16,7 @@ the backlog as it stands:
 - each work entry becomes a task with the labels, type, priority, assignee, dependencies,
   references and acceptance criteria it lists;
 - the CLI assigns the task numbers. Here the entries are named `A11Y-D1`..`A11Y-D6` (the
-  decisions) and `A11Y-0`..`A11Y-13` (the work), and the dependencies use these names; replace
+  decisions) and `A11Y-0`..`A11Y-14` (the work), and the dependencies use these names; replace
   them with the task numbers when the tasks are created;
 - the ordinals continue after m-6's (`--ordinal 200000`, then steps of 1000 in the order below).
 
@@ -71,7 +71,8 @@ The user asked for everything (2026-11-05); the order follows what each task nee
    (sliders, switches, spin buttons, pattern selector), A11Y-4 (sections, focus, key
    conflicts), A11Y-5 (announcements and read-out keys). After these, the whole panel can be
    operated and heard, except for the contents of the patterns.
-3. Patterns: A11Y-6 (303 step editor), A11Y-7 (drum grids).
+3. Patterns and units: A11Y-6 (303 step editor), A11Y-7 (drum grids), A11Y-14 (physical
+   units for the knobs and faders, from the engine).
 4. Files and windows: A11Y-8 (dialogs and windows), A11Y-9 (system file dialogs), A11Y-10
    (mod chooser), A11Y-11 (menu bar from the keyboard).
 5. Wrap-up: A11Y-12 (documentation), A11Y-13 (NVDA pass).
@@ -79,7 +80,8 @@ The user asked for everything (2026-11-05); the order follows what each task nee
 Dependencies, in short: A11Y-1 needs D1. A11Y-2 needs A11Y-0 and D5. A11Y-3 needs A11Y-2. A11Y-4
 needs A11Y-1, A11Y-3, D2, D3 and D6. A11Y-5 needs A11Y-2 and D6. A11Y-6 and A11Y-7 need A11Y-4
 and A11Y-5. A11Y-8 needs A11Y-5. A11Y-9 needs A11Y-1 and D4. A11Y-10 needs A11Y-8. A11Y-11 needs
-A11Y-0. A11Y-12 needs all of A11Y-1 to A11Y-11. A11Y-13 needs A11Y-12.
+A11Y-0. A11Y-14 (physical units) needs A11Y-2 and D5. A11Y-12 needs all of A11Y-1 to A11Y-11
+and A11Y-14. A11Y-13 needs A11Y-12.
 
 A11Y-0, A11Y-11 and the decisions can start at once and run side by side.
 
@@ -106,8 +108,19 @@ A11Y-0, A11Y-11 and the decisions can start at once and run side by side.
 
 Each is a task titled as below, `--type spike -l decision,ui -a @dengopaiv`, milestone m-7,
 priority high. Its acceptance criterion is always the same: the user has chosen, and the final
-summary records the choice and the date. The tasks that depend on a decision assume its
-recommendation until it is made, and change if the choice differs.
+summary records the choice and the date.
+
+**All six were decided by the user on 2026-11-05**, before the tasks were created. Each entry
+below keeps its options and adds a "Decided" line; when the tasks are created in the backlog,
+each decision task is created and closed in the same commit, its final summary being that
+line (`--final-summary`, `-s Done`, its acceptance criterion checked). The work tasks below
+already follow the decisions.
+
+In short: screen reader mode turns on by itself, with an Options menu override (D1). Space
+presses or toggles the focused control, F5 is Play/Stop, Enter keeps the original's meaning
+(D2). A machine's mixer channel is in the machine's section (D3). The system's file dialogs
+(D4). Values in physical units, as precise as the engine's code allows (D5). The function keys
+F1 to F12 as in D6, the 303 tap on Ctrl+Tab and Ctrl+Shift+Tab (D6).
 
 ### A11Y-D1. Decide: how screen reader mode turns on
 
@@ -126,6 +139,8 @@ recommendation until it is made, and change if the choice differs.
   - B. Only by hand, from the Options menu, kept in `ui.toml`.
   - C. Always on: no mode at all.
 - Recommendation: A. C would change the keys for every user and could not go upstream.
+- **Decided (2026-11-05): A.** Automatic when the system reports a screen reader, with the
+  Options menu item "Screen Reader Mode" (automatic, on, off), kept in `ui.toml`.
 
 ### A11Y-D2. Decide: Space and Enter on a focused control
 
@@ -133,9 +148,22 @@ recommendation until it is made, and change if the choice differs.
   section 10.
 - Why: in Windows dialogs Space presses or toggles the focused control; in ReBirth, and in
   every music program, Space plays and stops.
+- Facts found while deciding: no function key (F1 to F12) is used by orb-ui (no `Key::F..` in
+  `crates/`) or by the original's key map (docs/ui_spec.md section 10 names none), so all twelve
+  are free. Enter is the 303's Step key in Program Synth mode with a 303 focused, pressed after
+  every programmed note, and Play everywhere else (`keys.rs:158` and 188).
 - Options: A. Space stays Play/Stop everywhere; Enter presses or toggles the focused control.
-  B. Space toggles the focused control as in dialogs; Play/Stop moves to another key.
-- Recommendation: A.
+  B. Space toggles the focused control as in dialogs; Play/Stop moves to another key. Asked
+  again once the function keys were known to be free: Space and F5 both Play/Stop with Enter
+  toggling; Space toggling with F5 Play/Stop; Space Play/Stop with F5 left free. And for Enter:
+  keep the original's meaning; press focused buttons only; always press the focused control.
+- Recommendation: A at first; then, for Enter, keep the original's meaning, so that
+  programming a 303 works as in ReBirth.
+- **Decided (2026-11-05): B, with F5 as Play/Stop; Enter keeps the original's meaning.** In
+  screen reader mode Space presses or toggles the focused control (a button, a toggle, a
+  switch, a step of a drum grid) and is no longer Play/Stop; F5 is Play/Stop. Enter does what
+  it does in the original whatever has the focus: the 303's Step in Program Synth mode with a
+  303 focused, else Play. With the mode off, Space is Play/Stop as before.
 
 ### A11Y-D3. Decide: where a machine's mixer channel is in the navigation
 
@@ -145,6 +173,7 @@ recommendation until it is made, and change if the choice differs.
   channels one after the other.
 - Recommendation: A: in ReBirth a row is one machine with its channel, and the row focus that
   directs the keys follows the section.
+- **Decided (2026-11-05): A.** Each machine's section ends with its mixer channel.
 
 ### A11Y-D4. Decide: system file dialogs in screen reader mode
 
@@ -156,6 +185,8 @@ recommendation until it is made, and change if the choice differs.
   accessible (named list items, roles, focus) and keep it in both modes.
 - Recommendation: A: the Windows dialog is already fully accessible and familiar; B is more
   work for a worse result. The in-app browser stays as it is with the mode off.
+- **Decided (2026-11-05): A.** The system's dialogs in screen reader mode, the folder choices
+  in the Options menu; the in-app browser unchanged with the mode off.
 
 ### A11Y-D5. Decide: how values are spoken
 
@@ -163,9 +194,21 @@ recommendation until it is made, and change if the choice differs.
   `crates/orb-ui/src/model.rs` (`display`).
 - Options: A. The 0 to 127 value the original stores, with words for switches ("square"),
   pan ("center", "left 20") and the displays' own units (BPM, steps, bar). B. Physical units
-  (Hz, ms, dB) for the synth and effect knobs.
-- Recommendation: A: the original panel shows no units, so B's numbers would be guesses; A is
-  exact and matches what a song file holds.
+  (Hz, ms, dB) for the synth and effect knobs. C. Percent.
+- Recommendation: A: the original panel shows no units, so B's numbers would be estimates; A
+  is exact and matches what a song file holds.
+- **Decided (2026-11-05): B, made as precise as the code allows.** The user's words: "We can,
+  though these are estimates, still have them as precise as possible as we infer them from the
+  code." The engine is a bit-exact reimplementation, so the mapping from each 0..127 value to
+  its DSP parameter is in `crates/orb-engine` (for example the 303 filter's coefficient table
+  `FILT[reso >> 4][cutoff]`, `tables/mod.rs:43`; the decay multipliers per sample pair
+  `TR808_DECAY`, `PCF_DECAY`, `tables/data.rs`). Each unit is derived from there and marked by
+  how exact it is: computed in closed form from the engine's formula, derived numerically from
+  its tables or by measuring its output, or estimated. A quantity with no physical unit
+  (resonance, distortion shape) is spoken as a percent of its range. Switches, pan and the
+  displays keep their words and units. The work is task A11Y-14; until it lands, the value
+  text is the 0..127 number. The node's numeric value stays 0..127 (what Increment and
+  SetValue act on).
 
 ### A11Y-D6. Decide: the key map of screen reader mode
 
@@ -185,6 +228,31 @@ recommendation until it is made, and change if the choice differs.
     navigation focus.
 - Recommendation: the proposal as it stands; the user changes what does not suit their NVDA
   setup.
+- **Decided (2026-11-05).** The function keys take the transport (with D2), in the layout the
+  user chose, "transport on F9 to F12": the read-outs low, the transport high and away from F6,
+  so a slip while moving between sections does not start the music. The 303 tap keys are
+  Ctrl+Tab and Ctrl+Shift+Tab, close to the original's Tab. The key map of screen reader mode:
+  - F1: Help > Keyboard Shortcuts.
+  - F2: read the focused section's pattern. F3: read the transport. F4: read the levels.
+  - F5: Play / Stop.
+  - F6 / Shift+F6: next / previous section.
+  - F7, F8: free.
+  - F9: Record on / off. (Insert keeps working for users whose NVDA key it is not.)
+  - F10: the menu bar (and Alt pressed and released alone, A11Y-11).
+  - F11: Loop on / off.
+  - F12: song / pattern mode.
+  - Tab / Shift+Tab: next / previous control.
+  - Space: press or toggle the focused control (D2).
+  - Enter: the original's meaning, whatever has the focus (D2).
+  - Up, Down, Page Up, Page Down, Home, End: change the focused value. Left / Right: move in
+    the step editor and the grids.
+  - Ctrl+Up / Ctrl+Down: the original's row focus, without moving the navigation focus.
+  - Ctrl+Tab / Ctrl+Shift+Tab: tap a note / a rest into the playing step of the focused 303
+    (the original's Tab / Shift+Tab). Note that `App::keyboard` today skips every key pressed
+    with Ctrl (`app.rs:725`, the menu shortcuts), so this key needs its own handling; egui does
+    not move its focus on Ctrl+Tab (`memory/mod.rs:595`, Tab only without modifiers).
+  - Every other key of the original (the pitch, drum and pattern keys, minus, equals, the
+    digits, the keypad) keeps its meaning, whatever has the focus.
 
 ## Work
 
@@ -247,7 +315,9 @@ recommendation until it is made, and change if the choice differs.
   (docs/accessibility.md 1.1).
 - What: `crates/orb-ui/src/a11y/names.rs`: for each layout id its spoken name ("Cutoff",
   "Bass drum level", "Channel 3 mute") and its section's name ("Bass Line 1", "TR-808"), as a
-  table checked against `layout.tsv` by a test; value text per kind (D5); roles: Slider (knob,
+  table checked against `layout.tsv` by a test; value text per kind (the 0..127 number for
+  knobs and faders until A11Y-14 gives their units, words for switches and pan, the displays'
+  units); roles: Slider (knob,
   fader), CheckBox or ToggleButton (toggle), RadioButton (radio), Button (trigger), the switch
   as a two-state control with its two words. Non-interactive parts (LEDs, meters, the step
   parts, the click areas, the mod picture) get no focus: the panel's `ui.interact` for them
@@ -294,7 +364,8 @@ recommendation until it is made, and change if the choice differs.
      equal.
   2. A selection made with the pattern selector during song-mode recording is recorded like a
      click (a test with a link, as `crates/orb-ui/tests/wired.rs`).
-  3. Values read back as D5 says ("64", "center", "128 BPM", "Pattern B3").
+  3. Values read back as words or numbers ("64" until A11Y-14, "center", "128 BPM", "Pattern
+     B3"), through one function that A11Y-14 extends with the units.
   4. The tree has one node per spin button and per pattern selector, not the parts.
 
 ### A11Y-4. Sections, the focus order and the key conflicts
@@ -311,7 +382,10 @@ recommendation until it is made, and change if the choice differs.
     Shift+Tab move within the panel in section order (wrapping at the ends of the panel).
   - The row focus follows the section the focus is in (the two 303s, the 808, the 909), and the
     change is announced through A11Y-5's announcer when that exists, else by the section name.
-  - The key map of D6: Tab no longer taps the 303 (backslash does), Ctrl+R records, Up/Down
+  - The key map of D6: Tab no longer taps the 303 (Ctrl+Tab and Ctrl+Shift+Tab do), Space
+    presses or toggles the focused control and is no longer Play/Stop (D2), F5 is Play/Stop,
+    F9 Record, F11 Loop, F12 song/pattern mode (each the same `Panel::press` as the panel's
+    button), Enter keeps the original's meaning, Up/Down
     change the focused value instead of the row focus, Ctrl+Up/Down move the row focus.
   - egui's own arrow-key focus movement is suppressed on the panel (the arrows change values).
   - The original's play and program keys (letters, digits, minus, equals, Enter in Program
@@ -321,8 +395,11 @@ recommendation until it is made, and change if the choice differs.
 - Acceptance criteria:
   1. Tests: F6 visits the sections in order and wraps; Tab visits the controls of the panel in
      section order; the focused node after each step has the expected name.
-  2. Tests: while a 303 plays, Tab moves the focus and does not change the pattern; backslash
-     taps the playing step as Tab did; Ctrl+R toggles Record.
+  2. Tests: while a 303 plays, Tab moves the focus and does not change the pattern; Ctrl+Tab
+     taps the playing step as Tab did (Ctrl+Shift+Tab a rest); F5, F9, F11 and F12 give the
+     same engine events as the panel's Play/Stop, Record, Loop and mode buttons; Space on a
+     focused toggle toggles it and does not play; Enter with a 303 focused in Program Synth
+     mode is the 303's Step.
   3. With the mode off, `crates/orb-ui/tests/keyboard.rs` passes unchanged, and a test shows
      Tab and Up/Down behaving as on main.
   4. docs/ui_spec.md section 10 has a "Screen reader mode" part with the key map, and Help >
@@ -333,20 +410,22 @@ recommendation until it is made, and change if the choice differs.
 - Assignee: @agent-complex. Type: feature. Labels: ui. Priority: high.
   Dependencies: A11Y-2, A11Y-D6.
 - References: `crates/orb-ui/src/app.rs` (`status_bar` 307: painted text),
-  `crates/orb-ui/src/menu.rs` (where `status` is set: save, export, refresh mods), AccessKit `Node::set_live(Live::Polite)`,
-  `accesskit_windows-0.35.2/src/adapter.rs:261` (LiveRegionChanged), `crates/orb-ui/src/model.rs`
-  (`Transport`, `meters`, `gr_leds`, `playing_step*`).
+  `crates/orb-ui/src/menu.rs` (where `status` is set: save, export, refresh mods), AccessKit
+  `Node::set_live(Live::Polite)`, `accesskit_windows-0.35.2/src/adapter.rs:261`
+  (LiveRegionChanged), `crates/orb-ui/src/model.rs` (`Transport`, `meters`, `gr_leds`,
+  `playing_step*`).
 - What: `crates/orb-ui/src/a11y/announce.rs`: one node, polite live region, outside the focus
   order, whose text is the last message (repeated messages must be spoken again: add a
   changing invisible part or clear and set in two frames; test with NVDA which works). It
   speaks: the status line's messages; a song opened (its name and mod); a mod chosen; the
   keyboard mode changed (Ctrl+F, Ctrl+G); what an original key did when the focus is not on the
   control it changes (pattern selected with the pattern keys, tempo up/down, Record, Loop, mode,
-  Play/Stop only if D2 asks). The status line itself also gets a node with its text. Read-out
+  Play/Stop with F5 or Enter, Record with F9). The status line itself also gets a node with its
+  text. Read-out
   keys (D6): F2 reads the focused section's pattern (A11Y-6 and A11Y-7 fill in the synths and
   drums; here the pattern row: "Pattern B3, 16 steps, shuffle off"), F3 the transport ("Playing,
   bar 5, 128 BPM, song mode, loop 1 to 8, recording off"), F4 the levels (master left and right,
-  compressor gain reduction, as words or numbers per D5).
+  compressor gain reduction; in dB where A11Y-14 finds the engine's scale, else as numbers).
 - Acceptance criteria:
   1. Tests: each listed event sets the announcer's text; nothing sets it during 10 seconds of
      playback without input (position, meters and LEDs moving).
@@ -391,7 +470,7 @@ recommendation until it is made, and change if the choice differs.
   the panel's legend: "Accent", "Bass drum", ...; the 808's switchable slots by the voice they
   play now) and 16 columns (the steps, up to the pattern's length). Up and Down choose the
   instrument (`select_instrument`, so the panel's selection follows), Left and Right the step,
-  Enter sets the step as a click does (808: on/off; 909: the click cycle, with Ctrl, Alt and
+  Space sets the step as a click does (D2; 808: on/off; 909: the click cycle, with Ctrl, Alt and
   Ctrl+Alt as the mouse's modifiers, and the flam button's effect). Each cell reads "Bass drum,
   step 5, on" ("accent", "flam" on the 909). F2 on a drum section reads each instrument that
   has steps, with its steps ("Bass drum: 1, 5, 9, 13. Closed hi-hat: 3, 7, 11, 15").
@@ -488,7 +567,7 @@ recommendation until it is made, and change if the choice differs.
 ### A11Y-12. Documentation of screen reader mode
 
 - Assignee: @agent-worker. Type: docs. Labels: docs, ui. Priority: medium.
-  Dependencies: A11Y-1 to A11Y-11.
+  Dependencies: A11Y-1 to A11Y-11, A11Y-14.
 - References: README.md, docs/ui_spec.md, docs/accessibility.md, this plan,
   `crates/orb-ui/src/key_help.rs`.
 - What: a README section "Using OpenRB-338 with a screen reader" (turning the mode on, the
@@ -512,6 +591,57 @@ recommendation until it is made, and change if the choice differs.
 - Acceptance criteria:
   1. Each item of the checklist is marked as working or has a task filed for it.
 
+### A11Y-14. Physical units for every knob and fader, derived from the engine
+
+- Assignee: @agent-complex. Type: feature. Labels: ui, engine, docs. Priority: medium.
+  Dependencies: A11Y-2, A11Y-D5.
+- References: `crates/orb-engine/src` (`tb303.rs`, `tr808.rs`, `tr909.rs`, `drums.rs`,
+  `pcf.rs`, `delay.rs`, `dist.rs`, `comp.rs`, `process.rs`, `seq.rs`, `tables/mod.rs`,
+  `tables/data.rs`), `crates/orb-engine/src/song.rs` (the controller indices),
+  docs/initial_investigation.md and docs/export_state.md (the original's formulas with their
+  addresses), `crates/orb-ui/src/behavior.rs` (`knob_send`, `fader_send`), the user's decision
+  D5.
+- Why: the user decided (D5) that values are spoken in physical units, "as precise as possible
+  as we infer them from the code". The engine reproduces the original bit for bit, so the code
+  that turns each 0..127 value into a DSP parameter is the best source there is; the original
+  panel shows no units.
+- What: for each knob and fader (77 knobs, 9 faders; `layout.tsv`), find in the engine how its
+  value becomes a parameter, and derive what a musician would want to hear:
+  - frequencies in Hz or kHz (the 303's cutoff, from its filter coefficient table
+    `FILT[reso >> 4][cutoff]` by the pole frequency of the 2-pole sections; the PCF's frequency;
+    tunings as semitones and cents from the pitch tables);
+  - times in ms or s (the decays: the time to fall 60 dB from the per-sample or per-pair gain
+    multipliers, `TR808_DECAY`, `PCF_DECAY`, the 909's decay table; the 909 attack; the delay
+    time from the steps and the tempo);
+  - levels in dB (the faders' and level knobs' gains, the compressor's threshold, the accent
+    levels), and ratios as "4 to 1";
+  - pan as left/right percent ("left 30", "center");
+  - shuffle as the delay of the off-beat sixteenths in percent of a sixteenth (or ms at the
+    tempo);
+  - quantities with no physical unit (resonance, distortion shape and amount, envelope
+    modulation depth if it has no clean frequency range) as percent of their range.
+  Each mapping is a function in `crates/orb-ui/src/a11y/units.rs` (computed in f64 from the same
+  tables the engine uses, imported from orb-engine, not copied), and is marked in a new
+  knowledge document `docs/control_units.md` with: the control, the formula, the code it comes
+  from (engine function and the original's address as the engine's comments give it), and how
+  exact it is: [C] closed form from the engine's own formula, [D] derived numerically from its
+  tables or by measuring a render (state the measurement), [G] estimated (say from what). The
+  spoken text rounds to a sensible precision (3 significant digits for Hz and ms, 0.1 dB) and
+  says the unit in words NVDA reads well ("1.24 kilohertz", "350 milliseconds", "minus 6.5
+  decibels"). A setting "Speak raw values" (off by default, `ui.toml`, Options menu in screen
+  reader mode) adds the 0..127 number ("1.24 kilohertz, 64"). The engine is not changed.
+- Acceptance criteria:
+  1. `docs/control_units.md` lists every knob and fader with formula, source and its [C], [D]
+     or [G] mark; a test checks that the list and `layout.tsv` agree.
+  2. Tests: for each [C] and [D] mapping, sample values (0, 64, 127 and two others) give the
+     documented numbers; for at least the 303 cutoff and one decay, the number is checked
+     against a measurement of an engine render (a sine or impulse through the filter, a
+     decaying voice) within the stated tolerance.
+  3. The spoken value of every knob and fader uses the unit; the "Speak raw values" setting
+     adds the number; with screen reader mode off nothing changes.
+  4. The rendered audio is unchanged: `cargo test --release -p orb-engine --test corpus_golden`
+     passes (no engine file is modified).
+
 ## The NVDA checklist (A11Y-13)
 
 With NVDA (note its version) and the release build, screen reader mode on (by itself, A11Y-1):
@@ -521,7 +651,8 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
 2. F6 through all sections and back with Shift+F6: each section's name is spoken.
 3. Tab through the Transport section: each control's name, role and value are spoken.
 4. Change the tempo with Up and Down: the new tempo is spoken; Page Up and Page Down.
-5. Space plays and stops; nothing is spoken by itself while it plays.
+5. F5 plays and stops; nothing is spoken by itself while it plays. Space on a focused toggle
+   toggles it and does not play. F9 Record, F11 Loop and F12 mode are spoken when pressed.
 6. F3 reads the transport while playing and while stopped.
 7. In Bass Line 1: set the cutoff with the arrows and with NVDA's own slider commands; set the
    waveform; mute channel 1; choose pattern B3.
@@ -553,5 +684,12 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
   `frame_cost.rs`; if the cost grows, the nodes that do not change are cached.
 - **Upstream.** With the mode off nothing changes, so rebasing on upstream stays easy and the
   work can be offered upstream as it is.
+- **Units that are only estimates.** Some controls may have no clean physical quantity, or
+  one that can only be estimated (D5 accepted that). A11Y-14 marks each unit [C], [D] or [G]
+  in `docs/control_units.md`, checks the [C] and [D] ones against renders, and the "Speak raw
+  values" setting gives the exact stored number next to it.
+- **Space no longer plays in screen reader mode.** A habit from ReBirth (D2). F5 plays, Enter
+  still plays when no 303 is being programmed, and Help > Keyboard Shortcuts and the
+  announcement when the mode turns on say so.
 - **Speech over music.** The rule "nothing by itself during playback" is a test (A11Y-5), not a
   hope.

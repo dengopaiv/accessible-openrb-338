@@ -6,7 +6,7 @@ through UI Automation, VoiceOver on macOS and Orca on Linux, so the other platfo
 with less testing.
 
 The document has these parts: what a screen reader gets today (measured), the options, the
-proposal, the decisions it leaves open, the third-party mods and songs, and a reference for
+proposal, the decisions made on it, the third-party mods and songs, and a reference for
 developers (egui's accessibility API and how to measure). The work itself is planned, task by
 task, in [accessibility_plan.md](accessibility_plan.md).
 
@@ -169,14 +169,17 @@ focus, so the synth and tap keys go to it, and says so ("Bass Line 2, keyboard f
 9. Distortion.
 
 A machine's mixer channel goes into the machine's section, because in ReBirth a row is one
-machine with its channel (decision 3 below).
+machine with its channel (decision 3, section 4).
 
 ### 3.3 Controls
 
 - Knobs and faders: Slider with the value 0 to 127 (the value the original sends:
   `behavior::knob_send`, `fader_send`). Up and Down change it by 1, Page Up and Page Down by
   8, Home and End go to 0 and 127, and NVDA's own slider commands use the Increment,
-  Decrement and SetValue actions. Pan reads "center", "left 20", "right 20". The new value
+  Decrement and SetValue actions. The value is spoken in physical units derived from the
+  engine's code, as precisely as it allows ("Cutoff 1.24 kilohertz", "Decay 350
+  milliseconds", "Level minus 6.5 decibels"; decision 5, plan task A11Y-14), with a setting
+  to add the stored 0 to 127 number. Pan reads "center", "left 20", "right 20". The new value
   goes through `Panel::set_knob(id, behavior::knob_from_engine(v))`, so the mouse and the
   keyboard store the same values.
 - Toggles and switches: CheckBox or a two-state button with its state in words ("Waveform:
@@ -191,7 +194,7 @@ machine with its channel (decision 3 below).
   up, accent, slide", or "Step 6: rest") after each of the existing programming keys (the
   pitch keys, P, `[`, `;`, `'`, `-`, Enter, Backspace). Left and Right move the edit step.
 - The 808 and 909 step grids: Grid role, 12 instrument rows by 16 steps. Up and Down choose
-  the instrument (`Panel::select_instrument`), Left and Right the step, Enter sets or cycles
+  the instrument (`Panel::select_instrument`), Left and Right the step, Space sets or cycles
   the step as a click does (`set_step808`; `step909_new_value` and `set_step909`, with Ctrl
   and Alt as on the 909's mouse). Each cell reads "Bass drum, step 5, on", and on the 909 also
   "accent" or "flam".
@@ -201,22 +204,31 @@ machine with its channel (decision 3 below).
 
 ### 3.4 Keys in screen reader mode
 
-These keys need settling while the work is under way; this is the starting proposal.
+Decided by the user on 2026-11-05 (decisions 2 and 6). No function key is used by OpenRB-338
+or by the original's key map, so all twelve were free.
 
-- F6 and Shift+F6: next and previous section. Tab and Shift+Tab: next and previous control.
+- F1: Help > Keyboard Shortcuts.
+- F2: read the focused section's pattern (a 303 pattern as its steps; a drum machine as each
+  used instrument with its steps, "Bass drum: 1, 5, 9, 13"). F3: read the transport
+  ("Playing, bar 5 of 16, 128 BPM, song mode, loop 1 to 8"). F4: read the levels (meters, gain
+  reduction).
+- F5: Play and Stop.
+- F6 and Shift+F6: next and previous section.
+- F9: Record on and off (Insert keeps working for whoever does not use it as the NVDA key).
+- F10, or Alt alone: the menu bar.
+- F11: Loop on and off. F12: song or pattern mode.
+- F7 and F8 are free.
+- Tab and Shift+Tab: next and previous control.
+- Space: press or toggle the focused control (a button, toggle, switch or grid step). In
+  screen reader mode Space no longer plays; F5 does.
+- Enter: what it does in the original, whatever has the focus: the 303's Step in Program
+  Synth mode with a 303 focused, else Play. Programming a 303 works exactly as in ReBirth.
 - Up, Down, Page Up, Page Down, Home, End: change the focused value. Left and Right: move in
   the step editor and the grids.
-- Enter: press or toggle the focused control.
-- Space: Play and Stop, as now, everywhere (decision 2).
-- The 303 tap keys move from Tab and Shift+Tab to backslash and Shift+backslash.
-- Record also gets Ctrl+R; Insert keeps working for whoever does not use it as the NVDA key.
-- The row focus keys (Up and Down) are replaced by the section moves.
-- Read-out keys, all free today: F2 reads the focused section's pattern (a 303 pattern as its
-  16 steps; a drum machine as each used instrument with its steps, "Bass drum: 1, 5, 9, 13");
-  F3 reads the transport ("Playing, bar 5 of 16, 128 BPM, song mode, loop 1 to 8"); F4 reads
-  the levels (meters, gain reduction).
-- F10, or Alt alone, opens the menu bar, if egui's menu bar does not already do so (to be
-  checked).
+- Ctrl+Up and Ctrl+Down: the original's row focus, without moving the navigation focus.
+- Ctrl+Tab and Ctrl+Shift+Tab: tap a note or a rest into the playing step of the focused 303
+  (the original's Tab and Shift+Tab).
+- Every other key of the original keeps its meaning, whatever has the focus.
 - Help > Keyboard Shortcuts lists all of the above when the mode is on.
 
 ### 3.5 Announcements
@@ -283,22 +295,22 @@ leaves the door open to offering it upstream. Upstream's planned web version (mi
 would not get it: eframe 0.37's web runner drops the AccessKit update ("not currently
 implemented", `eframe-0.37.0/src/web/app_runner.rs:403`).
 
-## 4. Open decisions
+## 4. Decisions
 
-Each has a recommendation, which the work assumes unless decided otherwise.
+All were decided by the user on 2026-11-05. The options weighed for each, and the reasons,
+are in the plan's Decisions section ([accessibility_plan.md](accessibility_plan.md),
+A11Y-D1 to A11Y-D6).
 
-1. How screen reader mode turns on. Recommended: by itself when Windows reports a screen
-   reader, plus the Options menu item, remembered. Alternative: only by hand.
-2. Space on a toggle. Recommended: Space stays Play and Stop everywhere and Enter toggles,
-   because musicians expect Space to play. Alternative: Space toggles the focused control, as
-   in most Windows dialogs, and Play and Stop move to another key.
-3. Where a machine's mixer channel is. Recommended: in the machine's section. Alternative: one
-   Mixer section with the four channels.
-4. System file dialogs in screen reader mode. Recommended: yes. Alternative: make the in-app
-   browser's list accessible instead.
-5. How values are spoken. Recommended: the 0 to 127 value the original stores, plus words for
-   switches and pan. Alternative: physical units (Hz, ms, dB); the original panel shows none,
-   so they would be guesses.
+1. How screen reader mode turns on: by itself when the system reports a screen reader, plus
+   an Options menu item (automatic, on, off), remembered.
+2. Space and Enter: Space presses or toggles the focused control; F5 is Play and Stop; Enter
+   keeps the original's meaning (the 303's Step, else Play).
+3. Where a machine's mixer channel is: in the machine's section.
+4. File dialogs in screen reader mode: the system's own.
+5. How values are spoken: in physical units, as precise as the engine's code allows, each
+   marked as exact, derived or estimated in a new `docs/control_units.md` (plan task
+   A11Y-14); the stored 0 to 127 number on request.
+6. The key map: section 3.4, transport on the function keys, the 303 tap on Ctrl+Tab.
 
 ## 5. The third-party mods and songs
 
