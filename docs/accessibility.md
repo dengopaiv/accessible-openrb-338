@@ -411,8 +411,14 @@ What follows was read in the egui 0.37.0 and AccessKit 0.25.2 sources this works
 
 ### 6.2 A headless test of the tree
 
-The measurements of 1.1 and 1.4 came from two throwaway tests, not committed. Plan task A11Y-0
-turns them into a shared test helper. The core of it:
+The measurements of 1.1 and 1.4 came from two throwaway tests. Task-183 (A11Y-0) turned them
+into a shared helper, `crates/orb-ui/tests/common/a11y.rs`, used from a test file with
+`#[path = "common/a11y.rs"] mod a11y;`: `AppTree` runs the `App` headless and keeps the last
+tree (`tree()`, `key`, `send`), `Frames` runs any UI closure (a small test widget), `Tree`
+finds nodes (`by_id`, `by_layout(kind, id)`, `by_name`, `by_role`, `focused`), and `request` /
+`set_value_request` make the events a screen reader sends. `tests/a11y_actions.rs` shows an
+Increment, Decrement and SetValue arriving in a widget; `tests/a11y_baseline.rs` records the
+numbers of 1.1 and is updated by each later task. The core of it:
 
 ```rust
 let ctx = egui::Context::default();
