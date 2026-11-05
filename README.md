@@ -54,6 +54,32 @@ and Windows.
 - The original's preferences and its Windows menu.
 - Export to AIFF (use WAV, FLAC or Ogg).
 
+## Accessibility (this fork)
+
+This repository, accessible-openrb-338, is a fork of
+[OpenRB-338](https://github.com/pingw33n/openrb-338) whose aim is to make OpenRB-338 usable
+with a screen reader, NVDA on Windows first.
+
+**Where it stands (2026-11-05): not usable with a screen reader yet.** The panel is drawn as
+pictures. Of the 254 places the Tab key stops at, only the four menu titles (File, Mods,
+Options, Help) have a name; the knobs, buttons, patterns and the file list say nothing. What
+already works without sight: the `orb` command line tool (render, play, info, mods), and the
+panel's own computer keyboard, which plays and programs the synths and selects patterns
+(Help > Keyboard Shortcuts, though that window cannot be read yet either).
+
+**The plan.** A "Screen reader mode" that keeps the panel's look and adds, behind it:
+sections to move between with F6 and controls to Tab through, each with its name and value;
+knobs and faders as sliders; the 303's step editor spoken step by step; the drum machines as
+grids; keys that read a pattern, the transport or the levels aloud; spoken messages; the
+system's own file dialogs; and a searchable mod list. Nothing is spoken by itself while the
+music plays. With the mode off, OpenRB-338 behaves exactly as upstream. The sound engine is not
+touched, so the output stays identical to the original's.
+
+- [docs/accessibility.md](docs/accessibility.md): what a screen reader gets today (measured),
+  the options, the proposal, and notes for developers.
+- [docs/accessibility_plan.md](docs/accessibility_plan.md): the plan, as decisions and tasks,
+  with the NVDA checklist that ends it.
+
 ## Quick start
 
 1. **Download** the package for your system and CPU from

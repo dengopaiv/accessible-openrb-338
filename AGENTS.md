@@ -8,6 +8,32 @@ The original program (`Rebirth.exe`, `ReBirth.dll`) is not in git: it is copyrig
 
 Planning, progress and decisions live in `backlog/` (Backlog.md). The shared agent brief covers the worktree, IDA, the Windows test machine and its permits, testing and rebasing. It is the backlog doc `agent-brief`: run `backlog doc view doc-001 --plain`, or read its file under `backlog/docs/`.
 
+## This fork (accessible-openrb-338)
+
+This checkout is a fork. What this section says takes precedence over the rest of this file
+where they differ; the rest describes upstream's setup and stays as upstream has it, so that
+rebasing on upstream stays simple.
+
+- **Remotes.** `origin` is the fork, github.com/dengopaiv/accessible-openrb-338 (public). Upstream
+  is github.com/pingw33n/openrb-338; fetch it by URL or add it as the remote `upstream`. Where
+  the rules below say "push main to origin", that is the fork. Nothing is pushed to upstream.
+- **The user.** In this fork the user is `@dengopaiv`: decisions of work done here (milestone
+  m-7 and later) are assigned to `@dengopaiv`. Upstream's tasks and decisions keep `@pingw33n`.
+- **The fork's purpose.** Screen reader accessibility of the desktop UI, NVDA on Windows first.
+  `docs/accessibility.md` is the analysis (measured state, options, proposal, egui's
+  accessibility API, how to measure), `docs/accessibility_plan.md` the plan: milestone m-7 with
+  its decisions and tasks, written so each entry can be created in the backlog as it stands.
+  With screen reader mode off, the app must behave exactly as upstream.
+- **The third-party collections.** Upstream's public mod and song collections
+  (github.com/pingw33n/rb-mods, github.com/pingw33n/rb-songs) are cloned next to this checkout,
+  never into it (the user's decision, 2026-11-05: 1.1 GB of third-party files with no stated
+  license): `C:\GIT\music\rb-collections\rb-mods\mods` (320 recrypted mods) and
+  `C:\GIT\music\rb-collections\rb-songs\songs`. Point `ORB_THIRDPARTY_MODS_DIR` and
+  `ORB_THIRDPARTY_SONGS_DIR` at them for the gated tests (docs/rbm.md section 11.5, the run of
+  2026-11-05).
+- **Windows.** The development machine is Windows 11. `tools/uia_tree.ps1` shows what a screen
+  reader can see of the window (docs/accessibility.md section 6.3).
+
 ## Where things are
 
 **Backlog access.** Tasks, documents and milestones live in `backlog/` and are read and changed only through Backlog.md:
@@ -37,6 +63,8 @@ Planning, progress and decisions live in `backlog/` (Backlog.md). The shared age
 - `docs/initial_investigation.md` is the engine survey; its [C] items are confirmed and its [G] items are guessed.
 - `docs/RBS42.txt` is the file format.
 - Later tasks add `test_machine.md`, `song_load.md`, `export_state.md` and `rbm.md`.
+- `docs/accessibility.md` and `docs/accessibility_plan.md` are the fork's screen reader work
+  (section "This fork").
 - `docs/original_bugs.md` lists the defects of the original (what, addresses, trigger, effect, corpus songs, orb's model, [C]/[G]). A newly found defect of the original goes into `docs/original_bugs.md` as well as its home document.
 - A new fact about the original goes into the document it belongs to, with addresses, in the same commit as the work.
 
