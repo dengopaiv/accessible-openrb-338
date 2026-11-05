@@ -1553,3 +1553,36 @@ unchanged.
 - **Help > About** is laid out as section 18 says.
 
 The art part list, sizes and generator functions are in `assets/ui/README.md`.
+
+## 20. What a screen reader reads of the panel (task-186)
+
+Milestone m-7 (docs/accessibility_plan.md, A11Y-2). Every control of `assets/ui/layout.tsv` has
+a node in the AccessKit tree with a name, a role and its value or state; the table and the
+rules are `crates/orb-ui/src/a11y/names.rs`, written into the node of the control's hit area
+(`App::hit`) by `a11y::describe` where the control is drawn (`App::control`, `knob`, `fader`).
+The tree exists only while a screen reader or another UI Automation client asks for it
+(`Context::enable_accesskit`), so with none the panel behaves and costs as before.
+
+- **Names** follow this spec's tables, spelled out for speech: "Cutoff", "Bass drum level",
+  "Key C sharp", "Channel 3 on" (the mixer's on/off button, lit while the channel plays),
+  "Step accent" (the 303's accent button, beside the "Accent" knob). Each part also has a
+  spoken section: "Transport", "Bass Line 1", "Bass Line 2", "TR-808", "TR-909" (each with its
+  pattern section and its mixer channel, decision A11Y-D3), "Master and compressor", "PCF",
+  "Delay", "Distortion". No two parts of one spoken section share a name (a unit test).
+- **Roles.** Knob and fader: Slider. Toggle: CheckBox. Radio (the PCF and Comp switches) and
+  the pattern and bank buttons: RadioButton, checked when lit. Trigger, repeat and wind
+  buttons: Button. The mode switch and the two-position switches: Switch, whose value is the
+  word of its position ("pattern" / "song", "sawtooth" / "square", "low conga" / "low tom",
+  "band pass" / "low pass", "triplets" / "sixteenths").
+- **Values.** A knob or fader has the numeric value 0..127 (what the song stores, min 0, max
+  127, step 1) and the same number as its text; pan reads "center", "left 20", "right 20" (the
+  middle sends 64). Physical units come with task-192 (decision A11Y-D5) through the one
+  function `names::control_value_text`.
+- **Displays** are labels that take no focus: "Tempo 140 BPM", "Bar 3", "Loop length 4 bars",
+  "Pattern length 16 steps", "Edit step 5", "PCF pattern 25", "Delay steps 3"; a display the
+  mode turns off reads "off".
+- **No focus** for the LEDs and meters (they have no hit area), and none for the step strips
+  and the instrument selection areas of the 808 and 909 (`App::drum_strips`,
+  `App::instrument_selection`): their `ui.interact` senses click and drag without
+  `FOCUSABLE`, so the mouse works as before and Tab no longer stops on six unnamed areas. The
+  drum grids become readable in task-191 (A11Y-7).

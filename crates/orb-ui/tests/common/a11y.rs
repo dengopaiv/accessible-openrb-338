@@ -14,9 +14,10 @@ use orb_ui::app::App;
 use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::model::Panel;
 
-/// The egui id of a panel control's hit area (`App::hit`): the kind is part of the key.
+/// The egui id of a panel control's hit area (`App::hit`): the kind is part of the key. The
+/// app's own function, so a change of the key is seen by the tests.
 pub fn hit_id(kind: &str, layout_id: &str) -> Id {
-    Id::unique(("hit", kind, layout_id))
+    orb_ui::a11y::hit_id_of(kind, layout_id)
 }
 
 /// The accessibility tree of one frame.

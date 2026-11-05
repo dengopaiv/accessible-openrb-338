@@ -156,8 +156,15 @@ fn the_options_items_read_their_state() {
         .1;
     assert_eq!(a11y::role(vintage), Role::CheckBox);
     assert_eq!(a11y::toggled(vintage), Some(Toggled::False));
+    // the menu's radio buttons, not the panel's (the pattern, bank, PCF and Comp buttons are
+    // radio buttons too since task-186)
+    let panel: std::collections::HashSet<_> = orb_ui::layout::controls()
+        .iter()
+        .map(|c| a11y::hit_id(&c.kind, &c.id).accesskit_id())
+        .collect();
     let radios: Vec<_> = t
         .by_role(Role::RadioButton)
+        .filter(|(id, _)| !panel.contains(id))
         .map(|(_, n)| (a11y::name(n).unwrap_or("").to_string(), a11y::toggled(n)))
         .collect();
     println!("radios {radios:?}");

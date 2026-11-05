@@ -29,6 +29,10 @@ Two measurements, on main at cbca449:
 So Tab already walks through 250 silent stops. The panel cannot be used with a screen reader:
 no control says what it is or what its value is.
 
+Since task-186 (A11Y-2) every panel control has a name, a role and its value or state, and the
+focusable elements are 248, all named (section 6.3, docs/ui_spec.md section 20). The other
+gaps of this section remain for the later tasks of the plan.
+
 ### 1.2 Why
 
 - The panel is drawn, not built from widgets. `assets/ui/layout.tsv` lists 348 parts: 77
@@ -474,6 +478,33 @@ by type, named:
 can take the focus: 254, of them with a name: 4
 names: File | Mods | Options | Help
 ```
+
+Output after task-186 (A11Y-2: names, roles and values; 2026-11-05):
+
+```text
+window: 'OpenRB-338 - Untitled'
+elements: 262
+by type, named:
+    86  Slider, True
+    82  Button, True
+    57  RadioButton, True
+    23  CheckBox, True
+    12  Text, True
+     1  Menu, False
+     1  Pane, False
+can take the focus: 248, of them with a name: 248
+names: Shuffle amount | Tempo up | Tempo down | Mode | Play | Stop | ... | Cutoff | ...
+  | Channel 4 compressor | Master level | Master compressor | PCF on | ... | Threshold
+  | File | Mods | Options | Help | Tempo 140 BPM | Bar off | Loop start off | ...
+```
+
+The 82 buttons are the 68 trigger, repeat and wind buttons (46 + 18 + 4), the 4 menu titles
+and the 10 two-position switches (AccessKit's Switch role is a UI Automation Button whose value
+is the position's word). The 86 sliders are the 77 knobs and 9 faders, the 57 radio buttons the
+48 pattern and bank buttons and the 9 PCF and Comp switches, the 23 check boxes the toggles.
+The 12 Text elements are the displays, which take no focus. The six click areas of the drum machines
+(step strips, instrument selection) are no longer focusable and so no longer in the tree. The
+names and roles are listed in docs/ui_spec.md section 20.
 
 ### 6.4 NVDA and this program, for developers who do not use it
 

@@ -1022,11 +1022,25 @@ impl Panel {
         }
     }
 
+    /// Whether a pattern or bank button of a pattern section is lit: the selected pattern's
+    /// button when its bank is the shown one, and the shown bank.
+    pub fn grid_lit(&self, c: &crate::layout::Ctl) -> bool {
+        let r = index_of(&c.section, "pattern").unwrap_or(0).min(3);
+        let name = c.name();
+        if let Some(n) = name.strip_prefix("pattern") {
+            let n: u8 = n.parse().unwrap_or(1);
+            self.rows[r].lit_button() == Some(n - 1)
+        } else {
+            let letter = name.strip_prefix("bank").unwrap_or("A").as_bytes()[0] - b'A';
+            self.rows[r].bank == letter
+        }
+    }
+
     /// The part to draw for a control in its current state. `pressed` is a mouse button held
     /// on it, `now` the time in seconds.
     pub fn part_name(&self, c: &crate::layout::Ctl, pressed: bool, now: f64) -> String {
         let fam = c.family();
-        let (sec, name) = (c.section.as_str(), c.name());
+        let name = c.name();
         let on_off = |on: bool| format!("{fam}{}", if on { "on" } else { "off" });
         let push = || format!("{fam}{}", if pressed { "pressed" } else { "rest" });
         match c.kind.as_str() {
@@ -1050,17 +1064,7 @@ impl Panel {
             }
             "trigger" | "wind" | "repeat" => push(),
             "led" => on_off(self.led_on(c, now)),
-            "grid" => {
-                if let Some(n) = name.strip_prefix("pattern") {
-                    let r = index_of(sec, "pattern").unwrap_or(0).min(3);
-                    let n: u8 = n.parse().unwrap_or(1);
-                    on_off(self.rows[r].lit_button() == Some(n - 1))
-                } else {
-                    let r = index_of(sec, "pattern").unwrap_or(0).min(3);
-                    let letter = name.strip_prefix("bank").unwrap_or("A").as_bytes()[0] - b'A';
-                    on_off(self.rows[r].bank == letter)
-                }
-            }
+            "grid" => on_off(self.grid_lit(c)),
             "steps" => self.step_part(c),
             "meter" if name.starts_with("gr") => {
                 let i: usize = name[2..].parse().unwrap_or(1);

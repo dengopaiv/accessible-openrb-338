@@ -2,6 +2,11 @@
 //! vertices egui tessellates them into, the textures they bind, and the CPU time of the two, in
 //! a headless context (no GPU). `cargo test --release -p orb-ui --test frame_cost -- --nocapture`
 //! prints the numbers (a debug run draws 10 frames and checks only the counts' upper bounds).
+//!
+//! Each size is measured twice: as the window draws without a screen reader, and with AccessKit
+//! on (task-186: egui builds the accessibility tree only after `Context::enable_accesskit`,
+//! which the platform calls when a screen reader or another UI Automation client looks at the
+//! window). The difference of the two `show` times is the cost of building the tree.
 
 use std::collections::HashSet;
 use std::time::Instant;
@@ -18,6 +23,8 @@ struct Cost {
     meshes: usize,
     vertices: usize,
     textures: usize,
+    /// The nodes of the accessibility tree (0 with AccessKit off).
+    nodes: usize,
     show_ms: f64,
     tess_ms: f64,
 }
@@ -29,10 +36,13 @@ fn count_shapes(s: &epaint::Shape) -> usize {
     }
 }
 
-fn cost(size: Vec2, ppp: f32) -> Cost {
+fn cost(size: Vec2, ppp: f32, accesskit: bool) -> Cost {
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
     ctx.set_pixels_per_point(ppp);
+    if accesskit {
+        ctx.enable_accesskit();
+    }
     let mut app = App::new(Panel::demo(), None);
     app.menu = true;
     const WARM: usize = 8;
@@ -43,6 +53,7 @@ fn cost(size: Vec2, ppp: f32) -> Cost {
         meshes: 0,
         vertices: 0,
         textures: 0,
+        nodes: 0,
         show_ms: 0.0,
         tess_ms: 0.0,
     };
@@ -57,6 +68,12 @@ fn cost(size: Vec2, ppp: f32) -> Cost {
         let mut out = ctx.run_ui(input, |ui| app.show(ui));
         let t1 = Instant::now();
         out.textures_delta.clear();
+        let nodes = out
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .map_or(0, |u| u.nodes.len());
+        assert_eq!(nodes > 0, accesskit, "a tree only with AccessKit on");
         let shapes: usize = out.shapes.iter().map(|s| count_shapes(&s.shape)).sum();
         let prims = ctx.tessellate(out.shapes, out.pixels_per_point);
         let t2 = Instant::now();
@@ -66,6 +83,7 @@ fn cost(size: Vec2, ppp: f32) -> Cost {
         c.show_ms += (t1 - t0).as_secs_f64() * 1000.0 / RUNS as f64;
         c.tess_ms += (t2 - t1).as_secs_f64() * 1000.0 / RUNS as f64;
         c.shapes = shapes;
+        c.nodes = nodes;
         let mut tex = HashSet::new();
         c.meshes = 0;
         c.vertices = 0;
@@ -81,23 +99,50 @@ fn cost(size: Vec2, ppp: f32) -> Cost {
     c
 }
 
-fn report(what: &str, size: Vec2, ppp: f32) -> Cost {
-    let c = cost(size, ppp);
+fn report(what: &str, size: Vec2, ppp: f32, accesskit: bool) -> Cost {
+    let c = cost(size, ppp, accesskit);
     println!(
-        "{what}: {} shapes, {} meshes, {} vertices, {} textures; \
+        "{what}{}: {} shapes, {} meshes, {} vertices, {} textures, {} nodes; \
          show {:.3} ms, tessellate {:.3} ms",
-        c.shapes, c.meshes, c.vertices, c.textures, c.show_ms, c.tess_ms
+        if accesskit { " with AccessKit" } else { "" },
+        c.shapes,
+        c.meshes,
+        c.vertices,
+        c.textures,
+        c.nodes,
+        c.show_ms,
+        c.tess_ms
     );
     c
 }
 
 #[test]
 fn a_frame_of_the_panel() {
-    let native = report("native 1x", Vec2::new(PANEL_W, PANEL_H + MENU_H), 1.0);
-    let big = report("1800x1100 at 2x", Vec2::new(1800.0, 1100.0), 2.0);
+    let native_size = Vec2::new(PANEL_W, PANEL_H + MENU_H);
+    let big_size = Vec2::new(1800.0, 1100.0);
+    let native = report("native 1x", native_size, 1.0, false);
+    let big = report("1800x1100 at 2x", big_size, 2.0, false);
+    let native_ak = report("native 1x", native_size, 1.0, true);
+    let big_ak = report("1800x1100 at 2x", big_size, 2.0, true);
+    for (what, off, on) in [
+        ("native 1x", &native, &native_ak),
+        ("1800x1100 at 2x", &big, &big_ak),
+    ] {
+        println!(
+            "{what}: building the accessibility tree ({} nodes) costs {:.3} ms of show",
+            on.nodes,
+            on.show_ms - off.show_ms
+        );
+    }
     // the demo panel drew 559 shapes, 524 and 534 meshes, 14112 and 16412 vertices
-    // (2026-10-30): a change that makes a frame much bigger fails here
-    for (c, max_vertices) in [(&native, 17_000), (&big, 20_000)] {
+    // (2026-10-30): a change that makes a frame much bigger fails here. AccessKit draws
+    // nothing, so the same bounds hold with it on.
+    for (c, max_vertices) in [
+        (&native, 17_000),
+        (&big, 20_000),
+        (&native_ak, 17_000),
+        (&big_ak, 20_000),
+    ] {
         assert!(c.shapes > 0 && c.meshes > 0 && c.vertices > 0);
         assert!(c.shapes <= 680, "{} shapes", c.shapes);
         assert!(c.meshes <= 650, "{} meshes", c.meshes);

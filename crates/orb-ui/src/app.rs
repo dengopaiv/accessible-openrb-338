@@ -847,6 +847,7 @@ impl App {
             "knob" => self.knob(ui, view, c, rect),
             "fader" => self.fader(ui, view, c, rect),
             "display" => {
+                crate::a11y::describe_display(ui.ctx(), rect, &self.panel, c);
                 let n = (c.w / 9.0) as usize;
                 let frames = behavior::digit_frames(self.panel.display(&c.id), n);
                 for (i, f) in frames.into_iter().enumerate() {
@@ -875,6 +876,7 @@ impl App {
                     }
                     _ => {}
                 }
+                crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
                 let name = self.panel.part_name(c, down, now);
                 paint_part(ui, &name, rect);
             }
@@ -917,12 +919,8 @@ impl App {
 
     fn hit(&self, ui: &mut Ui, c: &Ctl, rect: Rect) -> Response {
         // The kind is part of the key: the 303's accent knob and accent flag button share
-        // the layout id `tb303_N.accent`.
-        ui.interact(
-            rect,
-            egui::Id::unique(("hit", &c.kind, &c.id)),
-            Sense::click_and_drag(),
-        )
+        // the layout id `tb303_N.accent` (`a11y::hit_id`).
+        ui.interact(rect, crate::a11y::hit_id(c), Sense::click_and_drag())
     }
 
     fn gesture(ui: &Ui, c: &Ctl) -> (egui::Id, Gesture) {
@@ -995,6 +993,7 @@ impl App {
         }
         g.down = down;
         ui.data_mut(|d| d.insert_temp(id, g));
+        crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
 
         let k = art::knob_design(&c.part);
         let p = self.panel.knob(&c.id);
@@ -1036,6 +1035,7 @@ impl App {
         }
         g.down = down;
         ui.data_mut(|d| d.insert_temp(id, g));
+        crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
         paint_part(ui, "fader_track", rect);
         let top = behavior::fader_handle_top(self.panel.fader(&c.id));
         paint_part(ui, "fader_handle", view.rect(c.x, c.y + top, 15.0, 11.0));
@@ -1052,10 +1052,12 @@ impl App {
             };
             let rect = view.rect(origin.0 + x0, origin.1 + y0, w, h);
             let name = if is808 { "strip808" } else { "strip909" };
+            // no FOCUSABLE: the strip is not a Tab stop (task-186; the grids become
+            // readable in task-191), the mouse works as with `Sense::click_and_drag`
             let r = ui.interact(
                 rect,
                 egui::Id::unique(("hit", name)),
-                Sense::click_and_drag(),
+                Sense::CLICK | Sense::DRAG,
             );
             let gid = egui::Id::unique(("gesture", name));
             let mut g: Gesture = ui.data(|d| d.get_temp(gid)).unwrap_or_default();
@@ -1126,10 +1128,11 @@ impl App {
         ];
         for (is808, o, [x, y, w, h], name) in areas {
             let rect = view.rect(o.0 + x, o.1 + y, w, h);
+            // no FOCUSABLE, as the step strips (task-186)
             let r = ui.interact(
                 rect,
                 egui::Id::unique(("hit", name)),
-                Sense::click_and_drag(),
+                Sense::CLICK | Sense::DRAG,
             );
             if !r.is_pointer_button_down_on() {
                 continue;

@@ -1,0 +1,153 @@
+//! Every control of the panel has a name, a role and a value (task-186, A11Y-2,
+//! docs/accessibility.md 3.3): the test walks `assets/ui/layout.tsv` and reads each part's
+//! node in the accessibility tree the app builds headless.
+
+#[path = "common/a11y.rs"]
+mod a11y;
+
+use std::collections::HashMap;
+
+use a11y::AppTree;
+use eframe::egui::accesskit::{Action, Role, Toggled};
+use orb_ui::a11y::names;
+use orb_ui::layout;
+
+/// The role each interactive kind must have (A11Y-2).
+fn expected_role(kind: &str) -> Role {
+    match kind {
+        "knob" | "fader" => Role::Slider,
+        "toggle" => Role::CheckBox,
+        "radio" | "grid" => Role::RadioButton,
+        "trigger" | "repeat" | "wind" => Role::Button,
+        "switch" | "hswitch" | "vswitch" => Role::Switch,
+        k => panic!("{k} is not an interactive kind"),
+    }
+}
+
+#[test]
+fn every_interactive_part_has_a_name_a_role_and_a_value() {
+    let h = AppTree::new();
+    let t = h.tree();
+    // (spoken section, name) -> layout id
+    let mut seen: HashMap<(String, String), String> = HashMap::new();
+    let mut checked = 0;
+    for c in layout::controls() {
+        if !names::is_interactive(&c.kind) {
+            continue;
+        }
+        let what = format!("{} ({})", c.id, c.kind);
+        let n = t
+            .by_layout(&c.kind, &c.id)
+            .unwrap_or_else(|| panic!("{what} has no node"));
+        let name = a11y::name(n).unwrap_or_default().to_string();
+        assert!(!name.is_empty(), "{what} has no name");
+        assert_eq!(a11y::role(n), expected_role(&c.kind), "{what}: role");
+        assert!(a11y::supports(n, Action::Focus), "{what} takes the focus");
+        match c.kind.as_str() {
+            "knob" | "fader" => {
+                let v = a11y::numeric_value(n).unwrap_or_else(|| panic!("{what}: no value"));
+                assert!((0.0..=127.0).contains(&v), "{what}: {v}");
+                assert!(a11y::value(n).is_some_and(|s| !s.is_empty()), "{what}");
+            }
+            "switch" | "hswitch" | "vswitch" => {
+                let v = a11y::value(n).unwrap_or_else(|| panic!("{what}: no value"));
+                assert!(names::switch_words(&c.id).contains(&v), "{what}: {v}");
+            }
+            "toggle" | "radio" | "grid" => {
+                assert!(
+                    matches!(a11y::toggled(n), Some(Toggled::True | Toggled::False)),
+                    "{what}: no state"
+                );
+            }
+            _ => {}
+        }
+        let section = names::section_name(&c.section).unwrap().to_string();
+        if let Some(other) = seen.insert((section.clone(), name.clone()), c.id.clone()) {
+            panic!("{} and {other} are both {name:?} in {section}", c.id);
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 244, "interactive parts in layout.tsv");
+}
+
+#[test]
+fn some_nodes_read_as_expected() {
+    let h = AppTree::new();
+    let t = h.tree();
+    let cutoff = t.by_layout("knob", "tb303_1.cutoff").unwrap();
+    assert_eq!(a11y::name(cutoff), Some("Cutoff"));
+    let v = h.app.panel.value("tb303_1.cutoff").unwrap();
+    assert_eq!(a11y::numeric_value(cutoff), Some(f64::from(v)));
+    assert_eq!(a11y::value(cutoff), Some(v.to_string().as_str()));
+
+    let pan = t.by_layout("knob", "mixer2.pan").unwrap();
+    assert_eq!(a11y::name(pan), Some("Channel 2 pan"));
+    let v = h.app.panel.value("mixer2.pan").unwrap();
+    let words = names::control_value_text("mixer2.pan", v);
+    assert_eq!(a11y::value(pan), Some(words.as_str()));
+
+    let mode = t.by_layout("switch", "transport.mode").unwrap();
+    assert_eq!(a11y::name(mode), Some("Mode"));
+    let expected = if h.app.panel.transport.song_mode {
+        "song"
+    } else {
+        "pattern"
+    };
+    assert_eq!(a11y::value(mode), Some(expected));
+
+    let accent = t.by_layout("trigger", "tb303_1.accent").unwrap();
+    assert_eq!(a11y::name(accent), Some("Step accent"));
+    let tempo = t.by_layout("display", "transport.tempo").unwrap();
+    assert_eq!(a11y::role(tempo), Role::Label);
+    let bpm = h.app.panel.display("transport.tempo").unwrap();
+    let text = format!("Tempo {bpm} BPM");
+    assert_eq!(a11y::name(tempo), Some(text.as_str()));
+    // UI Automation names a Label from its value
+    assert_eq!(a11y::value(tempo), Some(text.as_str()));
+    assert!(
+        !a11y::supports(tempo, Action::Focus),
+        "a display takes no focus"
+    );
+}
+
+#[test]
+fn the_nodes_follow_the_panel() {
+    let mut h = AppTree::new();
+    let id = a11y::hit_id("toggle", "transport.loop");
+    let before = h.app.panel.transport.looping;
+    assert_eq!(
+        a11y::toggled(h.tree().by_id(id).unwrap()),
+        Some(before.into())
+    );
+    h.app.panel.press("transport.loop", 0.0);
+    let after = a11y::toggled(h.frame(vec![]).by_id(id).unwrap());
+    assert_eq!(after, Some((!before).into()));
+
+    h.app.panel.set_knob("tb303_2.reso", 0);
+    let n = h.frame(vec![]).by_layout("knob", "tb303_2.reso").unwrap();
+    assert_eq!(a11y::numeric_value(n), Some(0.0));
+    assert_eq!(a11y::value(n), Some("0"));
+}
+
+#[test]
+fn leds_meters_steps_and_areas_take_no_focus() {
+    let h = AppTree::new();
+    let t = h.tree();
+    for c in layout::controls() {
+        if names::is_interactive(&c.kind) || c.kind == "display" {
+            continue;
+        }
+        if let Some(n) = t.by_layout(&c.kind, &c.id) {
+            assert!(
+                !a11y::supports(n, Action::Focus),
+                "{} can take the focus",
+                c.id
+            );
+        }
+    }
+    let focusable = t
+        .nodes()
+        .filter(|(_, n)| a11y::supports(n, Action::Focus))
+        .count();
+    assert!(focusable < 254, "{focusable} focusable nodes");
+}
