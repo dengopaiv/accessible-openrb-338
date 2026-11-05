@@ -78,7 +78,7 @@ impl Mode {
         }
     }
 
-    fn writes(self) -> bool {
+    pub fn writes(self) -> bool {
         matches!(self, Mode::SaveSong | Mode::Export)
     }
 }
@@ -186,21 +186,62 @@ pub struct Browser {
     hits: Vec<(String, Rect)>,
 }
 
+/// The folder a browser for `mode` starts in: the folder of the last file chosen in its kind
+/// (songs and export share one, mods have their own) while it exists, else the songs folder
+/// (songs, export) or the mods folder (mods) of `settings`, else the documents folder. The
+/// system dialog of screen reader mode starts in the same folder.
+pub fn start_dir(mode: Mode, settings: &Settings) -> PathBuf {
+    let (last, configured) = match mode {
+        Mode::ChooseMod => (&settings.last_mod_dir, &settings.mods_dir),
+        _ => (&settings.last_song_dir, &settings.songs_dir),
+    };
+    [last, configured]
+        .into_iter()
+        .flatten()
+        .find(|d| d.is_dir())
+        .cloned()
+        .unwrap_or_else(settings::documents_dir)
+}
+
+/// Whether `path` may be chosen in `mode`: a mod must be ready (recrypted, valid), a file to
+/// open must exist. The error is the text of the browser's error line.
+pub fn check_choice(mode: Mode, path: &Path) -> Result<(), String> {
+    if mode == Mode::ChooseMod {
+        match ModStatus::of(path) {
+            ModStatus::Ready => Ok(()),
+            ModStatus::NeedsRecrypt => Err(format!(
+                "{}: not recrypted. Run `orb mod recrypt --rb20ful RB20FUL.DAT FILE \
+                 -o OUT.rbm` once and choose OUT.rbm.",
+                path.display()
+            )),
+            ModStatus::Invalid(e) => Err(format!("{}: {e}", path.display())),
+        }
+    } else if !mode.writes() && !path.is_file() {
+        Err(format!("{}: no such file.", path.display()))
+    } else {
+        Ok(())
+    }
+}
+
+/// Notes the folder of a chosen file as a recent folder and as the last one of its kind, and
+/// saves the settings. The error of a failed write is returned (the choice stands).
+pub fn note_choice(mode: Mode, path: &Path, settings: &mut Settings) -> Option<String> {
+    let dir = path.parent()?;
+    settings.note_recent(dir);
+    let last = match mode {
+        Mode::ChooseMod => &mut settings.last_mod_dir,
+        _ => &mut settings.last_song_dir,
+    };
+    *last = Some(dir.to_path_buf());
+    settings.save().err()
+}
+
 impl Browser {
     /// A browser for `mode`, starting in the folder of the last file chosen in its kind (songs
     /// and export share one, mods have their own) while it exists, else the songs folder
     /// (songs, export) or the mods folder (mods) of `settings`, else the documents folder.
     pub fn new(mode: Mode, settings: &Settings) -> Self {
-        let (last, configured) = match mode {
-            Mode::ChooseMod => (&settings.last_mod_dir, &settings.mods_dir),
-            _ => (&settings.last_song_dir, &settings.songs_dir),
-        };
-        let dir = [last, configured]
-            .into_iter()
-            .flatten()
-            .find(|d| d.is_dir())
-            .cloned()
-            .unwrap_or_else(settings::documents_dir);
+        let dir = start_dir(mode, settings);
         let mut b = Self {
             mode,
             dir: dir.clone(),
@@ -553,38 +594,13 @@ impl Browser {
     }
 
     fn finish(&mut self, path: PathBuf, settings: &mut Settings) -> Poll {
-        if self.mode == Mode::ChooseMod {
-            match ModStatus::of(&path) {
-                ModStatus::Ready => {}
-                ModStatus::NeedsRecrypt => {
-                    self.error = Some(format!(
-                        "{}: not recrypted. Run `orb mod recrypt --rb20ful RB20FUL.DAT FILE \
-                         -o OUT.rbm` once and choose OUT.rbm.",
-                        path.display()
-                    ));
-                    return Poll::Open;
-                }
-                ModStatus::Invalid(e) => {
-                    self.error = Some(format!("{}: {e}", path.display()));
-                    return Poll::Open;
-                }
-            }
-        } else if !self.mode.writes() && !path.is_file() {
-            self.error = Some(format!("{}: no such file.", path.display()));
+        if let Err(e) = check_choice(self.mode, &path) {
+            self.error = Some(e);
             return Poll::Open;
         }
-        if let Some(dir) = path.parent() {
-            settings.note_recent(dir);
-            let last = match self.mode {
-                Mode::ChooseMod => &mut settings.last_mod_dir,
-                _ => &mut settings.last_song_dir,
-            };
-            *last = Some(dir.to_path_buf());
-            if let Err(e) = settings.save() {
-                // The choice stands; the failed note does not block it, the app shows it.
-                self.failures.push(e);
-            }
-        }
+        // The choice stands; a failed note does not block it, the app shows it.
+        self.failures
+            .extend(note_choice(self.mode, &path, settings));
         Poll::Chosen(path)
     }
 

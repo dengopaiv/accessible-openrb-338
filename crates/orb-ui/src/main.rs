@@ -314,6 +314,8 @@ fn main() -> eframe::Result {
             app.menu = true;
             app.enable_logo_anim();
             app.settings = Settings::load();
+            // the real screen reader check and the system's file dialogs (task-194)
+            app.use_system_services();
             // the song (or the new empty song) and its mod's startup sound; nothing in the demo,
             // which has no player
             // (the errors of the start are one box)

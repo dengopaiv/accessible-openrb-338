@@ -19,7 +19,7 @@ use eframe::egui::{
 
 use crate::art::{self, KnobDesign};
 use crate::behavior::{self, Mods};
-use crate::browser::{Browser, Mode, Poll};
+use crate::browser::{self, Browser, Mode, Poll};
 use crate::document::Document;
 use crate::keys::{self, Action, KeyMode};
 use crate::layout::{self, Ctl, PANEL_H, PANEL_W};
@@ -126,10 +126,21 @@ pub struct App {
     /// Whether the system reported a screen reader at the last check (at start and whenever the
     /// window regains the focus; task-185). Read through `App::screen_reader_mode`.
     system_screen_reader: bool,
+    /// Asks the system whether a screen reader runs; `App::new` has none (false), the program
+    /// installs the real one (`App::use_system_services`).
+    screen_reader_probe: fn() -> bool,
     /// The window's focus in the last frame, to see it regained.
     was_focused: bool,
     /// The open file browser, if any (`open_browser`).
     browser: Option<Browser>,
+    /// The system's file dialog, used instead of the browser in screen reader mode (task-194);
+    /// tests replace it (`App::set_picker`).
+    picker: crate::system_dialog::Picker,
+    /// The app's window, the owner of those dialogs (set every frame from eframe's `Frame`).
+    parent: Option<crate::system_dialog::Parent>,
+    /// A name the system dialog did not confirm that is a file already: the question
+    /// "Replace ...?" waits for its answer (`App::replace_ui`, task-194).
+    pub(crate) replace: Option<crate::system_dialog::Replace>,
     /// The open song: its file, its mod, whether it has unsaved changes (task-047).
     pub doc: Document,
     /// Whether a song has settled yet; until then the "previous kit" of the startup sound's
@@ -216,9 +227,13 @@ impl App {
             link: None,
             samples: None,
             settings: Settings::default(),
-            system_screen_reader: crate::screen_reader::system_reports_screen_reader(),
+            system_screen_reader: false,
+            screen_reader_probe: || false,
             was_focused: true,
             browser: None,
+            picker: crate::system_dialog::no_picker(),
+            parent: None,
+            replace: None,
             doc: Document::new(),
             settled: false,
             errors: Default::default(),
@@ -264,6 +279,15 @@ impl App {
         }
     }
 
+    /// Connects the app to the system: the real screen reader check (now and at every focus
+    /// gain) and the system's file dialogs. `App::new` has neither, so a test never asks the
+    /// real system or opens a real dialog; the program calls this once.
+    pub fn use_system_services(&mut self) {
+        self.screen_reader_probe = crate::screen_reader::system_reports_screen_reader;
+        self.system_screen_reader = (self.screen_reader_probe)();
+        self.picker = crate::system_dialog::system_picker();
+    }
+
     /// Whether screen reader mode is on: the setting is `on`, or `auto` and the system reported
     /// a screen reader at the last check (task-185). Nothing reads it yet; later tasks do.
     pub fn screen_reader_mode(&self) -> bool {
@@ -276,15 +300,101 @@ impl App {
     /// the focus (`focused` is this frame's state).
     fn check_screen_reader(&mut self, focused: bool) {
         if focused && !self.was_focused {
-            self.system_screen_reader = crate::screen_reader::system_reports_screen_reader();
+            self.system_screen_reader = (self.screen_reader_probe)();
         }
         self.was_focused = focused;
     }
 
     /// Opens the file browser for `mode` over the panel (the menu calls this). Ctrl/Cmd+O opens it
     /// for a song.
+    ///
+    /// In screen reader mode the system's file dialog opens instead ([`App::system_pick`]); the
+    /// in-app browser is for the mode off.
     pub fn open_browser(&mut self, mode: Mode) {
-        self.browser = Some(Browser::new(mode, &self.settings));
+        if self.screen_reader_mode() {
+            self.system_pick(mode);
+        } else {
+            self.browser = Some(Browser::new(mode, &self.settings));
+        }
+    }
+
+    /// Replaces the system's file dialog (for tests).
+    pub fn set_picker(&mut self, picker: crate::system_dialog::Picker) {
+        self.picker = picker;
+    }
+
+    /// Asks the system dialog for a file of `mode`, in the folder the browser would start in,
+    /// and does with the answer what the browser's answer does: the browser's checks and notes
+    /// ([`browser::check_choice`], [`browser::note_choice`]), then [`App::chosen`]. The dialog
+    /// is modal, so this call waits for it: the frame stands still, the audio thread plays on.
+    /// A cancelled dialog changes nothing, as a cancelled browser (a Save As that the prompt's
+    /// Save started ends that action).
+    fn system_pick(&mut self, mode: Mode) {
+        use crate::system_dialog::{Request, with_extension};
+        let start = browser::start_dir(mode, &self.settings);
+        let Some(picked) = (self.picker)(Request::File(mode), &start, self.parent.as_ref()) else {
+            self.after_save = None;
+            return;
+        };
+        let path = match with_extension(mode, picked.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                self.after_save = None;
+                self.fail(e);
+                return;
+            }
+        };
+        // The dialog asked about replacing `picked`, not about the name it was given here.
+        if path != picked && path.exists() {
+            self.replace = Some(crate::system_dialog::Replace {
+                mode,
+                path,
+                focused: false,
+            });
+            return;
+        }
+        self.finish_pick(mode, path);
+    }
+
+    /// Does with a path the system dialog chose (and the app confirmed) what the browser does
+    /// with its answer.
+    pub(crate) fn finish_pick(&mut self, mode: Mode, path: PathBuf) {
+        if let Err(e) = browser::check_choice(mode, &path) {
+            self.after_save = None;
+            self.fail(e);
+            return;
+        }
+        let failure = browser::note_choice(mode, &path, &mut self.settings);
+        self.fail_many(failure);
+        self.chosen(mode, path);
+    }
+
+    /// Options > Set Songs Folder... / Set Mods Folder...: the system's folder dialog, starting
+    /// in the folder now set (else the browser's start folder); the answer is what the
+    /// browser's "Use as songs folder" / "Use as mods folder" button sets, saved to `ui.toml`;
+    /// a new Mods folder is read again.
+    pub fn choose_folder(&mut self, which: crate::system_dialog::Folder) {
+        use crate::system_dialog::{Folder, Request};
+        let (current, mode) = match which {
+            Folder::Songs => (&self.settings.songs_dir, Mode::OpenSong),
+            Folder::Mods => (&self.settings.mods_dir, Mode::ChooseMod),
+        };
+        let start = current
+            .clone()
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(|| browser::start_dir(mode, &self.settings));
+        let Some(dir) = (self.picker)(Request::Folder(which), &start, self.parent.as_ref()) else {
+            return;
+        };
+        match which {
+            Folder::Songs => self.settings.songs_dir = Some(dir),
+            Folder::Mods => self.settings.mods_dir = Some(dir),
+        }
+        let failure = self.settings.save().err();
+        self.fail_many(failure);
+        if which == Folder::Mods {
+            self.refresh_mods();
+        }
     }
 
     /// Where the open browser drew its part `name` last (for tests; `Browser::hit`).
@@ -344,7 +454,10 @@ impl App {
             Color32::from_rgb(0xb8, 0xd8, 0xc0),
         );
         // Clicks in the browser, the prompt or the box over it do not dismiss it.
-        let blocked = self.browser.is_some() || self.prompt.is_some() || self.error_open();
+        let blocked = self.browser.is_some()
+            || self.prompt.is_some()
+            || self.replace.is_some()
+            || self.error_open();
         if !blocked && self.export.is_none() && ui.input(|i| i.pointer.any_click()) {
             self.status = None;
         }
@@ -369,6 +482,7 @@ impl eframe::App for App {
         egui_extras::install_image_loaders(ui.ctx());
         let focused = ui.input(|i| i.focused);
         self.check_screen_reader(focused);
+        self.parent = crate::system_dialog::Parent::of(frame);
         self.close_check(&ui.ctx().clone());
         self.show(ui);
         self.screenshot(ui.ctx());
@@ -626,7 +740,11 @@ impl App {
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
         // and no clicks of its own.
-        if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
+        if self.browser.is_none()
+            && self.prompt.is_none()
+            && self.replace.is_none()
+            && !self.error_open()
+        {
             if shortcuts::consume(ui, &shortcuts::NEW) {
                 self.new_song();
             } else if shortcuts::consume(ui, &shortcuts::OPEN) {
@@ -714,6 +832,7 @@ impl App {
         }
         self.browse(&ctx);
         self.prompt_ui(&ctx);
+        self.replace_ui(&ctx);
         self.info_ui(&ctx);
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);

@@ -38,6 +38,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 # box is run by `zenity` at run time (no GTK or other system library to link), and the Wayland
 # window-identifier code is not needed for a box without a parent window.
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+# The window handles that make the app's window the owner of the system file dialogs
+# (task-194); the version eframe, winit and rfd use.
+raw-window-handle = "0.6"
 
 [dev-dependencies]
 orb-ui-art = { path = "../orb-ui-art" }

@@ -43,6 +43,7 @@ use crate::palette::{INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 use crate::screen_reader::ScreenReaderSetting;
 use crate::session;
 use crate::shortcuts;
+use crate::system_dialog::Folder;
 
 /// The height of the menu bar in points.
 pub const MENU_H: f32 = 22.0;
@@ -100,6 +101,9 @@ pub enum Cmd {
     ToggleStartupSound,
     /// "Screen Reader Mode" of the Options menu (task-185).
     SetScreenReader(ScreenReaderSetting),
+    /// "Set Songs Folder..." / "Set Mods Folder..." of the Options menu (task-194): the
+    /// system's folder dialog.
+    SetFolder(crate::system_dialog::Folder),
     SetKeyMode(KeyMode),
 }
 
@@ -933,6 +937,7 @@ impl App {
                     }
                 }
             }
+            Cmd::SetFolder(which) => self.choose_folder(which),
             Cmd::SetKeyMode(m) => self.key_mode = m,
         }
     }
@@ -1109,7 +1114,8 @@ impl App {
     /// Draws the menu bar and runs what it chooses.
     pub fn menu_bar(&mut self, ui: &mut Ui) {
         let mut cmd: Option<Cmd> = None;
-        let enabled = !self.browsing() && !self.prompting() && !self.error_open();
+        let enabled =
+            !self.browsing() && !self.prompting() && self.replace.is_none() && !self.error_open();
         // F10, or Alt pressed and released alone, focuses the File menu (task-184)
         let focus_file = menu_bar_key(ui) && enabled;
         let mut bar: Vec<(Id, Id)> = vec![];
@@ -1254,6 +1260,19 @@ impl App {
                                 }
                             });
                             ui.separator();
+                            // the browser's "Use as ... folder" buttons, for the system dialog
+                            if self.screen_reader_mode() {
+                                for f in [Folder::Songs, Folder::Mods] {
+                                    let label = match f {
+                                        Folder::Songs => "Set Songs Folder...",
+                                        Folder::Mods => "Set Mods Folder...",
+                                    };
+                                    if item(ui, label, None) {
+                                        cmd = Some(Cmd::SetFolder(f));
+                                    }
+                                }
+                                ui.separator();
+                            }
                             let ctx = ui.ctx().clone();
                             let synth = format!(
                                 "Program Synth ({})",

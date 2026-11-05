@@ -28,4 +28,5 @@ pub mod screen_reader;
 pub mod session;
 pub mod settings;
 pub mod shortcuts;
+pub mod system_dialog;
 pub mod version;

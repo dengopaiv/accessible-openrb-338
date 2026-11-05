@@ -694,6 +694,12 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
 19. With NVDA closed (no screen reader running), Options > Screen Reader Mode set to Automatic
     leaves the mode off (the other half of A11Y-1's check; A11Y-1 verified only that Automatic
     turns the mode on with NVDA running).
+20. In screen reader mode, Save As, Export Loop as Audio File, Mods > Choose file and
+    Options > Set Songs Folder / Set Mods Folder open the system dialog, NVDA reads it, and a
+    file saved or exported through it is written as through the browser (TASK-194's deferred
+    hand check; item 11 covers Open). Type a name with a dot and no extension (`v1.2 mix`) over
+    an existing `v1.2 mix.rbs`: the question "Replace v1.2 mix.rbs?" is spoken, No is the
+    default.
 
 ## Risks and how the plan meets them
 
