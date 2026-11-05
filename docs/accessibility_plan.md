@@ -4,12 +4,32 @@ Status: plan, 2026-11-05, nothing implemented. The analysis behind it, with the 
 and the options, is in [accessibility.md](accessibility.md); read that first. This document
 turns its section 3 into a milestone, decisions and tasks.
 
+## The tasks in the backlog
+
+Created on 2026-11-05 with the Backlog.md CLI (1.55.3) from this document, so their text is
+the text below. The backlog is now the source of truth for status and progress.
+
+- Milestone: m-7, "m-7: Screen reader accessibility (NVDA first)".
+- Decisions, all Done: A11Y-D1 = TASK-177, A11Y-D2 = TASK-178, A11Y-D3 = TASK-179,
+  A11Y-D4 = TASK-180, A11Y-D5 = TASK-181, A11Y-D6 = TASK-182.
+- Work: A11Y-0 = TASK-183, A11Y-11 = TASK-184, A11Y-1 = TASK-185, A11Y-2 = TASK-186,
+  A11Y-3 = TASK-187, A11Y-4 = TASK-188, A11Y-5 = TASK-189, A11Y-6 = TASK-190,
+  A11Y-7 = TASK-191, A11Y-14 = TASK-192, A11Y-8 = TASK-193, A11Y-9 = TASK-194,
+  A11Y-10 = TASK-195, A11Y-12 = TASK-196, A11Y-13 = TASK-197.
+- The already-done test fix: TASK-176 (milestone m-5, Done).
+
+`backlog task list -m m-7 --plain` lists them. On Windows, a script that passes multi-line
+text to the CLI must run `node .../backlog.md/cli.js` directly: through npm's `backlog.cmd`
+shim, cmd.exe cuts an argument at its first newline and drops the rest of the command line
+(TASK-176 was created that way first, then repaired with `task edit`; the CLI sets references
+only at creation, so its references are in its description).
+
 ## How to use this document
 
 The repository plans in Backlog.md (`backlog/`, AGENTS.md "Backlog rules"), and its files are
 changed only through the Backlog.md CLI or MCP tools, never by hand. The CLI was not available
-when this plan was written, so the plan is here, written so that each entry can be created in
-the backlog as it stands:
+when this plan was written, so the plan was written here first, so that each entry could be
+created in the backlog as it stands (which was done; previous section):
 
 - the milestone becomes `m-7` (`backlog milestone add`; its title starts with its id);
 - each `Decide:` entry becomes a task with `--type spike -l decision,ui -a @dengopaiv`;
@@ -40,7 +60,8 @@ the music plays unless asked.
 tree serves Narrator and JAWS (UI Automation), VoiceOver (macOS) and Orca (Linux) through
 AccessKit, with less testing. Not in scope: the engine (no change at all: the rendered audio
 stays byte for byte the original's), the `orb` command line tool (already usable with a screen
-reader), the web version of m-6 (eframe 0.37's web runner drops the AccessKit update), MIDI.
+reader), MIDI, and any web version: the fork is a local editor only and has none (the user,
+2026-11-05, TASK-198; upstream's m-6 is archived here).
 
 **Ground rules for every task of the milestone.**
 
@@ -85,9 +106,9 @@ and A11Y-14. A11Y-13 needs A11Y-12.
 
 A11Y-0, A11Y-11 and the decisions can start at once and run side by side.
 
-## Already done, to be recorded
+## Already done
 
-### Third-party songs test: compare song paths in NFC (done in the working tree)
+### Third-party songs test: compare song paths in NFC (TASK-176, Done, commit 4d76af3)
 
 - Type: bug. Labels: tests. Priority: medium. Milestone: m-5 (maintenance). Status: Done.
 - References: `crates/orb-cli/tests/thirdparty.rs`, `crates/orb-cli/Cargo.toml`,

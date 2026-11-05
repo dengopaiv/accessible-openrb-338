@@ -293,7 +293,8 @@ The work stays in its own module, with small hooks in `app.rs`, `keys.rs`, `menu
 `settings.rs`, and the mode off means no change. That keeps rebasing on upstream simple and
 leaves the door open to offering it upstream. Upstream's planned web version (milestone m-6)
 would not get it: eframe 0.37's web runner drops the AccessKit update ("not currently
-implemented", `eframe-0.37.0/src/web/app_runner.rs:403`).
+implemented", `eframe-0.37.0/src/web/app_runner.rs:403`). This fork has no web version and
+will not have one (the user, 2026-11-05, TASK-198: a local editor only); m-6 is archived here.
 
 ## 4. Decisions
 

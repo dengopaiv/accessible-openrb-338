@@ -19,6 +19,15 @@ rebasing on upstream stays simple.
   the rules below say "push main to origin", that is the fork. Nothing is pushed to upstream.
 - **The user.** In this fork the user is `@dengopaiv`: decisions of work done here (milestone
   m-7 and later) are assigned to `@dengopaiv`. Upstream's tasks and decisions keep `@pingw33n`.
+- **A local editor, nothing more.** The user's rule (2026-11-05, TASK-198): "The program will
+  never have a web version. We only need a local editor. Nothing too complex. If necessary,
+  we'll gut the upstream to keep only what we need and what is local." So: no web version
+  (upstream's milestone m-6 and its tasks TASK-169 to TASK-175 are archived here); nothing
+  that needs a server, a hosted page or a network service; and an upstream part the fork does
+  not need may be removed when it gets in the way, each removal its own task, decided by the
+  user, with the reason in its description.
+- **The queue.** m-7 (screen reader accessibility) is the fork's first open milestone. Upstream
+  work merged in later does not go ahead of it unless the user says so.
 - **The fork's purpose.** Screen reader accessibility of the desktop UI, NVDA on Windows first.
   `docs/accessibility.md` is the analysis (measured state, options, proposal, egui's
   accessibility API, how to measure), `docs/accessibility_plan.md` the plan: milestone m-7 with
