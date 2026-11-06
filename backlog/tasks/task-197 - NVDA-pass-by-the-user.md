@@ -1,11 +1,11 @@
 ---
 id: TASK-197
 title: NVDA pass by the user
-status: To Do
+status: Done
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-05T19:32:00Z'
-updated_date: '2026-11-06T23:22:00Z'
+updated_date: '2026-11-06T23:47:00Z'
 labels:
   - ui
   - tests
@@ -33,15 +33,15 @@ Planned in docs/accessibility_plan.md as A11Y-13; the analysis is docs/accessibi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each item of the checklist is marked as working or has a task filed for it.
-- [ ] #2 With NVDA closed (no screen reader running), Options > Screen Reader Mode set to Automatic leaves the mode off (TASK-185's deferred check)
-- [ ] #3 In screen reader mode, Save As, Export Loop as Audio File, Mods > Choose file and Options > Set Songs Folder / Set Mods Folder open the system dialog, NVDA reads it, and a file saved or exported through it is written as through the browser (TASK-194's deferred hand check)
-- [ ] #4 In screen reader mode NVDA reads the section's name when Tab or F6 enters a section (the group name, or TASK-189's announcement), and reads the first line of Keyboard Shortcuts when F1 opens it (TASK-188's deferred by-ear check; the tree is tested headless)
-- [ ] #5 NVDA speaks TASK-189's announcements (the status messages, a song opened, a mod chosen, the keyboard mode, the transport keys) and the F2/F3/F4 read-outs, a message repeated twice included (checklist item 21 of docs/accessibility_plan.md)
-- [ ] #6 NVDA checklist item 22 (TASK-193's dialogs and windows): each window is announced as a dialog with its title and its first line is read; Tab reads the lines of About, Keyboard Shortcuts and Mod Info; the error box is announced as an alert and its message is read when the focus lands on OK (if not, the message needs App::announce: a follow-up task); the prompt is read with Save focused; Escape returns the focus.
+- [x] #1 Each item of the checklist is marked as working or has a task filed for it.
+- [x] #2 With NVDA closed (no screen reader running), Options > Screen Reader Mode set to Automatic leaves the mode off (TASK-185's deferred check)
+- [x] #3 In screen reader mode, Save As, Export Loop as Audio File, Mods > Choose file and Options > Set Songs Folder / Set Mods Folder open the system dialog, NVDA reads it, and a file saved or exported through it is written as through the browser (TASK-194's deferred hand check)
+- [x] #4 In screen reader mode NVDA reads the section's name when Tab or F6 enters a section (the group name, or TASK-189's announcement), and reads the first line of Keyboard Shortcuts when F1 opens it (TASK-188's deferred by-ear check; the tree is tested headless)
+- [x] #5 NVDA speaks TASK-189's announcements (the status messages, a song opened, a mod chosen, the keyboard mode, the transport keys) and the F2/F3/F4 read-outs, a message repeated twice included (checklist item 21 of docs/accessibility_plan.md)
+- [x] #6 NVDA checklist item 22 (TASK-193's dialogs and windows): each window is announced as a dialog with its title and its first line is read; Tab reads the lines of About, Keyboard Shortcuts and Mod Info; the error box is announced as an alert and its message is read when the focus lands on OK (if not, the message needs App::announce: a follow-up task); the prompt is read with Save focused; Escape returns the focus.
 - [x] #7 TASK-190's step editor (NVDA checklist item 8, docs/ui_spec.md 20.5): on the focused Step editor each programming key's new state is spoken once (value change), the same note again is spoken (announcer), Up/Down/Home/End speak the new step and Left/Right nothing, in pitch mode a pitch key speaks the step it set and then the next step, neither cut off; and while a song plays in song mode nothing is spoken when it moves to another pattern, with Options > Step Editor Follows Playback off and on.
 - [x] #8 TASK-191's drum grids (NVDA checklist item 9, docs/ui_spec.md 20.6): NVDA speaks the cell on entering a grid and on each Up, Down, Left, Right, Home and End, and the cell's new state after each Space (its name changes while it keeps the focus); Ctrl+Space, Alt+Space and Ctrl+Alt+Space on the TR-909 give a note, an accent and a flam, and Shift+Space an accent without the system menu (TASK-210); and while a song plays in song mode nothing is spoken when the machine moves to another pattern, with Options > Step Editor Follows Playback off and on.
-- [ ] #9 TASK-195's mod chooser (NVDA checklist item 12, docs/ui_spec.md 20.7): Ctrl+M speaks the dialog Choose Mod and the filter Filter mods as an edit field; typing narrows the list and the N of M mods line is readable; Down from the filter speaks Mods, tree view and the selected item with its level and position; Right speaks expanded and then the first file, Left goes back; Up/Down speak each item with has demo and current; Enter chooses and Mod X is spoken; Ctrl+I opens Mod Info and Escape returns to the chooser; Tab / Shift+Tab move between the two stops; Escape closes and the focus returns where it was.
+- [x] #9 TASK-195's mod chooser (NVDA checklist item 12, docs/ui_spec.md 20.7): Ctrl+M speaks the dialog Choose Mod and the filter Filter mods as an edit field; typing narrows the list and the N of M mods line is readable; Down from the filter speaks Mods, tree view and the selected item with its level and position; Right speaks expanded and then the first file, Left goes back; Up/Down speak each item with has demo and current; Enter chooses and Mod X is spoken; Ctrl+I opens Mod Info and Escape returns to the chooser; Tab / Shift+Tab move between the two stops; Escape closes and the focus returns where it was.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -62,4 +62,12 @@ The user's marks so far (2026-11-07, read from their uncommitted edit of docs/ac
 Item 4 (tempo with Up / Down, Page Up / Page Down): works (the user, 2026-11-07, "Tempo works."); the empty mark meant not yet marked.
 
 Item 5 (F5, Space on a toggle, F9 / F11 / F12 spoken): works (the user, 2026-11-07: "It works as expected"); the note on it was the user's reminder of which mode records, not a defect. Items 1 to 9 pass by ear; 10 to 22 not yet tried.
+
+Items 10 to 22 (the user, 2026-11-07): "Mark the nvda tests done. It worked. I was just caught up in playing with the thing to mark on every aspect." Every item of the checklist works; the marks are in docs/accessibility_plan.md 2.2.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The user went through the NVDA checklist (docs/accessibility_plan.md 2.2, items 1 to 22) on Windows with NVDA and the release build on 2026-11-07: every item works, including the by-ear checks deferred by TASK-185, 188, 189, 190, 191, 193, 194 and 195 (AC #2 to #9). Found on the way, a wish rather than a defect: TASK-211 (a pitch key that also turns a rest into a note). No other task filed.
+<!-- SECTION:FINAL_SUMMARY:END -->

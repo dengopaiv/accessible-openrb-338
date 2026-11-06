@@ -1,7 +1,7 @@
 # Screen reader accessibility: the plan
 
-**State on 2026-11-07: everything planned is built and merged; what is left is the user's NVDA
-pass (TASK-197, items 1 to 9 of its checklist pass) and a few follow-ups.**
+**State on 2026-11-07: everything planned is built and merged, and the user's NVDA pass
+(TASK-197) found every item of its checklist working. What is left are the follow-ups.**
 
 The analysis behind the plan, with the measurements and the options, is in
 [accessibility.md](accessibility.md); the behavior in detail is in docs/ui_spec.md section 20,
@@ -12,7 +12,7 @@ says what the milestone is, what of it is finished and what is still to do.
 The document has three parts:
 
 1. [Finished](#part-1-finished): the decisions, the work, and what was measured.
-2. [To do](#part-2-to-do): the NVDA pass with its checklist, and the open tasks.
+2. [To do](#part-2-to-do): the open tasks, and the NVDA checklist (all items pass).
 3. [Reference](#part-3-reference): the ground rules, the risks, and how the plan was turned into
    tasks.
 
@@ -38,6 +38,7 @@ The document has three parts:
 | (new) | TASK-210 | Shift+Space as the accent key on a TR-909 grid | 7267c55 |
 | A11Y-10 | TASK-195 | A mod chooser with a filter | 6cc85ab |
 | A11Y-12 | TASK-196 | Documentation of screen reader mode | df4d002 |
+| A11Y-13 | TASK-197 | The NVDA pass by the user: all 22 checklist items work | (backlog) |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -46,7 +47,6 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 | Task | What | Priority | Who |
 |---|---|---|---|
-| TASK-197 (A11Y-13) | The NVDA pass: items 1 to 9 pass; 10 to 22 not yet tried | high | the user |
 | TASK-211 | An option: a 303 pitch key also turns a rest into a note | medium | agent |
 | TASK-201 | Mods menu: the playing mod's mark in the accessibility tree | medium | agent |
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | low | agent |
@@ -54,8 +54,8 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 | TASK-206 | A system file dialog that cannot open reads as a cancel (Linux) | low | agent |
 | TASK-200 | crash.rs's release backtrace check fails on Windows (not m-7) | low | agent |
 
-The milestone is done when TASK-197 is done and no task it files is left open (Part 3, "Done
-when").
+The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); TASK-200 is
+not part of it.
 
 ## The milestone
 
@@ -231,15 +231,12 @@ on, the 593 elements include the 384 cells of the two drum grids.
 
 ## Part 2: To do
 
-### 2.1 The NVDA pass (A11Y-13 = TASK-197)
+### 2.1 The NVDA pass (A11Y-13 = TASK-197): done
 
-Assigned to the user (@dengopaiv). The user goes through the checklist below with NVDA on
-Windows and the release build, and each problem becomes a task (labels ui, milestone m-7). Its
-acceptance criteria are the checklist and the by-ear checks the other tasks deferred to it;
-#7 (the step editor) and #8 (the drum grids) are checked.
-
-**State (2026-11-07):** items 1 to 9 work; items 10 to 22 are not yet tried. Found on the way:
-TASK-211.
+The user (@dengopaiv) went through the checklist below with NVDA on Windows and the release
+build on 2026-11-07: every item works ("It worked"). TASK-197 is Done. Found on the way, as
+wishes rather than defects: TASK-211. The checklist stays here as the by-ear test of screen
+reader mode, to repeat after a change.
 
 ### 2.2 The NVDA checklist (A11Y-13)
 
@@ -276,8 +273,9 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
    a song plays in song mode with the focus on a grid, nothing is spoken when the machine moves
    to another pattern, with Options > Step Editor Follows Playback off and on; F2 says "Grid on
    pattern ..." while off. (x)
-10. Record in song mode: a pattern change and a knob move are recorded; play them back.
+10. Record in song mode: a pattern change and a knob move are recorded; play them back. (x)
 11. File > Open in the system dialog; open a song from rb-songs; its name and mod are spoken.
+    (x)
 12. Choose a mod with the mod chooser, with the filter; Mods > Info reads the mod's text;
     Mods > Demo Song. (TASK-195 checked the tree headless: roles, names, levels, expanded,
     the keys, the kits.) By ear: Ctrl+M speaks the dialog's name "Choose Mod" and the filter
@@ -287,28 +285,29 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     speaks "expanded" and then the first file; Left goes back; Up and Down speak each item
     with "has demo" and "current"; Enter chooses and "Mod X" is spoken; Ctrl+I opens Mod Info
     and Escape returns to the list; Tab and Shift+Tab move between the two stops; Escape closes
-    and the focus is back where it was.
-13. File > Info: read and edit the song's title.
-14. Save, Save As, and Export Loop as Audio File: the status messages are spoken.
+    and the focus is back where it was. (x)
+13. File > Info: read and edit the song's title. (x)
+14. Save, Save As, and Export Loop as Audio File: the status messages are spoken. (x)
 15. Trigger an error (open a file that is not a song): the error box is spoken and OK closes it.
-16. Close with unsaved changes: the prompt is spoken, the focus is on Save.
-17. Help > Keyboard Shortcuts: the list can be read line by line.
-18. Turn the mode off: the original keys behave as before (Tab taps the 303 while playing).
+    (x)
+16. Close with unsaved changes: the prompt is spoken, the focus is on Save. (x)
+17. Help > Keyboard Shortcuts: the list can be read line by line. (x)
+18. Turn the mode off: the original keys behave as before (Tab taps the 303 while playing). (x)
 19. With NVDA closed (no screen reader running), Options > Screen Reader Mode set to Automatic
     leaves the mode off (the other half of A11Y-1's check; A11Y-1 verified only that Automatic
-    turns the mode on with NVDA running).
+    turns the mode on with NVDA running). (x)
 20. In screen reader mode, Save As, Export Loop as Audio File, Mods > Choose file and
     Options > Set Songs Folder / Set Mods Folder open the system dialog, NVDA reads it, and a
     file saved or exported through it is written as through the browser (TASK-194's deferred
     hand check; item 11 covers Open). Type a name with a dot and no extension (`v1.2 mix`) over
     an existing `v1.2 mix.rbs`: the question "Replace v1.2 mix.rbs?" is spoken, No is the
-    default.
+    default. (x)
 21. TASK-189's announcements are spoken without moving the focus: a status message (Save),
     a song opened (its name and mod), a mod chosen, the keyboard mode (Ctrl+F, Ctrl+G), the
     transport keys (F5, F9, F11, F12, Enter, Space on Play and Stop, + and -, a pattern key
     in Select Patterns mode); and the read-outs F2, F3 and F4. Press F3 twice in a row: the
     same message is spoken both times. (TASK-189 checked only that the window raises a UI
-    Automation LiveRegionChanged event for each, a repeated message included.)
+    Automation LiveRegionChanged event for each, a repeated message included.) (x)
 22. TASK-193's windows (docs/ui_spec.md 20.4), each opened from the panel with the mode on:
     Keyboard Shortcuts, File > Info, Help > About and Mods > Info are announced as dialogs
     with their title, and NVDA reads the first line (the content) as the focus enters; Tab
@@ -318,9 +317,9 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     when the focus lands on OK (if NVDA does not read the message, the message needs
     `App::announce`); Escape or Enter closes it and the focus returns, also to the window
     under it. The unsaved-changes prompt (item 16) is read with its question and the focus
-    is on Save.
+    is on Save. (x)
 
-When TASK-211 is merged, its by-ear check joins this list.
+When TASK-211 is merged, its by-ear check joins this list as item 23.
 
 ### 2.3 Open tasks
 
@@ -367,7 +366,7 @@ says which to start (one agent at a time).
   and the by-ear part goes to the NVDA checklist (2.2).
 - Lines of Rust at most 100 columns, `cargo clippy --all-targets -- -D warnings` clean.
 
-**Done when.** All tasks of m-7 are Done, and the NVDA pass (TASK-197) found nothing open.
+**Done when.** All tasks of m-7 are Done (the NVDA pass, TASK-197, is).
 
 ### Risks and how the plan meets them
 

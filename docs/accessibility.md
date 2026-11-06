@@ -1,11 +1,10 @@
 # Screen reader accessibility: a proposal
 
 Status, 2026-11-07: the proposal of section 3 is implemented, as screen reader mode (Options >
-Screen Reader Mode), by TASK-184 to TASK-196 and TASK-210 (docs/accessibility_plan.md,
-"Where it stands"; the behavior is docs/ui_spec.md section 20, the user's guide the README's
-"Using OpenRB-338 with a screen reader"). Open: TASK-197, the user's pass with NVDA, which
-checks by ear what the tests cannot; until it is done, nothing here is known to read well in
-NVDA, only to be in the tree. The text below is the proposal as written on 2026-11-05, kept
+Screen Reader Mode), by TASK-184 to TASK-196 and TASK-210 (docs/accessibility_plan.md, part 1;
+the behavior is docs/ui_spec.md section 20, the user's guide the README's "Using OpenRB-338
+with a screen reader"), and the user's pass with NVDA (TASK-197) found every item of its
+checklist working by ear. The follow-ups are in the plan's part 2. The text below is the proposal as written on 2026-11-05, kept
 for its reasons; section 1.1 has the measurement of that day and of 2026-11-07. The first
 target is NVDA on
 Windows (the user's choice); AccessKit, the layer proposed here, also serves Narrator and JAWS
@@ -63,7 +62,7 @@ take the focus are the 194 controls (section 6.3), the two step editors and the 
 the grid cells take no focus themselves. With the mode off the tree is the one of TASK-187 (the
 two 303 edit steps are Text labels): no unnamed element is left, and the Tab order is
 egui's. Tab, which stopped on 250 silent places, now stops on 198 places that all say what
-they are. How they read in NVDA is TASK-197's.
+they are. The user's NVDA pass (TASK-197, 2026-11-07) found them reading as they should.
 
 The numbers come from `cargo test --release -p orb-ui --test a11y_baseline -- --nocapture`
 (headless) and `tools/uia_tree.ps1` (section 6.3; the test `a11y_baseline` holds the counts).
