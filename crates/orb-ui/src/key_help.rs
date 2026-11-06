@@ -151,6 +151,9 @@ pub enum SrWant {
     Help,
     /// No action from the key map (a value key, handled on a focused value control).
     Nothing,
+    /// A read-out key (F2 to F4, task-189): handled by `App::readout_key` before the key map,
+    /// which has no action for it.
+    Readout,
 }
 
 impl SrWant {
@@ -161,7 +164,7 @@ impl SrWant {
             SrWant::Section(back) => SrAction::Section(*back),
             SrWant::Activate => SrAction::Activate,
             SrWant::Help => SrAction::Help,
-            SrWant::Nothing => return None,
+            SrWant::Nothing | SrWant::Readout => return None,
         })
     }
 }
@@ -239,7 +242,7 @@ fn sr_row(keys: &str, what: &'static str, sr_binds: Vec<SrBind>) -> Row {
 }
 
 /// The keys of screen reader mode (task-188, decisions A11Y-D2 and A11Y-D6), listed first when
-/// the mode is on. The read-out keys F2 to F4 come with task-189.
+/// the mode is on, with the read-out keys F2 to F4 (task-189).
 fn screen_reader_group() -> Group {
     use Shift::{Any, No, Yes};
     let press = |s: &str| SrWant::Panel(id(s));
@@ -259,9 +262,25 @@ fn screen_reader_group() -> Group {
                below where they differ; every other key keeps its meaning, whatever control \
                of the panel has the focus. While a menu or a window (this one, Info, About, \
                Mods > Info) has the focus, or a window is open and nothing has it, the \
-               panel's keys wait, but for F1, F5, F6, F9, F11 and F12.",
+               panel's keys wait, but for F1 to F6, F9, F11 and F12. F2, F3 and F4 are \
+               spoken, without moving the focus.",
         rows: vec![
             sr_row("F1", "This window", vec![sr(Key::F1, Any, SrWant::Help)]),
+            sr_row(
+                "F2",
+                "Read the pattern of the focused section (else of the row with the row focus)",
+                vec![sr(Key::F2, No, SrWant::Readout)],
+            ),
+            sr_row(
+                "F3",
+                "Read the transport",
+                vec![sr(Key::F3, No, SrWant::Readout)],
+            ),
+            sr_row(
+                "F4",
+                "Read the levels",
+                vec![sr(Key::F4, No, SrWant::Readout)],
+            ),
             sr_row(
                 "F5",
                 "Play if stopped, Stop otherwise",

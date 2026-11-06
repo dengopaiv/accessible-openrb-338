@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-05T19:32:00Z'
-updated_date: '2026-11-06T08:00:00Z'
+updated_date: '2026-11-06T08:14:00Z'
 labels:
   - ui
   - tests
@@ -36,4 +36,5 @@ Planned in docs/accessibility_plan.md as A11Y-13; the analysis is docs/accessibi
 - [ ] #2 With NVDA closed (no screen reader running), Options > Screen Reader Mode set to Automatic leaves the mode off (TASK-185's deferred check)
 - [ ] #3 In screen reader mode, Save As, Export Loop as Audio File, Mods > Choose file and Options > Set Songs Folder / Set Mods Folder open the system dialog, NVDA reads it, and a file saved or exported through it is written as through the browser (TASK-194's deferred hand check)
 - [ ] #4 In screen reader mode NVDA reads the section's name when Tab or F6 enters a section (the group name, or TASK-189's announcement), and reads the first line of Keyboard Shortcuts when F1 opens it (TASK-188's deferred by-ear check; the tree is tested headless)
+- [ ] #5 NVDA speaks TASK-189's announcements (the status messages, a song opened, a mod chosen, the keyboard mode, the transport keys) and the F2/F3/F4 read-outs, a message repeated twice included (checklist item 21 of docs/accessibility_plan.md)
 <!-- AC:END -->

@@ -268,7 +268,7 @@ impl App {
         let was = self.settings.preferred_mod(&name) == Some(file);
         self.settings
             .set_preferred_mod(&name, (!was).then_some(file));
-        self.status = Some(if was {
+        self.set_status(if was {
             format!("No preferred file for the mod {name} any more")
         } else {
             format!("{file} is now the preferred file for the mod {name}")
@@ -336,7 +336,7 @@ impl App {
                 };
                 let n = list.len();
                 let s = if n == 1 { "" } else { "s" };
-                self.status = Some(format!(
+                self.set_status(format!(
                     "Mod list refreshed: {n} mod{s}{folder} (+{added}, -{removed})"
                 ));
             }
@@ -500,6 +500,9 @@ impl App {
             document::set_engine_tracks(&mut source, link.loaded_tracks());
         }
         self.settle(path, source, opened.facts_1x, mod_name, kit);
+        // task-189: the song and the mod that plays it
+        let text = format!("Opened {}, mod {}", self.doc.name(), self.doc.mod_name);
+        self.announce(text);
     }
 
     /// Whether the current song's mod has a `Demo.rbs` (the Mods menu's "Demo Song"): never for
@@ -647,6 +650,7 @@ impl App {
     /// Replaces the open song with the start state (`Link::load_new` stops the playing song).
     pub fn new_now(&mut self) {
         self.fresh();
+        self.announce(format!("New song, mod {}", self.doc.mod_name));
     }
 
     /// `sub_426C67` after a song's mod was opened by its only user (word +1088 is 1,
@@ -705,7 +709,7 @@ impl App {
                 }
                 self.doc.path = Some(path.to_path_buf());
                 self.doc.modified = false;
-                self.status = Some(format!("Saved {}", path.display()));
+                self.set_status(format!("Saved {}", path.display()));
                 if let Some(t) = self.after_save.take() {
                     self.proceed(t);
                 }
@@ -783,7 +787,7 @@ impl App {
                 .map_err(|orb_cli::Fail(_, m)| m);
             let _ = tx.send(result);
         });
-        self.status = Some(format!("Exporting {} ...", path.display()));
+        self.set_status(format!("Exporting {} ...", path.display()));
         self.export = Some(Job {
             rx,
             path: path.to_path_buf(),
@@ -797,7 +801,8 @@ impl App {
         };
         match job.rx.try_recv() {
             Ok(Ok(())) => {
-                self.status = Some(format!("Exported {}", job.path.display()));
+                let text = format!("Exported {}", job.path.display());
+                self.set_status(text);
                 self.export = None;
             }
             Ok(Err(e)) => {
@@ -871,6 +876,7 @@ impl App {
             Kit::Standard => Default::default(),
         };
         self.set_song_mod(kit, name, ftp, web);
+        self.announce(format!("Mod {}", self.doc.mod_name));
     }
 
     /// Records the song's mod: the kit, the INFO name and the two URLs a save writes. The song
@@ -946,7 +952,7 @@ impl App {
                     self.fail(e);
                 }
             }
-            Cmd::SetKeyMode(m) => self.key_mode = m,
+            Cmd::SetKeyMode(m) => self.set_key_mode(m),
         }
     }
 

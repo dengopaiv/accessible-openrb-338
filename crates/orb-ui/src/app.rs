@@ -17,7 +17,7 @@ use eframe::egui::{
     emath::GuiRounding, epaint,
 };
 
-use crate::a11y::{drive, nav};
+use crate::a11y::{announce, drive, nav};
 use crate::art::{self, KnobDesign};
 use crate::behavior::{self, Mods};
 use crate::browser::{self, Browser, Mode, Poll};
@@ -84,6 +84,9 @@ struct Hold {
     id: Option<String>,
     /// A repeat or wind button: its id, when the key went down, the steps taken.
     arrow: Option<(&'static str, f64, u32)>,
+    /// What the announcer was told after the key's press (an arrow held longer announces its
+    /// final value at the release; task-189).
+    seen: Option<announce::KeyState>,
 }
 
 /// The windows that take the focus as they open in screen reader mode (`App::window_focus`).
@@ -196,6 +199,10 @@ pub struct App {
     pub(crate) error_text: Option<Rect>,
     /// What was done, shown at the bottom of the window ("Saved ...").
     pub status: Option<String>,
+    /// The last announcement for a screen reader (task-189, `a11y::announce`).
+    pub announcer: announce::Announcer,
+    /// egui's focus when this frame's keys were read (what `App::act` does not announce).
+    pub(crate) key_focus: Option<egui::Id>,
     /// The Options menu's keyboard mode (Ctrl/Cmd+F / +G).
     pub key_mode: KeyMode,
     /// Whether the window draws the menu bar (the window of OpenRB-338 does; the headless tests
@@ -294,6 +301,8 @@ impl App {
             error_copy: None,
             error_text: None,
             status: None,
+            announcer: Default::default(),
+            key_focus: None,
             key_mode: KeyMode::default(),
             menu: false,
             prompt: None,
@@ -521,6 +530,7 @@ impl App {
             egui::FontId::proportional(12.0),
             Color32::from_rgb(0xb8, 0xd8, 0xc0),
         );
+        announce::describe_status(ui.ctx(), bar, text);
         // Clicks in the browser, the prompt or the box over it do not dismiss it.
         let blocked = self.browser.is_some()
             || self.prompt.is_some()
@@ -834,10 +844,10 @@ impl App {
             } else {
                 // Ctrl/Cmd+F and +G: the Options menu's two keyboard modes.
                 if shortcuts::consume(ui, &shortcuts::KEYS_SYNTH) {
-                    self.key_mode = KeyMode::Synth;
+                    self.set_key_mode(KeyMode::Synth);
                 }
                 if shortcuts::consume(ui, &shortcuts::KEYS_PATTERNS) {
-                    self.key_mode = KeyMode::Patterns;
+                    self.set_key_mode(KeyMode::Patterns);
                 }
                 if ui.ctx().text_edit_focused() || crate::menu::menu_has_keys(ui.ctx()) {
                     // typing in a text field (File > Info, task-117), or walking the menu bar
@@ -935,7 +945,18 @@ impl App {
         self.mod_info_ui(&ctx);
         self.poll_export(&ctx);
         self.update_title(&ctx);
+        // last: every message of this frame is in
+        announce::show(&ctx, &self.announcer);
         self.close_if_allowed(&ctx);
+    }
+
+    /// The Options menu's keyboard mode (Ctrl/Cmd+F / +G and the menu), announced (task-189).
+    pub fn set_key_mode(&mut self, m: KeyMode) {
+        self.key_mode = m;
+        self.announce(match m {
+            KeyMode::Synth => "Program synth from keyboard",
+            KeyMode::Patterns => "Select patterns from keyboard",
+        });
     }
 
     /// The computer keyboard (`keys`): a key press acts like a mouse press on its button, a
@@ -983,6 +1004,7 @@ impl App {
         if screen_reader && (on_panel || (arrow() && !tab())) {
             ui.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
         }
+        self.key_focus = ui.memory(|m| m.focused());
         for ev in events {
             let egui::Event::Key {
                 key,
@@ -996,7 +1018,7 @@ impl App {
             };
             let k = keys::position(key, physical_key);
             if !pressed {
-                self.holds.retain(|h| h.key != k);
+                self.release(k);
                 continue;
             }
             // Screen reader mode: Up, Down, Page Up, Page Down, Home and End change the focused
@@ -1018,10 +1040,23 @@ impl App {
                 // task-189's, F10 the menu bar's, Escape the window's). Also with the focus
                 // nowhere while a window is open (before the window takes it, or after a click
                 // on its text).
+                // F2, F3 and F4 read the pattern, the transport, the levels (task-189), with a
+                // window open too (F2 then reads the row focus's pattern).
+                if !repeat && !modifiers.any() && self.readout_key(ui, key) {
+                    continue;
+                }
                 if window_has_keys
                     && !matches!(
                         k,
-                        Key::F1 | Key::F5 | Key::F6 | Key::F9 | Key::F11 | Key::F12
+                        Key::F1
+                            | Key::F2
+                            | Key::F3
+                            | Key::F4
+                            | Key::F5
+                            | Key::F6
+                            | Key::F9
+                            | Key::F11
+                            | Key::F12
                     )
                 {
                     continue;
@@ -1094,13 +1129,36 @@ impl App {
         self.holds = holds;
     }
 
+    /// The release of the key `k`: its held button is let go. A repeat or wind button that
+    /// stepped more than once announces where it ended (task-189).
+    fn release(&mut self, k: Key) {
+        let (released, held): (Vec<Hold>, Vec<Hold>) = std::mem::take(&mut self.holds)
+            .into_iter()
+            .partition(|h| h.key == k);
+        self.holds = held;
+        for h in released {
+            if let (Some(seen), Some((id, _, taken))) = (h.seen, h.arrow)
+                && taken > 1
+            {
+                let after = seen.with_arrow_from(id, &announce::KeyState::of(&self.panel));
+                if let Some(text) = announce::key_effect(&seen, &after, self.key_focus) {
+                    self.announce(text);
+                }
+            }
+        }
+    }
+
+    /// What a key of the original's map does (`keys::map`). What it changed is announced in
+    /// screen reader mode when the focus is not on the control that shows it (task-189).
     fn act(&mut self, k: Key, action: Action, now: f64) {
         // (a press without the release before it, e.g. after the window lost the focus)
         self.holds.retain(|h| h.key != k);
+        let before = announce::KeyState::of(&self.panel);
         let mut hold = Hold {
             key: k,
             id: None,
             arrow: None,
+            seen: None,
         };
         match action {
             Action::PlayStop => {
@@ -1128,6 +1186,10 @@ impl App {
             }
             Action::Tap303(rest) => self.panel.tap_303(self.panel.focus, rest),
             Action::TapDrum(i) => self.panel.tap_drum(self.panel.focus == 2, i),
+        }
+        self.announce_key_effect(&before);
+        if hold.arrow.is_some() {
+            hold.seen = Some(announce::KeyState::of(&self.panel));
         }
         self.holds.push(hold);
     }
@@ -1272,7 +1334,11 @@ impl App {
             .find(|c| !drive::joined(c) && crate::a11y::hit_id(c) == f)
             .cloned();
         if let Some(c) = c {
+            // what it did is announced as for a key of the original (task-189): Play and Stop
+            // have no state of their own; a focused toggle or switch speaks its own
+            let before = announce::KeyState::of(&self.panel);
             self.mouse_down(&c, now);
+            self.announce_key_effect(&before);
         }
     }
 

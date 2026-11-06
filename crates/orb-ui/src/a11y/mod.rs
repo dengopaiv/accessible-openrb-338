@@ -6,6 +6,7 @@
 //! client has asked for the tree): with it off, a frame costs one lock per control and nothing
 //! else.
 
+pub mod announce;
 pub mod drive;
 pub mod names;
 pub mod nav;

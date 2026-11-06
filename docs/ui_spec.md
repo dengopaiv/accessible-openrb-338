@@ -841,7 +841,8 @@ because the window has no control of its own. While a window has the focus, or a
 open and nothing has the focus (before the window takes it, or after egui cleared it), the
 panel's keys wait, as they do for the menus (TASK-202): the original's keys, Enter, Space, the arrows and
 Ctrl+Up/Down / Ctrl+Tab do nothing on the panel (the arrows do not move egui's focus either),
-while F1, F5, F6, F9, F11 and F12 keep working (F2 to F4: task-189) and Escape closes the
+while F1 to F6, F9, F11 and F12 keep working (F2 to F4 are task-189's read-outs, section
+20.3) and Escape closes the
 window. Tab is egui's: it
 goes through the window's contents and, from the last, back to the first (egui would give it
 to the panel's first control, as the windows are drawn after the panel). The title bar, which
@@ -1727,3 +1728,68 @@ A11Y-4 of docs/accessibility_plan.md; `crates/orb-ui/src/a11y/nav.rs`, tests
   Distortion on). With nothing focused, Tab goes to the first stop, Shift+Tab to the last.
   egui's own Tab order (the registration order) is used with the mode off and in windows.
 - **Row focus**: section 10, "Screen reader mode".
+
+### 20.3 Announcements and the read-out keys (task-189)
+
+A11Y-5 of docs/accessibility_plan.md; the code is `crates/orb-ui/src/a11y/announce.rs`, the
+tests `crates/orb-ui/tests/a11y_announce.rs`.
+
+- **The announcer** is one node of the tree, role Label, a polite live region (`Live::Polite`),
+  with no bounds and no focus, whose text is the last message; there is none before the first
+  message. Each message is a new node (its egui id carries the message's number,
+  `Announcer::node_id`), because `accesskit_windows` 0.35.2 raises UI Automation's
+  LiveRegionChanged for an added node that has a name (`adapter.rs:256`) but for a changed node
+  only when the name changed (`adapter.rs:313`): the same text set again on one node would be
+  silent. So a message repeated ("Saved X" twice) is spoken again, in the frame it is set, with
+  nothing invisible in its text. The node is built last in `App::show`, after everything that
+  can set a message.
+- **What is announced**, in screen reader mode only (`App::announce`; with the mode off the
+  announcer stays empty):
+  - every status line message (`App::set_status`, the one way to set it): "Saved PATH",
+    "Exporting PATH ...", "Exported PATH", "Mod list refreshed: ...", the preferred mod file,
+    and the repeated notices (`App::notify`);
+  - a song opened: "Opened Trakka Rekka.rbs, mod Standard ReBirth" (a mod's demo song too);
+    File > New: "New song, mod Standard ReBirth"; a mod chosen: "Mod NAME";
+  - the keyboard mode, by Ctrl+F, Ctrl+G or the Options menu: "Program synth from keyboard",
+    "Select patterns from keyboard" (said again when chosen again);
+  - what a key of the original's map did (`App::act`, `announce::key_effect`), from the
+    state before and after it: "Playing", "Stopped", "Song mode", "Pattern mode", "Recording
+    on", "Loop off", "Tempo 141 BPM", "Bar 5", "Bass Line 1 pattern A2", joined in one message
+    when one key did several ("Stopped, recording off"). A change shown by the control that has
+    the focus is left out, because the screen reader speaks that control's own value change
+    (the tempo spin button for the tempo, the row's pattern selector for its pattern, the
+    Record and Loop toggles, the mode switch, the bar spin button); Play and Stop are always
+    said. A held tempo, bar or wind key announces its final value when it is released, if it
+    stepped more than once. The 303's and the drums' keys announce nothing here (tasks 190 and
+    191); the row focus moving is task-188's. The keys of screen reader mode that act on the
+    transport (F5, F9, F11, F12, Enter) go through `App::act` and are announced the same way;
+    Space on a focused button, toggle or switch (`App::activate`) is too, so Space on Play or
+    Stop says "Playing" or "Stopped" (a toggle or switch with the focus speaks its own new
+    state instead). Other code announces with `App::announce_key_effect` and the state taken
+    before the change, or `App::announce`.
+  - Nothing else: the engine's side of the panel (the position, the meters, the LEDs, the
+    running lights, the patterns song mode selects) never sets the announcer (test: 10 s of
+    Trakka Rekka playing with no input leave the announcer as it was).
+- **The status line** has its own node while it shows a message: role Status (UI Automation's
+  StatusBar), the message as its name, the bar as its bounds, not live. It exists with the mode
+  off too.
+- **The read-out keys** (decision A11Y-D6), screen reader mode only, auto-repeat ignored
+  (`App::readout_key`, one call from `App::keyboard`, also with a window open); with the mode
+  off they do nothing, as before:
+  - F2: the pattern row of the section the focus is in (a machine's pattern section, the
+    machine or its mixer channel), else (the focus elsewhere, in a window or nowhere) of the
+    row that has the row focus: "Bass Line 1,
+    pattern A1, 16 steps, shuffle off", with ", pattern section off" when the row's power
+    switch is off. Tasks 190 and 191 add the synths' and the drums' steps.
+  - F3: the transport: "Stopped, bar 1, 139 BPM, song mode, loop 1 to 8, recording off" ("loop
+    off" when the loop is off, "loop bar 3" for a one-bar loop); in pattern mode, where the
+    bar, the loop and Record do nothing, "Playing, 140 BPM, pattern mode".
+  - F4: the levels as the panel shows them: "Master left 7 of 10, right 6 of 10, gain reduction
+    2 of 4", the lit segments of the master meters and a count of the gain-reduction LEDs lit
+    left of the compressor's "0" LED (a count of lit LEDs, not an amount: the LEDs hold their
+    last state, so a stopped song can read "1 of 4"). A meter the engine has not reported yet
+    reads "no reading" ("Master left no reading, ..."), not 0. Numbers, not decibels: the meter
+    scale was not read in the original ([G], section 16, `sub_424220` and `sub_424A7E`), and
+    A11Y-14 gives the knobs' and faders' units, not the meters'.
+- Help > Keyboard Shortcuts lists F2, F3 and F4 in its screen reader group
+  (`key_help::screen_reader_group`, `SrWant::Readout`).

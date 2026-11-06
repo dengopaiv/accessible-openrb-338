@@ -248,13 +248,14 @@ or by the original's key map, so all twelve were free.
 - Every other key of the original keeps its meaning, whatever has the focus.
 - Help > Keyboard Shortcuts lists all of the above when the mode is on.
 
-Done in task-188 but for F2 to F4 (task-189) and Left / Right (task-190, task-191):
-docs/ui_spec.md section 10, "Screen reader mode".
+Done in task-188 (docs/ui_spec.md section 10, "Screen reader mode") and task-189 (F2 to F4,
+docs/ui_spec.md section 20.3); Left / Right are pending (task-190, task-191).
 
 ### 3.5 Announcements
 
-One hidden node with a polite live setting carries what the user should hear without moving
-the focus:
+A polite live Label node, without bounds and without the focus, carries what the user should
+hear without moving the focus; each message is a new such node (one at a time, docs/ui_spec.md
+section 20.3):
 
 - the status line's messages ("Saved ...", "Exported ...");
 - a song opened (its name and mod), a mod chosen;
@@ -263,8 +264,15 @@ the focus:
   the tempo changed with the plus and minus keys, Record turned on or off.
 
 Values changed on the focused control are spoken by NVDA from the value change itself and
-are not announced again. The error box becomes an alert dialog that takes the focus, so NVDA
-reads it at once.
+are not announced again.
+
+The error box is to become an alert dialog that takes the focus, so NVDA reads it at once:
+that is task-193 (A11Y-8), not done yet (there is no AlertDialog node today).
+
+Done in task-189 (docs/ui_spec.md section 20.3): each message is a new live node, because
+`accesskit_windows` raises LiveRegionChanged for an added named node (`adapter.rs:256`) but
+for an updated one only when its name changed (`adapter.rs:313`), so a repeated message would
+otherwise be silent. The read-out keys F2, F3 and F4 announce through it too.
 
 ### 3.6 Files, mods and windows
 

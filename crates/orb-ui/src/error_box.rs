@@ -97,11 +97,12 @@ impl App {
         let n = self.notified.entry(kind.to_owned()).or_insert(0);
         *n += 1;
         let message = message.into();
-        self.status = Some(if *n > 1 {
+        let text = if *n > 1 {
             format!("{message} (repeated {n} times)")
         } else {
             message
-        });
+        };
+        self.set_status(text);
     }
 
     /// The error the box shows now (the oldest not closed), if any.

@@ -700,6 +700,12 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
     hand check; item 11 covers Open). Type a name with a dot and no extension (`v1.2 mix`) over
     an existing `v1.2 mix.rbs`: the question "Replace v1.2 mix.rbs?" is spoken, No is the
     default.
+21. TASK-189's announcements are spoken without moving the focus: a status message (Save),
+    a song opened (its name and mod), a mod chosen, the keyboard mode (Ctrl+F, Ctrl+G), the
+    transport keys (F5, F9, F11, F12, Enter, Space on Play and Stop, + and -, a pattern key
+    in Select Patterns mode); and the read-outs F2, F3 and F4. Press F3 twice in a row: the
+    same message is spoken both times. (TASK-189 checked only that the window raises a UI
+    Automation LiveRegionChanged event for each, a repeated message included.)
 
 ## Risks and how the plan meets them
 
