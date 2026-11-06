@@ -500,6 +500,16 @@ fn the_message_is_selectable_and_copyable() {
     // Escape closes it, as ever
     h.key(Key::Escape, Modifiers::NONE);
     assert!(!h.app.error_open());
+
+    // the same in screen reader mode (task-193): Copy copies exactly the message, the box stays
+    let mut h = Harness::new();
+    h.app.settings.screen_reader = orb_ui::screen_reader::ScreenReaderSetting::On;
+    h.app.fail("one\ntwo");
+    h.settle();
+    let b = h.app.error_copy_rect().expect("the Copy button is drawn");
+    h.click(b.center());
+    assert_eq!(h.copied, ["one\ntwo"]);
+    assert!(h.app.error_open(), "Copy leaves the box open");
 }
 
 /// task-130: one Open that fails twice (the mod is missing, and the engine refuses the song) is

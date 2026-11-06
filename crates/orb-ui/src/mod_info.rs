@@ -20,6 +20,7 @@
 use eframe::egui::{self, Color32, Context, Key, Modifiers, RichText};
 use orb_cli::mods::{Kit, STANDARD};
 
+use crate::a11y::window as win;
 use crate::app::App;
 use crate::info::link;
 use crate::palette::{INK, INK_DIM};
@@ -310,8 +311,10 @@ impl App {
         let ppp = ctx.pixels_per_point();
         let mut shown = None;
         let mut open = true;
+        let sr = self.screen_reader_mode();
+        let id = self.mod_info_id();
         egui::Window::new("Mod Information")
-            .id(self.mod_info_id())
+            .id(id)
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -322,12 +325,13 @@ impl App {
             .default_height(screen.height() - 60.0)
             .show(ctx, |ui| {
                 crate::app::focus_into_window(ui, due);
+                win::window(ui, sr, id, "Mod Information");
                 // a window with `vscroll` starts 400 high; this one is as high as its content
                 egui::ScrollArea::vertical()
                     .auto_shrink([true, true])
                     .max_height(screen.height() - 70.0)
                     .show(ui, |ui| {
-                        shown = body(ui, &missing, &tex, &details, basis, (ppp, max_width));
+                        shown = body(ui, sr, &missing, &tex, &details, basis, (ppp, max_width));
                     });
             });
         self.mod_info_shown = shown;
@@ -342,6 +346,7 @@ impl App {
 /// it drew of the splash. `(ppp, max_width)`: the pixels per point and the widest splash.
 fn body(
     ui: &mut egui::Ui,
+    sr: bool,
     missing: &Option<String>,
     tex: &Option<egui::TextureHandle>,
     details: &Result<ModDetails, String>,
@@ -350,7 +355,8 @@ fn body(
 ) -> Option<SplashShown> {
     if let Some(name) = missing {
         let text = format!("The mod \"{name}\" of the song is missing: the built-in kit plays.");
-        ui.label(RichText::new(text).color(Color32::from_rgb(0xff, 0xb0, 0x60)));
+        let text = RichText::new(text).color(Color32::from_rgb(0xff, 0xb0, 0x60));
+        win::line(ui, sr, text, true, None);
         ui.add_space(4.0);
     }
     let shown = match tex {
@@ -360,15 +366,17 @@ fn body(
             Some(s)
         }
         None => {
-            ui.label(RichText::new("This mod has no splash picture.").color(INK_DIM));
+            let text = RichText::new("This mod has no splash picture.").color(INK_DIM);
+            win::line(ui, sr, text, true, None);
             None
         }
     };
     match details {
         Err(e) => {
-            ui.label(RichText::new(e).color(Color32::from_rgb(0xff, 0x80, 0x80)));
+            let text = RichText::new(e).color(Color32::from_rgb(0xff, 0x80, 0x80));
+            win::line(ui, sr, text, true, None);
         }
-        Ok(d) => details_grid(ui, d),
+        Ok(d) => details_grid(ui, sr, d),
     }
     shown
 }
@@ -400,7 +408,7 @@ fn splash(
     }
 }
 
-fn details_grid(ui: &mut egui::Ui, d: &ModDetails) {
+fn details_grid(ui: &mut egui::Ui, sr: bool, d: &ModDetails) {
     egui::Grid::new("orb_mod_info_grid")
         .num_columns(2)
         .spacing([12.0, 4.0])
@@ -409,7 +417,9 @@ fn details_grid(ui: &mut egui::Ui, d: &ModDetails) {
                 ui.label(RichText::new(k).color(INK_DIM));
                 ui.scope(|ui| {
                     ui.set_max_width(VALUE_WIDTH);
-                    ui.add(egui::Label::new(RichText::new(v).color(INK)).wrap());
+                    // read as "Name: value", one line to a row
+                    let spoken = format!("{k}: {v}");
+                    win::line(ui, sr, RichText::new(v).color(INK), true, Some(&spoken));
                 });
                 ui.end_row();
             };

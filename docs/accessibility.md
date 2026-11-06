@@ -266,8 +266,9 @@ section 20.3):
 Values changed on the focused control are spoken by NVDA from the value change itself and
 are not announced again.
 
-The error box is to become an alert dialog that takes the focus, so NVDA reads it at once:
-that is task-193 (A11Y-8), not done yet (there is no AlertDialog node today).
+The error box is an alert dialog that takes the focus (on OK), so NVDA reads it at once: done
+in task-193 (A11Y-8, docs/ui_spec.md 20.4); whether NVDA reads its message is a hand check
+(NVDA checklist item 22).
 
 Done in task-189 (docs/ui_spec.md section 20.3): each message is a new live node, because
 `accesskit_windows` raises LiveRegionChanged for an added named node (`adapter.rs:256`) but
@@ -287,7 +288,8 @@ otherwise be silent. The read-out keys F2, F3 and F4 announce through it too.
   Enter to choose and a key for Mod Info.
 - The unsaved-changes prompt, the error box and the Info, About, Keyboard Shortcuts and Mod
   Info windows: a Dialog (or AlertDialog) role, the focus moved into the window when it opens
-  (to the default button of a prompt), and Escape as now.
+  (to the default button of a prompt), and Escape as now. Done in task-193 (docs/ui_spec.md
+  20.4).
 
 ### 3.7 Order of the work
 

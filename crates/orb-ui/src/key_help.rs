@@ -10,6 +10,7 @@
 
 use eframe::egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
 
+use crate::a11y::window as a11y;
 use crate::app::App;
 use crate::keys::{Action, KeyMode, SrAction};
 use crate::palette::{INK, INK_DIM};
@@ -843,8 +844,9 @@ impl App {
         let current = self.key_mode;
         let screen_reader = self.screen_reader_mode();
         // centered the way File > Info is (info.rs): pivot, default place, an id per open
+        let id = self.key_help_id();
         egui::Window::new("Keyboard Shortcuts")
-            .id(self.key_help_id())
+            .id(id)
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
@@ -853,20 +855,17 @@ impl App {
             .default_size(size)
             .show(ctx, |ui| {
                 crate::app::focus_into_window(ui, due);
-                // in screen reader mode the first line takes the focus when the window opens
-                // (the window has no control of its own but the close button)
-                let sense = if screen_reader {
-                    egui::Sense::FOCUSABLE
-                } else {
-                    egui::Sense::hover()
-                };
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(format!("Keyboard mode now: {}", mode_name(current)))
-                            .strong()
-                            .color(CURRENT),
-                    )
-                    .sense(sense),
+                a11y::window(ui, screen_reader, id, "Keyboard Shortcuts");
+                // in screen reader mode every line takes the focus, the first when the window
+                // opens (the window has no control of its own but the close button)
+                a11y::line(
+                    ui,
+                    screen_reader,
+                    RichText::new(format!("Keyboard mode now: {}", mode_name(current)))
+                        .strong()
+                        .color(CURRENT),
+                    false,
+                    None,
                 );
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -878,20 +877,23 @@ impl App {
                             let mut title = RichText::new(g.title).strong().size(15.0);
                             title = title.color(if is_current { CURRENT } else { INK });
                             ui.horizontal(|ui| {
-                                ui.label(title);
+                                a11y::line(ui, screen_reader, title, false, None);
                                 if is_current {
                                     ui.label(RichText::new("(current mode)").color(CURRENT));
                                 }
                             });
                             if !g.note.is_empty() {
-                                ui.label(RichText::new(g.note).color(INK_DIM));
+                                let note = RichText::new(g.note).color(INK_DIM);
+                                a11y::line(ui, screen_reader, note, false, None);
                             }
                             egui::Grid::new(("orb_key_help_grid", n))
                                 .num_columns(2)
                                 .show(ui, |ui| {
                                     for r in &g.rows {
                                         ui.label(RichText::new(&r.keys).monospace().color(INK));
-                                        ui.add(egui::Label::new(r.what).wrap());
+                                        let spoken = format!("{}: {}", r.keys, r.what);
+                                        let what = RichText::new(r.what);
+                                        a11y::line(ui, screen_reader, what, true, Some(&spoken));
                                         ui.end_row();
                                     }
                                 });

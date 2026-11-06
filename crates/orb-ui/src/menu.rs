@@ -34,6 +34,9 @@ use orb_engine::frame::LoadRefused;
 use orb_engine::samples::SampleSet;
 use orb_engine::song::LoadForm;
 
+use eframe::egui::accesskit::Role;
+
+use crate::a11y;
 use crate::app::App;
 use crate::browser::{ExportFormat, Mode};
 use crate::document::{self, Document};
@@ -1026,8 +1029,10 @@ impl App {
     /// Draws the prompt and takes its keys: S or Enter saves, D or N does not, Esc cancels.
     pub fn prompt_ui(&mut self, ctx: &Context) {
         let Some(then) = self.prompt.clone() else {
+            self.prompt_focused = false;
             return;
         };
+        let sr = self.screen_reader_mode();
         let key = |k: Key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, k));
         let mut answer = None;
         if key(Key::S) || key(Key::Y) || key(Key::Enter) {
@@ -1052,15 +1057,13 @@ impl App {
             .backdrop_color(Color32::from_black_alpha(170))
             .show(ctx, |ui| {
                 ui.set_width(320.0);
-                ui.label(
-                    RichText::new(format!("Save changes to {}?", self.doc.name()))
-                        .color(INK)
-                        .strong()
-                        .size(15.0),
-                );
-                ui.label(
-                    RichText::new(format!("The song has unsaved changes {what}.")).color(INK_DIM),
-                );
+                let question = format!("Save changes to {}?", self.doc.name());
+                let detail = format!("The song has unsaved changes {what}.");
+                // a named Dialog, the question as its name and the detail as its description
+                // (screen reader mode; task-193)
+                a11y::window::dialog(ui, sr, Role::Dialog, &question, Some(&detail));
+                ui.label(RichText::new(&question).color(INK).strong().size(15.0));
+                ui.label(RichText::new(&detail).color(INK_DIM));
                 ui.add_space(8.0);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui.button("Cancel").clicked() {
@@ -1069,7 +1072,14 @@ impl App {
                     if ui.button("Don't Save").clicked() {
                         answer = Some(Answer::DontSave);
                     }
-                    if ui.button("Save").clicked() {
+                    let save = ui.button("Save");
+                    // once, on the first frame: Save, the default (Enter saves too), takes the
+                    // focus from whatever had it, so that the screen reader reads the prompt
+                    if sr && !self.prompt_focused {
+                        save.request_focus();
+                        self.prompt_focused = true;
+                    }
+                    if save.clicked() {
                         answer = Some(Answer::Save);
                     }
                 });

@@ -11,6 +11,7 @@ pub mod drive;
 pub mod names;
 pub mod nav;
 pub mod units;
+pub mod window;
 
 use eframe::egui::{self, Rect, accesskit};
 

@@ -391,12 +391,21 @@ fn f1_opens_the_keyboard_shortcuts_in_screen_reader_mode() {
         "{}",
         name_of(&a, f)
     );
-    // Tab stays in the window: its contents cycle (here one line), not the panel's order
+    // Tab stays in the window: the next line, not the panel's order (every line of the
+    // window takes the focus, task-193)
     let first = f;
     a.key(Key::Tab);
     a.frame(vec![]);
-    assert_eq!(focused(&a), first, "Tab cycles in the window");
+    assert_ne!(focused(&a), first, "Tab moves to the next line");
+    let second = focused(&a);
+    assert!(
+        order.iter().all(|s| s.id.accesskit_id() != second),
+        "in the window"
+    );
     // Shift+Tab goes back into the title bar, to its close button
+    // (from the second line: back over the first, then to the title bar)
+    key_with(&mut a, Key::Tab, Modifiers::SHIFT);
+    assert_eq!(focused(&a), first, "Shift+Tab goes back a line");
     key_with(&mut a, Key::Tab, Modifiers::SHIFT);
     key_with(&mut a, Key::Tab, Modifiers::SHIFT);
     let f = focused(&a);
@@ -504,8 +513,8 @@ fn the_panel_keys_wait_while_a_window_has_the_focus() {
     let f = focused(&a);
     assert_eq!(
         a11y::role(a.tree().node(f).unwrap()),
-        Role::Link,
-        "About's first link"
+        Role::Label,
+        "About's first line, the version"
     );
     take(&mut a);
     let step = a.app.panel.display("tb303_1.edit_step");
@@ -608,9 +617,9 @@ fn a_second_window_and_a_window_under_a_modal_get_the_focus() {
     a.app.show_about();
     a.frame(vec![]);
     a.frame(vec![]);
-    assert_eq!(
-        a11y::role(a.tree().node(focused(&a)).unwrap()),
-        Role::Link,
+    // (its first line, the version: the lines of About take the focus, task-193)
+    assert!(
+        name_of(&a, focused(&a)).starts_with("Version "),
         "the newer window, About, has it"
     );
 

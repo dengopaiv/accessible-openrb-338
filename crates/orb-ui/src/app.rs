@@ -270,6 +270,14 @@ pub struct App {
     /// Tab was pressed with the focus in a window (`App::window_focus`).
     window_tab: bool,
     panel_focus: Option<egui::Id>,
+    /// A modal (the unsaved-changes prompt, the error box, Replace, the file browser) was open
+    /// at the last frame (1), or closed at it so that the focus is to go back now (2), else 0
+    /// (`App::window_focus`).
+    modal_was: u8,
+    /// The focus has been put on the default button of the open prompt / error box (once, on
+    /// its first frame, in screen reader mode; task-193).
+    pub(crate) prompt_focused: bool,
+    pub(crate) error_focused: bool,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
     pub frame_stats: Option<FrameStats>,
@@ -339,6 +347,9 @@ impl App {
             focus_window: None,
             window_tab: false,
             panel_focus: None,
+            modal_was: 0,
+            prompt_focused: false,
+            error_focused: false,
             shot,
             frame_stats: FrameStats::from_env(),
         }
@@ -826,6 +837,7 @@ impl App {
             self.window_new = None;
             self.window_focus_due = None;
             self.focus_window = None;
+            self.modal_was = 0;
         }
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
@@ -1289,6 +1301,34 @@ impl App {
                         if !modifiers.any())
                 })
             });
+        // a modal that closed gives the focus back: to the window under it, else to the panel
+        // control that had it (the modal took it; task-193)
+        // (the frame right after the modal's last open frame is too early: egui still treats
+        // the panel as under the modal layer, and its widgets give up the focus; so the focus
+        // goes back two frames after it, and a repaint is requested so that the second frame
+        // comes without any input)
+        let was = self.modal_was;
+        self.modal_was = if modal {
+            1
+        } else if was == 1 {
+            2
+        } else {
+            0
+        };
+        // (only at the closing transition: an open modal does not keep the app repainting)
+        if self.modal_was == 2 {
+            ui.ctx().request_repaint();
+        }
+        if was == 2 && !modal {
+            if let Some(w) = self.focus_window.filter(|&w| self.win_open(w)) {
+                self.window_focus_due = Some(w);
+            } else if !open
+                && let Some(back) = self.panel_focus
+                && !focused.is_some_and(|f| nav::section_of(&self.nav, f).is_some())
+            {
+                ui.memory_mut(|m| m.request_focus(back));
+            }
+        }
         if !open && self.windows_open != 0 {
             self.window_focus_due = None;
             self.focus_window = None;

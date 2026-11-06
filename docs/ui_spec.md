@@ -835,9 +835,9 @@ egui's sizing pass, which shows no widget; a repaint is requested so the second 
 under the browser, the prompt, Replace or the error box the move waits until it closes), to
 the first widget of its contents that takes the focus (`app::focus_into_window`
 with `FocusDirection::Next`, the way egui's Tab gives the focus with nothing focused): Info's
-first text field, About's and Mods > Info's first link, and in Keyboard Shortcuts its first
-line ("Keyboard mode now: ..."), a label that takes the focus in screen reader mode only,
-because the window has no control of its own. While a window has the focus, or a window is
+first text field, and in the three windows of text its first line (task-193, section 20.4:
+Keyboard Shortcuts "Keyboard mode now: ...", About "Version ...", Mods > Info the first row),
+a label that takes the focus in screen reader mode only. While a window has the focus, or a window is
 open and nothing has the focus (before the window takes it, or after egui cleared it), the
 panel's keys wait, as they do for the menus (TASK-202): the original's keys, Enter, Space, the arrows and
 Ctrl+Up/Down / Ctrl+Tab do nothing on the panel (the arrows do not move egui's focus either),
@@ -1793,3 +1793,39 @@ tests `crates/orb-ui/tests/a11y_announce.rs`.
     A11Y-14 gives the knobs' and faders' units, not the meters'.
 - Help > Keyboard Shortcuts lists F2, F3 and F4 in its screen reader group
   (`key_help::screen_reader_group`, `SrWant::Readout`).
+
+### 20.4 Dialogs and windows (task-193)
+
+A11Y-8 of docs/accessibility_plan.md; the code is `crates/orb-ui/src/a11y/window.rs`, the
+tests `crates/orb-ui/tests/a11y_windows.rs`. Screen reader mode only; with the mode off the
+windows, the prompt and the error box are as they were.
+
+- **Roles and names.** egui makes a Window node (role Window, the title as name) at the
+  window's id `.with("move")` and an unnamed Dialog node for a Modal. In screen reader mode the
+  four windows' Window nodes become role Dialog with the title as the name ("Keyboard
+  Shortcuts", "Song Information", "About OpenRB-338", "Mod Information"; `window::window`);
+  the unsaved-changes prompt is a Dialog named by its question ("Save changes to X?") whose
+  description is its second line; the error box is an AlertDialog named "Error" whose
+  description is the message (`window::dialog`, which finds the Modal's node through
+  `Ui::stack`, as TASK-194's Replace question does). The windows' close button is egui's
+  "Close window"; the error box's own close button is named "Close" (always, also with the mode
+  off).
+- **The focus goes in.** The windows: section 10, "Screen reader mode", to their first line
+  (below). The prompt: to Save (the default; Enter saves), once, on its first frame
+  (`App::prompt_focused`). The error box: to OK, once per box (`App::error_focused`, reset for
+  each queued error). Escape and Enter work as before.
+- **The focus comes back.** When the last modal (prompt, error box, Replace, the file browser)
+  closes the focus goes to the window that was open under it, else to the panel control that
+  had it. It goes back one frame after the modal's last frame (`App::modal_was` = 2): in
+  the frame right after, egui still treats the panel as lying under the modal layer and the
+  panel's widgets give up the focus, so a request made then is lost. A window closing returns
+  the focus as before (section 10).
+- **Lines.** `window::line`: a label that takes the focus (Tab and Shift+Tab walk the lines,
+  scrolling into view) and is spoken as `keys: what`, `Name: value`. Keyboard Shortcuts: the
+  mode line, every group title and note and every row's description (spoken with its keys);
+  About: the version line, the collection labels and the links; Mods > Info: the notices
+  and every row of the facts; the error box: its message (not selectable in this mode; Copy
+  copies it). Info's grid is not made of lines: its text fields are its stops.
+- **Announcer.** Not used: a role plus the focus is what the screen reader reads. Whether NVDA
+  reads the AlertDialog's description when the focus enters OK is a hand check (NVDA checklist
+  item 22 in docs/accessibility_plan.md); if it does not, `App::announce` takes the message.

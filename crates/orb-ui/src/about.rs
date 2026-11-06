@@ -4,6 +4,7 @@
 
 use eframe::egui::{self, Context, Key, Modifiers, RichText};
 
+use crate::a11y::window as win;
 use crate::app::{self, App};
 use crate::logo_anim::{self, LOGO_H, LOGO_W};
 use crate::palette::INK_DIM;
@@ -84,9 +85,11 @@ impl App {
         }
         let t = logo_anim::time_now(now, self.about_start.filter(|_| self.logo_anim));
         let mut open = true;
+        let sr = self.screen_reader_mode();
+        let id = self.about_id();
         // centered the way File > Info is (info.rs): pivot, default place, an id per open
         egui::Window::new(format!("About {NAME}"))
-            .id(self.about_id())
+            .id(id)
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -95,6 +98,7 @@ impl App {
             .frame(egui::Frame::window(&ctx.global_style()).inner_margin(0.0))
             .show(ctx, |ui| {
                 crate::app::focus_into_window(ui, due);
+                win::window(ui, sr, id, &format!("About {NAME}"));
                 // The layout of the mockup session (task-115), points from the top left of
                 // the content: the icon, the wordmark at 2x, and under its subtitle the
                 // version and the link, left-aligned. The images are SVG, so the loader
@@ -120,7 +124,8 @@ impl App {
                     line_at(ui, TEXT_X, y, f);
                 };
                 line(ui, 104.0, &|ui| {
-                    ui.label(RichText::new(format!("Version {VERSION}")).color(INK_DIM));
+                    let version = RichText::new(format!("Version {VERSION}")).color(INK_DIM);
+                    win::line(ui, sr, version, false, None);
                 });
                 line(ui, 126.0, &|ui| {
                     ui.hyperlink_to(URL, URL);
@@ -130,7 +135,7 @@ impl App {
                     // exactly the same x whatever the width of the label
                     let y = 148.0 + 22.0 * i as f32;
                     line(ui, y, &|ui| {
-                        ui.label(RichText::new(label).color(INK_DIM));
+                        win::line(ui, sr, RichText::new(label).color(INK_DIM), false, None);
                     });
                     line_at(ui, TEXT_X + LABEL_W, y, &|ui| {
                         ui.hyperlink_to(url, url);

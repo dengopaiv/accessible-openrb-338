@@ -414,9 +414,12 @@ impl App {
             // a small window: the info scrolls in a window that fits
             .max_size(ctx.content_rect().size() - egui::vec2(16.0, 16.0))
             .default_width(INFO_W);
+        let sr = self.screen_reader_mode();
+        let id = self.info_id();
         let doc = &mut self.doc;
         window.show(ctx, |ui| {
             crate::app::focus_into_window(ui, due);
+            crate::a11y::window::window(ui, sr, id, "Song Information");
             // the value column of the edits grid is what the window leaves after the label
             // column and the grid's spacing
             let value_w = ui.available_width() - LABEL_W - GRID_GAP;

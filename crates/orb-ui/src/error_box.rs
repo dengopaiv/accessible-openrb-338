@@ -4,11 +4,13 @@
 //! windows). Several errors queue: one box at a time, in the order they came. What was done
 //! (`App::status`) stays on the status line.
 
+use eframe::egui::accesskit::Role;
 use eframe::egui::{
     self, Align, Color32, Context, Event, Frame, Id, Key, Label, Layout, Margin, Order, RichText,
-    Sense, Stroke,
+    Sense, Stroke, WidgetInfo,
 };
 
+use crate::a11y;
 use crate::app::App;
 use crate::palette::{AMBER, INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 
@@ -127,6 +129,7 @@ impl App {
         self.error_close = None;
         self.error_copy = None;
         self.error_text = None;
+        self.error_focused = false;
     }
 
     /// Draws the box when there is an error, above every other window. It is closed by OK
@@ -140,6 +143,7 @@ impl App {
             self.clear_rects();
             return;
         };
+        let sr = self.screen_reader_mode();
         let frame = Frame::new()
             .fill(SLATE_DARK)
             .stroke(Stroke::new(1.0, SLATE_LINE))
@@ -172,6 +176,9 @@ impl App {
             .backdrop_color(Color32::from_black_alpha(170))
             .show(ctx, |ui| {
                 ui.set_width(WIDTH);
+                // an AlertDialog named by its title, the message as its description: the
+                // screen reader reads it when the focus goes to OK (screen reader mode)
+                a11y::window::dialog(ui, sr, Role::AlertDialog, TITLE, Some(&message));
                 // the title bar: the title, and the close button at the right
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(TITLE).color(AMBER).strong().size(15.0));
@@ -185,6 +192,7 @@ impl App {
                             .line_segment([c.left_top(), c.right_bottom()], stroke);
                         ui.painter()
                             .line_segment([c.left_bottom(), c.right_top()], stroke);
+                        r.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Close"));
                         self.error_close = Some(rect);
                         ok |= r.clicked();
                     });
@@ -196,11 +204,13 @@ impl App {
                     .max_height((ctx.content_rect().height() - 200.0).max(80.0))
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        let r = ui.add(
-                            Label::new(RichText::new(&message).color(INK))
-                                .wrap()
-                                .selectable(true),
-                        );
+                        let text = RichText::new(&message).color(INK);
+                        let r = if sr {
+                            // a line of its own for the screen reader (not selectable)
+                            a11y::window::line(ui, true, text, true, None)
+                        } else {
+                            ui.add(Label::new(text).wrap().selectable(true))
+                        };
                         self.error_text = Some(r.rect);
                     });
                 let more = self.errors.len() - 1;
@@ -212,9 +222,11 @@ impl App {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let r = ui.add(egui::Button::new(OK).min_size(egui::vec2(72.0, 0.0)));
                     self.error_ok = Some(r.rect);
-                    // Escape takes the focus away: OK gets it back
-                    if ui.memory(|m| m.focused().is_none()) {
+                    // Escape takes the focus away: OK gets it back; in screen reader mode OK
+                    // takes it once as the box opens, from whatever had it
+                    if ui.memory(|m| m.focused().is_none()) || (sr && !self.error_focused) {
                         r.request_focus();
+                        self.error_focused = true;
                     }
                     ok |= r.clicked();
                     // Copy: the whole message to the clipboard; the box stays
