@@ -51,6 +51,12 @@ pub fn fader_send(p: i32) -> i32 {
     (127 * p + 500) / 1000
 }
 
+/// The fader position for a value from the engine: the knob's rule (`sub_4A637D`) within the
+/// fader's travel, so that [`fader_send`] gives the value back.
+pub fn fader_from_engine(v: i32) -> i32 {
+    knob_from_engine(v).min(FADER_MAX)
+}
+
 /// The handle's top edge, from the track's top (panel pixels).
 pub fn fader_handle_top(p: i32) -> f32 {
     (1.0 - p as f32 / FADER_MAX as f32) * FADER_TRAVEL
@@ -256,6 +262,9 @@ mod tests {
         assert!(fader_drag(0, 50.0, 7.0) >= 990);
         assert_eq!(fader_drag(0, 50.0, 60.0), 0);
         assert_eq!(fader_send(FADER_MAX), 127);
+        for v in 0..=127 {
+            assert_eq!(fader_send(fader_from_engine(v)), v);
+        }
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use a11y::AppTree;
 use eframe::egui::accesskit::{Action, Role, Toggled};
-use orb_ui::a11y::{names, units};
+use orb_ui::a11y::{drive, names, units};
 use orb_ui::layout;
 use orb_ui::screen_reader::ScreenReaderSetting;
 
@@ -33,7 +33,9 @@ fn every_interactive_part_has_a_name_a_role_and_a_value() {
     let mut seen: HashMap<(String, String), String> = HashMap::new();
     let mut checked = 0;
     for c in layout::controls() {
-        if !names::is_interactive(&c.kind) {
+        // the arrows of a spin button and the pattern and bank buttons are read through their
+        // spin button and pattern selector (task-187, tests/a11y_drive.rs)
+        if !names::is_interactive(&c.kind) || drive::joined(&c) {
             continue;
         }
         let what = format!("{} ({})", c.id, c.kind);
@@ -68,7 +70,12 @@ fn every_interactive_part_has_a_name_a_role_and_a_value() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 244, "interactive parts in layout.tsv");
+    // 244 interactive parts, of which 20 arrows and 48 pattern and bank buttons are joined
+    assert_eq!(
+        checked,
+        244 - 68,
+        "interactive parts in layout.tsv with a node"
+    );
 }
 
 /// The app with screen reader mode set to `mode` (not the system's answer), settled.
@@ -108,15 +115,23 @@ fn some_nodes_read_as_expected() {
 
     let accent = t.by_layout("trigger", "tb303_1.accent").unwrap();
     assert_eq!(a11y::name(accent), Some("Step accent"));
+    // the tempo display with its arrows is a spin button (task-187)
     let tempo = t.by_layout("display", "transport.tempo").unwrap();
-    assert_eq!(a11y::role(tempo), Role::Label);
+    assert_eq!(a11y::role(tempo), Role::SpinButton);
     let bpm = h.app.panel.display("transport.tempo").unwrap();
-    let text = format!("Tempo {bpm} BPM");
-    assert_eq!(a11y::name(tempo), Some(text.as_str()));
-    // UI Automation names a Label from its value
+    assert_eq!(a11y::name(tempo), Some("Tempo"));
+    let text = format!("{bpm} BPM");
     assert_eq!(a11y::value(tempo), Some(text.as_str()));
+    // the 303's edit step has no arrows: a label
+    let edit = t.by_layout("display", "tb303_1.edit_step").unwrap();
+    assert_eq!(a11y::role(edit), Role::Label);
+    let step = h.app.panel.display("tb303_1.edit_step").unwrap();
+    let text = format!("Edit step {step}");
+    assert_eq!(a11y::name(edit), Some(text.as_str()));
+    // UI Automation names a Label from its value
+    assert_eq!(a11y::value(edit), Some(text.as_str()));
     assert!(
-        !a11y::supports(tempo, Action::Focus),
+        !a11y::supports(edit, Action::Focus),
         "a display takes no focus"
     );
 }

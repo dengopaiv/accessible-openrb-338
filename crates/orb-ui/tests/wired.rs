@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use eframe::egui::{self, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, Vec2};
 use orb_engine::samples::SampleSet;
+use orb_engine::seq::Event as TrackEvent;
 use orb_engine::song::Device;
 use orb_engine::tables::Tables;
 use orb_player::{Audio, CALL_FRAMES, Snapshot};
@@ -1180,5 +1181,70 @@ fn the_wind_bar_and_loop_arrows_send_nothing_in_pattern_mode() {
             global(8, 10 * BAR as u32),
             global(16, 2 * BAR as u32)
         ]
+    );
+}
+
+/// Records, in song mode, the selection of patterns A2 to A8 and B1 in the first row: by the
+/// mouse's clicks on the pattern and bank buttons, or by the screen reader's Increment on the
+/// row's pattern selector (task-187). Returns what the panel sent and the merged tracks.
+fn record_pattern_selection(by_selector: bool) -> (Vec<Msg>, Vec<Vec<TrackEvent>>) {
+    let mut h = Harness::new();
+    h.ctx.enable_accesskit();
+    if !h.app.panel.transport.song_mode {
+        h.app.panel.press("transport.mode", 0.0);
+    }
+    h.app.panel.press("transport.record", 0.0);
+    h.app.panel.press("transport.play", 0.0);
+    h.frame(vec![]);
+    h.calls(20);
+    assert!(h.app.panel.transport.recording);
+    h.take_log();
+    let selector = orb_ui::a11y::drive::selector_id(0).accesskit_id();
+    for p in 1..=8u8 {
+        if by_selector {
+            let req = egui::accesskit::ActionRequest {
+                action: egui::accesskit::Action::Increment,
+                target_tree: egui::accesskit::TreeId::ROOT,
+                target_node: selector,
+                data: None,
+            };
+            h.frame(vec![Event::AccessKitActionRequest(req)]);
+        } else {
+            if p == 8 {
+                h.click("pattern1.bankB");
+            }
+            h.click(&format!("pattern1.pattern{}", p % 8 + 1));
+        }
+        // a new pattern starts at the next bar line: one selection per bar
+        h.calls(80);
+    }
+    let sent = h.take_log();
+    h.app.panel.press("transport.record", 0.0);
+    h.frame(vec![]);
+    h.calls(2);
+    assert!(!h.app.panel.transport.recording);
+    let link = h.app.link.as_ref().unwrap();
+    let tracks = link.recorded_tracks().expect("the merge's tracks").to_vec();
+    (sent, tracks)
+}
+
+#[test]
+fn a_selection_with_the_pattern_selector_is_recorded_as_the_clicks() {
+    let (clicks_sent, clicks) = record_pattern_selection(false);
+    let (selector_sent, selector) = record_pattern_selection(true);
+    // the panel sends pattern 1..=8 of the first 303 (`{1, p}`, sub 40)
+    let expected: Vec<Msg> = (1..=8).map(|p| dev(Device::Tb303_1, 40, &[1, p])).collect();
+    assert_eq!(clicks_sent, expected);
+    assert_eq!(selector_sent, clicks_sent);
+    assert_eq!(selector, clicks);
+    // the recording holds the selections (controller 1 of the 303's track)
+    let recorded: Vec<u8> = clicks[1]
+        .iter()
+        .filter(|e| e.tick > 0 && e.ctrl == 1)
+        .map(|e| e.value)
+        .collect();
+    assert!(
+        recorded.starts_with(&[1, 2, 3, 4, 5, 6, 7, 8]),
+        "{recorded:?}"
     );
 }

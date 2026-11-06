@@ -373,11 +373,22 @@ pub fn display_text(id: &str, shown: Option<i32>) -> String {
     }
 }
 
+/// A pattern's name as the panel shows it: its bank letter and button, "A1" to "D8".
+pub fn pattern_text(p: u8) -> String {
+    format!("{}{}", char::from(b'A' + p / 8 % 4), p % 8 + 1)
+}
+
 /// The value text of a part in the panel's state, by its kind: knobs and faders
 /// ([`control_value_text`], spoken as `speech` says), switches (their words), displays (with
-/// their units). None for the kinds whose state is a toggled state or nothing.
+/// their units; also the value of a spin button, task-187), the pattern and bank buttons (the
+/// row's selected pattern, "B3": the value of the row's pattern selector, task-187). None for
+/// the kinds whose state is a toggled state or nothing.
 pub fn value_text(panel: &Panel, c: &Ctl, speech: Speech) -> Option<String> {
     match c.kind.as_str() {
+        "grid" => {
+            let r: usize = c.section.strip_prefix("pattern")?.parse().ok()?;
+            Some(pattern_text(panel.rows.get(r.checked_sub(1)?)?.pattern))
+        }
         "knob" | "fader" => Some(control_value_text(
             panel,
             &c.id,
@@ -533,9 +544,23 @@ mod tests {
             let v = value_text(&p, &c, Speech::Units);
             let valued = matches!(
                 c.kind.as_str(),
-                "knob" | "fader" | "switch" | "hswitch" | "vswitch" | "display"
+                "knob" | "fader" | "switch" | "hswitch" | "vswitch" | "display" | "grid"
             );
             assert_eq!(v.is_some(), valued, "{} ({})", c.id, c.kind);
         }
+    }
+
+    #[test]
+    fn pattern_names() {
+        assert_eq!(pattern_text(0), "A1");
+        assert_eq!(pattern_text(10), "B3");
+        assert_eq!(pattern_text(31), "D8");
+        let mut p = Panel::new();
+        p.rows[1].pattern = 10;
+        let c = layout::controls()
+            .into_iter()
+            .find(|c| c.id == "pattern2.bankD")
+            .unwrap();
+        assert_eq!(value_text(&p, &c, Speech::Units).as_deref(), Some("B3"));
     }
 }

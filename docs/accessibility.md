@@ -190,10 +190,16 @@ machine with its channel (decision 3, section 4).
   square", "Delay: on", "Mute: on").
 - Repeat buttons with their display: one SpinButton each, for tempo ("128 BPM"), bar, loop
   start, loop length, pattern length ("16 steps"), delay steps and PCF pattern. Up and Down
-  call `Panel::arrow` with the up or down button's id, as a click does.
+  call `Panel::arrow` with the up or down button's id, as a click does. Page Up and Page Down
+  are 10 clicks; Home and End click to the end of the range on pattern length, delay steps and
+  PCF pattern only, and do nothing on tempo, bar, loop start and loop length (TASK-205, the
+  user, 2026-11-06).
 - A row's pattern grid (8 pattern buttons and 4 bank buttons): one selector, "Pattern B3".
   Up and Down move through the 32 patterns, A1 to D8, through the same `Panel::press` calls a
   click makes, so selections are recorded in song mode as they are now.
+- Done in task-187 for the sliders, spin buttons and pattern selectors (the selector is a
+  SpinButton named "Pattern" whose value is "B3"), with a screen reader's Click on the buttons,
+  toggles and switches acting as one mouse down: docs/ui_spec.md section 20.1.
 - The 303 step editor: one node that speaks the step being edited ("Step 5 of 16: C sharp,
   up, accent, slide", or "Step 6: rest") after each of the existing programming keys (the
   pitch keys, P, `[`, `;`, `'`, `-`, Enter, Backspace). Left and Right move the edit step.

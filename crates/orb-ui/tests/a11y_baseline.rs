@@ -15,6 +15,13 @@
 //! focusable); the six click areas of the drum machines (two step strips, four instrument
 //! selection areas) no longer focusable, so no longer in the tree. Valued: 86 knobs and faders,
 //! 10 switches, 12 displays (a label's text is its value in UI Automation).
+//!
+//! | task-187 (spin buttons, pattern selectors) | 203 | 196 | 0 | 112 | 194 |
+//!
+//! Task-187: the 20 arrows of the 10 spin displays and the 48 pattern and bank buttons have no
+//! node (they take no focus); the 10 displays with arrows are focusable spin buttons instead of
+//! labels; 4 pattern selectors added (named "Pattern", valued "A1"). Roles: 14 SpinButton, 2
+//! Label (the 303s' edit step).
 
 #[path = "common/a11y.rs"]
 mod a11y;
@@ -24,12 +31,12 @@ use std::collections::BTreeMap;
 use a11y::AppTree;
 use eframe::egui::accesskit::{Action, Role};
 
-const BASELINE_NODES: usize = 267;
-const BASELINE_NAMED: usize = 260;
+const BASELINE_NODES: usize = 203;
+const BASELINE_NAMED: usize = 196;
 const BASELINE_UNKNOWN_ROLE: usize = 0;
-const BASELINE_VALUED: usize = 108;
-const BASELINE_FOCUSABLE: usize = 248;
-const BASELINE_NAMES: [&str; 8] = [
+const BASELINE_VALUED: usize = 112;
+const BASELINE_FOCUSABLE: usize = 194;
+const BASELINE_NAMES: [&str; 9] = [
     "File",
     "Mods",
     "Options",
@@ -37,7 +44,8 @@ const BASELINE_NAMES: [&str; 8] = [
     "Cutoff",
     "Play",
     "Channel 3 on",
-    "Tempo 140 BPM",
+    "Tempo",
+    "Pattern",
 ];
 
 #[test]

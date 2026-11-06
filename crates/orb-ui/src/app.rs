@@ -17,6 +17,7 @@ use eframe::egui::{
     emath::GuiRounding, epaint,
 };
 
+use crate::a11y::drive;
 use crate::art::{self, KnobDesign};
 use crate::behavior::{self, Mods};
 use crate::browser::{self, Browser, Mode, Poll};
@@ -880,6 +881,17 @@ impl App {
                 self.holds.retain(|h| h.key != k);
                 continue;
             }
+            // Screen reader mode: Up, Down, Page Up, Page Down, Home and End change the focused
+            // slider, spin button or pattern selector, auto-repeat included, and do not reach
+            // the original's keys (task-187).
+            if !modifiers.any()
+                && self.screen_reader_mode()
+                && let Some(step) = drive::Step::of_key(key)
+                && let Some(t) = self.focused_target(ui)
+            {
+                drive::step(&mut self.panel, &t, step, now);
+                continue;
+            }
             if repeat || modifiers.command || modifiers.ctrl {
                 continue;
             }
@@ -979,7 +991,11 @@ impl App {
             "knob" => self.knob(ui, view, c, rect),
             "fader" => self.fader(ui, view, c, rect),
             "display" => {
-                crate::a11y::describe_display(ui.ctx(), rect, &self.panel, c);
+                if drive::is_spin(&c.id) {
+                    self.spin_button(ui, c, rect, now);
+                } else {
+                    crate::a11y::describe_display(ui.ctx(), rect, &self.panel, c);
+                }
                 let n = (c.w / 9.0) as usize;
                 let frames = behavior::digit_frames(self.panel.display(&c.id), n);
                 for (i, f) in frames.into_iter().enumerate() {
@@ -992,7 +1008,18 @@ impl App {
                 paint_part(ui, &name, rect);
             }
             kind => {
-                let r = self.hit(ui, c, rect);
+                if kind == "grid" && c.name() == "pattern1" {
+                    // the row's selector, before its buttons: the Tab order is the panel's
+                    self.pattern_selector(ui, view, c, now);
+                }
+                let joined = drive::joined(c);
+                let r = if joined {
+                    // part of a spin button or a pattern selector: the mouse works as with
+                    // `Sense::click_and_drag`, but no focus and no node (task-187)
+                    ui.interact(rect, crate::a11y::hit_id(c), Sense::CLICK | Sense::DRAG)
+                } else {
+                    self.hit(ui, c, rect)
+                };
                 let down = r.is_pointer_button_down_on() || self.key_held(&c.id);
                 match kind {
                     "repeat" | "wind" => self.repeat(ui, c, &r),
@@ -1008,7 +1035,18 @@ impl App {
                     }
                     _ => {}
                 }
-                crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
+                if !joined {
+                    // A screen reader's Click (its default action) is one mouse down. Only the
+                    // AccessKit request: egui's own click of a focused widget on Space or Enter
+                    // stays without effect, as before (task-187).
+                    let ak_click = ui.input(|i| {
+                        i.has_accesskit_action_request(r.id, egui::accesskit::Action::Click)
+                    });
+                    if ak_click {
+                        self.mouse_down(c, now);
+                    }
+                    crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
+                }
                 let name = self.panel.part_name(c, down, now);
                 paint_part(ui, &name, rect);
             }
@@ -1053,6 +1091,72 @@ impl App {
         // The kind is part of the key: the 303's accent knob and accent flag button share
         // the layout id `tb303_N.accent` (`a11y::hit_id`).
         ui.interact(rect, crate::a11y::hit_id(c), Sense::click_and_drag())
+    }
+
+    /// What one mouse down on a button, toggle or switch does (a screen reader's Click). The
+    /// pattern and bank buttons and the spin buttons' arrows have no node and get no Click
+    /// (they are driven through their selector or spin button, `drive`).
+    fn mouse_down(&mut self, c: &Ctl, now: f64) {
+        match c.kind.as_str() {
+            "repeat" | "wind" => self.panel.arrow(&c.id),
+            "switch" | "toggle" | "radio" | "trigger" => self.panel.press(&c.id, now),
+            "hswitch" | "vswitch" => {
+                let v = 1 - self.panel.switch_position(&c.id);
+                self.panel.set_switch(&c.id, v);
+            }
+            _ => {}
+        }
+    }
+
+    /// The screen reader's requests to the value control `t` whose node is `id`, and, in
+    /// screen reader mode with the focus on it, egui's focus kept from the Up and Down keys
+    /// (they change the value: `App::keyboard`).
+    fn drive_value(&mut self, ui: &Ui, r: &Response, t: &drive::Target, now: f64) {
+        for req in drive::requests(ui, r.id) {
+            drive::request(&mut self.panel, t, req, now);
+        }
+        if r.has_focus() && self.screen_reader_mode() {
+            let filter = egui::EventFilter {
+                vertical_arrows: true,
+                ..Default::default()
+            };
+            ui.memory_mut(|m| m.set_focus_lock_filter(r.id, filter));
+        }
+    }
+
+    /// A display with its up and down arrows: one spin button (task-187). The display takes
+    /// the focus but no click; the arrows keep their mouse behavior (`App::control`).
+    fn spin_button(&mut self, ui: &mut Ui, c: &Ctl, rect: Rect, now: f64) {
+        let r = ui.interact(rect, crate::a11y::hit_id(c), Sense::FOCUSABLE);
+        self.drive_value(ui, &r, &drive::Target::Spin(c.id.clone()), now);
+        crate::a11y::describe_spin(ui.ctx(), &self.panel, c);
+    }
+
+    /// A row's pattern selector over its 8 pattern and 4 bank buttons (task-187): focusable,
+    /// with no click of its own, so the buttons under it keep the mouse. `c` is the row's
+    /// button `pattern1`, the selector's top left.
+    fn pattern_selector(&mut self, ui: &mut Ui, view: &View, c: &Ctl, now: f64) {
+        let Some(row) = drive::row_of(&c.section) else {
+            return;
+        };
+        let (w, h) = drive::SELECTOR_SIZE;
+        let rect = view.rect(c.x, c.y, w, h);
+        let r = ui.interact(rect, drive::selector_id(row), Sense::FOCUSABLE);
+        self.drive_value(ui, &r, &drive::Target::Pattern(row), now);
+        crate::a11y::describe_selector(ui.ctx(), &self.panel, row, c);
+    }
+
+    /// The value control that has egui's focus, if any.
+    fn focused_target(&self, ui: &Ui) -> Option<drive::Target> {
+        let f = ui.memory(|m| m.focused())?;
+        if let Some(row) = (0..4).find(|&r| drive::selector_id(r) == f) {
+            return Some(drive::Target::Pattern(row));
+        }
+        self.ctls
+            .iter()
+            .filter_map(|c| Some((c, drive::target(c)?)))
+            .find(|(c, _)| crate::a11y::hit_id(c) == f)
+            .map(|(_, t)| t)
     }
 
     fn gesture(ui: &Ui, c: &Ctl) -> (egui::Id, Gesture) {
@@ -1125,6 +1229,11 @@ impl App {
         }
         g.down = down;
         ui.data_mut(|d| d.insert_temp(id, g));
+        // a screen reader's request in a frame where the mouse drags this knob is dropped: the
+        // drag sets the position from its own start on every frame and would undo it anyway
+        if !down && let Some(t) = drive::target(c) {
+            self.drive_value(ui, &r, &t, ui.input(|i| i.time));
+        }
         crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
 
         let k = art::knob_design(&c.part);
@@ -1167,6 +1276,10 @@ impl App {
         }
         g.down = down;
         ui.data_mut(|d| d.insert_temp(id, g));
+        // as for the knob: a request during a drag of this fader is dropped
+        if !down && let Some(t) = drive::target(c) {
+            self.drive_value(ui, &r, &t, ui.input(|i| i.time));
+        }
         crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
         paint_part(ui, "fader_track", rect);
         let top = behavior::fader_handle_top(self.panel.fader(&c.id));

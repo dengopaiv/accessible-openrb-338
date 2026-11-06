@@ -6,6 +6,7 @@
 //! client has asked for the tree): with it off, a frame costs one lock per control and nothing
 //! else.
 
+pub mod drive;
 pub mod names;
 pub mod units;
 
@@ -56,6 +57,10 @@ pub fn describe(ctx: &egui::Context, id: egui::Id, panel: &Panel, c: &Ctl) {
                 node.set_min_numeric_value(0.0);
                 node.set_max_numeric_value(127.0);
                 node.set_numeric_value_step(1.0);
+                // task-187: `drive::request` acts on them
+                node.add_action(accesskit::Action::Increment);
+                node.add_action(accesskit::Action::Decrement);
+                node.add_action(accesskit::Action::SetValue);
             }
             "toggle" | "radio" => node.set_toggled(panel.toggle_on(&c.id).into()),
             "grid" => node.set_toggled(panel.grid_lit(c).into()),
@@ -64,10 +69,46 @@ pub fn describe(ctx: &egui::Context, id: egui::Id, panel: &Panel, c: &Ctl) {
     });
 }
 
+/// A spin button's node (task-187): the display `c` with its up and down arrows, named as the
+/// display ("Tempo") with what it shows as the value ("140 BPM", "off" when the mode turns the
+/// display off). Increment and Decrement are one click of an arrow (`drive::request`). The id
+/// is the display's [`hit_id`], a focusable hit area with no click of its own.
+pub fn describe_spin(ctx: &egui::Context, panel: &Panel, c: &Ctl) {
+    // read before the node builder, which holds the context's lock
+    let speech = speech(ctx);
+    ctx.accesskit_node_builder(hit_id(c), |node| {
+        node.set_role(accesskit::Role::SpinButton);
+        if let Some(name) = names::name(c) {
+            node.set_label(name);
+        }
+        if let Some(text) = names::value_text(panel, c, speech) {
+            node.set_value(text);
+        }
+        node.add_action(accesskit::Action::Increment);
+        node.add_action(accesskit::Action::Decrement);
+    });
+}
+
+/// The pattern selector of row `r` (task-187): one spin button for the row's 8 pattern and 4
+/// bank buttons, "Pattern" with the selected pattern as the value ("B3", `names::value_text` of
+/// any of the row's buttons; `c` is the row's button `pattern1`). Increment and Decrement move
+/// to the next or previous of the 32 patterns (`drive::select_pattern`).
+pub fn describe_selector(ctx: &egui::Context, panel: &Panel, r: usize, c: &Ctl) {
+    let speech = speech(ctx);
+    ctx.accesskit_node_builder(drive::selector_id(r), |node| {
+        node.set_role(accesskit::Role::SpinButton);
+        node.set_label("Pattern");
+        if let Some(text) = names::value_text(panel, c, speech) {
+            node.set_value(text);
+        }
+        node.add_action(accesskit::Action::Increment);
+        node.add_action(accesskit::Action::Decrement);
+    });
+}
+
 /// A display's node (task-186): a label that cannot take the focus, its text the display's name
-/// and what it shows ("Tempo 140 BPM"). The id is the one [`hit_id`] gives the display.
-/// The display is not a value control: A11Y-3 (task-187) joins it with its up and down
-/// buttons into one spin button.
+/// and what it shows ("Edit step 5"). The id is the one [`hit_id`] gives the display. The
+/// displays with arrows are spin buttons instead ([`describe_spin`], task-187).
 pub fn describe_display(ctx: &egui::Context, rect: Rect, panel: &Panel, c: &Ctl) {
     ctx.accesskit_node_builder(hit_id(c), |node| {
         node.set_role(accesskit::Role::Label);

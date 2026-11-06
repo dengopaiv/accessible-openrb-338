@@ -1597,3 +1597,47 @@ The tree exists only while a screen reader or another UI Automation client asks 
   `App::instrument_selection`): their `ui.interact` senses click and drag without
   `FOCUSABLE`, so the mouse works as before and Tab no longer stops on six unnamed areas. The
   drum grids become readable in task-191 (A11Y-7).
+
+### 20.1 What a screen reader can do with the controls (task-187)
+
+A11Y-3 of docs/accessibility_plan.md. The operations are `crates/orb-ui/src/a11y/drive.rs`;
+each goes through the `Panel` method the mouse uses, so the engine hears the same events and a
+song-mode recording records them as clicks (tests `crates/orb-ui/tests/a11y_drive.rs` and
+`wired.rs` `a_selection_with_the_pattern_selector_is_recorded_as_the_clicks`).
+
+- **Sliders** (every knob and fader): the actions Increment, Decrement and SetValue on the
+  0..127 value. A value `v` is stored as the mouse stores it: `set_knob(id,
+  knob_from_engine(v))`, `set_fader(id, fader_from_engine(v))` (`behavior::fader_from_engine`
+  is the knob's rule within the fader's 0..999, the expression `Panel::adopt` uses); a request
+  for the value the control already sends does nothing, so the position the mouse left stays.
+- **Spin buttons**: each display with up and down arrows is one node, role SpinButton, named
+  as the display ("Tempo") with what it shows as the value ("140 BPM", "off" while the mode
+  turns the display off): tempo, bar, loop start, loop length, the four pattern lengths, delay
+  steps and PCF pattern (`drive::SPIN_DISPLAYS`). Increment and Decrement are one click of the
+  up or down arrow (`Panel::arrow`). The display's hit area takes the focus and no click; the
+  arrows (the bar's are wind buttons, the others repeat buttons) keep their mouse behavior but
+  take no focus and have no node. The 303's edit step display has no arrows and stays a label.
+- **Pattern selectors**: one node per row over its 8 pattern and 4 bank buttons, role
+  SpinButton, named "Pattern" with the selected pattern as the value ("B3"). Increment and
+  Decrement select the next or previous of the 32 patterns, A1 to D8, without wrapping, with
+  the clicks a mouse makes: the bank button when the shown bank is another, then the pattern
+  button (`drive::select_pattern`). The node is registered before the row's buttons, so the
+  focus order is the panel's; it senses no click, so the buttons under it keep the mouse, and
+  they take no focus and have no node.
+- **Buttons, toggles and switches**: a screen reader's Click (its default action) does what
+  one mouse down does (`App::mouse_down`). Only the AccessKit request counts: egui's own click
+  of a focused widget on Space or Enter still does nothing on the panel, so with screen reader
+  mode off the keys are as before.
+- **Keys, in screen reader mode only** (`App::keyboard`): with the focus on a slider, a spin
+  button or a pattern selector, Up and Down change it by one (a slider's value, one arrow
+  click, one pattern), Page Up and Page Down by 8 (a slider) or one bank (a selector), Home
+  and End go to 0 and 127 (a slider) or A1 and D8 (a selector). Auto-repeat counts. These keys
+  then do not reach the original's key map (Up and Down are its row focus), and the focused
+  control keeps egui from moving the focus on Up and Down (its focus lock filter). On a spin
+  button (TASK-205, the user's decision of 2026-11-06), Page Up and Page Down are 10 clicks of
+  the up or down arrow, each sent as a click sends it; Home and End click down or up to the end
+  of the range only where it is short (`drive::short_range`: each row's pattern length 1..16,
+  delay steps 1..32, PCF pattern 0..54) and do nothing on tempo, bar, loop start and loop
+  length, so a slip cannot send hundreds of events. With the
+  mode off, every key is the original's, whatever has the focus. The routing of the other keys
+  (Tab, F6, Space, the row focus on Ctrl+Up and Ctrl+Down) is task-188 (A11Y-4).

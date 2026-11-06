@@ -577,7 +577,7 @@ impl Panel {
             }
         } else if let Some(p) = self.faders.get_mut(id) {
             if behavior::fader_send(*p) != v {
-                *p = behavior::knob_from_engine(v).min(behavior::FADER_MAX);
+                *p = behavior::fader_from_engine(v);
             }
         } else if let Some(t) = self.toggles.get_mut(id) {
             *t = v != 0;
