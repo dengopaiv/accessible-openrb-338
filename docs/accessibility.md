@@ -378,9 +378,9 @@ will not have one (the user, 2026-11-05, TASK-198: a local editor only); m-6 is 
 
 ## 4. Decisions
 
-All were decided by the user on 2026-11-05. The options weighed for each, and the reasons,
-are in the plan's Decisions section ([accessibility_plan.md](accessibility_plan.md),
-A11Y-D1 to A11Y-D6).
+All were decided by the user on 2026-11-05. The plan lists them with the decisions made
+later ([accessibility_plan.md](accessibility_plan.md) section 1.1); the options weighed for
+each, and the reasons, are in its decision task (A11Y-D1 to A11Y-D6 = TASK-177 to TASK-182).
 
 1. How screen reader mode turns on: by itself when the system reports a screen reader, plus
    an Options menu item (automatic, on, off), remembered.
