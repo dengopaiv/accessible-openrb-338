@@ -7,16 +7,36 @@
 //! else.
 
 pub mod names;
+pub mod units;
 
 use eframe::egui::{self, Rect, accesskit};
 
 use crate::layout::Ctl;
 use crate::model::Panel;
+use names::Speech;
+
+/// The key of the speech style in the context's data.
+fn speech_id() -> egui::Id {
+    egui::Id::unique("orb_a11y_speech")
+}
+
+/// Sets how knobs and faders speak their value from this frame on (task-192): the app sets it
+/// every frame from screen reader mode and the setting "Speak raw values".
+pub fn set_speech(ctx: &egui::Context, speech: Speech) {
+    ctx.data_mut(|d| d.insert_temp(speech_id(), speech));
+}
+
+/// How knobs and faders speak their value ([`Speech::Plain`] until [`set_speech`]).
+pub fn speech(ctx: &egui::Context) -> Speech {
+    ctx.data(|d| d.get_temp(speech_id())).unwrap_or_default()
+}
 
 /// Writes the role, name, value and state of the control `c` into the node of its hit area
 /// `id` (task-186). The node already has the bounds and the Focus and Click actions egui gives a
 /// focusable widget.
 pub fn describe(ctx: &egui::Context, id: egui::Id, panel: &Panel, c: &Ctl) {
+    // read before the node builder, which holds the context's lock
+    let speech = speech(ctx);
     ctx.accesskit_node_builder(id, |node| {
         let Some(role) = names::role(&c.kind) else {
             return;
@@ -25,7 +45,7 @@ pub fn describe(ctx: &egui::Context, id: egui::Id, panel: &Panel, c: &Ctl) {
         if let Some(name) = names::name(c) {
             node.set_label(name);
         }
-        if let Some(text) = names::value_text(panel, c) {
+        if let Some(text) = names::value_text(panel, c, speech) {
             node.set_value(text);
         }
         match c.kind.as_str() {

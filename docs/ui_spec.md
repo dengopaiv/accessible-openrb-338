@@ -1035,7 +1035,8 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Mods | Info... | a centered, closable window (Escape closes it) with the splash of the kit that plays at its 2000-era physical size, the mod's INFO facts and the file's (task-106; below) |
 | Options | Vintage ReBirth Synth Sound | the song's sound model (the original has it in the Edit menu) |
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
-| Options | Screen Reader Mode > Automatic, On, Off | `Settings::screen_reader` (`auto` by default, `on`, `off`; key `screen_reader` of `ui.toml`), saved at once (task-185). `App::screen_reader_mode()` is true for On, and for Automatic while the system reports a screen reader (Windows: `SystemParametersInfoW(SPI_GETSCREENREADER)`, asked at start and whenever the window regains the focus; other platforms report none yet). Nothing reads it yet: the accessible layer and its key changes come in later tasks (docs/accessibility_plan.md) |
+| Options | Screen Reader Mode > Automatic, On, Off | `Settings::screen_reader` (`auto` by default, `on`, `off`; key `screen_reader` of `ui.toml`), saved at once (task-185). `App::screen_reader_mode()` is true for On, and for Automatic while the system reports a screen reader (Windows: `SystemParametersInfoW(SPI_GETSCREENREADER)`, asked at start and whenever the window regains the focus; other platforms report none yet). The knobs' and faders' units read it (task-192, section 20); the key changes come in later tasks (docs/accessibility_plan.md) |
+| Options | Speak Raw Values (shown in screen reader mode only) | `Settings::speak_raw_values` (false by default; the bool `speak_raw_values` of `ui.toml`), saved at once (task-192): a knob or fader speaks its 0..127 value after its unit ("1.24 kilohertz, 64"); section 20 |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/openrb-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; below) |
@@ -1575,9 +1576,19 @@ The tree exists only while a screen reader or another UI Automation client asks 
   word of its position ("pattern" / "song", "sawtooth" / "square", "low conga" / "low tom",
   "band pass" / "low pass", "triplets" / "sixteenths").
 - **Values.** A knob or fader has the numeric value 0..127 (what the song stores, min 0, max
-  127, step 1) and the same number as its text; pan reads "center", "left 20", "right 20" (the
-  middle sends 64). Physical units come with task-192 (decision A11Y-D5) through the one
-  function `names::control_value_text`.
+  127, step 1). Its text, in screen reader mode (task-192, decision A11Y-D5), is its physical
+  unit as the engine's code gives it: "1.24 kilohertz", "350 milliseconds", "minus 6.5
+  decibels", "plus 3 semitones 25 cents", "4.2 to 1", "left 31" (percent of the travel),
+  "center", "50 percent" for a quantity without a unit; with Options > Speak Raw Values the
+  0..127 number follows ("1.24 kilohertz, 64"). docs/control_units.md lists every knob and
+  fader with its formula, its source in the engine and how exact it is
+  (`crates/orb-ui/src/a11y/units.rs`). The 303 cutoff and accent follow the synth's
+  resonance and the sound model, the PCF frequency the Q fader, the compressor ratio the
+  threshold, the flam the tempo (`names::control_value_text(panel, id, v, speech)`, the one entry point: it needs the panel
+  and the speech style, so no caller gets units with the mode off or without the context). With screen reader mode off
+  the text is the number, and pan "center", "left 20", "right 20" (the middle sends 64), as
+  before. `App::show` puts the style into the egui context every frame (`a11y::set_speech`),
+  and `a11y::describe` reads it.
 - **Displays** are labels that take no focus: "Tempo 140 BPM", "Bar 3", "Loop length 4 bars",
   "Pattern length 16 steps", "Edit step 5", "PCF pattern 25", "Delay steps 3"; a display the
   mode turns off reads "off".

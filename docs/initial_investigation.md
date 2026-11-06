@@ -1105,6 +1105,10 @@ This uses the absolute song position, so the pattern stays phase-locked to the s
 w = 0.0628 (static init 0x10017840). It starts at 0.
 [C] task-019: the constants {b2, A, g} at 0x10100260 are bit-identical to the 303 smoother's
 (§6.2): the same code with the same constants (0x10152490..0x101524B0).
+[D] task-192, by running the engine's `pcf::smooth_cutoff` with its f32 store to rest: for
+every frequency 1..127 the base settles one f32 step below `4*freq` (the f32 `g` makes the DC
+gain `A - b2 + g` a hair under 1), so at rest, with E = 0, the table index `trunc(env)` is
+`4*freq - 1`, not `4*freq` (`docs/control_units.md`).
 
 **Envelope, per 4 samples.**
 - `E *= dec`

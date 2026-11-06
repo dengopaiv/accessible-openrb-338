@@ -104,6 +104,8 @@ pub enum Cmd {
     /// "Set Songs Folder..." / "Set Mods Folder..." of the Options menu (task-194): the
     /// system's folder dialog.
     SetFolder(crate::system_dialog::Folder),
+    /// "Speak Raw Values" of the Options menu, shown in screen reader mode (task-192).
+    ToggleSpeakRawValues,
     SetKeyMode(KeyMode),
 }
 
@@ -938,6 +940,12 @@ impl App {
                 }
             }
             Cmd::SetFolder(which) => self.choose_folder(which),
+            Cmd::ToggleSpeakRawValues => {
+                self.settings.speak_raw_values = !self.settings.speak_raw_values;
+                if let Err(e) = self.settings.save() {
+                    self.fail(e);
+                }
+            }
             Cmd::SetKeyMode(m) => self.key_mode = m,
         }
     }
@@ -1259,6 +1267,14 @@ impl App {
                                     }
                                 }
                             });
+                            // task-192: only in screen reader mode
+                            let mut raw = self.settings.speak_raw_values;
+                            if self.screen_reader_mode()
+                                && ui.checkbox(&mut raw, "Speak Raw Values").clicked()
+                            {
+                                cmd = Some(Cmd::ToggleSpeakRawValues);
+                                ui.close();
+                            }
                             ui.separator();
                             // the browser's "Use as ... folder" buttons, for the system dialog
                             if self.screen_reader_mode() {

@@ -7,12 +7,13 @@
 //! or Export, and of the last mod; task-144), `startup_sound` (a bool) and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151) and `screen_reader` (`"auto"`, `"on"` or `"off"`; absent or unknown reads as
-//! `auto`; task-185), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
-//! `OpenRB-338/ui.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
-//! `~/.config` on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows).
-//! Reading never fails: a missing or damaged file gives the defaults (a damaged file stays as
-//! it is until the next save), a key of the wrong type is skipped and the others kept, and
-//! unknown keys are
+//! `auto`; task-185) and `speak_raw_values` (a bool, false by default: in screen reader mode a
+//! knob or fader speaks its 0..127 value after its unit; task-192), so it can be edited by hand.
+//! Where it lives: `$ORB_UI_CONFIG` if set; else `OpenRB-338/ui.toml` in the platform's
+//! configuration folder (`$XDG_CONFIG_HOME`, or `~/.config` on Linux, `~/Library/Application
+//! Support` on macOS, `%APPDATA%` on Windows). Reading never fails: a missing or damaged file gives
+//! the defaults (a damaged file stays as it is until the next save), a key of the wrong type is
+//! skipped and the others kept, and unknown keys are
 //! ignored. Saving writes the whole file through a temporary file and a rename, and returns
 //! its errors for the browser to show. A path that is not valid UTF-8 cannot be stored in
 //! TOML (and a lossy string would name another folder), so a save leaves it out: a `recent`
@@ -55,6 +56,9 @@ pub struct Settings {
     /// Screen reader mode (task-185): `auto` (default), `on` or `off`. Stored as the string
     /// `screen_reader`; an absent or unknown value reads as `auto`.
     pub screen_reader: ScreenReaderSetting,
+    /// "Speak raw values" (task-192): in screen reader mode a knob or fader speaks its 0..127
+    /// value after its unit ("1.24 kilohertz, 64"). Stored as the bool `speak_raw_values`.
+    pub speak_raw_values: bool,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
 }
@@ -70,6 +74,7 @@ impl Default for Settings {
             last_mod_dir: None,
             preferred_mods: BTreeMap::new(),
             screen_reader: ScreenReaderSetting::Auto,
+            speak_raw_values: false,
             file: None,
         }
     }
@@ -124,6 +129,7 @@ struct Stored<'a> {
     mods_dir: Option<&'a Path>,
     startup_sound: bool,
     screen_reader: &'a str,
+    speak_raw_values: bool,
     recent: Vec<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_song_dir: Option<&'a Path>,
@@ -177,6 +183,9 @@ impl Settings {
         {
             s.screen_reader = v;
         }
+        if let Some(b) = table.get("speak_raw_values").and_then(|v| v.as_bool()) {
+            s.speak_raw_values = b;
+        }
         s.songs_dir = table.get("songs_dir").and_then(path_of);
         s.mods_dir = table.get("mods_dir").and_then(path_of);
         s.last_song_dir = table.get("last_song_dir").and_then(path_of);
@@ -226,6 +235,7 @@ impl Settings {
             mods_dir: self.mods_dir.as_deref().and_then(storable),
             startup_sound: self.startup_sound,
             screen_reader: self.screen_reader.key(),
+            speak_raw_values: self.speak_raw_values,
             recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
             last_song_dir: self.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),

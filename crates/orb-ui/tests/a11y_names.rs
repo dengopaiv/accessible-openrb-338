@@ -9,8 +9,9 @@ use std::collections::HashMap;
 
 use a11y::AppTree;
 use eframe::egui::accesskit::{Action, Role, Toggled};
-use orb_ui::a11y::names;
+use orb_ui::a11y::{names, units};
 use orb_ui::layout;
+use orb_ui::screen_reader::ScreenReaderSetting;
 
 /// The role each interactive kind must have (A11Y-2).
 fn expected_role(kind: &str) -> Role {
@@ -70,9 +71,19 @@ fn every_interactive_part_has_a_name_a_role_and_a_value() {
     assert_eq!(checked, 244, "interactive parts in layout.tsv");
 }
 
+/// The app with screen reader mode set to `mode` (not the system's answer), settled.
+fn app_in(mode: ScreenReaderSetting, raw: bool) -> AppTree {
+    let mut h = AppTree::new();
+    h.app.settings.screen_reader = mode;
+    h.app.settings.speak_raw_values = raw;
+    h.frame(vec![]);
+    h.frame(vec![]);
+    h
+}
+
 #[test]
 fn some_nodes_read_as_expected() {
-    let h = AppTree::new();
+    let h = app_in(ScreenReaderSetting::Off, false);
     let t = h.tree();
     let cutoff = t.by_layout("knob", "tb303_1.cutoff").unwrap();
     assert_eq!(a11y::name(cutoff), Some("Cutoff"));
@@ -83,7 +94,7 @@ fn some_nodes_read_as_expected() {
     let pan = t.by_layout("knob", "mixer2.pan").unwrap();
     assert_eq!(a11y::name(pan), Some("Channel 2 pan"));
     let v = h.app.panel.value("mixer2.pan").unwrap();
-    let words = names::control_value_text("mixer2.pan", v);
+    let words = names::control_value_text(&h.app.panel, "mixer2.pan", v, names::Speech::Plain);
     assert_eq!(a11y::value(pan), Some(words.as_str()));
 
     let mode = t.by_layout("switch", "transport.mode").unwrap();
@@ -110,9 +121,90 @@ fn some_nodes_read_as_expected() {
     );
 }
 
+/// Task-192: in screen reader mode every knob and fader speaks its unit, with the number after
+/// it when "Speak raw values" is on; with the mode off the number alone, as before.
+#[test]
+fn knobs_and_faders_speak_their_units_in_screen_reader_mode() {
+    let knobs: Vec<_> = layout::controls()
+        .into_iter()
+        .filter(|c| c.kind == "knob" || c.kind == "fader")
+        .collect();
+    assert_eq!(knobs.len(), 86);
+    for (mode, raw) in [
+        (ScreenReaderSetting::On, false),
+        (ScreenReaderSetting::On, true),
+        (ScreenReaderSetting::Off, false),
+        (ScreenReaderSetting::Off, true),
+    ] {
+        let h = app_in(mode, raw);
+        let t = h.tree();
+        for c in &knobs {
+            let n = t.by_layout(&c.kind, &c.id).unwrap();
+            let v = h.app.panel.value(&c.id).unwrap();
+            let ctx = names::units_context(&h.app.panel, &c.id);
+            let unit = units::text(&c.id, v, &ctx).unwrap();
+            let want = match (mode, raw) {
+                (ScreenReaderSetting::On, false) => unit,
+                (ScreenReaderSetting::On, true) => format!("{unit}, {v}"),
+                // task-186's text
+                _ if c.id.ends_with(".pan") => {
+                    let d = i32::from(v) - 64;
+                    match d {
+                        0 => "center".to_string(),
+                        d if d < 0 => format!("left {}", -d),
+                        d => format!("right {d}"),
+                    }
+                }
+                _ => v.to_string(),
+            };
+            assert_eq!(
+                a11y::value(n),
+                Some(want.as_str()),
+                "{} {mode:?} {raw}",
+                c.id
+            );
+            assert_eq!(a11y::numeric_value(n), Some(f64::from(v)), "{}", c.id);
+        }
+    }
+}
+
+#[test]
+fn the_unit_follows_the_controls_it_depends_on() {
+    let mut h = app_in(ScreenReaderSetting::On, false);
+    h.app.panel.set_knob("tb303_1.cutoff", 500);
+    h.app.panel.set_knob("tb303_1.reso", 0);
+    let id = a11y::hit_id("knob", "tb303_1.cutoff");
+    let low = a11y::value(h.frame(vec![]).by_id(id).unwrap())
+        .unwrap()
+        .to_string();
+    h.app.panel.set_knob("tb303_1.reso", 1000);
+    let high = a11y::value(h.frame(vec![]).by_id(id).unwrap())
+        .unwrap()
+        .to_string();
+    let v = h.app.panel.value("tb303_1.cutoff").unwrap();
+    assert_ne!(low, high, "the resonance moves the 303's pole frequency");
+    assert!(
+        low.ends_with("hertz") && high.ends_with("hertz"),
+        "{low} / {high}"
+    );
+    assert_eq!(
+        low,
+        names::control_value_text(
+            &{
+                let mut p = h.app.panel.clone();
+                p.set_knob("tb303_1.reso", 0);
+                p
+            },
+            "tb303_1.cutoff",
+            v,
+            names::Speech::Units
+        )
+    );
+}
+
 #[test]
 fn the_nodes_follow_the_panel() {
-    let mut h = AppTree::new();
+    let mut h = app_in(ScreenReaderSetting::Off, false);
     let id = a11y::hit_id("toggle", "transport.loop");
     let before = h.app.panel.transport.looping;
     assert_eq!(

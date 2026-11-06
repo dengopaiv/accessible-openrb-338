@@ -5,12 +5,13 @@
 //! The names follow the original's manual as docs/ui_spec.md sections 3 to 9 give them, spelled
 //! out for speech ("Bass drum level", not "BD level"; "C sharp", not "C#"). A machine's pattern
 //! section and its mixer channel belong to the machine's spoken section (decision A11Y-D3,
-//! task-179). Knobs and faders read the 0..127 value the original stores until task-192 gives
-//! them their units (decision A11Y-D5, task-181): that is [`control_value_text`], the one
-//! function to extend.
+//! task-179). Knobs and faders read their physical units in screen reader mode (task-192,
+//! decision A11Y-D5, [`units`]; [`Speech`]), and the 0..127 value the original stores with the
+//! mode off.
 
 use eframe::egui::accesskit::Role;
 
+use super::units;
 use crate::layout::Ctl;
 use crate::model::Panel;
 
@@ -284,10 +285,22 @@ pub fn table_keys() -> impl Iterator<Item = &'static str> {
     NAMES.iter().map(|(k, _)| *k)
 }
 
-/// The value text of a knob or fader whose stored value is `v` (0..127). The 0..127 number,
-/// and pan in words ("center", "left 20", "right 20"; the knob's middle sends 64). Task-192
-/// (A11Y-14) extends this function with the physical units derived from the engine.
-pub fn control_value_text(id: &str, v: u8) -> String {
+/// How knobs and faders speak their value (task-192, decision A11Y-D5).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Speech {
+    /// Screen reader mode off: the 0..127 number, pan in words (task-186's text).
+    #[default]
+    Plain,
+    /// Screen reader mode: the physical unit derived from the engine ("1.24 kilohertz").
+    Units,
+    /// Screen reader mode with the setting "Speak raw values": the unit, then the 0..127
+    /// number ("1.24 kilohertz, 64").
+    UnitsAndRaw,
+}
+
+/// The value text of a knob or fader without units: the 0..127 number, and pan in words
+/// ("center", "left 20", "right 20"; the knob's middle sends 64).
+fn plain_value_text(id: &str, v: u8) -> String {
     if id.ends_with(".pan") {
         let d = i32::from(v) - 64;
         return match d {
@@ -297,6 +310,33 @@ pub fn control_value_text(id: &str, v: u8) -> String {
         };
     }
     v.to_string()
+}
+
+/// The other values the unit of `id` depends on, from the panel: the resonance of the 303 the
+/// knob belongs to, the sound model, the PCF's Q, the compressor's threshold, the tempo.
+pub fn units_context(panel: &Panel, id: &str) -> units::Context {
+    let d = units::Context::default();
+    let sec = id.split_once('.').map_or(id, |(s, _)| s);
+    units::Context {
+        reso: panel.value(&format!("{sec}.reso")).unwrap_or(d.reso),
+        vintage: panel.vintage,
+        pcf_q: panel.value("pcf.q").unwrap_or(d.pcf_q),
+        comp_threshold: panel.value("comp.threshold").unwrap_or(d.comp_threshold),
+        tempo: panel.transport.tempo,
+    }
+}
+
+/// The value text of the knob or fader `id` at the value `v` (0..127), spoken as `speech` says
+/// (the caller passes the app's style, `a11y::speech`): the 0..127 number with screen reader
+/// mode off, else the physical unit (task-192, [`units`]) with the other controls it depends on
+/// read from the panel ([`units_context`]). The one way to a knob's or fader's text.
+pub fn control_value_text(panel: &Panel, id: &str, v: u8, speech: Speech) -> String {
+    let unit = || units::text(id, v, &units_context(panel, id));
+    match (speech, unit()) {
+        (Speech::Units, Some(u)) => u,
+        (Speech::UnitsAndRaw, Some(u)) => format!("{u}, {v}"),
+        _ => plain_value_text(id, v),
+    }
 }
 
 /// The words of a two-position switch's positions 0 and 1 (the position it draws,
@@ -334,11 +374,16 @@ pub fn display_text(id: &str, shown: Option<i32>) -> String {
 }
 
 /// The value text of a part in the panel's state, by its kind: knobs and faders
-/// ([`control_value_text`]), switches (their words), displays (with their units). None for the
-/// kinds whose state is a toggled state or nothing.
-pub fn value_text(panel: &Panel, c: &Ctl) -> Option<String> {
+/// ([`control_value_text`], spoken as `speech` says), switches (their words), displays (with
+/// their units). None for the kinds whose state is a toggled state or nothing.
+pub fn value_text(panel: &Panel, c: &Ctl, speech: Speech) -> Option<String> {
     match c.kind.as_str() {
-        "knob" | "fader" => Some(control_value_text(&c.id, panel.value(&c.id)?)),
+        "knob" | "fader" => Some(control_value_text(
+            panel,
+            &c.id,
+            panel.value(&c.id)?,
+            speech,
+        )),
         "switch" | "hswitch" | "vswitch" => {
             Some(switch_words(&c.id)[usize::from(panel.switch_position(&c.id).min(1))].into())
         }
@@ -431,10 +476,44 @@ mod tests {
 
     #[test]
     fn value_texts() {
-        assert_eq!(control_value_text("tb303_1.cutoff", 100), "100");
-        assert_eq!(control_value_text("mixer1.pan", 64), "center");
-        assert_eq!(control_value_text("mixer1.pan", 44), "left 20");
-        assert_eq!(control_value_text("delay.pan", 127), "right 63");
+        assert_eq!(plain_value_text("tb303_1.cutoff", 100), "100");
+        assert_eq!(plain_value_text("mixer1.pan", 64), "center");
+        assert_eq!(plain_value_text("mixer1.pan", 44), "left 20");
+        assert_eq!(plain_value_text("delay.pan", 127), "right 63");
+        let p = Panel::demo();
+        let units = |id: &str, v: u8| control_value_text(&p, id, v, Speech::Units);
+        assert_eq!(units("mixer1.pan", 44), "left 31");
+        assert_eq!(units("tr808.bd_level", 0), "silent");
+        assert_eq!(units("mixer1.level", 127), "0 decibels");
+        assert_eq!(
+            control_value_text(&p, "mixer1.pan", 44, Speech::Plain),
+            "left 20"
+        );
+        let v = p.value("tb303_1.cutoff").unwrap();
+        let unit = units("tb303_1.cutoff", v);
+        assert!(unit.ends_with("hertz"), "{unit}");
+        assert_eq!(
+            control_value_text(&p, "tb303_1.cutoff", v, Speech::UnitsAndRaw),
+            format!("{unit}, {v}")
+        );
+        assert_eq!(
+            control_value_text(&p, "tb303_1.cutoff", v, Speech::Plain),
+            v.to_string()
+        );
+        // the context is the panel's: the 303's resonance moves its pole frequency
+        let mut q = p.clone();
+        q.set_knob(
+            "tb303_1.reso",
+            if p.knob("tb303_1.reso") > 500 {
+                0
+            } else {
+                1000
+            },
+        );
+        assert_ne!(
+            control_value_text(&q, "tb303_1.cutoff", v, Speech::Units),
+            unit
+        );
         assert_eq!(switch_words("transport.mode"), ["pattern", "song"]);
         assert_eq!(switch_words("pcf.mode"), ["band pass", "low pass"]);
         assert_eq!(switch_words("tb303_2.wave"), ["sawtooth", "square"]);
@@ -451,7 +530,7 @@ mod tests {
     fn the_panel_values() {
         let p = Panel::demo();
         for c in layout::controls() {
-            let v = value_text(&p, &c);
+            let v = value_text(&p, &c, Speech::Units);
             let valued = matches!(
                 c.kind.as_str(),
                 "knob" | "fader" | "switch" | "hswitch" | "vswitch" | "display"

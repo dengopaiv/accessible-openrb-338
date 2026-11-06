@@ -289,11 +289,23 @@ impl App {
     }
 
     /// Whether screen reader mode is on: the setting is `on`, or `auto` and the system reported
-    /// a screen reader at the last check (task-185). Nothing reads it yet; later tasks do.
+    /// a screen reader at the last check (task-185). [`App::speech`] reads it (task-192).
     pub fn screen_reader_mode(&self) -> bool {
         self.settings
             .screen_reader
             .active(self.system_screen_reader)
+    }
+
+    /// How knobs and faders speak their value (task-192): in their units in screen reader mode,
+    /// with the 0..127 number too when the setting "Speak raw values" is on; the number alone
+    /// with the mode off.
+    pub fn speech(&self) -> crate::a11y::names::Speech {
+        use crate::a11y::names::Speech;
+        match (self.screen_reader_mode(), self.settings.speak_raw_values) {
+            (false, _) => Speech::Plain,
+            (true, false) => Speech::Units,
+            (true, true) => Speech::UnitsAndRaw,
+        }
     }
 
     /// Asks the system again whether a screen reader runs, when the window has just regained
@@ -728,6 +740,7 @@ impl App {
         if ui.ctx().options(|o| o.theme_preference) != egui::ThemePreference::Dark {
             ui.ctx().set_theme(egui::ThemePreference::Dark);
         }
+        crate::a11y::set_speech(ui.ctx(), self.speech());
         let mut avail = ui.ctx().content_rect();
         ui.painter().rect_filled(avail, 0.0, BG);
         if self.menu {

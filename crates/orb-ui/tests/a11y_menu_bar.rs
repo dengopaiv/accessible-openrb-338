@@ -140,6 +140,36 @@ fn a_lone_alt_focuses_file_and_alt_with_a_key_does_not() {
     assert_ne!(focus(&h), (Role::Button, "File".to_string()));
 }
 
+/// Options with the Options menu open, screen reader mode set to `mode`.
+fn options_open(mode: orb_ui::screen_reader::ScreenReaderSetting) -> AppTree {
+    let mut h = AppTree::new();
+    h.app.settings.screen_reader = mode;
+    h.frame(vec![]);
+    h.key(Key::F10);
+    h.key(Key::ArrowRight);
+    h.key(Key::ArrowRight);
+    assert_eq!(focus(&h), (Role::Button, "Options".to_string()));
+    open_with_down(&mut h);
+    h
+}
+
+/// Task-192: "Speak Raw Values" is an Options item in screen reader mode only.
+#[test]
+fn speak_raw_values_shows_in_screen_reader_mode_only() {
+    use orb_ui::screen_reader::ScreenReaderSetting;
+    let h = options_open(ScreenReaderSetting::Off);
+    assert!(h.tree().by_name("Speak Raw Values").next().is_none());
+    let h = options_open(ScreenReaderSetting::On);
+    let n = h
+        .tree()
+        .by_name("Speak Raw Values")
+        .next()
+        .expect("the checkbox in screen reader mode")
+        .1;
+    assert_eq!(a11y::role(n), Role::CheckBox);
+    assert_eq!(a11y::toggled(n), Some(Toggled::False));
+}
+
 #[test]
 fn the_options_items_read_their_state() {
     let mut h = AppTree::new();
