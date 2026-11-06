@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-05T19:32:00Z'
-updated_date: '2026-11-06T23:19:00Z'
+updated_date: '2026-11-06T23:20:00Z'
 labels:
   - ui
   - tests
@@ -58,4 +58,6 @@ The user's marks so far (2026-11-07, read from their uncommitted edit of docs/ac
 - (x) 8 the 303 step editor (AC #7). Found along the way: a pitch key leaves a rest a rest, as in the original; the user asked for an option, TASK-211.
 - (x) 9 the drum grids (AC #8).
 - 10 to 22 not yet tried.
+
+Item 4 (tempo with Up / Down, Page Up / Page Down): works (the user, 2026-11-07, "Tempo works."); the empty mark meant not yet marked.
 <!-- SECTION:NOTES:END -->
