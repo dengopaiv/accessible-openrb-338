@@ -219,7 +219,13 @@ section 20.2).
   the instrument (`Panel::select_instrument`), Left and Right the step, Space sets or cycles
   the step as a click does (`set_step808`; `step909_new_value` and `set_step909`, with Ctrl
   and Alt as on the 909's mouse). Each cell reads "Bass drum, step 5, on", and on the 909 also
-  "accent" or "flam".
+  "accent" or "flam". Done in task-191 (docs/ui_spec.md section 20.6): the Grid node is a
+  focusable child `Ui` of the machine's section whose `active_descendant` is the cell under
+  the cursor, so the screen reader speaks each cell as the focus; Alt+Space also opens the
+  window's system menu on Windows (TASK-208, the user's decision). As the step editor, a grid
+  edits its own pattern (`Panel::drum_pin`): playback moving the row to another pattern never
+  changes the grid without input, and the same setting makes it move along, silently, at the
+  next input (decision task-209).
 - LEDs, meters and the running light: not in the Tab order. Their state is read on request
   (3.4).
 - The mod picture: its name is read with the song's information.
@@ -256,8 +262,8 @@ or by the original's key map, so all twelve were free.
 - Help > Keyboard Shortcuts lists all of the above when the mode is on.
 
 Done in task-188 (docs/ui_spec.md section 10, "Screen reader mode") and task-189 (F2 to F4,
-docs/ui_spec.md section 20.3); Up / Down on the 303 step editor in task-190 (section 20.5),
-on the drum grids pending (task-191).
+docs/ui_spec.md section 20.3); Up / Down on the 303 step editor in task-190 (section 20.5);
+Left / Right and Space on the drum grids in task-191 (section 20.6).
 
 ### 3.5 Announcements
 
@@ -573,6 +579,31 @@ the focus, as after task-188.
 The nine Groups are the sections (docs/ui_spec.md 20.2), each before its controls in the tree.
 The tree lists the controls in the drawing order; the Tab order of the mode is the sections'
 (20.2).
+
+Output after task-191 (A11Y-7: the drum grids; 2026-11-06), `-ScreenReader on`:
+
+```text
+window: 'OpenRB-338 - Untitled'
+elements: 593
+by type, named:
+   384  DataItem, True
+    86  Slider, True
+    62  Button, True
+    23  CheckBox, True
+    14  Spinner, True
+     9  Group, True
+     9  RadioButton, True
+     2  DataGrid, True
+     2  Text, True
+     1  Menu, False
+     1  Pane, False
+can take the focus: 196, of them with a name: 196
+```
+
+The two DataGrids are the drum grids ("Steps", focusable) and the 384 DataItems their cells (2
+x 12 instruments x 16 steps, named "Bass drum, step 1, off", not focusable themselves: the
+grid's active descendant is reported as the focus; docs/ui_spec.md 20.6). With the mode off
+there are no grids and the tree is as before.
 
 ### 6.4 NVDA and this program, for developers who do not use it
 

@@ -293,20 +293,20 @@ pub fn read_303_pattern(panel: &Panel, r: usize) -> Option<String> {
     })
 }
 
-/// What `App` keeps the pin of 303 `k` at, each frame in screen reader mode before the
-/// frame's input acts (task-190, [`Synth303::pin`](crate::model::Synth303::pin)). Only a frame
-/// with input (`input`) sets it, to the row's pattern: when there is none yet, and when the
-/// editor follows playback (`follows`, the setting; the move is then not spoken by itself, the
-/// input's own change goes with it). A frame without input leaves it as it is, `None`
-/// included: a song just loaded (a new `Panel`, no pin) is on the row's pattern until the
-/// first input, so the editor takes the pattern the engine reports for the song, not the one
-/// the panel had before that report.
-pub fn pin_of(panel: &Panel, k: usize, follows: bool, input: bool) -> Option<u8> {
-    let pin = panel.synth[k].pin;
+/// What `App` keeps the pin of row `r` at, each frame in screen reader mode before the
+/// frame's input acts ([`Panel::pin`]: a 303's step editor, task-190, or a drum grid,
+/// task-191). Only a frame with input (`input`) sets it, to the row's pattern: when there is
+/// none yet, and when the editor follows playback (`follows`, the setting; the move is then not
+/// spoken by itself, the input's own change goes with it). A frame without input leaves it as
+/// it is, `None` included: a song just loaded (a new `Panel`, no pin) is on the row's pattern
+/// until the first input, so the editor takes the pattern the engine reports for the song, not
+/// the one the panel had before that report.
+pub fn pin_of(panel: &Panel, r: usize, follows: bool, input: bool) -> Option<u8> {
+    let pin = panel.pin(r);
     match pin {
         Some(_) if !(input && follows) => pin,
         None if !input => None,
-        _ => Some(panel.rows[k].pattern),
+        _ => Some(panel.rows[r].pattern),
     }
 }
 

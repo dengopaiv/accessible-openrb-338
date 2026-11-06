@@ -324,7 +324,9 @@ fn screen_reader_group() -> Group {
             ),
             sr_row(
                 "Space",
-                "Press or toggle the focused button, toggle or switch (not Play / Stop)",
+                "Press or toggle the focused button, toggle or switch (not Play / Stop). On a \
+                 drum grid: set the step as a click does; on the TR-909 with Ctrl, Alt or \
+                 Ctrl+Alt as the mouse's (a note, an accent, a flam)",
                 vec![sr(Key::Space, Any, SrWant::Activate)],
             ),
             sr_row(
@@ -340,7 +342,8 @@ fn screen_reader_group() -> Group {
                  arrow. On a pattern selector: the next / previous pattern. On a 303's step \
                  editor: the previous / next step (its Back / Step, wrapping at 16); Home / \
                  End step 1 / the pattern's last step. The step a programming key changed is \
-                 spoken; F2 reads the whole pattern",
+                 spoken; F2 reads the whole pattern. On a drum grid: the instrument before / \
+                 after",
                 value_keys[..2]
                     .iter()
                     .map(|&k| sr(k, Any, SrWant::Nothing))
@@ -359,7 +362,8 @@ fn screen_reader_group() -> Group {
                 "Home / End",
                 "On a knob or fader: 0 / 127. On a pattern selector: A1 / D8. On the pattern \
                  length, delay steps and PCF pattern: the end of the range; nothing on \
-                 tempo, bar, loop start and loop length",
+                 tempo, bar, loop start and loop length. On a drum grid: the first / last \
+                 step",
                 value_keys[4..]
                     .iter()
                     .map(|&k| sr(k, Any, SrWant::Nothing))
@@ -367,7 +371,8 @@ fn screen_reader_group() -> Group {
             ),
             sr_row(
                 "Left / Right",
-                "Nothing on a 303's step editor (Up / Down move its step)",
+                "On a drum grid: the step before / after, within the pattern's length. \
+                 Nothing on a 303's step editor (Up / Down move its step)",
                 [Key::ArrowLeft, Key::ArrowRight]
                     .iter()
                     .map(|&k| sr(k, Any, SrWant::Nothing))

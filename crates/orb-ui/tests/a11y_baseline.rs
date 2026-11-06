@@ -98,9 +98,13 @@ fn the_tree_today() {
 /// |---|---|---|---|---|
 /// | task-188 (sections) | 212 | 205 | 9 | 194 |
 /// | task-190 (the 303 step editors) | 212 | 205 | 9 | 196 |
+/// | task-191 (drum grids) | 598 | 591 | 9 | 198 |
 ///
 /// Task-190: the two 303s' edit step labels are the focusable step editors (Slider, named
 /// "Step editor", the step as the value) in this mode, so 2 more take the focus.
+///
+/// Task-191: the two drum grids (role Grid, named "Steps", focusable) and their cells (role
+/// GridCell, named, not focusable): 12 instruments by 16 steps each at the default length.
 #[test]
 fn the_tree_in_screen_reader_mode() {
     let mut h = AppTree::new();
@@ -117,12 +121,16 @@ fn the_tree_in_screen_reader_mode() {
         t.len(),
         t.named().len()
     );
-    assert_eq!(t.len(), BASELINE_NODES + 9, "node count");
-    assert_eq!(t.named().len(), BASELINE_NAMED + 9, "named nodes");
+    // the sections, the 2 grids and their 2 x 12 x 16 cells
+    let grids = 2 + 2 * 12 * 16;
+    assert_eq!(t.len(), BASELINE_NODES + 9 + grids, "node count");
+    assert_eq!(t.named().len(), BASELINE_NAMED + 9 + grids, "named nodes");
     assert_eq!(groups, 9, "the sections");
+    assert_eq!(t.by_role(Role::Grid).count(), 2, "the drum grids");
+    assert_eq!(t.by_role(Role::GridCell).count(), 2 * 12 * 16, "the cells");
     assert_eq!(
         focusable,
-        BASELINE_FOCUSABLE + 2,
-        "nodes that can take the focus: the two step editors too"
+        BASELINE_FOCUSABLE + 4,
+        "nodes that can take the focus: the two step editors and the two grids too"
     );
 }

@@ -23,13 +23,19 @@ pub enum Event {
     Press { id: String },
     /// A pattern button selected `pattern` (0..=31) in row `row` (0..=3).
     Pattern { row: usize, pattern: u8 },
+    /// A TR-808 step of `pattern` (0..=31) set or cleared. The pattern is the one the step
+    /// strip shows ([`Panel::edit_pattern`]): the row's, or in screen reader mode the drum
+    /// grid's pin (task-191); a tap's is the row's.
     Step808 {
         instrument: usize,
+        pattern: u8,
         step: usize,
         on: bool,
     },
+    /// A TR-909 step of `pattern` (0..=31) took `value`; the pattern as for `Step808`.
     Step909 {
         instrument: usize,
+        pattern: u8,
         step: usize,
         value: u8,
     },
@@ -273,8 +279,15 @@ pub struct Panel {
     /// The selected instruments (0 = AC) of the two drum machines.
     pub inst808: usize,
     pub inst909: usize,
+    /// The steps of the pattern the 808's and the 909's step strips show
+    /// ([`Panel::edit_pattern`] of rows 2 and 3), filled by `Link`.
     pub steps808: [[bool; 16]; 12],
     pub steps909: [[u8; 16]; 12],
+    /// The pattern the 808's (0) and the 909's (1) step strip show and edit when it is not
+    /// the row's (task-191, screen reader mode only; `App` sets it): the drum grid stays on it
+    /// while playback moves the row to other patterns, as a 303's [`Synth303::pin`]. `None`
+    /// (always with the mode off): the row's pattern, as the original.
+    pub drum_pin: [Option<u8>; 2],
     /// The playing step (the running light), from the engine; `None` when stopped.
     pub playing_step808: Option<usize>,
     pub playing_step909: Option<usize>,
@@ -329,6 +342,7 @@ impl Panel {
             inst909: 1,
             steps808: [[false; 16]; 12],
             steps909: [[0; 16]; 12],
+            drum_pin: [None; 2],
             playing_step808: None,
             playing_step909: None,
             playing_step303: [None; 2],
@@ -745,8 +759,9 @@ impl Panel {
             let row = &mut self.rows[r];
             row.pattern = (b - 1) + 8 * row.bank;
             let pattern = row.pattern;
-            // the pattern the user chose is the one a 303's step editor edits (task-190)
-            if let Some(pin) = self.synth.get_mut(r).and_then(|s| s.pin.as_mut()) {
+            // the pattern the user chose is the one a 303's step editor (task-190) or a drum
+            // grid (task-191) edits
+            if let Some(pin) = self.pin_mut(r).as_mut() {
                 *pin = pattern;
             }
             self.focus = r;
@@ -767,10 +782,28 @@ impl Panel {
         }
     }
 
-    /// The pattern the programming buttons of 303 `k` edit: its pin in screen reader mode
-    /// (task-190, [`Synth303::pin`]), else the row's.
-    pub fn edit_pattern(&self, k: usize) -> u8 {
-        self.synth[k].pin.unwrap_or(self.rows[k].pattern)
+    /// The pin of row `r` (0..=3): a 303's [`Synth303::pin`] (task-190) or a drum machine's
+    /// [`Panel::drum_pin`] (task-191). Always `None` with screen reader mode off.
+    pub fn pin(&self, r: usize) -> Option<u8> {
+        match r {
+            0 | 1 => self.synth[r].pin,
+            _ => self.drum_pin[r - 2],
+        }
+    }
+
+    /// The pin of row `r` (0..=3), to change.
+    pub fn pin_mut(&mut self, r: usize) -> &mut Option<u8> {
+        match r {
+            0 | 1 => &mut self.synth[r].pin,
+            _ => &mut self.drum_pin[r - 2],
+        }
+    }
+
+    /// The pattern row `r` edits: for a 303 (0, 1) what its programming buttons edit, for a
+    /// drum machine (2, 3) what its step strip shows and edits. Its pin in screen reader mode
+    /// ([`Panel::pin`]), else the row's.
+    pub fn edit_pattern(&self, r: usize) -> u8 {
+        self.pin(r).unwrap_or(self.rows[r].pattern)
     }
 
     fn press_303(&mut self, k: usize, name: &str, now: f64) {
@@ -919,11 +952,13 @@ impl Panel {
         self.put_step808(self.inst808, step, on);
     }
 
+    /// Sets a TR-808 step of the pattern the strip shows ([`Panel::edit_pattern`]).
     fn put_step808(&mut self, i: usize, step: usize, on: bool) {
         if self.steps808[i][step] != on {
             self.steps808[i][step] = on;
             self.emit(Event::Step808 {
                 instrument: i,
+                pattern: self.edit_pattern(2),
                 step,
                 on,
             });
@@ -935,13 +970,16 @@ impl Panel {
         self.put_step909(self.inst909, step, value);
     }
 
+    /// Sets a TR-909 step of the pattern the strip shows ([`Panel::edit_pattern`]).
     fn put_step909(&mut self, i: usize, step: usize, value: u8) {
         if self.steps909[i][step] == value {
             return;
         }
+        let pattern = self.edit_pattern(3);
         self.steps909[i][step] = value;
         self.emit(Event::Step909 {
             instrument: i,
+            pattern,
             step,
             value,
         });
@@ -951,6 +989,7 @@ impl Panel {
                 self.steps909[other][step] = 0;
                 self.emit(Event::Step909 {
                     instrument: other,
+                    pattern,
                     step,
                     value: 0,
                 });
@@ -1006,6 +1045,41 @@ impl Panel {
     /// step that is playing (the 909 with value 1, the AC row with 2), whatever the selected
     /// instrument is. Nothing when the machine does not play.
     pub fn tap_drum(&mut self, is808: bool, i: usize) {
+        let r = if is808 { 2 } else { 3 };
+        let playing = self.rows[r].pattern;
+        if self.pin(r).is_some_and(|p| p != playing) {
+            // Screen reader mode, the strip on another pattern than the one playing (task-191):
+            // the tap still goes to the playing pattern, whose steps the panel does not hold, so
+            // the step is sent as set (and on the 909 the other hi-hat as cleared) whatever it
+            // was; the strip does not change.
+            if is808 {
+                if let Some(step) = self.playing_step808 {
+                    self.emit(Event::Step808 {
+                        instrument: i,
+                        pattern: playing,
+                        step,
+                        on: true,
+                    });
+                }
+            } else if let Some(step) = self.playing_step909 {
+                let value = if i == 0 { 2 } else { 1 };
+                self.emit(Event::Step909 {
+                    instrument: i,
+                    pattern: playing,
+                    step,
+                    value,
+                });
+                if i == 8 || i == 9 {
+                    self.emit(Event::Step909 {
+                        instrument: 17 - i,
+                        pattern: playing,
+                        step,
+                        value: 0,
+                    });
+                }
+            }
+            return;
+        }
         if is808 {
             if let Some(step) = self.playing_step808 {
                 self.put_step808(i, step, true);

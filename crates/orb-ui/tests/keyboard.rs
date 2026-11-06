@@ -270,6 +270,7 @@ fn minus_and_equals_by_position_whatever_the_layout() {
         h.events(),
         vec![Out::Step909 {
             instrument: 0,
+            pattern: 0,
             step: 4,
             value: 2
         }],
@@ -313,6 +314,7 @@ fn the_drum_tap_keys_set_instruments_on_the_playing_step() {
     h.key(Key::Minus);
     let on = |instrument| Out::Step808 {
         instrument,
+        pattern: 0,
         step: 5,
         on: true,
     };
@@ -326,6 +328,7 @@ fn the_drum_tap_keys_set_instruments_on_the_playing_step() {
         h.events(),
         vec![Out::Step909 {
             instrument: 1,
+            pattern: 0,
             step: 0,
             value: 1
         }]

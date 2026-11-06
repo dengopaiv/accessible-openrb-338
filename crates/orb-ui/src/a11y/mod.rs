@@ -8,6 +8,7 @@
 
 pub mod announce;
 pub mod drive;
+pub mod grid;
 pub mod names;
 pub mod nav;
 pub mod step303;

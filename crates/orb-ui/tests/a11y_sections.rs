@@ -106,6 +106,9 @@ fn stop_name(id: Id) -> String {
     if (0..2).any(|k| orb_ui::a11y::step303::editor_id(k) == id) {
         return orb_ui::a11y::step303::EDITOR_NAME.into();
     }
+    if orb_ui::a11y::grid::machine_of(id).is_some() {
+        return "Steps".into();
+    }
     let c = layout::controls()
         .into_iter()
         .find(|c| nav::focusable(c) && orb_ui::a11y::hit_id(c) == id)
@@ -192,11 +195,9 @@ fn f6_visits_the_sections_in_order_and_wraps() {
 fn tab_visits_the_controls_of_the_panel_in_section_order() {
     let mut a = app(true, true);
     let order = nav::order(&layout::controls());
-    assert_eq!(
-        order.len(),
-        192,
-        "the panel's focusable controls (the 303 step editors since task-190)"
-    );
+    // 186 controls, 4 pattern selectors, the 2 303 step editors (task-190), the 2 drum grids
+    // (task-191)
+    assert_eq!(order.len(), 194, "the panel's focusable controls");
     let mut sections = vec![];
     for (i, stop) in order.iter().enumerate() {
         a.key(Key::Tab);

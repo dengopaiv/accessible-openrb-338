@@ -17,7 +17,7 @@ use eframe::egui::{
     emath::GuiRounding, epaint,
 };
 
-use crate::a11y::{announce, drive, nav, step303};
+use crate::a11y::{announce, drive, grid, nav, step303};
 use crate::art::{self, KnobDesign};
 use crate::behavior::{self, Mods};
 use crate::browser::{self, Browser, Mode, Poll};
@@ -257,6 +257,9 @@ pub struct App {
     /// row focus follows the section only when the focus enters another one, so Ctrl+Up and
     /// Ctrl+Down move the row without the focus undoing it (`App::follow_section`).
     nav_section: Option<usize>,
+    /// The step (0-based) of the drum grids' cursors, the 808's and the 909's (task-191,
+    /// `a11y::grid`); the row is the machine's selected instrument.
+    grid_step: [usize; 2],
     /// Screen reader mode and the windows (Keyboard Shortcuts, File > Info, Help > About,
     /// Mods > Info; `App::window_focus`): which were open at the last frame (a bit per
     /// [`Win::ALL`]), the window that opened last and the frames it has been waiting for the
@@ -341,6 +344,7 @@ impl App {
             ctls: layout::controls(),
             nav: nav::order(&layout::controls()),
             nav_section: None,
+            grid_step: [0; 2],
             windows_open: 0,
             window_new: None,
             window_focus_due: None,
@@ -828,8 +832,9 @@ impl App {
         let now = ui.input(|i| i.time);
         self.panel.held = None;
         let screen_reader = self.screen_reader_mode();
-        // the patterns the 303 step editors edit, before this frame's input acts (task-190)
-        self.pin_303(ui, screen_reader);
+        // the patterns the 303 step editors (task-190) and the drum grids (task-191) edit,
+        // before this frame's input acts
+        self.pin_patterns(ui, screen_reader);
         if screen_reader {
             self.follow_section(ui);
             self.window_focus(ui);
@@ -917,6 +922,12 @@ impl App {
                 None => &mut *ui,
             };
             self.control(target, &view, c, now);
+        }
+        // the drum grids, in their machines' sections (task-191)
+        for (is808, s) in [(true, 3), (false, 4)] {
+            if let Some(g) = groups.get_mut(s) {
+                self.drum_grid(g, &view, &ctls, is808);
+            }
         }
         drop(groups);
         self.ctls = ctls;
@@ -1038,6 +1049,12 @@ impl App {
             // Screen reader mode, the focus on a 303's step editor: Up, Down, Home and End move
             // its edit step, auto-repeat included; Left and Right do nothing (task-190).
             if !modifiers.any() && screen_reader && self.step_editor_key(ui, key, now) {
+                continue;
+            }
+            // Screen reader mode, the focus on a drum grid: the arrows, Home, End and Space
+            // (with Ctrl and Alt) are the grid's (task-191), before the value keys and the key
+            // map.
+            if screen_reader && self.grid_key(ui, key, modifiers, repeat) {
                 continue;
             }
             // Screen reader mode: Up, Down, Page Up, Page Down, Home and End change the focused
@@ -1408,12 +1425,17 @@ impl App {
         }
     }
 
-    /// Keeps the pattern each 303's step editor edits (task-190, `Synth303::pin`): none with the
-    /// mode off (the row's, as the original); in screen reader mode [`step303::pin_of`], so
-    /// that playback moving a row to another pattern never changes the editor without input
-    /// ("move-along doesn't speak", decision task-209). The frame's input is a key or mouse
-    /// button press or an accessibility action.
-    fn pin_303(&mut self, ui: &Ui, screen_reader: bool) {
+    /// Keeps the pattern each 303's step editor (task-190, `Synth303::pin`) and each drum grid
+    /// (task-191, `Panel::drum_pin`) edits: none with the mode off (the row's, as the
+    /// original); in screen reader mode [`step303::pin_of`], so that playback moving a row to
+    /// another pattern never changes an editor or a grid without input ("move-along doesn't
+    /// speak", decision task-209). The frame's input is a key or mouse button press or an
+    /// accessibility action. When a drum pin changes here, the link fills the step strip with
+    /// its pattern at once, before the frame's input reads it (`Link::show_patterns`). A pattern
+    /// chosen on the panel during the frame (`Panel::press` moves the pin) shows at the frame's
+    /// end (`Link::sync`), as a row's pattern change always did: a step set later in that same
+    /// frame reads the strip of before, as with the mouse.
+    fn pin_patterns(&mut self, ui: &Ui, screen_reader: bool) {
         let input = ui.input(|i| {
             i.events.iter().any(|e| {
                 matches!(
@@ -1425,11 +1447,17 @@ impl App {
             })
         });
         let follows = self.settings.step_editor_follows;
-        for k in 0..2 {
+        let drums = self.panel.drum_pin;
+        for r in 0..4 {
             let pin = screen_reader
-                .then(|| step303::pin_of(&self.panel, k, follows, input))
+                .then(|| step303::pin_of(&self.panel, r, follows, input))
                 .flatten();
-            self.panel.synth[k].pin = pin;
+            *self.panel.pin_mut(r) = pin;
+        }
+        if self.panel.drum_pin != drums
+            && let Some(link) = &mut self.link
+        {
+            link.show_patterns(&mut self.panel);
         }
     }
 
@@ -1916,6 +1944,71 @@ impl App {
             _ => ("sel_21x14", 236.0 + 21.0 * (i - 6) as f32, 4.0, 21.0, 14.0),
         };
         paint_part(ui, name, view.rect(o9.0 + x, o9.1 + y, w, h));
+    }
+
+    /// Screen reader mode: a drum machine's grid (task-191, `a11y::grid`) in its section's
+    /// `Ui`: a child `Ui` that takes the focus (its id is the grid's stop in the focus order)
+    /// and whose node is the Grid, with a hover-only widget per cell (12 instruments by the
+    /// pattern's length) so that the cells' nodes are its children. It senses no click: the
+    /// step strip under it keeps the mouse (`App::drum_strips`).
+    fn drum_grid(&mut self, ui: &mut Ui, view: &View, ctls: &[Ctl], is808: bool) {
+        let section = if is808 { "tr808" } else { "tr909" };
+        let steps: Vec<Rect> = (1..=16)
+            .filter_map(|n| {
+                let id = format!("{section}.step{n}");
+                let c = ctls.iter().find(|c| c.kind == "steps" && c.id == id)?;
+                Some(view.rect(c.x, c.y, c.w, c.h))
+            })
+            .collect();
+        let Some(rect) = steps.iter().copied().reduce(|a, b| a.union(b)) else {
+            return;
+        };
+        let gid = grid::grid_id(is808);
+        let g = ui.new_child(
+            egui::UiBuilder::new()
+                .scope_id(gid)
+                .max_rect(rect)
+                .sense(Sense::FOCUSABLE)
+                .accessibility_role(egui::accesskit::Role::Grid)
+                .accessibility_label("Steps"),
+        );
+        let n = grid::length(&self.panel, is808).min(steps.len());
+        let cursor = &mut self.grid_step[usize::from(!is808)];
+        *cursor = (*cursor).min(n - 1);
+        let cursor = *cursor;
+        if g.memory(|m| m.has_focus(gid)) {
+            // the arrows are the grid's (`App::grid_key`), not egui's focus moves
+            let filter = egui::EventFilter {
+                vertical_arrows: true,
+                horizontal_arrows: true,
+                ..Default::default()
+            };
+            g.memory_mut(|m| m.set_focus_lock_filter(gid, filter));
+        }
+        let ctx = g.ctx().clone();
+        grid::describe_grid(&ctx, &self.panel, is808, cursor, rect);
+        for i in 0..grid::ROWS {
+            for (s, r) in steps.iter().enumerate().take(n) {
+                g.interact(*r, grid::cell_id(is808, i, s), Sense::hover());
+                grid::describe_cell(&ctx, &self.panel, is808, (i, s), *r);
+            }
+        }
+    }
+
+    /// Screen reader mode, the focus on a drum grid: what a key does there (`a11y::grid`).
+    /// True when the key is the grid's. Space ignores auto-repeat, as the original's keys do.
+    fn grid_key(&mut self, ui: &Ui, key: Key, modifiers: egui::Modifiers, repeat: bool) -> bool {
+        let Some(is808) = ui.memory(|m| m.focused()).and_then(grid::machine_of) else {
+            return false;
+        };
+        let Some(k) = grid::GridKey::of(key, modifiers) else {
+            return false;
+        };
+        if !(repeat && matches!(k, grid::GridKey::Set(_))) {
+            let step = &mut self.grid_step[usize::from(!is808)];
+            grid::key(&mut self.panel, is808, step, k);
+        }
+        true
     }
 
     /// With `--screenshot`: after a few frames (the SVGs are loaded and rasterized) save the

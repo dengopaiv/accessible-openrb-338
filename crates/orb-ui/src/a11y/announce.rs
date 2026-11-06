@@ -16,7 +16,7 @@
 
 use eframe::egui::{self, Key, Rect, accesskit};
 
-use super::{drive, hit_id_of, names};
+use super::{drive, grid, hit_id_of, names};
 use crate::app::App;
 use crate::model::Panel;
 
@@ -319,11 +319,16 @@ impl App {
                 let r = focused
                     .and_then(focused_row)
                     .unwrap_or(self.panel.focus.min(3));
-                let row = pattern_readout(&self.panel, r);
-                // a 303's steps (task-190)
-                match super::step303::read_303_pattern(&self.panel, r) {
-                    Some(steps) => format!("{row}. {steps}"),
-                    None => row,
+                // a drum machine's steps (task-191), a 303's steps (task-190)
+                match read_drum_pattern(&self.panel, r) {
+                    Some(text) => text,
+                    None => {
+                        let row = pattern_readout(&self.panel, r);
+                        match super::step303::read_303_pattern(&self.panel, r) {
+                            Some(steps) => format!("{row}. {steps}"),
+                            None => row,
+                        }
+                    }
                 }
             }
             Key::F3 => transport_readout(&self.panel),
@@ -335,10 +340,35 @@ impl App {
     }
 }
 
+/// F2 on a drum machine's row (2 the 808, 3 the 909; task-191): the pattern row, then each
+/// instrument that has steps with its steps ([`grid::drum_readout`]): "TR-808, pattern A1, 16
+/// steps, shuffle off. Bass drum: 1, 5, 9, 13. Closed hi-hat: 3, 7, 11, 15". The steps are
+/// those of the pattern the grid edits; when playback has moved the row to another pattern
+/// (decision task-209), that is said before them: "Grid on pattern A1: Bass drum: 1". None for
+/// the 303s.
+pub fn read_drum_pattern(panel: &Panel, r: usize) -> Option<String> {
+    let is808 = match r {
+        2 => true,
+        3 => false,
+        _ => return None,
+    };
+    let steps = grid::drum_readout(panel, is808);
+    let p = panel.edit_pattern(r);
+    let steps = if p == panel.rows[r].pattern {
+        steps
+    } else {
+        format!("Grid on pattern {}: {steps}", names::pattern_text(p))
+    };
+    Some(format!("{}. {steps}", pattern_readout(panel, r)))
+}
+
 /// The row of the section whose control has egui's focus `f`.
 fn focused_row(f: egui::Id) -> Option<usize> {
     if let Some(r) = (0..4).find(|&r| drive::selector_id(r) == f) {
         return Some(r);
+    }
+    if let Some(is808) = grid::machine_of(f) {
+        return Some(grid::row_of(is808));
     }
     crate::layout::controls()
         .iter()

@@ -809,10 +809,11 @@ wait (the windows paragraph below). With the mode off nothing here applies.
 | F11 | The Loop button |
 | F12 | The mode switch (song / pattern) |
 | Tab / Shift+Tab | The next / previous control of the panel, in section order, wrapping at its ends (the menu bar is reached with F10) |
-| Space | Presses or toggles the focused button, toggle or switch: one mouse down, the path of a screen reader's Click (`App::mouse_down`); not Play/Stop; nothing on a knob, fader, spin button or pattern selector |
+| Space | Presses or toggles the focused button, toggle or switch: one mouse down, the path of a screen reader's Click (`App::mouse_down`); on a drum grid sets the step as a click does, with Ctrl, Alt and Ctrl+Alt as the 909's mouse modifiers (section 20.6); not Play/Stop; nothing on a knob, fader, spin button or pattern selector |
 | Enter | By the section of the focused control (the user's decision of 2026-11-06, task-207): in a 303's section that 303's Step (Program Synth mode), in the Transport, the drum machines' and the effect sections Play; with no panel control focused, as above by the row focus |
-| Up, Down, PgUp, PgDn, Home, End | Change the focused knob, fader, spin button or pattern selector (section 20.1), auto-repeat included; nothing on another control. Not the row focus |
-| Up, Down | On a 303's step editor (task-190, section 20.5): the previous / next edit step, the panel's Back / Step (Home / End: step 1 / the pattern's last step); Left and Right do nothing there (decision task-209). The drum grids are task-191 |
+| Up, Down, PgUp, PgDn, Home, End | Change the focused knob, fader, spin button or pattern selector (section 20.1), auto-repeat included; on a drum grid Up / Down choose the instrument and Home / End the first / last step (section 20.6); nothing on another control. Not the row focus |
+| Up, Down | On a 303's step editor (task-190, section 20.5): the previous / next edit step, the panel's Back / Step (Home / End: step 1 / the pattern's last step); Left and Right do nothing there (decision task-209) |
+| Left, Right | On a drum grid: the step before / after (section 20.6). Nothing elsewhere |
 | Ctrl+Up / Ctrl+Down | The row focus to the previous / next row, wrapping (the original's Up / Down), without moving the navigation focus |
 | Ctrl+Tab / Ctrl+Shift+Tab | The original's Tab / Shift+Tab: the playing step of the focused 303 becomes a note / a rest (Program Synth mode) |
 
@@ -1099,7 +1100,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Screen Reader Mode > Automatic, On, Off | `Settings::screen_reader` (`auto` by default, `on`, `off`; key `screen_reader` of `ui.toml`), saved at once (task-185). `App::screen_reader_mode()` is true for On, and for Automatic while the system reports a screen reader (Windows: `SystemParametersInfoW(SPI_GETSCREENREADER)`, asked at start and whenever the window regains the focus; other platforms report none yet). The knobs' and faders' units read it (task-192, section 20); the key changes come in later tasks (docs/accessibility_plan.md) |
 | Options | Speak Raw Values (shown in screen reader mode only) | `Settings::speak_raw_values` (false by default; the bool `speak_raw_values` of `ui.toml`), saved at once (task-192): a knob or fader speaks its 0..127 value after its unit ("1.24 kilohertz, 64"); section 20 |
-| Options | Step Editor Follows Playback (shown in screen reader mode only) | `Settings::step_editor_follows` (false by default; the bool `step_editor_follows` of `ui.toml`), saved at once (task-190, decision task-209): on, a 303's step editor moves to the pattern playback selects, silently, at the next input; off, it stays on the pattern the user chose; section 20.5 |
+| Options | Step Editor Follows Playback (shown in screen reader mode only) | `Settings::step_editor_follows` (false by default; the bool `step_editor_follows` of `ui.toml`), saved at once (task-190, decision task-209): on, a 303's step editor and a drum grid (task-191) move to the pattern playback selects, silently, at the next input; off, they stay on the pattern the user chose; sections 20.5 and 20.6 |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/openrb-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; below) |
@@ -1658,8 +1659,9 @@ The tree exists only while a screen reader or another UI Automation client asks 
 - **No focus** for the LEDs and meters (they have no hit area), and none for the step strips
   and the instrument selection areas of the 808 and 909 (`App::drum_strips`,
   `App::instrument_selection`): their `ui.interact` senses click and drag without
-  `FOCUSABLE`, so the mouse works as before and Tab no longer stops on six unnamed areas. The
-  drum grids become readable in task-191 (A11Y-7).
+  `FOCUSABLE`, so the mouse works as before and Tab no longer stops on six unnamed areas. In
+  screen reader mode each drum machine has a Grid node over its steps instead (task-191,
+  section 20.6).
 
 ### 20.1 What a screen reader can do with the controls (task-187)
 
@@ -1723,8 +1725,10 @@ A11Y-4 of docs/accessibility_plan.md; `crates/orb-ui/src/a11y/nav.rs`, tests
   `assets/ui/layout.tsv` (the pattern row, the machine, the mixer channel), except that a
   machine's pattern selector comes first and the transport follows docs/accessibility.md 3.2:
   Play, Stop, Record, Loop, Mode, Tempo, Shuffle amount, Bar, Loop start, Loop length, Rewind,
-  Fast forward. 192 stops: 186 controls, 4 pattern selectors and the two 303s' step editors
-  (task-190, section 20.5, after the 303's knobs). Tab and Shift+Tab move along
+  Fast forward. 194 stops: 186 controls, 4 pattern selectors, the two 303s' step editors
+  (task-190, section 20.5, after the 303's knobs) and the 2 drum grids (task-191, section
+  20.6: each at the place of its machine's step buttons in `layout.tsv`, after the machine's
+  knobs and switches, before its mixer channel). Tab and Shift+Tab move along
   it and wrap at the ends of the panel; F6 and Shift+F6 go to the first stop of the next or
   previous section (Play; the four pattern selectors; Master level; PCF on; Delay on;
   Distortion on). With nothing focused, Tab goes to the first stop, Shift+Tab to the last.
@@ -1782,8 +1786,8 @@ tests `crates/orb-ui/tests/a11y_announce.rs`.
     machine or its mixer channel), else (the focus elsewhere, in a window or nowhere) of the
     row that has the row focus: "Bass Line 1,
     pattern A1, 16 steps, shuffle off", with ", pattern section off" when the row's power
-    switch is off. On a 303, its steps follow (task-190, section 20.5); task-191 adds the
-    drums' steps.
+    switch is off. On a 303, its steps follow (task-190, section 20.5); on a drum machine's
+    row, its steps (task-191, section 20.6).
   - F3: the transport: "Stopped, bar 1, 139 BPM, song mode, loop 1 to 8, recording off" ("loop
     off" when the loop is off, "loop bar 3" for a one-bar loop); in pattern mode, where the
     bar, the loop and Record do nothing, "Playing, 140 BPM, pattern mode".
@@ -1864,7 +1868,7 @@ edit step display stays the label "Edit step 5" of section 20.
   section 10, "Screen reader mode": the programming keys of Program Synth mode, Enter as Step,
   Backspace as Back.
 - **The editor's pattern, and playback** (decision task-209). The editor edits its own
-  pattern, `Synth303::pin`, which `App::pin_303` keeps at the start of every frame, before
+  pattern, `Synth303::pin`, which `App::pin_patterns` keeps at the start of every frame, before
   the frame's input acts: none with the mode off (the row's pattern, as the original), else
   `step303::pin_of`. Only a frame with input (a key or mouse button press, a screen reader
   action) sets a pin. A song loaded (or File > New) gives a new panel without one, and the
@@ -1926,3 +1930,97 @@ edit step display stays the label "Edit step 5" of section 20.
    next step, and the step it set is said. Turning it on starts again at step 1. Then turn it
    off and set the rests, accents and slides step by step.
 7. "Clear" (Space on it, after "Pitch mode") empties the pattern: every step a rest on C.
+
+### 20.6 The drum grids (task-191)
+
+A11Y-7 of docs/accessibility_plan.md; the code is `crates/orb-ui/src/a11y/grid.rs` and
+`App::drum_grid` / `App::grid_key`, the tests `crates/orb-ui/tests/a11y_grid.rs`. In screen
+reader mode only; with the mode off there is no grid and every key is as before.
+
+- **The node.** Each drum machine's section has one Grid node, "Steps", over its 16 step
+  buttons: a child `Ui` of the section's group that takes the focus (`UiBuilder::sense(
+  FOCUSABLE)`, with the explicit id `grid::grid_id`, its stop in the focus order) and senses
+  no click, so the step strip under it keeps the mouse (`App::drum_strips`). It has 12 rows
+  (`row_count`) and as many columns as the selected pattern has steps (`column_count`, 1..16).
+  Its children are the cells, role GridCell, one per instrument and step up to the pattern's
+  length (12 x 16 = 192 per machine at full length), each a hover-only widget in the grid's
+  `Ui` (the parent of a node is its widget's `Ui`) with the step button's bounds and its row and
+  column index. No Row nodes: `accesskit_windows` 0.35.2 has no UI Automation Grid or Table
+  pattern (a Row would be a named DataItem spoken again with each cell), so the instrument is
+  in the cell's text instead.
+- **The cursor.** The grid's row is the machine's selected instrument (`Panel::inst808`,
+  `inst909`), so the panel's selection frame (`App::instrument_selection`) always shows the
+  grid's row; the column is a cursor of the app (`App::grid_step`), brought back within the
+  pattern's length when the length shrinks. The grid's `active_descendant` is the cell under
+  the cursor: AccessKit then reports that cell as the focus (`accesskit_consumer`
+  `Tree::focus`), so a screen reader speaks the cell when the focus enters the grid and each
+  time the cursor moves.
+- **The grid's pattern, and playback** (decision task-209, as the 303's step editor, section
+  20.5). In screen reader mode the step strip of each drum machine shows and edits its own
+  pattern, `Panel::drum_pin` (`Panel::edit_pattern` of row 2 or 3), which `App::pin_patterns`
+  keeps with `step303::pin_of` at the start of every frame, before the frame's input acts: set
+  only by a frame with input, so a song just loaded is on the row's pattern until the first
+  input. When a pin changes, `Link::show_patterns` fills the strip with that pattern's steps at
+  once, so the frame's input reads the steps it edits. The edit events carry their pattern
+  (`Event::Step808` / `Step909`, `pattern`; `Link::drum_step` writes that pattern; with the
+  mode off it is the row's, as the original's). Playback moving the row (song mode, a pattern
+  change at the bar's end) changes the pattern selector and the row's display, but not the
+  strip or a cell's text: a focused grid never speaks without input. Options > Step Editor
+  Follows Playback chooses where the grid goes, as for the step editor: off (the default) it
+  stays on its pattern until the user chooses another one on the panel (`Panel::press` moves
+  the pin); on, it moves to the playing pattern at the next input, unannounced (the cell the
+  input lands on is then spoken as usual). The grid's length is its pattern's
+  (`grid::length`); the pattern length spin button stays the row's, as the original. A tap
+  key (section 10) still sets the playing step of the playing pattern: when the strip is on
+  another pattern the tap is sent to the playing one (the other hi-hat cleared on the 909)
+  and the strip does not change (`Panel::tap_drum`).
+- **Cell text.** "Bass drum, step 5, on" / "off"; on the 909 "on" (value 1), "accent" (2),
+  "flam" (3, and 5..255: the flam hit only), "accent and flam" (4), and the accent row "on" for
+  any value but 0 (section 7). The instruments are named as the legend: Accent, Bass drum,
+  Snare drum, Low tom, Mid tom, High tom, Rim shot, Hand clap, Closed hi-hat, Open hi-hat,
+  Crash cymbal, Ride cymbal on the 909; on the 808 Accent, Bass drum, Snare drum, the slots 3..7
+  by the voice their switch plays now ("Low conga" or "Low tom", "Mid conga" / "Mid tom", "High
+  conga" / "High tom", "Claves" / "Rim shot", "Maracas" / "Hand clap": `names::switch_words`),
+  Cowbell, Cymbal, Open hi-hat, Closed hi-hat. A step that changes changes the cell's name.
+- **Keys** (`App::grid_key`, dispatched before the value keys and the key map, only while a
+  grid has the focus):
+  - Up / Down: the instrument before / after (`Panel::select_instrument`, as a legend click),
+    stopping at Accent and at the last instrument. Left / Right: the step before / after,
+    stopping at step 1 and at the pattern's last step; Home / End: step 1 / the last step.
+    Auto-repeat counts. The arrows do not move egui's focus (a focus lock filter, and
+    `App::keyboard`'s cancel).
+  - Space: sets the step as a mouse down on its button does: on the 808 the opposite of its
+    state (`set_step808`); on the 909 the value `step909_new_value` gives (`set_step909`), the
+    click cycle off, note, accent, with Ctrl+Space a note on / off, Alt+Space an accent on /
+    off, Ctrl+Alt+Space a flam on / off, and the Flam entry button on making every Space a
+    flam, as on the mouse (section 7); the accent row is on / off; a hi-hat clears the other
+    hi-hat on its step. The 808 ignores the modifiers, as its mouse does. Shift+Space is not
+    the grid's. Auto-repeat is ignored.
+  - Alt+Space also opens the window's system menu on Windows: winit 0.30.13 passes every
+    WM_SYSKEYDOWN to `DefWindowProc` (`event_loop.rs` 1767), after the key event reached the
+    app. TASK-208 asks the user how to settle it.
+- **F2** on a drum machine's row (the focus on the grid or anywhere in the machine's section,
+  else the row focus) reads the pattern row, then each instrument that has steps within the
+  pattern's length with its steps: "TR-808, pattern A1, 16 steps, shuffle off. Accent: 9.
+  Bass drum: 1, 5, 9, 13. Closed hi-hat: 3, 7, 11, 15"; a 909 step that is not a plain note
+  says what it is ("5 accent", "9 flam"); an empty pattern "No steps"
+  (`announce::read_drum_pattern`, `grid::drum_readout`). The steps are those of the grid's
+  pattern; when playback has moved the row to another one, that is said before them:
+  "TR-808, pattern A2, 16 steps, shuffle off. Grid on pattern A1: Bass drum: 1".
+
+**Programming a drum pattern with a screen reader:**
+
+1. F6 to "TR-808" (or "TR-909"). Choose the pattern on the section's first control, the
+   pattern selector (Up and Down).
+2. Tab to "Steps", after the machine's knobs and switches. It says the cell under the cursor:
+   "Bass drum, step 1, off".
+3. Up and Down choose the instrument (Accent first); the panel's selection frame goes with
+   it. Left and Right go to the step before or after, Home and End to step 1 and the
+   pattern's last step.
+4. Space sets the step on or off. On the TR-909 it goes round off, note, accent, as a click
+   does; Ctrl+Space sets a plain note on or off, Alt+Space an accent, Ctrl+Alt+Space a flam.
+   The cell then says its new state.
+5. F2 reads the pattern back, each instrument with its steps. F5 plays it.
+6. While a song plays, the grid stays on its pattern and says nothing when the song moves
+   on; Options > Step Editor Follows Playback makes it go along with the song instead, still
+   silently, at your next key.

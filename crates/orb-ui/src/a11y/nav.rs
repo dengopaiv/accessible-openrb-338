@@ -10,7 +10,7 @@
 
 use eframe::egui::{self, accesskit};
 
-use super::{drive, hit_id, names};
+use super::{drive, grid, hit_id, names};
 use crate::layout::Ctl;
 
 /// The spoken sections, in the navigation order (`names::section_name` gives each part's).
@@ -88,6 +88,10 @@ pub fn order(ctls: &[Ctl]) -> Vec<Stop> {
             && let Some(row) = drive::row_of(&c.section)
         {
             keyed.push(((section, 0, 0), drive::selector_id(row)));
+        }
+        // a drum machine's grid (task-191) at the place of its step buttons
+        if c.kind == "steps" && c.name() == "step1" {
+            keyed.push(((section, 1, i), grid::grid_id(c.section == "tr808")));
         }
         if focusable(c) {
             let rank = if section == 0 {
@@ -168,9 +172,13 @@ mod tests {
         let parts = ctls.iter().filter(|c| focusable(c)).count();
         assert_eq!(
             order.len(),
-            parts + 4,
-            "the parts and the 4 pattern selectors"
+            parts + 4 + 2,
+            "the parts, the 4 pattern selectors and the 2 drum grids"
         );
+        // each grid in its machine's section
+        for (is808, s) in [(true, 3), (false, 4)] {
+            assert_eq!(section_of(&order, grid::grid_id(is808)), Some(s));
+        }
         for (i, a) in order.iter().enumerate() {
             assert!(order[i + 1..].iter().all(|b| b.id != a.id));
         }

@@ -403,7 +403,13 @@ fn the_read_out_keys_on_a_known_song() {
     h.send(fader, Action::Focus, None);
     assert_eq!(h.tree().focused_id(), fader.accesskit_id());
     let f2 = press(&mut h, Key::F2).unwrap();
-    assert_eq!(f2, "TR-909, pattern B5, 16 steps, shuffle off");
+    // with the drums' steps (task-191): the song's 909 pattern B5
+    assert!(
+        f2.starts_with("TR-909, pattern B5, 16 steps, shuffle off. Accent: 1, 3, 5, "),
+        "{f2}"
+    );
+    assert!(f2.contains(". Bass drum: 1 accent, 9 accent. "), "{f2}");
+    assert!(f2.ends_with(". Closed hi-hat: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16"));
 
     // playing: the transport and the levels follow
     ctrl(&mut h, Key::G);

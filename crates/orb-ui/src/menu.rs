@@ -110,7 +110,7 @@ pub enum Cmd {
     /// "Speak Raw Values" of the Options menu, shown in screen reader mode (task-192).
     ToggleSpeakRawValues,
     /// "Step Editor Follows Playback" of the Options menu, shown in screen reader mode
-    /// (task-190).
+    /// (task-190; the drum grids too, task-191).
     ToggleStepEditorFollows,
     SetKeyMode(KeyMode),
 }

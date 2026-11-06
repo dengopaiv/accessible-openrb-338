@@ -19,22 +19,18 @@ keyboard), TASK-186 (names, roles, values), TASK-194 (system file dialogs), TASK
 units), TASK-187 (operable controls), TASK-188 (sections, focus order, key map), TASK-189
 (announcements, F2-F4), TASK-193 (dialog roles and focus; merged 2026-11-06 after the work
 resumed, at the user's request), TASK-190 (the 303 step editor, spoken; merged 2026-11-06
-after two review rounds, at the user's request "Resume and complete Task 190"). The user's
+after two review rounds, at the user's request "Resume and complete Task 190"), TASK-191 (the
+drum grids; finished by the supervisor at the user's request "Initiate and complete Task 191":
+the work-in-progress commit rebased on TASK-190, TASK-209's silent move-along applied to the
+grids, reviewed). The user's
 decisions made along the way: TASK-202 (panel keys wait while a menu is in use), TASK-203 (ask
 before replacing a file), TASK-205 (Page Up/Down and Home/End on spin buttons), TASK-207 (Enter
 follows the section), TASK-209 (the step editor during playback and its arrow keys: move-along
 is the setting Options > Step Editor Follows Playback, off by default, and never speaks; Up/Down
-move the step, Left/Right do nothing), plus the six up-front ones.
+move the step, Left/Right do nothing; the same for the drum grids), plus the six up-front ones.
 
-Unfinished, on its own local branch (not on main, not pushed). In the backlog on main it is
-still To Do; its branch holds the work and its notes:
-- TASK-191 (the drum grids): branch `worktree-agent-ae78deeae4d42fe78`, commit e2c1ac2, a
-  work-in-progress commit made by the supervisor when work stopped: the agent's files as they
-  were, not finished, not fully tested, not Done. Next: rebase on main (expect conflicts with
-  TASK-190 in App::keyboard, announce.rs readout_key, key_help.rs and ui_spec section 10; keep
-  both sides; its decision file task-208 keeps its id, TASK-190's decision took 209), apply
-  TASK-209's move-along rule to the grids (they must not speak or move by themselves during
-  playback), finish it, squash to one commit, review.
+Waiting for the user: TASK-208 (Alt+Space on a TR-909 grid also opens the window's system
+menu; options and a recommendation in the task).
 
 Not started: TASK-195 (mod chooser), TASK-196 (docs pass), TASK-197 (the user's NVDA pass,
 whose checklist below has collected every by-ear check deferred by the tasks), and the
@@ -724,7 +720,14 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
    spoken when the song moves to another pattern, with Options > Step Editor Follows Playback
    off and on; F2 says "Step editor on pattern ..." while off.
 9. In the TR-808: walk the grid, set a bass drum on steps 1, 5, 9, 13, F2 reads it back; same
-   on the 909 with an accent and a flam.
+   on the 909 with an accent and a flam. (TASK-191 checked the tree headless: the grid's active
+   cell, its name after each key, F2's text.) By ear: Tab onto the grid speaks "Steps" and the
+   cell ("Bass drum, step 1, off"); each Up, Down, Left and Right speaks the new cell; each
+   Space speaks the cell's new state (its name changes while it keeps the focus); Ctrl+Space,
+   Alt+Space and Ctrl+Alt+Space on the 909 give a note, an accent and a flam (Alt+Space also
+   opens the system menu, TASK-208). While a song plays in song mode with the focus on a grid,
+   nothing is spoken when the machine moves to another pattern, with Options > Step Editor
+   Follows Playback off and on; F2 says "Grid on pattern ..." while off.
 10. Record in song mode: a pattern change and a knob move are recorded; play them back.
 11. File > Open in the system dialog; open a song from rb-songs; its name and mod are spoken.
 12. Choose a mod with the mod chooser, with the filter; Mods > Info reads the mod's text;

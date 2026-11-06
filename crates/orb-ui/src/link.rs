@@ -563,8 +563,16 @@ impl Link {
         self.flush();
     }
 
+    /// Fills the drum step strips of the pattern each one now edits, at once: `App` calls it
+    /// when a drum grid's pin changed (task-191, screen reader mode), so the frame's input reads
+    /// the steps of the pattern it edits, not those shown before ([`Link::fill_views`]).
+    pub fn show_patterns(&mut self, panel: &mut Panel) {
+        self.fill_views(panel);
+    }
+
     /// Fills the model's pattern views from the pattern arrays: the 303s' steps, the lengths and
-    /// shuffle flags, and the drum step strips of a section whose selected pattern changed.
+    /// shuffle flags, and the drum step strips of a section whose shown pattern changed (the
+    /// row's, or a drum grid's pin, [`Panel::edit_pattern`]).
     fn fill_views(&mut self, panel: &mut Panel) {
         for r in 0..4 {
             let (_, plen, slen) = layout(r);
@@ -589,10 +597,16 @@ impl Link {
                     }
                 }
             }
-            let sel = panel.rows[r].pattern;
+            // a drum strip shows the pattern it edits: the row's, or in screen reader mode the
+            // drum grid's pin (task-191)
+            let sel = if r >= 2 {
+                panel.edit_pattern(r)
+            } else {
+                panel.rows[r].pattern
+            };
             if self.shown[r] != Some(sel) {
                 self.shown[r] = Some(sel);
-                self.row_pattern[r] = sel;
+                self.row_pattern[r] = panel.rows[r].pattern;
                 let h = &pat[sel as usize * plen..];
                 // only the drum rows have 12-byte steps; a 303 pattern is 98 bytes and the last
                 // pattern (31) would run past the array
@@ -636,14 +650,16 @@ impl Link {
             Event::Set { id, value } => self.set_messages(id, *value),
             Event::Step808 {
                 instrument,
+                pattern,
                 step,
                 on,
-            } => self.drum_step(2, *step, *instrument, *on as u8),
+            } => self.drum_step(2, *pattern, *step, *instrument, *on as u8),
             Event::Step909 {
                 instrument,
+                pattern,
                 step,
                 value,
-            } => self.drum_step(3, *step, *instrument, *value),
+            } => self.drum_step(3, *pattern, *step, *instrument, *value),
             Event::Step303 {
                 synth,
                 pattern,
@@ -679,8 +695,9 @@ impl Link {
         }
     }
 
-    fn drum_step(&mut self, row: usize, step: usize, inst: usize, value: u8) -> Vec<Msg> {
-        let p = self.row_pattern[row];
+    /// A drum step of pattern `p` of `row` (2 the 808, 3 the 909). The pattern is the event's:
+    /// with screen reader mode off the row's, as `row_pattern` (task-191).
+    fn drum_step(&mut self, row: usize, p: u8, step: usize, inst: usize, value: u8) -> Vec<Msg> {
         let (_, plen, slen) = layout(row);
         self.patterns[row][plen * p as usize + 2 + slen * step + inst] = value;
         let d = ROW_DEVICES[row];

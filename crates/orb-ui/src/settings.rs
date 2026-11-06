@@ -61,9 +61,10 @@ pub struct Settings {
     /// "Speak raw values" (task-192): in screen reader mode a knob or fader speaks its 0..127
     /// value after its unit ("1.24 kilohertz, 64"). Stored as the bool `speak_raw_values`.
     pub speak_raw_values: bool,
-    /// "Step Editor Follows Playback" (task-190): in screen reader mode a 303's step editor moves
-    /// to the pattern the 303 plays, silently, at the next input; off (the default), it stays on
-    /// the pattern last chosen by the user. Stored as the bool `step_editor_follows`.
+    /// "Step Editor Follows Playback" (task-190, task-191): in screen reader mode a 303's step
+    /// editor and a drum grid move to the pattern their row plays, silently, at the next input;
+    /// off (the default), they stay on the pattern last chosen by the user. Stored as the bool
+    /// `step_editor_follows`.
     pub step_editor_follows: bool,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,

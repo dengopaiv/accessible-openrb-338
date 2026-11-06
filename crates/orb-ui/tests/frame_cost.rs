@@ -16,6 +16,7 @@ use orb_ui::app::App;
 use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::menu::MENU_H;
 use orb_ui::model::Panel;
+use orb_ui::screen_reader::ScreenReaderSetting;
 
 /// The cost of a frame, drawn in a window of `size` points at `ppp` pixels per point.
 struct Cost {
@@ -36,7 +37,7 @@ fn count_shapes(s: &epaint::Shape) -> usize {
     }
 }
 
-fn cost(size: Vec2, ppp: f32, accesskit: bool) -> Cost {
+fn cost(size: Vec2, ppp: f32, accesskit: bool, screen_reader: bool) -> Cost {
     let ctx = egui::Context::default();
     egui_extras::install_image_loaders(&ctx);
     ctx.set_pixels_per_point(ppp);
@@ -45,6 +46,11 @@ fn cost(size: Vec2, ppp: f32, accesskit: bool) -> Cost {
     }
     let mut app = App::new(Panel::demo(), None);
     app.menu = true;
+    app.settings.screen_reader = if screen_reader {
+        ScreenReaderSetting::On
+    } else {
+        ScreenReaderSetting::Off
+    };
     const WARM: usize = 8;
     // the timing needs many frames; a debug run only checks the counts
     const RUNS: usize = if cfg!(debug_assertions) { 2 } else { 200 };
@@ -100,11 +106,20 @@ fn cost(size: Vec2, ppp: f32, accesskit: bool) -> Cost {
 }
 
 fn report(what: &str, size: Vec2, ppp: f32, accesskit: bool) -> Cost {
-    let c = cost(size, ppp, accesskit);
+    report_mode(what, size, ppp, accesskit, false)
+}
+
+fn report_mode(what: &str, size: Vec2, ppp: f32, accesskit: bool, screen_reader: bool) -> Cost {
+    let c = cost(size, ppp, accesskit, screen_reader);
     println!(
-        "{what}{}: {} shapes, {} meshes, {} vertices, {} textures, {} nodes; \
+        "{what}{}{}: {} shapes, {} meshes, {} vertices, {} textures, {} nodes; \
          show {:.3} ms, tessellate {:.3} ms",
         if accesskit { " with AccessKit" } else { "" },
+        if screen_reader {
+            " in screen reader mode"
+        } else {
+            ""
+        },
         c.shapes,
         c.meshes,
         c.vertices,
@@ -124,9 +139,12 @@ fn a_frame_of_the_panel() {
     let big = report("1800x1100 at 2x", big_size, 2.0, false);
     let native_ak = report("native 1x", native_size, 1.0, true);
     let big_ak = report("1800x1100 at 2x", big_size, 2.0, true);
+    // screen reader mode adds the section groups and the drum grids (task-188, task-191)
+    let native_sr = report_mode("native 1x", native_size, 1.0, true, true);
     for (what, off, on) in [
         ("native 1x", &native, &native_ak),
         ("1800x1100 at 2x", &big, &big_ak),
+        ("native 1x, screen reader mode", &native, &native_sr),
     ] {
         println!(
             "{what}: building the accessibility tree ({} nodes) costs {:.3} ms of show",
@@ -142,6 +160,7 @@ fn a_frame_of_the_panel() {
         (&big, 20_000),
         (&native_ak, 17_000),
         (&big_ak, 20_000),
+        (&native_sr, 17_000),
     ] {
         assert!(c.shapes > 0 && c.meshes > 0 && c.vertices > 0);
         assert!(c.shapes <= 680, "{} shapes", c.shapes);
