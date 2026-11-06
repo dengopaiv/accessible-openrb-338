@@ -23,7 +23,10 @@ rebasing on upstream stays simple.
   never have a web version. We only need a local editor. Nothing too complex. If necessary,
   we'll gut the upstream to keep only what we need and what is local." So: no web version
   (upstream's milestone m-6 and its tasks TASK-169 to TASK-175 are archived here); nothing
-  that needs a server, a hosted page or a network service; and an upstream part the fork does
+  that needs a server, a hosted page or a network service (the user, 2026-11-06: "nothing that
+  will want to go online needs to be built"; upstream's links that open the browser in About,
+  Mods > Info and File > Info stay as they are, the user's choice of the same day, because they
+  act only when the user activates them); and an upstream part the fork does
   not need may be removed when it gets in the way, each removal its own task, decided by the
   user, with the reason in its description.
 - **The queue.** m-7 (screen reader accessibility) is the fork's first open milestone. Upstream

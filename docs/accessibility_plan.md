@@ -1,8 +1,43 @@
 # Screen reader accessibility: the plan
 
-Status: plan, 2026-11-05, nothing implemented. The analysis behind it, with the measurements
-and the options, is in [accessibility.md](accessibility.md); read that first. This document
-turns its section 3 into a milestone, decisions and tasks.
+Status: in progress; work stopped by the user on 2026-11-06 (see "Where it stands"). The
+analysis behind the plan, with the measurements and the options, is in
+[accessibility.md](accessibility.md); read that first. This document turns its section 3 into
+a milestone, decisions and tasks.
+
+## Where it stands (2026-11-06, work stopped)
+
+The user stopped all work on 2026-11-06 ("Save and stop everything"), after asking about the
+load on their computer: the agents' parallel worktree builds had kept it at 100% CPU for most
+of 14 hours. Before resuming, read the user's rules in memory and AGENTS.md "This fork": one
+agent at a time, ask before starting a task, light reviews (code and tests only), clean up
+worktrees and their build folders after merging.
+
+Merged on main and pushed to the fork (each reviewed, with the supervisor's merge note in its
+commit): TASK-183 (test harness), TASK-185 (screen reader mode), TASK-184 (menu bar from the
+keyboard), TASK-186 (names, roles, values), TASK-194 (system file dialogs), TASK-192 (physical
+units), TASK-187 (operable controls), TASK-188 (sections, focus order, key map), TASK-189
+(announcements, F2-F4). The user's decisions made along the way: TASK-202 (panel keys wait
+while a menu is in use), TASK-203 (ask before replacing a file), TASK-205 (Page Up/Down and
+Home/End on spin buttons), TASK-207 (Enter follows the section), plus the six up-front ones.
+
+Unfinished, each on its own local branch (not on main, not pushed). In the backlog on main
+they are still To Do; their branches hold the work and its notes:
+- TASK-190 (the 303 step editor, spoken): branch `worktree-agent-aa4eb387f6da39059`, one
+  finished commit 4999c4a, Done on its branch; its review was started and stopped before a
+  verdict. Note for the user: it also makes Up/Down move the edit step (the agent's choice,
+  citing D6). Next: review, then merge (expect conflicts with TASK-191 in App::keyboard,
+  announce.rs readout_key, key_help.rs and ui_spec section 10; keep both sides).
+- TASK-193 (dialog roles and focus): branch `worktree-agent-a60ffc4431977dabd`, one finished
+  commit 76c4592, Done on its branch; its review was started and stopped before a verdict.
+  Next: review, then merge.
+- TASK-191 (the drum grids): branch `worktree-agent-ae78deeae4d42fe78`, commit e2c1ac2, a
+  work-in-progress commit made by the supervisor when work stopped: the agent's files as they
+  were, not finished, not fully tested, not Done. Next: finish it, squash to one commit, review.
+
+Not started: TASK-195 (mod chooser), TASK-196 (docs pass), TASK-197 (the user's NVDA pass,
+whose checklist below has collected every by-ear check deferred by the tasks), and the
+follow-ups TASK-199, 200, 201, 204, 206.
 
 ## The tasks in the backlog
 
