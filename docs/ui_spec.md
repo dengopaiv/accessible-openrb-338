@@ -791,8 +791,10 @@ row 2) without selecting it [G]; the drums' Shift+Tab deletion is not done (whic
 clears is unknown, section 15).
 
 **Screen reader mode (task-188, decisions A11Y-D2 and A11Y-D6; OpenRB-338 only).** With the
-mode on (`App::screen_reader_mode`, docs/accessibility.md 3.4), four keys of the original
-collide with navigation and move (`keys::map_screen_reader`, routed in `App::keyboard`); every
+mode on (`App::screen_reader_mode`, docs/accessibility.md 3.4), the keys of the original that
+collide with navigation (Tab, Space, Up and Down, and Left, Right, Page Up, Page Down, Home
+and End on the controls that take them) move, and F1 to F6, F9, F11 and F12 are added
+(`keys::map_screen_reader`, routed in `App::keyboard`); every
 other key keeps its meaning above, whatever control of the panel has the focus. While a menu
 (TASK-202) or a window has the focus, or a window is open and nothing has it, the panel's keys
 wait (the windows paragraph below). With the mode off nothing here applies.
@@ -800,7 +802,7 @@ wait (the windows paragraph below). With the mode off nothing here applies.
 | Key | In screen reader mode |
 |---|---|
 | F1 | Help > Keyboard Shortcuts |
-| F2, F3, F4 | Free: the read-out keys of task-189 (A11Y-5) |
+| F2, F3, F4 | The read-out keys of task-189 (section 20.3), spoken, no focus moves: F2 the pattern of the focused section (else of the row focus; a 303's or a drum machine's steps too, sections 20.5 and 20.6), F3 the transport, F4 the levels |
 | F5 | Play if stopped, Stop otherwise (Space's action above) |
 | F6 / Shift+F6 | The first control of the next / previous section (wraps) |
 | F7, F8 | Free |
@@ -814,9 +816,12 @@ wait (the windows paragraph below). With the mode off nothing here applies.
 | Up, Down, PgUp, PgDn, Home, End | Change the focused knob, fader, spin button or pattern selector (section 20.1), auto-repeat included; on a drum grid Up / Down choose the instrument and Home / End the first / last step (section 20.6); nothing on another control. Not the row focus |
 | Up, Down | On a 303's step editor (task-190, section 20.5): the previous / next edit step, the panel's Back / Step (Home / End: step 1 / the pattern's last step); Left and Right do nothing there (decision task-209) |
 | Left, Right | On a drum grid: the step before / after (section 20.6). Nothing elsewhere |
+| Enter, Backspace | Enter as above. On a 303's step editor Enter is Step and Backspace Back, as the original's keys; the rest of the programming keys (pitch keys, `-` / `=`, `P`, `[`, `'`, `;`) are the original's, to the row focus (section 20.5) |
 | Ctrl+Up / Ctrl+Down | The row focus to the previous / next row, wrapping (the original's Up / Down), without moving the navigation focus |
 | Ctrl+Tab / Ctrl+Shift+Tab | The original's Tab / Shift+Tab: the playing step of the focused 303 becomes a note / a rest (Program Synth mode) |
 | Ctrl+M (Cmd+M) | Mods > Choose Mod...: the mod chooser, a dialog with a filter field and the list of mods (task-195, section 20.7). A menu shortcut like Ctrl+N, outside the key map; with the mode off Ctrl+M does nothing (the original's "Select Mod..." was Ctrl+M, section 18.0, which orb has not) |
+| Ctrl+I (Cmd+I), in the mod chooser | Mod Info of the selected mod without loading it (section 20.7) |
+| Escape | Closes the open window, dialog or menu (the mod chooser too) |
 
 The F keys act as the buttons' mouse down (`Panel::press` of `transport.play` or `.stop`,
 `.record`, `.loop`, `.mode`) and show the button pressed while held, as the original's keys do.

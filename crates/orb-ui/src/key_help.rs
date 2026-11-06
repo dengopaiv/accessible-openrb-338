@@ -358,7 +358,12 @@ fn screen_reader_group(is_mac: bool) -> Group {
                 "Enter",
                 "By the section of the focused control: in a 303's section that 303's Step \
                  (Program Synth mode), in any other section Play. The pitch and drum keys \
-                 still go to the row focus",
+                 still go to the row focus, and Backspace is a 303's Back",
+                vec![],
+            ),
+            sr_row(
+                "Escape",
+                "Close the open window, dialog (Choose Mod too) or menu",
                 vec![],
             ),
             sr_row(
@@ -1042,6 +1047,54 @@ mod tests {
             }
         }
         assert!(changed > 100, "{changed} changed cases");
+    }
+
+    /// The keys of the mode that `keys::map_screen_reader` does not map (the menu shortcuts,
+    /// the keys of the step editor, the grid, the mod chooser and the dialogs, handled in
+    /// `App::keyboard` and the windows) cannot be compared with the key map. This is a check
+    /// by name only: it does not read the code, so a key added in `app.rs` is not found by
+    /// it; its name must be added to these lists by hand. The first list is checked against
+    /// the rows' `keys` field, the second against the rows' descriptions.
+    #[test]
+    fn the_keys_handled_outside_the_key_map_are_named_in_the_group() {
+        let g = screen_reader_group(false);
+        for k in [
+            "F10",
+            "Ctrl+M",
+            "Escape",
+            "Enter",
+            "Space",
+            "Left / Right",
+            "Ctrl+Up / Ctrl+Down",
+            "Ctrl+Tab",
+            "PgUp / PgDn",
+            "Home / End",
+            "F6 / Shift+F6",
+        ] {
+            assert!(
+                g.rows.iter().any(|r| r.keys.contains(k)),
+                "no row of the screen reader group has the keys {k:?}"
+            );
+        }
+        assert!(
+            g.rows
+                .iter()
+                .any(|r| r.keys.contains("Ctrl+I in Choose Mod"))
+        );
+        for k in [
+            "Shift+Space",
+            "Ctrl+Alt",
+            "Backspace",
+            "step editor",
+            "drum grid",
+        ] {
+            assert!(
+                g.rows.iter().any(|r| r.what.contains(k)),
+                "no row of the screen reader group describes {k:?}"
+            );
+        }
+        let mac = screen_reader_group(true);
+        assert!(mac.rows.iter().any(|r| r.keys.contains("Cmd+M")));
     }
 
     /// Every listed key does what the window says, in every mode and row the bind covers.

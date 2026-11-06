@@ -60,24 +60,97 @@ This repository, accessible-openrb-338, is a fork of
 [OpenRB-338](https://github.com/pingw33n/openrb-338) whose aim is to make OpenRB-338 usable
 with a screen reader, NVDA on Windows first.
 
-**Where it stands (2026-11-05): not usable with a screen reader yet.** The panel is drawn as
-pictures. Of the 254 places the Tab key stops at, only the four menu titles (File, Mods,
-Options, Help) have a name; the knobs, buttons, patterns and the file list say nothing. What
-already works without sight: the `orb` command line tool (render, play, info, mods), and the
-panel's own computer keyboard, which plays and programs the synths and selects patterns
-(Help > Keyboard Shortcuts, though that window cannot be read yet either).
+**Where it stands (2026-11-07): built, not yet checked by ear.** Screen reader mode is
+implemented and tested through the accessibility tree (every control has a name, a role and a
+value; Tab stops at 198 places, all named). The pass with NVDA itself, by the person who
+uses it, is still to be done, so some things may read worse than described below. With the
+mode off, OpenRB-338 behaves exactly as upstream, and the sound engine is not touched, so the
+output stays identical to the original's. The `orb` command line tool (render, play, info,
+mods) needs no mode.
 
-**The plan.** A "Screen reader mode" that keeps the panel's look and adds, behind it:
-sections to move between with F6 and controls to Tab through, each with its name and value;
-knobs and faders as sliders; the 303's step editor spoken step by step; the drum machines as
-grids; keys that read a pattern, the transport or the levels aloud; spoken messages; the
-system's own file dialogs; and a searchable mod list. Knob and fader values are spoken in
-physical units (hertz, milliseconds, decibels) worked out from the engine's code. The
-transport moves to the function keys (F5 Play/Stop, F9 Record, F11 Loop, F12 song/pattern
-mode; F2 to F4 read things aloud, F6 moves between sections), Space presses the focused
-control, and Enter keeps its ReBirth meaning. Nothing is spoken by itself while the music
-plays. With the mode off, OpenRB-338 behaves exactly as upstream. The sound engine is not
-touched, so the output stays identical to the original's.
+### Using OpenRB-338 with a screen reader
+
+**Turning the mode on.** Options > Screen Reader Mode has three choices: Automatic (the
+default: on while Windows reports a running screen reader, such as NVDA), On and Off. On
+other systems Automatic stays off; choose On. Options > Speak Raw Values adds the 0 to 127
+number after a knob's physical value ("1.24 kilohertz, 64"). Options > Step Editor Follows
+Playback is explained under programming a pattern. F1 opens Help > Keyboard Shortcuts, which
+lists the keys of the mode that are in force and reads line by line (Tab walks the lines).
+
+**The sections.** The panel is nine sections: Transport, Bass Line 1, Bass Line 2, TR-808,
+TR-909 (each machine with its pattern selector and its mixer channel), Master and
+compressor, PCF, Delay and Distortion. F6 and Shift+F6 go to the first control of the next
+and the previous section; Tab and Shift+Tab move control by control and wrap around. The menu
+bar is reached with F10 (or Alt alone). Entering a machine's section gives that machine the
+"row focus", which is where the pitch and drum keys of ReBirth go.
+
+**The keys.** Everything else keeps its ReBirth meaning, so the panel's keyboard still plays
+and programs the synths (Ctrl+F) or selects patterns (Ctrl+G).
+
+| Key | What it does |
+|---|---|
+| F1 | Help > Keyboard Shortcuts |
+| F2 | Reads the pattern of the section you are in (the 303's steps, or the drum machine's steps per instrument) |
+| F3 | Reads the transport: in song mode playing or stopped, bar, tempo, mode, loop and recording; in pattern mode, where bar, loop and Record do nothing, only playing or stopped, tempo and "pattern mode" |
+| F4 | Reads the master levels and the compressor's gain reduction |
+| F5 | Play, or Stop if playing |
+| F6 / Shift+F6 | Next / previous section |
+| F9 (Insert too) | Record |
+| F10, or Alt alone | The menu bar |
+| F11 | Loop on / off |
+| F12 | Song / pattern mode |
+| Tab / Shift+Tab | Next / previous control |
+| Space | Presses the focused button, toggle or switch |
+| Enter | In a 303's section the 303's Step (Program Synth mode); in any other section Play |
+| Up / Down | On a knob or fader: the value by 1; on a spin button (tempo, bar, lengths): one click; on a pattern selector: the next / previous pattern |
+| Page Up / Page Down | Knob or fader by 8; spin button by 10 clicks; pattern selector by one bank |
+| Home / End | Knob or fader to 0 / 127; pattern selector to A1 / D8; on a short spin button (pattern length, delay steps, PCF pattern) its ends; nothing on tempo, bar and loop |
+| Left / Right | On a drum grid: the step before / after, within the pattern's length. Nothing elsewhere, and nothing on a 303's step editor (Up / Down move its step) |
+| Ctrl+Up / Ctrl+Down | Moves the row focus to the previous / next row without moving where you are |
+| Ctrl+Tab / Ctrl+Shift+Tab | Program Synth mode, a 303 in focus: the playing step becomes a note / a rest |
+| Ctrl+M | Choose Mod (below) |
+| Escape | Closes a window, a dialog or a menu |
+
+Knobs and faders are spoken in physical units, such as "350 milliseconds" or "minus 6.5
+decibels". Messages ("Saved ...", "Exported ...", "Mod ...") are spoken when they happen.
+Nothing is spoken by itself while the music plays.
+
+**Programming a 303 pattern.** Press F6 until "Bass Line 1" (or 2) and choose the pattern
+on its first control, the pattern selector (Up and Down). Tab to "Step editor"; it says the
+step and what it holds, for example "Step 1 of 16: rest, C". On each step, a pitch key sets
+the note (`C` is C, `F` C sharp, `V` D, and so on up to `/` for high C), `-` or `=` turns the
+rest into a note and back, `P` is accent, `[` slide, `'` octave up and `;` octave down. Down
+(or Enter, in Program Synth mode) goes to the next step, Up or Backspace to the previous one, Home to step 1 and End
+to the last step; Left and Right do nothing. Each key is answered with the step's new state,
+and F2 reads the whole pattern back. F5 plays it. The step editor stays on its own pattern
+while a song plays and says nothing when the song moves on; Options > Step Editor Follows
+Playback makes it go along with the song at your next key instead, still silently.
+
+**Programming a drum pattern.** F6 to "TR-808" or "TR-909" and choose the pattern; Tab to
+"Steps". It says the cell under the cursor, "Bass drum, step 1, off". Up and Down choose the
+instrument (Accent first), Left and Right the step, Home and End the first and the last step.
+Space sets the step. On the TR-909 it goes round off, note, accent as a mouse click does;
+Ctrl+Space sets a plain note, Shift+Space an accent and Ctrl+Alt+Space a flam (Alt+Space is
+an accent too, but Windows then also opens the window's system menu: Escape closes it). The
+cell says its new state. F2 reads the pattern back, each instrument with its steps.
+
+**Choosing a mod.** Ctrl+M (or Mods > Choose Mod...) opens a dialog with a filter field and
+the list of mods. Type to narrow the list by name; Down moves from the filter to the list;
+Tab goes between the two. In the list Up, Down, Home, End, Page Up and Page Down move;
+Right opens a mod that has variants and Left closes it. Enter chooses the selected mod (for a
+mod with variants the preferred one, or the variant selected), Ctrl+I shows its Mod Info
+without loading it, and Escape closes the dialog.
+
+**Files.** File > Open, Save As and Export use the system's own file dialogs in this mode.
+
+**Known limits.**
+- It has not been tried with NVDA by the person it is made for yet; expect rough places.
+- Detection of a running screen reader in Automatic is Windows only. Narrator, JAWS,
+  VoiceOver and Orca are not tested.
+- The drum grids are not a real table to the screen reader: each cell carries its
+  instrument and step in its own text, and the arrow keys are the program's.
+- The meters are read as lit segments (F4), not decibels.
+- The original's pattern functions (copy, paste, clear a bar, undo) are not implemented.
 
 - [docs/accessibility.md](docs/accessibility.md): what a screen reader gets today (measured),
   the options, the proposal, and notes for developers.

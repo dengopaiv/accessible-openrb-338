@@ -5,7 +5,7 @@ analysis behind the plan, with the measurements and the options, is in
 [accessibility.md](accessibility.md); read that first. This document turns its section 3 into
 a milestone, decisions and tasks.
 
-## Where it stands (2026-11-06, work stopped)
+## Where it stands (2026-11-07)
 
 The user stopped all work on 2026-11-06 ("Save and stop everything"), after asking about the
 load on their computer: the agents' parallel worktree builds had kept it at 100% CPU for most
@@ -33,11 +33,14 @@ Then TASK-210: Shift+Space as a second accent key on the TR-909 grid, because Al
 opens the window's system menu (the user's decision TASK-208, 2026-11-06: "Add shift+space").
 
 TASK-195 (the mod chooser; the user's decisions of 2026-11-07: Ctrl+M, two stops, a tree for
-the variants, Ctrl+I for Mod Info; docs/ui_spec.md 20.7) is done on its branch `task-mod-chooser`.
+the variants, Ctrl+I for Mod Info; docs/ui_spec.md 20.7) is merged.
 
-Not started: TASK-196 (docs pass), TASK-197 (the user's NVDA pass,
-whose checklist below has collected every by-ear check deferred by the tasks), and the
-follow-ups TASK-199, 200, 201, 204, 206.
+TASK-196 (the documentation pass, 2026-11-07) is done: the README's "Using OpenRB-338 with a
+screen reader", docs/ui_spec.md section 20 and Help > Keyboard Shortcuts say the same keys,
+and docs/accessibility.md has the measurement taken again (section 1.1).
+
+Next: TASK-197 (the user's NVDA pass, whose checklist below has collected every by-ear check
+deferred by the tasks). Not started: the follow-ups TASK-199, 200, 201, 204, 206.
 
 ## The tasks in the backlog
 

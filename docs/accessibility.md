@@ -1,6 +1,13 @@
 # Screen reader accessibility: a proposal
 
-Status: proposal, 2026-11-05. Nothing in it is implemented yet. The first target is NVDA on
+Status, 2026-11-07: the proposal of section 3 is implemented, as screen reader mode (Options >
+Screen Reader Mode), by TASK-184 to TASK-196 and TASK-210 (docs/accessibility_plan.md,
+"Where it stands"; the behavior is docs/ui_spec.md section 20, the user's guide the README's
+"Using OpenRB-338 with a screen reader"). Open: TASK-197, the user's pass with NVDA, which
+checks by ear what the tests cannot; until it is done, nothing here is known to read well in
+NVDA, only to be in the tree. The text below is the proposal as written on 2026-11-05, kept
+for its reasons; section 1.1 has the measurement of that day and of 2026-11-07. The first
+target is NVDA on
 Windows (the user's choice); AccessKit, the layer proposed here, also serves Narrator and JAWS
 through UI Automation, VoiceOver on macOS and Orca on Linux, so the other platforms come along,
 with less testing.
@@ -31,7 +38,35 @@ no control says what it is or what its value is.
 
 Since task-186 (A11Y-2) every panel control has a name, a role and its value or state, and the
 focusable elements are 248, all named (section 6.3, docs/ui_spec.md section 20). The other
-gaps of this section remain for the later tasks of the plan.
+gaps of this section were closed by the later tasks of the plan; the measurement again, after
+them:
+
+Measured again on 2026-11-07, main at 6cc85ab (after TASK-195, the last task to change the
+tree), the same two ways. The program is the release build; `tools/uia_tree.ps1` was run with
+`-ScreenReader on`, `off` and `auto` (NVDA was running, so `auto` is on).
+
+| | 2026-11-05, cbca449 (before) | 2026-11-07, 6cc85ab, mode off | 2026-11-07, 6cc85ab, mode on |
+|---|---|---|---|
+| Headless nodes | 261 | 203 | 598 |
+| of them with a name | 4 | 196 | 591 |
+| with a value | 0 | 112 | not counted |
+| that can take the focus | not measured | 194 | 198 |
+| Real window (UI Automation) elements | 256 | 198 | 593 |
+| of them that can take the focus | 254 | 194 | 198 |
+| of those, with a name | 4 | 194 | 198 |
+| Unnamed "Custom" elements | 250 | 0 | 0 |
+
+With the mode on, the 593 elements are 384 DataItems (the cells of the two drum grids), 88
+Sliders (77 knobs, 9 faders, the two step editors), 62 Buttons, 23 CheckBoxes, 14 Spinners, 9
+Groups (the sections), 9 RadioButtons, 2 DataGrids, the menu bar and the pane. The 198 that
+take the focus are the 194 controls (section 6.3), the two step editors and the two grids;
+the grid cells take no focus themselves. With the mode off the tree is the one of TASK-187 (the
+two 303 edit steps are Text labels): no unnamed element is left, and the Tab order is
+egui's. Tab, which stopped on 250 silent places, now stops on 198 places that all say what
+they are. How they read in NVDA is TASK-197's.
+
+The numbers come from `cargo test --release -p orb-ui --test a11y_baseline -- --nocapture`
+(headless) and `tools/uia_tree.ps1` (section 6.3; the test `a11y_baseline` holds the counts).
 
 ### 1.2 Why
 
@@ -605,6 +640,14 @@ The two DataGrids are the drum grids ("Steps", focusable) and the 384 DataItems 
 x 12 instruments x 16 steps, named "Bass drum, step 1, off", not focusable themselves: the
 grid's active descendant is reported as the focus; docs/ui_spec.md 20.6). With the mode off
 there are no grids and the tree is as before.
+
+Output after TASK-195 and TASK-210 (main at 6cc85ab, 2026-11-07; the last tasks that change
+the tree), `-ScreenReader on` and, with NVDA running, `auto`: the same 593 elements and types
+as above with 88 Sliders (the step editors are sliders), and 198 that take the focus, all
+named (the 194 controls, the two step editors, the two grids). `-ScreenReader off`: 198
+elements (86 Sliders, 62 Buttons, 23 CheckBoxes, 14 Spinners, 9 RadioButtons, 2 Texts, the menu
+and the pane), 194 that take the focus, all named. The mod chooser is a window, not in the
+tree until it is open.
 
 ### 6.4 NVDA and this program, for developers who do not use it
 
