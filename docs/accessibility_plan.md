@@ -29,8 +29,8 @@ follows the section), TASK-209 (the step editor during playback and its arrow ke
 is the setting Options > Step Editor Follows Playback, off by default, and never speaks; Up/Down
 move the step, Left/Right do nothing; the same for the drum grids), plus the six up-front ones.
 
-Waiting for the user: TASK-208 (Alt+Space on a TR-909 grid also opens the window's system
-menu; options and a recommendation in the task).
+Then TASK-210: Shift+Space as a second accent key on the TR-909 grid, because Alt+Space also
+opens the window's system menu (the user's decision TASK-208, 2026-11-06: "Add shift+space").
 
 Not started: TASK-195 (mod chooser), TASK-196 (docs pass), TASK-197 (the user's NVDA pass,
 whose checklist below has collected every by-ear check deferred by the tasks), and the
@@ -725,7 +725,7 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
    cell ("Bass drum, step 1, off"); each Up, Down, Left and Right speaks the new cell; each
    Space speaks the cell's new state (its name changes while it keeps the focus); Ctrl+Space,
    Alt+Space and Ctrl+Alt+Space on the 909 give a note, an accent and a flam (Alt+Space also
-   opens the system menu, TASK-208). While a song plays in song mode with the focus on a grid,
+   opens the system menu, TASK-208); Shift+Space gives an accent and no menu (TASK-210). While a song plays in song mode with the focus on a grid,
    nothing is spoken when the machine moves to another pattern, with Options > Step Editor
    Follows Playback off and on; F2 says "Grid on pattern ..." while off.
 10. Record in song mode: a pattern change and a knob move are recorded; play them back.

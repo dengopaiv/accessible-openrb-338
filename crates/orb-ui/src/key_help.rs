@@ -326,7 +326,8 @@ fn screen_reader_group() -> Group {
                 "Space",
                 "Press or toggle the focused button, toggle or switch (not Play / Stop). On a \
                  drum grid: set the step as a click does; on the TR-909 with Ctrl, Alt or \
-                 Ctrl+Alt as the mouse's (a note, an accent, a flam)",
+                 Ctrl+Alt as the mouse's (a note, an accent, a flam); Shift+Space is an \
+                 accent too, without Windows' system menu that Alt+Space also opens",
                 vec![sr(Key::Space, Any, SrWant::Activate)],
             ),
             sr_row(

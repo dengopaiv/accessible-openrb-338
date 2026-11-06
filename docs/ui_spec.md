@@ -809,7 +809,7 @@ wait (the windows paragraph below). With the mode off nothing here applies.
 | F11 | The Loop button |
 | F12 | The mode switch (song / pattern) |
 | Tab / Shift+Tab | The next / previous control of the panel, in section order, wrapping at its ends (the menu bar is reached with F10) |
-| Space | Presses or toggles the focused button, toggle or switch: one mouse down, the path of a screen reader's Click (`App::mouse_down`); on a drum grid sets the step as a click does, with Ctrl, Alt and Ctrl+Alt as the 909's mouse modifiers (section 20.6); not Play/Stop; nothing on a knob, fader, spin button or pattern selector |
+| Space | Presses or toggles the focused button, toggle or switch: one mouse down, the path of a screen reader's Click (`App::mouse_down`); on a drum grid sets the step as a click does, with Ctrl, Alt and Ctrl+Alt as the 909's mouse modifiers and Shift+Space as Alt+Space (section 20.6); not Play/Stop; nothing on a knob, fader, spin button or pattern selector |
 | Enter | By the section of the focused control (the user's decision of 2026-11-06, task-207): in a 303's section that 303's Step (Program Synth mode), in the Transport, the drum machines' and the effect sections Play; with no panel control focused, as above by the row focus |
 | Up, Down, PgUp, PgDn, Home, End | Change the focused knob, fader, spin button or pattern selector (section 20.1), auto-repeat included; on a drum grid Up / Down choose the instrument and Home / End the first / last step (section 20.6); nothing on another control. Not the row focus |
 | Up, Down | On a 303's step editor (task-190, section 20.5): the previous / next edit step, the panel's Back / Step (Home / End: step 1 / the pattern's last step); Left and Right do nothing there (decision task-209) |
@@ -1994,11 +1994,14 @@ reader mode only; with the mode off there is no grid and every key is as before.
     click cycle off, note, accent, with Ctrl+Space a note on / off, Alt+Space an accent on /
     off, Ctrl+Alt+Space a flam on / off, and the Flam entry button on making every Space a
     flam, as on the mouse (section 7); the accent row is on / off; a hi-hat clears the other
-    hi-hat on its step. The 808 ignores the modifiers, as its mouse does. Shift+Space is not
-    the grid's. Auto-repeat is ignored.
-  - Alt+Space also opens the window's system menu on Windows: winit 0.30.13 passes every
-    WM_SYSKEYDOWN to `DefWindowProc` (`event_loop.rs` 1767), after the key event reached the
-    app. TASK-208 asks the user how to settle it.
+    hi-hat on its step. The 808 ignores the modifiers, as its mouse does. Auto-repeat is
+    ignored.
+  - Shift+Space (Shift alone) is Alt+Space: an accent on / off on the 909, the 808's plain
+    Space (decision task-208, the user, 2026-11-06). Alt+Space also opens the window's system
+    menu on Windows: winit 0.30.13 passes every WM_SYSKEYDOWN to `DefWindowProc`
+    (`event_loop.rs` 1767), after the key event reached the app, so the accent is set and the
+    menu opens over it (Escape closes it). Shift+Space sets the accent without the menu; Alt+Space
+    stays for whoever expects the mouse's modifier. Shift with Ctrl or Alt is not the grid's.
 - **F2** on a drum machine's row (the focus on the grid or anywhere in the machine's section,
   else the row focus) reads the pattern row, then each instrument that has steps within the
   pattern's length with its steps: "TR-808, pattern A1, 16 steps, shuffle off. Accent: 9.
@@ -2018,8 +2021,9 @@ reader mode only; with the mode off there is no grid and every key is as before.
    it. Left and Right go to the step before or after, Home and End to step 1 and the
    pattern's last step.
 4. Space sets the step on or off. On the TR-909 it goes round off, note, accent, as a click
-   does; Ctrl+Space sets a plain note on or off, Alt+Space an accent, Ctrl+Alt+Space a flam.
-   The cell then says its new state.
+   does; Ctrl+Space sets a plain note on or off, Shift+Space an accent (Alt+Space too, but
+   Windows then also opens the system menu), Ctrl+Alt+Space a flam. The cell then says its
+   new state.
 5. F2 reads the pattern back, each instrument with its steps. F5 plays it.
 6. While a song plays, the grid stays on its pattern and says nothing when the song moves
    on; Options > Step Editor Follows Playback makes it go along with the song instead, still

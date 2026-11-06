@@ -1,11 +1,11 @@
 ---
 id: TASK-208
 title: 'Decide: Alt+Space on a TR-909 grid opens the system menu'
-status: To Do
+status: Done
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-06T08:41:00Z'
-updated_date: '2026-11-06T21:50:00Z'
+updated_date: '2026-11-06T22:00:00Z'
 labels:
   - decision
   - ui
@@ -41,5 +41,11 @@ Context: crates/orb-ui/src/a11y/grid.rs (GridKey::of), crates/orb-ui/src/app.rs 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user chose an option (A, B, C or D); the outcome and the date are in the final summary
+- [x] #1 The user chose an option (A, B, C or D); the outcome and the date are in the final summary
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by @dengopaiv on 2026-11-06: option B, in the user's words "Add shift+space." Shift+Space on a drum grid is Alt+Space (an accent on/off on the TR-909, the 808's plain Space), the accent key that does not open Windows' system menu; Alt+Space stays as it is (the mouse's modifier, the menu also opens). Applied in TASK-210 (docs/ui_spec.md 20.6).
+<!-- SECTION:FINAL_SUMMARY:END -->

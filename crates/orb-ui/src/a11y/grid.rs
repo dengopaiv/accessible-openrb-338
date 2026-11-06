@@ -221,11 +221,21 @@ pub enum GridKey {
 
 impl GridKey {
     /// The grid's meaning of a key pressed with `modifiers`: the arrows, Home and End without
-    /// modifiers; Space without Shift, with or without Ctrl and Alt (the 909's mouse modifiers;
-    /// the 808 ignores them, as its mouse does).
+    /// modifiers; Space with or without Ctrl and Alt (the 909's mouse modifiers; the 808
+    /// ignores them, as its mouse does); Shift+Space alone as Alt+Space, the accent key that
+    /// does not open the window's system menu (decision task-208).
     pub fn of(key: egui::Key, modifiers: egui::Modifiers) -> Option<Self> {
         if key == egui::Key::Space {
-            return (!modifiers.shift && !modifiers.mac_cmd).then_some(Self::Set(Mods {
+            if modifiers.mac_cmd {
+                return None;
+            }
+            if modifiers.shift {
+                return (!modifiers.ctrl && !modifiers.alt).then_some(Self::Set(Mods {
+                    ctrl: false,
+                    alt: true,
+                }));
+            }
+            return Some(Self::Set(Mods {
                 ctrl: modifiers.ctrl,
                 alt: modifiers.alt,
             }));
@@ -351,7 +361,22 @@ mod tests {
                 alt: true
             }))
         );
-        assert_eq!(GridKey::of(Key::Space, Modifiers::SHIFT), None);
+        // Shift+Space is the accent key, as Alt+Space (decision task-208); not with Ctrl or Alt
+        assert_eq!(
+            GridKey::of(Key::Space, Modifiers::SHIFT),
+            Some(GridKey::Set(Mods {
+                ctrl: false,
+                alt: true
+            }))
+        );
+        assert_eq!(
+            GridKey::of(Key::Space, Modifiers::SHIFT | Modifiers::CTRL),
+            None
+        );
+        assert_eq!(
+            GridKey::of(Key::Space, Modifiers::SHIFT | Modifiers::ALT),
+            None
+        );
         assert_eq!(GridKey::of(Key::ArrowUp, Modifiers::CTRL), None);
         assert_eq!(
             GridKey::of(Key::ArrowLeft, Modifiers::NONE),

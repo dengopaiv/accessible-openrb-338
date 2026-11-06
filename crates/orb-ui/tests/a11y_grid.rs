@@ -230,6 +230,43 @@ fn the_909_flam_button_acts_on_the_grid_as_on_the_mouse() {
     assert_eq!(sr, mouse);
 }
 
+/// Decision task-208: Shift+Space is Alt+Space (an accent on / off on the 909; the 808's plain
+/// Space), the accent key that does not open Windows' system menu.
+#[test]
+fn shift_space_is_the_accent_key() {
+    const SHIFT: Modifiers = Modifiers::SHIFT;
+    for is808 in [false, true] {
+        let mut mouse = app(false);
+        let mut sr = app(true);
+        focus(&mut sr, grid::grid_id(is808));
+        for s in [0, 0, 3] {
+            click_at(&mut mouse, step_pos(is808, s), ALT);
+            key(&mut sr, Key::Home, Modifiers::NONE);
+            keys(&mut sr, Key::ArrowRight, s);
+            key(&mut sr, Key::Space, SHIFT);
+        }
+        let (mouse, sr) = (take(&mut mouse), take(&mut sr));
+        assert_eq!(mouse.len(), 3, "{mouse:?}");
+        assert_eq!(sr, mouse, "808 {is808}");
+    }
+    // the accent on the 909's bass drum, step 1
+    let mut h = app(true);
+    focus(&mut h, grid::grid_id(false));
+    key(&mut h, Key::Space, Modifiers::SHIFT);
+    assert_eq!(
+        active(&h, grid::grid_id(false)),
+        "Bass drum, step 1, accent"
+    );
+    // Shift with Ctrl is not the grid's: nothing set
+    take(&mut h);
+    key(&mut h, Key::Space, Modifiers::SHIFT | CTRL);
+    assert!(
+        take(&mut h)
+            .iter()
+            .all(|e| !matches!(e, Out::Step909 { .. }))
+    );
+}
+
 #[test]
 fn the_grid_node_its_cells_and_the_keys() {
     let mut h = app(true);

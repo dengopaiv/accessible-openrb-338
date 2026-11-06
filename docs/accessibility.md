@@ -221,8 +221,8 @@ section 20.2).
   and Alt as on the 909's mouse). Each cell reads "Bass drum, step 5, on", and on the 909 also
   "accent" or "flam". Done in task-191 (docs/ui_spec.md section 20.6): the Grid node is a
   focusable child `Ui` of the machine's section whose `active_descendant` is the cell under
-  the cursor, so the screen reader speaks each cell as the focus; Alt+Space also opens the
-  window's system menu on Windows (TASK-208, the user's decision). As the step editor, a grid
+  the cursor, so the screen reader speaks each cell as the focus. Alt+Space also opens the
+  window's system menu on Windows, so Shift+Space is an accent key too (decision TASK-208). As the step editor, a grid
   edits its own pattern (`Panel::drum_pin`): playback moving the row to another pattern never
   changes the grid without input, and the same setting makes it move along, silently, at the
   next input (decision task-209).
