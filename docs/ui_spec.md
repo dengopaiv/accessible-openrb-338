@@ -790,6 +790,67 @@ byte 9) to note / rest; a drum tap key sets that instrument on the playing step 
 row 2) without selecting it [G]; the drums' Shift+Tab deletion is not done (which instrument it
 clears is unknown, section 15).
 
+**Screen reader mode (task-188, decisions A11Y-D2 and A11Y-D6; OpenRB-338 only).** With the
+mode on (`App::screen_reader_mode`, docs/accessibility.md 3.4), four keys of the original
+collide with navigation and move (`keys::map_screen_reader`, routed in `App::keyboard`); every
+other key keeps its meaning above, whatever control of the panel has the focus. While a menu
+(TASK-202) or a window has the focus, or a window is open and nothing has it, the panel's keys
+wait (the windows paragraph below). With the mode off nothing here applies.
+
+| Key | In screen reader mode |
+|---|---|
+| F1 | Help > Keyboard Shortcuts |
+| F2, F3, F4 | Free: the read-out keys of task-189 (A11Y-5) |
+| F5 | Play if stopped, Stop otherwise (Space's action above) |
+| F6 / Shift+F6 | The first control of the next / previous section (wraps) |
+| F7, F8 | Free |
+| F9 | The Record button (Insert still records) |
+| F10, or Alt alone | The menu bar (section 18.2, both modes) |
+| F11 | The Loop button |
+| F12 | The mode switch (song / pattern) |
+| Tab / Shift+Tab | The next / previous control of the panel, in section order, wrapping at its ends (the menu bar is reached with F10) |
+| Space | Presses or toggles the focused button, toggle or switch: one mouse down, the path of a screen reader's Click (`App::mouse_down`); not Play/Stop; nothing on a knob, fader, spin button or pattern selector |
+| Enter | By the section of the focused control (the user's decision of 2026-11-06, task-207): in a 303's section that 303's Step (Program Synth mode), in the Transport, the drum machines' and the effect sections Play; with no panel control focused, as above by the row focus |
+| Up, Down, PgUp, PgDn, Home, End | Change the focused knob, fader, spin button or pattern selector (section 20.1), auto-repeat included; nothing on another control. Not the row focus |
+| Left, Right | Nothing yet (the 303 step editor and the drum grids, task-190 and task-191) |
+| Ctrl+Up / Ctrl+Down | The row focus to the previous / next row, wrapping (the original's Up / Down), without moving the navigation focus |
+| Ctrl+Tab / Ctrl+Shift+Tab | The original's Tab / Shift+Tab: the playing step of the focused 303 becomes a note / a rest (Program Synth mode) |
+
+The F keys act as the buttons' mouse down (`Panel::press` of `transport.play` or `.stop`,
+`.record`, `.loop`, `.mode`) and show the button pressed while held, as the original's keys do.
+Auto-repeat is honored for Tab, Shift+Tab, F6, Shift+F6 and the value keys only; the others
+ignore it as the original does. egui's own focus moves on Tab and on the arrows are cancelled
+while the focus is on the panel or nowhere (`Memory::move_focus(FocusDirection::None)` before
+any widget of the frame registers); in a window (Keyboard Shortcuts, Info) Tab is egui's.
+
+The row focus follows the navigation: when the focus enters a machine's section (by Tab, F6, a
+screen reader's own navigation or a click) that machine gets the row focus, so the synth and
+tap keys go to it. Only entering another section moves it, so Ctrl+Up / Ctrl+Down stay until
+the focus leaves the section; a stay in the menu bar or a window keeps it too. Enter goes by
+the focused control's section instead (task-207). The sections are in section 20.2.
+
+The windows Keyboard Shortcuts, File > Info, Help > About and Mods > Info: when one opens (the
+newest when another is open), the focus moves into it at its second frame (the first is
+egui's sizing pass, which shows no widget; a repaint is requested so the second frame comes;
+under the browser, the prompt, Replace or the error box the move waits until it closes), to
+the first widget of its contents that takes the focus (`app::focus_into_window`
+with `FocusDirection::Next`, the way egui's Tab gives the focus with nothing focused): Info's
+first text field, About's and Mods > Info's first link, and in Keyboard Shortcuts its first
+line ("Keyboard mode now: ..."), a label that takes the focus in screen reader mode only,
+because the window has no control of its own. While a window has the focus, or a window is
+open and nothing has the focus (before the window takes it, or after egui cleared it), the
+panel's keys wait, as they do for the menus (TASK-202): the original's keys, Enter, Space, the arrows and
+Ctrl+Up/Down / Ctrl+Tab do nothing on the panel (the arrows do not move egui's focus either),
+while F1, F5, F6, F9, F11 and F12 keep working (F2 to F4: task-189) and Escape closes the
+window. Tab is egui's: it
+goes through the window's contents and, from the last, back to the first (egui would give it
+to the panel's first control, as the windows are drawn after the panel). The title bar, which
+egui registers before the contents, is reached with Shift+Tab from the first: an unnamed node
+(egui's title click area), then the close button. When the windows close (Escape, the close
+button), the panel control that had the focus last gets it back (`App::window_focus`). Their
+dialog roles, and the names of the unnamed nodes (Info's text fields, the title bar), are
+task-193's.
+
 ## 11. Pattern mode, song mode, song position and loop
 
 - **Pattern mode** (global byte 0 = 0): the selected patterns loop, every control stays where it
@@ -1640,4 +1701,29 @@ song-mode recording records them as clicks (tests `crates/orb-ui/tests/a11y_driv
   delay steps 1..32, PCF pattern 0..54) and do nothing on tempo, bar, loop start and loop
   length, so a slip cannot send hundreds of events. With the
   mode off, every key is the original's, whatever has the focus. The routing of the other keys
-  (Tab, F6, Space, the row focus on Ctrl+Up and Ctrl+Down) is task-188 (A11Y-4).
+  (Tab, F6, Space, the row focus on Ctrl+Up and Ctrl+Down) is task-188 (A11Y-4): section 10,
+  "Screen reader mode", and 20.2.
+
+### 20.2 Sections and the focus order (task-188)
+
+A11Y-4 of docs/accessibility_plan.md; `crates/orb-ui/src/a11y/nav.rs`, tests
+`crates/orb-ui/tests/a11y_sections.rs`. In screen reader mode only:
+
+- **Sections.** The panel's controls are drawn into nine child `Ui`s, one per section, whose
+  nodes have the role Group and the section's name (`nav::group`, egui's
+  `UiBuilder::accessibility_role` / `accessibility_label`): Transport, Bass Line 1, Bass Line 2,
+  TR-808, TR-909 (each with its pattern row and its mixer channel, decision A11Y-D3), Master and
+  compressor, PCF, Delay, Distortion. A control's node is a child of its section's group (the
+  parent of a node is the `Ui` its widget was made in); the 303's edit step label gets a
+  hover-only widget for that. The drawing order is unchanged. A screen reader names the group
+  when the focus enters it. With the mode off there are no groups and the tree is as before.
+- **Focus order** (`nav::order`): the sections in that order; within a section the order of
+  `assets/ui/layout.tsv` (the pattern row, the machine, the mixer channel), except that a
+  machine's pattern selector comes first and the transport follows docs/accessibility.md 3.2:
+  Play, Stop, Record, Loop, Mode, Tempo, Shuffle amount, Bar, Loop start, Loop length, Rewind,
+  Fast forward. 190 stops: 186 controls and 4 pattern selectors. Tab and Shift+Tab move along
+  it and wrap at the ends of the panel; F6 and Shift+F6 go to the first stop of the next or
+  previous section (Play; the four pattern selectors; Master level; PCF on; Delay on;
+  Distortion on). With nothing focused, Tab goes to the first stop, Shift+Tab to the last.
+  egui's own Tab order (the registration order) is used with the mode off and in windows.
+- **Row focus**: section 10, "Screen reader mode".

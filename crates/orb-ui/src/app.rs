@@ -17,12 +17,12 @@ use eframe::egui::{
     emath::GuiRounding, epaint,
 };
 
-use crate::a11y::drive;
+use crate::a11y::{drive, nav};
 use crate::art::{self, KnobDesign};
 use crate::behavior::{self, Mods};
 use crate::browser::{self, Browser, Mode, Poll};
 use crate::document::Document;
-use crate::keys::{self, Action, KeyMode};
+use crate::keys::{self, Action, KeyMode, SrAction};
 use crate::layout::{self, Ctl, PANEL_H, PANEL_W};
 use crate::link::Link;
 use crate::logo_anim;
@@ -84,6 +84,34 @@ struct Hold {
     id: Option<String>,
     /// A repeat or wind button: its id, when the key went down, the steps taken.
     arrow: Option<(&'static str, f64, u32)>,
+}
+
+/// The windows that take the focus as they open in screen reader mode (`App::window_focus`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Win {
+    KeyHelp,
+    Info,
+    About,
+    ModInfo,
+}
+
+impl Win {
+    pub(crate) const ALL: [Win; 4] = [Win::KeyHelp, Win::Info, Win::About, Win::ModInfo];
+}
+
+/// Screen reader mode: moves the focus into a window (`due`, from `App::window_focus_due`).
+/// Called at the start of the window's contents: the first widget after this point that takes
+/// the focus gets it, the window's first control, as egui's Tab does with nothing focused.
+pub(crate) fn focus_into_window(ui: &Ui, due: bool) {
+    if !due {
+        return;
+    }
+    ui.memory_mut(|m| {
+        if let Some(f) = m.focused() {
+            m.surrender_focus(f);
+        }
+        m.move_focus(egui::FocusDirection::Next);
+    });
 }
 
 /// The top-left corner that centers a block of `size` (a text galley, wrapped lines included)
@@ -216,6 +244,25 @@ pub struct App {
     pub title: String,
     holds: Vec<Hold>,
     ctls: Vec<Ctl>,
+    /// The focus order of screen reader mode (`a11y::nav`, task-188).
+    nav: Vec<nav::Stop>,
+    /// The section the navigation focus was in at the last frame of screen reader mode: the
+    /// row focus follows the section only when the focus enters another one, so Ctrl+Up and
+    /// Ctrl+Down move the row without the focus undoing it (`App::follow_section`).
+    nav_section: Option<usize>,
+    /// Screen reader mode and the windows (Keyboard Shortcuts, File > Info, Help > About,
+    /// Mods > Info; `App::window_focus`): which were open at the last frame (a bit per
+    /// [`Win::ALL`]), the window that opened last and the frames it has been waiting for the
+    /// focus, the window the focus is to move into in this frame, the window it last moved
+    /// into, and the panel control that had the focus last, which gets it back when the
+    /// windows close.
+    windows_open: u8,
+    window_new: Option<(Win, u32)>,
+    window_focus_due: Option<Win>,
+    focus_window: Option<Win>,
+    /// Tab was pressed with the focus in a window (`App::window_focus`).
+    window_tab: bool,
+    panel_focus: Option<egui::Id>,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
     pub frame_stats: Option<FrameStats>,
@@ -275,6 +322,14 @@ impl App {
             title: String::new(),
             holds: Vec::new(),
             ctls: layout::controls(),
+            nav: nav::order(&layout::controls()),
+            nav_section: None,
+            windows_open: 0,
+            window_new: None,
+            window_focus_due: None,
+            focus_window: None,
+            window_tab: false,
+            panel_focus: None,
             shot,
             frame_stats: FrameStats::from_env(),
         }
@@ -751,6 +806,17 @@ impl App {
         let view = View::fit(avail, ui.ctx().pixels_per_point());
         let now = ui.input(|i| i.time);
         self.panel.held = None;
+        let screen_reader = self.screen_reader_mode();
+        if screen_reader {
+            self.follow_section(ui);
+            self.window_focus(ui);
+        } else {
+            self.nav_section = None;
+            self.windows_open = 0;
+            self.window_new = None;
+            self.window_focus_due = None;
+            self.focus_window = None;
+        }
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
         // and no clicks of its own.
@@ -810,9 +876,25 @@ impl App {
         }
 
         let ctls = std::mem::take(&mut self.ctls);
+        // Screen reader mode: each section's controls in a child Ui whose node is a Group
+        // named as the section (task-188); the order of the drawing is the panel's as before.
+        let mut groups: Vec<Ui> = if screen_reader {
+            let r = ui.max_rect();
+            (0..nav::SECTIONS.len())
+                .map(|s| ui.new_child(nav::group(s, r)))
+                .collect()
+        } else {
+            Vec::new()
+        };
         for c in &ctls {
-            self.control(ui, &view, c, now);
+            let section = nav::section_index(&c.section);
+            let target = match section.and_then(|s| groups.get_mut(s)) {
+                Some(g) => g,
+                None => &mut *ui,
+            };
+            self.control(target, &view, c, now);
         }
+        drop(groups);
         self.ctls = ctls;
         self.drum_strips(ui, &view);
         self.instrument_selection(ui, &view);
@@ -865,6 +947,42 @@ impl App {
         if !focused {
             self.holds.clear();
         }
+        let screen_reader = self.screen_reader_mode();
+        // Screen reader mode, the focus on the panel or nowhere: Tab, Shift+Tab and the arrows
+        // do not move egui's focus (it moves in the panel's order below, and the arrows change
+        // values). Called before any widget of this frame says it takes the focus, which is
+        // where egui would move it. A window's focus keeps egui's Tab.
+        let on_panel = ui
+            .memory(|m| m.focused())
+            .is_none_or(|f| nav::section_of(&self.nav, f).is_some());
+        // In a window only the arrows' moves are cancelled (they would leave the window for
+        // the panel by position); Tab stays egui's.
+        let arrow = || {
+            events.iter().any(|e| {
+                matches!(e, egui::Event::Key { key, pressed: true, .. }
+                    if matches!(key, Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft
+                        | Key::ArrowRight))
+            })
+        };
+        let tab = || {
+            events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key {
+                        key: Key::Tab,
+                        pressed: true,
+                        ..
+                    }
+                )
+            })
+        };
+        let panel_control = ui
+            .memory(|m| m.focused())
+            .is_some_and(|f| nav::section_of(&self.nav, f).is_some());
+        let window_has_keys = !panel_control && Win::ALL.iter().any(|&w| self.win_open(w));
+        if screen_reader && (on_panel || (arrow() && !tab())) {
+            ui.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
+        }
         for ev in events {
             let egui::Event::Key {
                 key,
@@ -885,11 +1003,73 @@ impl App {
             // slider, spin button or pattern selector, auto-repeat included, and do not reach
             // the original's keys (task-187).
             if !modifiers.any()
-                && self.screen_reader_mode()
+                && screen_reader
                 && let Some(step) = drive::Step::of_key(key)
                 && let Some(t) = self.focused_target(ui)
             {
                 drive::step(&mut self.panel, &t, step, now);
+                continue;
+            }
+            if screen_reader {
+                // The key map of the mode (task-188, decision A11Y-D6). With the focus in a
+                // window (Keyboard Shortcuts, Info, About, Mods > Info), the panel's keys wait,
+                // as they do for the menus (TASK-202): Enter, Space, the arrows and the letters
+                // are the window's; the mode's function keys still work (F2 to F4 are
+                // task-189's, F10 the menu bar's, Escape the window's). Also with the focus
+                // nowhere while a window is open (before the window takes it, or after a click
+                // on its text).
+                if window_has_keys
+                    && !matches!(
+                        k,
+                        Key::F1 | Key::F5 | Key::F6 | Key::F9 | Key::F11 | Key::F12
+                    )
+                {
+                    continue;
+                }
+                let ctrl = modifiers.command || modifiers.ctrl;
+                // Enter follows the section of the focused control, not the row focus (the
+                // user's decision, task-207): in a 303's section that 303's Step (Program
+                // Synth mode), in any other section Play. With no panel control focused, the
+                // row focus decides, as with the mode off.
+                let section = ui
+                    .memory(|m| m.focused())
+                    .and_then(|f| nav::section_of(&self.nav, f));
+                let enter = k == Key::Enter && !ctrl;
+                let mapped = match (enter, section) {
+                    (true, Some(s)) => match nav::row_of_section(s) {
+                        Some(r) if r < 2 => {
+                            keys::map_screen_reader(k, modifiers.shift, ctrl, self.key_mode, r)
+                        }
+                        _ => Some(SrAction::Panel(Action::Press("transport.play".into()))),
+                    },
+                    _ => keys::map_screen_reader(
+                        k,
+                        modifiers.shift,
+                        ctrl,
+                        self.key_mode,
+                        self.panel.focus,
+                    ),
+                };
+                let Some(a) = mapped else {
+                    continue;
+                };
+                match a {
+                    // moves of the focus repeat as in any program
+                    SrAction::Control(back) if on_panel => {
+                        let f = ui.memory(|m| m.focused());
+                        self.move_nav(ui, nav::next_control(&self.nav, f, back));
+                    }
+                    SrAction::Control(_) => {}
+                    SrAction::Section(back) => {
+                        let f = ui.memory(|m| m.focused());
+                        self.move_nav(ui, nav::next_section(&self.nav, f, back));
+                    }
+                    // the original ignores auto-repeat for its keys; that stays
+                    _ if repeat => {}
+                    SrAction::Activate => self.activate(ui, now),
+                    SrAction::Help => self.show_key_help(),
+                    SrAction::Panel(a) => self.act(k, a, now),
+                }
                 continue;
             }
             if repeat || modifiers.command || modifiers.ctrl {
@@ -957,6 +1137,145 @@ impl App {
         self.holds.iter().any(|h| h.id.as_deref() == Some(id))
     }
 
+    /// Screen reader mode: gives egui's focus to the panel's control `to` (Tab, F6) and the row
+    /// focus to its section's machine.
+    fn move_nav(&mut self, ui: &Ui, to: Option<egui::Id>) {
+        if let Some(id) = to {
+            ui.memory_mut(|m| m.request_focus(id));
+            self.follow_section(ui);
+        }
+    }
+
+    /// Screen reader mode: when the navigation focus is in another section than at the last
+    /// frame, a machine's section gives that machine the row focus (docs/accessibility.md
+    /// 3.2), so the synth, tap and Enter keys go to it. A screen reader says the section's name
+    /// as the focus enters its group; TASK-189 adds the spoken confirmation.
+    fn follow_section(&mut self, ui: &Ui) {
+        let section = ui
+            .memory(|m| m.focused())
+            .and_then(|f| nav::section_of(&self.nav, f));
+        if section.is_some() && section != self.nav_section {
+            if let Some(r) = section.and_then(nav::row_of_section) {
+                self.panel.focus = r;
+            }
+            self.nav_section = section;
+        }
+    }
+
+    /// Screen reader mode: the focus and the windows Keyboard Shortcuts, File > Info, Help >
+    /// About and Mods > Info. When one opens, the focus is to move into it
+    /// ([`focus_into_window`], called at the start of its contents); while one has the focus,
+    /// Tab is egui's there (`App::keyboard`), and Tab on its last widget goes back to its first
+    /// rather than out to the panel; when the last closes, the panel
+    /// control that had the focus last gets it back.
+    fn window_focus(&mut self, ui: &Ui) {
+        let focused = ui.memory(|m| m.focused());
+        if let Some(f) = focused.filter(|&f| nav::section_of(&self.nav, f).is_some()) {
+            self.panel_focus = Some(f);
+        }
+        let mask = Win::ALL
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| self.win_open(**w))
+            .fold(0u8, |m, (i, _)| m | 1 << i);
+        let open = mask != 0;
+        let in_window = open && focused.is_some_and(|f| nav::section_of(&self.nav, f).is_none());
+        // a window that opened since the last frame is the one the focus goes to (the newest,
+        // also when another is open)
+        let new = mask & !self.windows_open;
+        if let Some(i) = (0..Win::ALL.len()).find(|i| new & 1 << i != 0) {
+            self.window_new = Some((Win::ALL[i], 0));
+        }
+        let modal = self.browser.is_some()
+            || self.prompt.is_some()
+            || self.replace.is_some()
+            || self.error_open();
+        match self.window_new {
+            Some((w, _)) if !self.win_open(w) => self.window_new = None,
+            // under the browser, the prompt, Replace or the error box the move waits until it
+            // closes: they have the keys
+            Some(_) if modal => {}
+            // the window's second frame: in its first, egui sizes it without showing its
+            // widgets (a sizing pass), so none could take the focus
+            Some((w, n)) if n >= 1 => {
+                self.window_new = None;
+                self.window_focus_due = Some(w);
+                self.focus_window = Some(w);
+            }
+            Some((w, n)) => {
+                self.window_new = Some((w, n + 1));
+                // the second frame comes whether or not anything else repaints
+                ui.ctx().request_repaint();
+            }
+            None => {}
+        }
+        if std::mem::take(&mut self.window_tab)
+            && !in_window
+            && let Some(w) = self.focus_window.filter(|&w| self.win_open(w))
+        {
+            // Tab on the window's last widget: egui gives the focus to the next widget that
+            // takes it, which is the panel's first (the windows are drawn after the panel); it
+            // goes back to the window's first control, so Tab cycles in the window's contents.
+            // The title bar (its close button), which egui registers before the contents, is
+            // reached with Shift+Tab
+            self.window_focus_due = Some(w);
+        }
+        self.window_tab = in_window
+            && ui.input(|i| {
+                i.events.iter().any(|e| {
+                    matches!(e, egui::Event::Key { key: Key::Tab, pressed: true, modifiers, .. }
+                        if !modifiers.any())
+                })
+            });
+        if !open && self.windows_open != 0 {
+            self.window_focus_due = None;
+            self.focus_window = None;
+            let on_panel = focused.is_some_and(|f| nav::section_of(&self.nav, f).is_some());
+            if let Some(back) = self.panel_focus.filter(|_| !on_panel) {
+                ui.memory_mut(|m| m.request_focus(back));
+            }
+        }
+        self.windows_open = mask;
+    }
+
+    /// Whether the window `w` is open.
+    fn win_open(&self, w: Win) -> bool {
+        match w {
+            Win::KeyHelp => self.key_help_open,
+            Win::Info => self.info_open,
+            Win::About => self.about_open,
+            Win::ModInfo => self.mod_info_open,
+        }
+    }
+
+    /// Called by the window `w` of [`App::window_focus`] before it draws: whether, in screen
+    /// reader mode, the focus is to go into it now ([`focus_into_window`] at the start of its
+    /// contents).
+    pub(crate) fn window_focus_due(&mut self, w: Win) -> bool {
+        if self.window_focus_due == Some(w) {
+            self.window_focus_due = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Space in screen reader mode: what a screen reader's Click does on the focused button,
+    /// toggle or switch, one mouse down (`App::mouse_down`). Nothing on the other controls.
+    fn activate(&mut self, ui: &Ui, now: f64) {
+        let Some(f) = ui.memory(|m| m.focused()) else {
+            return;
+        };
+        let c = self
+            .ctls
+            .iter()
+            .find(|c| !drive::joined(c) && crate::a11y::hit_id(c) == f)
+            .cloned();
+        if let Some(c) = c {
+            self.mouse_down(&c, now);
+        }
+    }
+
     /// A click anywhere inside a row gives the row the focus (`sub_42ADBB`).
     fn focus_click(&mut self, ui: &Ui, view: &View) {
         let pressed = ui.input(|i| {
@@ -994,6 +1313,11 @@ impl App {
                 if drive::is_spin(&c.id) {
                     self.spin_button(ui, c, rect, now);
                 } else {
+                    if self.screen_reader_mode() {
+                        // a hover-only widget, so that the label's node is in the section's
+                        // group (the parent of a node is the Ui of its widget)
+                        ui.interact(rect, crate::a11y::hit_id(c), Sense::hover());
+                    }
                     crate::a11y::describe_display(ui.ctx(), rect, &self.panel, c);
                 }
                 let n = (c.w / 9.0) as usize;

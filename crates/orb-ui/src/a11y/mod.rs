@@ -8,6 +8,7 @@
 
 pub mod drive;
 pub mod names;
+pub mod nav;
 pub mod units;
 
 use eframe::egui::{self, Rect, accesskit};

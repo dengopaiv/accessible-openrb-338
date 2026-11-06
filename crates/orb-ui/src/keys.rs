@@ -199,9 +199,111 @@ pub fn map(k: Key, shift: bool, mode: KeyMode, focus: usize) -> Option<Action> {
     }
 }
 
+/// What a key does in screen reader mode (task-188, decisions A11Y-D2 and A11Y-D6,
+/// docs/ui_spec.md section 10, "Screen reader mode").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SrAction {
+    /// What the panel does, as with the mode off (the original's keys, and F5, F9, F11, F12,
+    /// Ctrl+Up / Ctrl+Down and Ctrl+Tab / Ctrl+Shift+Tab, which stand for the original's).
+    Panel(Action),
+    /// Tab (false) / Shift+Tab (true): the next / previous control of the panel.
+    Control(bool),
+    /// F6 (false) / Shift+F6 (true): the first control of the next / previous section.
+    Section(bool),
+    /// Space: presses or toggles the focused control, as a screen reader's Click.
+    Activate,
+    /// F1: Help > Keyboard Shortcuts.
+    Help,
+}
+
+/// What the key `k` does in screen reader mode, with `shift` and `ctrl` (Ctrl or Cmd) held, in
+/// `mode`, with the row `focus` (see [`map`]). Up, Down, Page Up, Page Down, Home and End change
+/// a focused value control (`App::keyboard`, task-187) and are nothing here; Left and Right are
+/// kept for the step editor and the grids (task-190, task-191); F2 to F4 for the read-out keys
+/// (task-189); F10 is the menu bar's (task-184). Every other key is [`map`]'s.
+pub fn map_screen_reader(
+    k: Key,
+    shift: bool,
+    ctrl: bool,
+    mode: KeyMode,
+    focus: usize,
+) -> Option<SrAction> {
+    let panel = |a: Option<Action>| a.map(SrAction::Panel);
+    let press = |id: &str| Some(SrAction::Panel(Action::Press(id.into())));
+    if ctrl {
+        // the original's Tab / Shift+Tab and Up / Down, moved; other keys are the menu's
+        return match k {
+            Key::Tab => panel(map(Key::Tab, shift, mode, focus)),
+            Key::ArrowUp if !shift => Some(SrAction::Panel(Action::Focus(-1))),
+            Key::ArrowDown if !shift => Some(SrAction::Panel(Action::Focus(1))),
+            _ => None,
+        };
+    }
+    match k {
+        Key::Tab => Some(SrAction::Control(shift)),
+        Key::F6 => Some(SrAction::Section(shift)),
+        Key::F1 => Some(SrAction::Help),
+        Key::F5 => Some(SrAction::Panel(Action::PlayStop)),
+        Key::F9 => press("transport.record"),
+        Key::F11 => press("transport.loop"),
+        Key::F12 => press("transport.mode"),
+        Key::Space => Some(SrAction::Activate),
+        Key::ArrowUp
+        | Key::ArrowDown
+        | Key::ArrowLeft
+        | Key::ArrowRight
+        | Key::PageUp
+        | Key::PageDown
+        | Key::Home
+        | Key::End => None,
+        _ => panel(map(k, shift, mode, focus)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screen_reader_mode_moves_the_colliding_keys() {
+        let sr = |k, shift, ctrl, focus| map_screen_reader(k, shift, ctrl, KeyMode::Synth, focus);
+        assert_eq!(
+            sr(Key::Tab, false, false, 0),
+            Some(SrAction::Control(false))
+        );
+        assert_eq!(sr(Key::Tab, true, false, 0), Some(SrAction::Control(true)));
+        assert_eq!(
+            sr(Key::Tab, false, true, 0),
+            Some(SrAction::Panel(Action::Tap303(false)))
+        );
+        assert_eq!(
+            sr(Key::Tab, true, true, 1),
+            Some(SrAction::Panel(Action::Tap303(true)))
+        );
+        assert_eq!(
+            sr(Key::Tab, false, true, 2),
+            None,
+            "no tap on a drum machine"
+        );
+        assert_eq!(sr(Key::Space, false, false, 0), Some(SrAction::Activate));
+        assert_eq!(sr(Key::ArrowUp, false, false, 0), None);
+        assert_eq!(
+            sr(Key::ArrowUp, false, true, 0),
+            Some(SrAction::Panel(Action::Focus(-1)))
+        );
+        assert_eq!(
+            sr(Key::Enter, false, false, 1),
+            Some(SrAction::Panel(Action::Press("tb303_2.step".into())))
+        );
+        assert_eq!(
+            sr(Key::Insert, false, false, 3),
+            Some(SrAction::Panel(Action::Press("transport.record".into())))
+        );
+        for k in [Key::F2, Key::F3, Key::F4, Key::F7, Key::F8, Key::F10] {
+            assert_eq!(sr(k, false, false, 0), None, "{k:?}");
+        }
+        assert_eq!(sr(Key::N, false, true, 0), None, "the menu's");
+    }
 
     #[test]
     fn missing_physical_key_falls_back_to_the_logical_one() {

@@ -77,6 +77,7 @@ impl App {
             self.about_open = false;
             return;
         }
+        let due = self.window_focus_due(crate::app::Win::About);
         let now = ctx.input(|i| i.time);
         if std::mem::take(&mut self.about_start_due) {
             self.about_start = Some(now);
@@ -93,6 +94,7 @@ impl App {
             .default_pos(ctx.content_rect().center())
             .frame(egui::Frame::window(&ctx.global_style()).inner_margin(0.0))
             .show(ctx, |ui| {
+                crate::app::focus_into_window(ui, due);
                 // The layout of the mockup session (task-115), points from the top left of
                 // the content: the icon, the wordmark at 2x, and under its subtitle the
                 // version and the link, left-aligned. The images are SVG, so the loader

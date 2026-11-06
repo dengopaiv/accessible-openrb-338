@@ -280,6 +280,7 @@ impl App {
             self.mod_info_shown = None;
             return;
         }
+        let due = self.window_focus_due(crate::app::Win::ModInfo);
         let stale = self
             .mod_details
             .as_ref()
@@ -320,6 +321,7 @@ impl App {
             // else the content may use only the default area height (400)
             .default_height(screen.height() - 60.0)
             .show(ctx, |ui| {
+                crate::app::focus_into_window(ui, due);
                 // a window with `vscroll` starts 400 high; this one is as high as its content
                 egui::ScrollArea::vertical()
                     .auto_shrink([true, true])

@@ -175,6 +175,11 @@ focus, so the synth and tap keys go to it, and says so ("Bass Line 2, keyboard f
 A machine's mixer channel goes into the machine's section, because in ReBirth a row is one
 machine with its channel (decision 3, section 4).
 
+Done in task-188: the sections are Group nodes in screen reader mode, and Tab goes through
+the whole panel in this order, wrapping at its ends; within a section the panel's order, with
+the pattern selector first and the transport in the order listed above (docs/ui_spec.md
+section 20.2).
+
 ### 3.3 Controls
 
 - Knobs and faders: Slider with the value 0 to 127 (the value the original sends:
@@ -233,6 +238,8 @@ or by the original's key map, so all twelve were free.
   screen reader mode Space no longer plays; F5 does.
 - Enter: what it does in the original, whatever has the focus: the 303's Step in Program
   Synth mode with a 303 focused, else Play. Programming a 303 works exactly as in ReBirth.
+  Refined by the user on 2026-11-06 (task-207): "a 303 focused" is the section of the focused
+  control, so Enter in the Transport or an effect section is Play whatever the row focus.
 - Up, Down, Page Up, Page Down, Home, End: change the focused value. Left and Right: move in
   the step editor and the grids.
 - Ctrl+Up and Ctrl+Down: the original's row focus, without moving the navigation focus.
@@ -240,6 +247,9 @@ or by the original's key map, so all twelve were free.
   (the original's Tab and Shift+Tab).
 - Every other key of the original keeps its meaning, whatever has the focus.
 - Help > Keyboard Shortcuts lists all of the above when the mode is on.
+
+Done in task-188 but for F2 to F4 (task-189) and Left / Right (task-190, task-191):
+docs/ui_spec.md section 10, "Screen reader mode".
 
 ### 3.5 Announcements
 
@@ -511,6 +521,34 @@ is the position's word). The 86 sliders are the 77 knobs and 9 faders, the 57 ra
 The 12 Text elements are the displays, which take no focus. The six click areas of the drum machines
 (step strips, instrument selection) are no longer focusable and so no longer in the tree. The
 names and roles are listed in docs/ui_spec.md section 20.
+
+Output after task-188 (A11Y-4: sections; 2026-11-06), with `-ScreenReader on` (the parameter
+writes `screen_reader = "on"` or `"off"` into the throwaway settings; the default, `auto`, is
+on while NVDA runs, so the default run on the development machine gave this output too). With
+`-ScreenReader off` the same run gave 198 elements: these without the 9 Groups, 194 that take
+the focus, as before.
+
+```text
+window: 'OpenRB-338 - Untitled'
+elements: 207
+by type, named:
+    86  Slider, True
+    62  Button, True
+    23  CheckBox, True
+    14  Spinner, True
+     9  Group, True
+     9  RadioButton, True
+     2  Text, True
+     1  Menu, False
+     1  Pane, False
+can take the focus: 194, of them with a name: 194
+names: Transport | Shuffle amount | Tempo | Mode | Play | ... | Bass Line 1 | Pattern section on
+  | Pattern | ...
+```
+
+The nine Groups are the sections (docs/ui_spec.md 20.2), each before its controls in the tree.
+The tree lists the controls in the drawing order; the Tab order of the mode is the sections'
+(20.2).
 
 ### 6.4 NVDA and this program, for developers who do not use it
 

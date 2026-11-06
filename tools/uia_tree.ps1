@@ -26,9 +26,18 @@
 .PARAMETER Dump
     Also print every element: its control type, its name and whether it can take the focus.
 
+.PARAMETER ScreenReader
+    The screen reader mode setting the program starts with, written into the throwaway
+    settings file: auto (the default: on while Windows reports a screen reader running, as
+    NVDA does), on (the tree a screen reader user gets, with the section groups of task-188)
+    or off (the tree with the mode off, also on a machine with NVDA running).
+
 .EXAMPLE
     cargo build --release -p orb-ui
     pwsh tools/uia_tree.ps1
+
+.EXAMPLE
+    pwsh tools/uia_tree.ps1 -ScreenReader on
 
 .EXAMPLE
     pwsh tools/uia_tree.ps1 -Arguments 'C:\songs\a.rbs' -Dump
@@ -36,7 +45,9 @@
 param(
     [string]$Exe = (Join-Path $PSScriptRoot '..\target\release\OpenRB-338.exe'),
     [string[]]$Arguments = @('--demo', '--size', '624x510'),
-    [switch]$Dump
+    [switch]$Dump,
+    [ValidateSet('auto', 'on', 'off')]
+    [string]$ScreenReader = 'auto'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,6 +82,10 @@ public static class OrbUiaWin {
 $config = Join-Path ([IO.Path]::GetTempPath()) "orb-uia-tree-$PID.toml"
 $oldConfig = $env:ORB_UI_CONFIG
 $env:ORB_UI_CONFIG = $config
+if ($ScreenReader -ne 'auto') {
+    # UTF-8 without a byte order mark, in any PowerShell
+    [IO.File]::WriteAllText($config, "screen_reader = `"$ScreenReader`"`n")
+}
 $p = Start-Process -FilePath $Exe -ArgumentList $Arguments -PassThru
 try {
     # The main window is winit's visible "Window Class" window. The process also has a hidden

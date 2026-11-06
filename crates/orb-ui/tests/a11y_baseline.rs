@@ -90,3 +90,34 @@ fn the_tree_today() {
         "nodes that can take the focus"
     );
 }
+
+/// The tree in screen reader mode (task-188): the same nodes, plus the nine section groups,
+/// each named, with the panel's controls inside.
+///
+/// | Task | Nodes | Named | Groups | Focusable |
+/// |---|---|---|---|---|
+/// | task-188 (sections) | 212 | 205 | 9 | 194 |
+#[test]
+fn the_tree_in_screen_reader_mode() {
+    let mut h = AppTree::new();
+    h.app.settings.screen_reader = orb_ui::screen_reader::ScreenReaderSetting::On;
+    h.frame(vec![]);
+    let t = h.tree();
+    let focusable = t
+        .nodes()
+        .filter(|(_, n)| a11y::supports(n, Action::Focus))
+        .count();
+    let groups = t.by_role(Role::Group).count();
+    println!(
+        "nodes {} named {} groups {groups} focusable {focusable}",
+        t.len(),
+        t.named().len()
+    );
+    assert_eq!(t.len(), BASELINE_NODES + 9, "node count");
+    assert_eq!(t.named().len(), BASELINE_NAMED + 9, "named nodes");
+    assert_eq!(groups, 9, "the sections");
+    assert_eq!(
+        focusable, BASELINE_FOCUSABLE,
+        "nodes that can take the focus"
+    );
+}

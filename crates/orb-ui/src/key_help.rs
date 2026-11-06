@@ -11,7 +11,7 @@
 use eframe::egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
 
 use crate::app::App;
-use crate::keys::{Action, KeyMode};
+use crate::keys::{Action, KeyMode, SrAction};
 use crate::palette::{INK, INK_DIM};
 use crate::shortcuts;
 
@@ -141,6 +141,62 @@ impl Bind {
     }
 }
 
+/// What a bind of screen reader mode must give from [`keys::map_screen_reader`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SrWant {
+    Panel(Want),
+    Control(bool),
+    Section(bool),
+    Activate,
+    Help,
+    /// No action from the key map (a value key, handled on a focused value control).
+    Nothing,
+}
+
+impl SrWant {
+    pub fn action(&self, focus: usize) -> Option<SrAction> {
+        Some(match self {
+            SrWant::Panel(w) => SrAction::Panel(w.action(focus)?),
+            SrWant::Control(back) => SrAction::Control(*back),
+            SrWant::Section(back) => SrAction::Section(*back),
+            SrWant::Activate => SrAction::Activate,
+            SrWant::Help => SrAction::Help,
+            SrWant::Nothing => return None,
+        })
+    }
+}
+
+/// One key of screen reader mode, with Ctrl held or not, and what
+/// [`keys::map_screen_reader`] must make of it.
+#[derive(Clone, Debug)]
+pub struct SrBind {
+    pub key: Key,
+    pub shift: Shift,
+    pub ctrl: bool,
+    pub scope: Scope,
+    pub want: SrWant,
+}
+
+fn sr(key: Key, shift: Shift, want: SrWant) -> SrBind {
+    SrBind {
+        key,
+        shift,
+        ctrl: false,
+        scope: Scope::Always,
+        want,
+    }
+}
+
+fn sr_ctrl(key: Key, shift: Shift, scope: Scope, want: SrWant) -> SrBind {
+    SrBind {
+        key,
+        shift,
+        ctrl: true,
+        scope,
+        want,
+    }
+}
+
 /// A line of the window.
 #[derive(Clone, Debug)]
 pub struct Row {
@@ -150,6 +206,8 @@ pub struct Row {
     pub what: &'static str,
     /// The bindings the line stands for (empty for a menu shortcut and for a plain note).
     pub binds: Vec<Bind>,
+    /// The bindings of screen reader mode the line stands for (its group's only).
+    pub sr_binds: Vec<SrBind>,
 }
 
 /// A titled block of lines.
@@ -167,6 +225,154 @@ fn row(keys: &str, what: &'static str, binds: Vec<Bind>) -> Row {
         keys: keys.into(),
         what,
         binds,
+        sr_binds: vec![],
+    }
+}
+
+fn sr_row(keys: &str, what: &'static str, sr_binds: Vec<SrBind>) -> Row {
+    Row {
+        keys: keys.into(),
+        what,
+        binds: vec![],
+        sr_binds,
+    }
+}
+
+/// The keys of screen reader mode (task-188, decisions A11Y-D2 and A11Y-D6), listed first when
+/// the mode is on. The read-out keys F2 to F4 come with task-189.
+fn screen_reader_group() -> Group {
+    use Shift::{Any, No, Yes};
+    let press = |s: &str| SrWant::Panel(id(s));
+    let s303 = Scope::Synth303;
+    let value_keys = [
+        Key::ArrowUp,
+        Key::ArrowDown,
+        Key::PageUp,
+        Key::PageDown,
+        Key::Home,
+        Key::End,
+    ];
+    Group {
+        title: "Screen reader mode",
+        mode: None,
+        note: "On while Options > Screen Reader Mode says so. These keys replace the ones \
+               below where they differ; every other key keeps its meaning, whatever control \
+               of the panel has the focus. While a menu or a window (this one, Info, About, \
+               Mods > Info) has the focus, or a window is open and nothing has it, the \
+               panel's keys wait, but for F1, F5, F6, F9, F11 and F12.",
+        rows: vec![
+            sr_row("F1", "This window", vec![sr(Key::F1, Any, SrWant::Help)]),
+            sr_row(
+                "F5",
+                "Play if stopped, Stop otherwise",
+                vec![sr(Key::F5, Any, SrWant::Panel(Want::PlayStop))],
+            ),
+            sr_row(
+                "F6 / Shift+F6",
+                "The first control of the next / previous section (wraps). The sections: \
+                 Transport, Bass Line 1, Bass Line 2, TR-808, TR-909 (each with its pattern \
+                 row and mixer channel), Master and compressor, PCF, Delay, Distortion",
+                vec![
+                    sr(Key::F6, No, SrWant::Section(false)),
+                    sr(Key::F6, Yes, SrWant::Section(true)),
+                ],
+            ),
+            sr_row(
+                "F9",
+                "Record (Insert too)",
+                vec![sr(Key::F9, Any, press("transport.record"))],
+            ),
+            sr_row("F10  or  Alt alone", "The menu bar", vec![]),
+            sr_row(
+                "F11",
+                "Loop on / off",
+                vec![sr(Key::F11, Any, press("transport.loop"))],
+            ),
+            sr_row(
+                "F12",
+                "Song / pattern mode",
+                vec![sr(Key::F12, Any, press("transport.mode"))],
+            ),
+            sr_row(
+                "Tab / Shift+Tab",
+                "The next / previous control of the panel, section by section (wraps). \
+                 Entering a machine's section gives that machine the row focus",
+                vec![
+                    sr(Key::Tab, No, SrWant::Control(false)),
+                    sr(Key::Tab, Yes, SrWant::Control(true)),
+                ],
+            ),
+            sr_row(
+                "Space",
+                "Press or toggle the focused button, toggle or switch (not Play / Stop)",
+                vec![sr(Key::Space, Any, SrWant::Activate)],
+            ),
+            sr_row(
+                "Enter",
+                "By the section of the focused control: in a 303's section that 303's Step \
+                 (Program Synth mode), in any other section Play. The pitch and drum keys \
+                 still go to the row focus",
+                vec![],
+            ),
+            sr_row(
+                "Up / Down",
+                "On a knob or fader: the value by 1. On a spin button: one click of its \
+                 arrow. On a pattern selector: the next / previous pattern",
+                value_keys[..2]
+                    .iter()
+                    .map(|&k| sr(k, Any, SrWant::Nothing))
+                    .collect(),
+            ),
+            sr_row(
+                "PgUp / PgDn",
+                "On a knob or fader: by 8. On a spin button: 10 clicks. On a pattern \
+                 selector: the next / previous bank",
+                value_keys[2..4]
+                    .iter()
+                    .map(|&k| sr(k, Any, SrWant::Nothing))
+                    .collect(),
+            ),
+            sr_row(
+                "Home / End",
+                "On a knob or fader: 0 / 127. On a pattern selector: A1 / D8. On the pattern \
+                 length, delay steps and PCF pattern: the end of the range; nothing on \
+                 tempo, bar, loop start and loop length",
+                value_keys[4..]
+                    .iter()
+                    .map(|&k| sr(k, Any, SrWant::Nothing))
+                    .collect(),
+            ),
+            sr_row(
+                "Ctrl+Up / Ctrl+Down",
+                "Move the row focus to the previous / next row (wraps), without moving the \
+                 focus",
+                vec![
+                    sr_ctrl(
+                        Key::ArrowUp,
+                        No,
+                        Scope::Always,
+                        SrWant::Panel(Want::Focus(-1)),
+                    ),
+                    sr_ctrl(
+                        Key::ArrowDown,
+                        No,
+                        Scope::Always,
+                        SrWant::Panel(Want::Focus(1)),
+                    ),
+                ],
+            ),
+            sr_row(
+                "Ctrl+Tab / Ctrl+Shift+Tab",
+                "Program Synth mode, a 303 focused: the playing step becomes a note / a rest \
+                 (the original's Tab / Shift+Tab)",
+                vec![
+                    sr_ctrl(Key::Tab, No, s303, SrWant::Panel(Want::Tap303(false))),
+                    sr_ctrl(Key::Tab, Yes, s303, SrWant::Panel(Want::Tap303(true))),
+                    sr_ctrl(Key::Tab, Any, Scope::SynthDrums, SrWant::Nothing),
+                    sr_ctrl(Key::Tab, Any, Scope::Patterns, SrWant::Nothing),
+                ],
+            ),
+        ],
     }
 }
 
@@ -250,8 +456,18 @@ const PATTERN: [[Key; 8]; 4] = [
     ],
 ];
 
-/// All the groups of the window, for a platform (`is_mac`: Cmd instead of Ctrl).
-pub fn groups(is_mac: bool) -> Vec<Group> {
+/// All the groups of the window, for a platform (`is_mac`: Cmd instead of Ctrl); with
+/// `screen_reader` (the mode is on) the keys of screen reader mode come after the menu
+/// shortcuts.
+pub fn groups(is_mac: bool, screen_reader: bool) -> Vec<Group> {
+    let mut g = original_groups(is_mac);
+    if screen_reader {
+        g.insert(1, screen_reader_group());
+    }
+    g
+}
+
+fn original_groups(is_mac: bool) -> Vec<Group> {
     let s303 = Scope::Synth303;
     let pitch = PITCH
         .iter()
@@ -598,6 +814,7 @@ impl App {
             self.key_help_open = false;
             return;
         }
+        let due = self.window_focus_due(crate::app::Win::KeyHelp);
         let mut open = true;
         let screen = ctx.content_rect();
         let size = egui::vec2(
@@ -605,6 +822,7 @@ impl App {
             (screen.height() - 40.0).clamp(150.0, 440.0),
         );
         let current = self.key_mode;
+        let screen_reader = self.screen_reader_mode();
         // centered the way File > Info is (info.rs): pivot, default place, an id per open
         egui::Window::new("Keyboard Shortcuts")
             .id(self.key_help_id())
@@ -615,15 +833,27 @@ impl App {
             .default_pos(screen.center())
             .default_size(size)
             .show(ctx, |ui| {
-                ui.label(
-                    RichText::new(format!("Keyboard mode now: {}", mode_name(current)))
-                        .strong()
-                        .color(CURRENT),
+                crate::app::focus_into_window(ui, due);
+                // in screen reader mode the first line takes the focus when the window opens
+                // (the window has no control of its own but the close button)
+                let sense = if screen_reader {
+                    egui::Sense::FOCUSABLE
+                } else {
+                    egui::Sense::hover()
+                };
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(format!("Keyboard mode now: {}", mode_name(current)))
+                            .strong()
+                            .color(CURRENT),
+                    )
+                    .sense(sense),
                 );
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for (n, g) in groups(ctx.os().is_mac()).iter().enumerate() {
+                        let all = groups(ctx.os().is_mac(), screen_reader);
+                        for (n, g) in all.iter().enumerate() {
                             ui.add_space(8.0);
                             let is_current = is_current(g, current);
                             let mut title = RichText::new(g.title).strong().size(15.0);
@@ -661,11 +891,95 @@ mod tests {
     use crate::keys;
 
     fn binds(is_mac: bool) -> Vec<Bind> {
-        groups(is_mac)
+        groups(is_mac, true)
             .into_iter()
             .flat_map(|g| g.rows)
             .flat_map(|r| r.binds)
             .collect()
+    }
+
+    fn sr_binds() -> Vec<SrBind> {
+        groups(false, true)
+            .into_iter()
+            .flat_map(|g| g.rows)
+            .flat_map(|r| r.sr_binds)
+            .collect()
+    }
+
+    /// The screen reader group is listed when the mode is on only, after the menu shortcuts,
+    /// and carries the only screen reader binds.
+    #[test]
+    fn the_screen_reader_keys_are_listed_when_the_mode_is_on() {
+        let titles =
+            |on| -> Vec<&'static str> { groups(false, on).iter().map(|g| g.title).collect() };
+        assert!(!titles(false).contains(&"Screen reader mode"));
+        assert_eq!(titles(true)[1], "Screen reader mode");
+        assert_eq!(titles(true).len(), titles(false).len() + 1);
+        for g in groups(false, true) {
+            let sr = g.rows.iter().any(|r| !r.sr_binds.is_empty());
+            assert_eq!(sr, g.title == "Screen reader mode", "{}", g.title);
+        }
+    }
+
+    /// Every listed key of screen reader mode does what the window says.
+    #[test]
+    fn every_listed_screen_reader_key_maps_to_its_action() {
+        let all = sr_binds();
+        assert!(all.len() > 20, "{} binds", all.len());
+        for b in &all {
+            for &shift in b.shift.states() {
+                for (mode, focus) in b.scope.cases() {
+                    assert_eq!(
+                        keys::map_screen_reader(b.key, shift, b.ctrl, mode, focus),
+                        b.want.action(focus),
+                        "{:?} shift={shift} ctrl={} {mode:?} focus={focus}",
+                        b.key,
+                        b.ctrl
+                    );
+                }
+            }
+        }
+    }
+
+    /// Every key whose meaning screen reader mode changes is listed in its group: with Ctrl,
+    /// every key it maps; without, every key it maps otherwise than `keys::map`.
+    #[test]
+    fn every_key_the_mode_changes_is_listed() {
+        let all = sr_binds();
+        let mut changed = 0;
+        for &key in Key::ALL {
+            for ctrl in [false, true] {
+                for shift in [false, true] {
+                    for mode in [KeyMode::Synth, KeyMode::Patterns] {
+                        for focus in 0..4 {
+                            let got = keys::map_screen_reader(key, shift, ctrl, mode, focus);
+                            let plain = if ctrl {
+                                None
+                            } else {
+                                keys::map(key, shift, mode, focus).map(SrAction::Panel)
+                            };
+                            if got == plain {
+                                continue;
+                            }
+                            changed += 1;
+                            let listed = all.iter().any(|b| {
+                                b.key == key
+                                    && b.ctrl == ctrl
+                                    && b.shift.states().contains(&shift)
+                                    && b.scope.cases().contains(&(mode, focus))
+                                    && b.want.action(focus) == got
+                            });
+                            assert!(
+                                listed,
+                                "{key:?} shift={shift} ctrl={ctrl} {mode:?} focus={focus} -> \
+                                 {got:?} is not listed in the screen reader group"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert!(changed > 100, "{changed} changed cases");
     }
 
     /// Every listed key does what the window says, in every mode and row the bind covers.
@@ -748,7 +1062,7 @@ mod tests {
     #[test]
     fn menu_rows_use_the_platform_text() {
         let text = |is_mac| -> Vec<String> {
-            groups(is_mac)[0]
+            groups(is_mac, true)[0]
                 .rows
                 .iter()
                 .map(|r| r.keys.clone())
@@ -766,7 +1080,7 @@ mod tests {
     #[test]
     fn the_current_mode_marks_its_groups() {
         let marked = |mode| -> Vec<&'static str> {
-            groups(false)
+            groups(false, true)
                 .iter()
                 .filter(|g| is_current(g, mode))
                 .map(|g| g.title)

@@ -396,6 +396,7 @@ impl App {
             self.info_shown = None;
             return;
         }
+        let due = self.window_focus_due(crate::app::Win::Info);
         let info = self.song_info();
         self.info_shown = Some(info.clone());
         let mut open = true;
@@ -415,6 +416,7 @@ impl App {
             .default_width(INFO_W);
         let doc = &mut self.doc;
         window.show(ctx, |ui| {
+            crate::app::focus_into_window(ui, due);
             // the value column of the edits grid is what the window leaves after the label
             // column and the grid's spacing
             let value_w = ui.available_width() - LABEL_W - GRID_GAP;

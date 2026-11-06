@@ -67,6 +67,11 @@ impl Tree {
             .collect()
     }
 
+    /// The node whose children include `id`.
+    pub fn parent(&self, id: NodeId) -> Option<(NodeId, &Node)> {
+        self.nodes().find(|(_, n)| n.children().contains(&id))
+    }
+
     /// The node that has the keyboard focus, if it is in the tree.
     pub fn focused(&self) -> Option<&Node> {
         self.node(self.update.focus)
