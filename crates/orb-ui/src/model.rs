@@ -217,6 +217,11 @@ pub struct Synth303 {
     pub flash_until: f64,
     /// The steps of the 32 patterns.
     pub patterns: Vec<[Step303; 16]>,
+    /// The pattern the programming buttons edit when it is not the row's (task-190, screen
+    /// reader mode only; `App` sets it): the step editor stays on it while playback moves the
+    /// row to other patterns. `None` (always with the mode off): the row's pattern, as the
+    /// original. A pattern chosen on the panel ([`Panel::press`]) moves it there.
+    pub pin: Option<u8>,
 }
 
 impl Default for Synth303 {
@@ -226,6 +231,7 @@ impl Default for Synth303 {
             pitch_mode: false,
             flash_until: 0.0,
             patterns: vec![[Step303::default(); 16]; 32],
+            pin: None,
         }
     }
 }
@@ -739,6 +745,10 @@ impl Panel {
             let row = &mut self.rows[r];
             row.pattern = (b - 1) + 8 * row.bank;
             let pattern = row.pattern;
+            // the pattern the user chose is the one a 303's step editor edits (task-190)
+            if let Some(pin) = self.synth.get_mut(r).and_then(|s| s.pin.as_mut()) {
+                *pin = pattern;
+            }
             self.focus = r;
             self.emit(Event::Pattern { row: r, pattern });
         } else if let Some(letter) = name.strip_prefix("bank") {
@@ -757,8 +767,14 @@ impl Panel {
         }
     }
 
+    /// The pattern the programming buttons of 303 `k` edit: its pin in screen reader mode
+    /// (task-190, [`Synth303::pin`]), else the row's.
+    pub fn edit_pattern(&self, k: usize) -> u8 {
+        self.synth[k].pin.unwrap_or(self.rows[k].pattern)
+    }
+
     fn press_303(&mut self, k: usize, name: &str, now: f64) {
-        let pattern = self.rows[k].pattern;
+        let pattern = self.edit_pattern(k);
         let s = &mut self.synth[k];
         let edit = s.edit as usize;
         let mut sent: Option<(u8, u8)> = None;
@@ -1095,7 +1111,9 @@ impl Panel {
         };
         let k = k.min(1);
         let s = &self.synth[k.min(1)];
-        let pattern = self.rows[k].pattern;
+        // the edit step's lights: of the pattern the programming buttons edit (task-190: the
+        // step editor's pin in screen reader mode, else the row's)
+        let pattern = self.edit_pattern(k);
         let step = s.step(pattern);
         match c.name() {
             "pitch_led" => s.pitch_mode,

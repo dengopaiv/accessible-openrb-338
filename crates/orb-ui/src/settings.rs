@@ -8,7 +8,9 @@
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151) and `screen_reader` (`"auto"`, `"on"` or `"off"`; absent or unknown reads as
 //! `auto`; task-185) and `speak_raw_values` (a bool, false by default: in screen reader mode a
-//! knob or fader speaks its 0..127 value after its unit; task-192), so it can be edited by hand.
+//! knob or fader speaks its 0..127 value after its unit; task-192) and `step_editor_follows` (a
+//! bool, false by default: in screen reader mode a 303's step editor follows the playing
+//! pattern; task-190), so it can be edited by hand.
 //! Where it lives: `$ORB_UI_CONFIG` if set; else `OpenRB-338/ui.toml` in the platform's
 //! configuration folder (`$XDG_CONFIG_HOME`, or `~/.config` on Linux, `~/Library/Application
 //! Support` on macOS, `%APPDATA%` on Windows). Reading never fails: a missing or damaged file gives
@@ -59,6 +61,10 @@ pub struct Settings {
     /// "Speak raw values" (task-192): in screen reader mode a knob or fader speaks its 0..127
     /// value after its unit ("1.24 kilohertz, 64"). Stored as the bool `speak_raw_values`.
     pub speak_raw_values: bool,
+    /// "Step Editor Follows Playback" (task-190): in screen reader mode a 303's step editor moves
+    /// to the pattern the 303 plays, silently, at the next input; off (the default), it stays on
+    /// the pattern last chosen by the user. Stored as the bool `step_editor_follows`.
+    pub step_editor_follows: bool,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
 }
@@ -75,6 +81,7 @@ impl Default for Settings {
             preferred_mods: BTreeMap::new(),
             screen_reader: ScreenReaderSetting::Auto,
             speak_raw_values: false,
+            step_editor_follows: false,
             file: None,
         }
     }
@@ -130,6 +137,7 @@ struct Stored<'a> {
     startup_sound: bool,
     screen_reader: &'a str,
     speak_raw_values: bool,
+    step_editor_follows: bool,
     recent: Vec<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_song_dir: Option<&'a Path>,
@@ -186,6 +194,9 @@ impl Settings {
         if let Some(b) = table.get("speak_raw_values").and_then(|v| v.as_bool()) {
             s.speak_raw_values = b;
         }
+        if let Some(b) = table.get("step_editor_follows").and_then(|v| v.as_bool()) {
+            s.step_editor_follows = b;
+        }
         s.songs_dir = table.get("songs_dir").and_then(path_of);
         s.mods_dir = table.get("mods_dir").and_then(path_of);
         s.last_song_dir = table.get("last_song_dir").and_then(path_of);
@@ -236,6 +247,7 @@ impl Settings {
             startup_sound: self.startup_sound,
             screen_reader: self.screen_reader.key(),
             speak_raw_values: self.speak_raw_values,
+            step_editor_follows: self.step_editor_follows,
             recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
             last_song_dir: self.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),

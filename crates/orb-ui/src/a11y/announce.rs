@@ -319,7 +319,12 @@ impl App {
                 let r = focused
                     .and_then(focused_row)
                     .unwrap_or(self.panel.focus.min(3));
-                pattern_readout(&self.panel, r)
+                let row = pattern_readout(&self.panel, r);
+                // a 303's steps (task-190)
+                match super::step303::read_303_pattern(&self.panel, r) {
+                    Some(steps) => format!("{row}. {steps}"),
+                    None => row,
+                }
             }
             Key::F3 => transport_readout(&self.panel),
             Key::F4 => levels_readout(&self.panel),

@@ -97,6 +97,10 @@ fn the_tree_today() {
 /// | Task | Nodes | Named | Groups | Focusable |
 /// |---|---|---|---|---|
 /// | task-188 (sections) | 212 | 205 | 9 | 194 |
+/// | task-190 (the 303 step editors) | 212 | 205 | 9 | 196 |
+///
+/// Task-190: the two 303s' edit step labels are the focusable step editors (Slider, named
+/// "Step editor", the step as the value) in this mode, so 2 more take the focus.
 #[test]
 fn the_tree_in_screen_reader_mode() {
     let mut h = AppTree::new();
@@ -117,7 +121,8 @@ fn the_tree_in_screen_reader_mode() {
     assert_eq!(t.named().len(), BASELINE_NAMED + 9, "named nodes");
     assert_eq!(groups, 9, "the sections");
     assert_eq!(
-        focusable, BASELINE_FOCUSABLE,
-        "nodes that can take the focus"
+        focusable,
+        BASELINE_FOCUSABLE + 2,
+        "nodes that can take the focus: the two step editors too"
     );
 }

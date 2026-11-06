@@ -1,6 +1,6 @@
 # Screen reader accessibility: the plan
 
-Status: in progress; work stopped by the user on 2026-11-06 (see "Where it stands"). The
+Status: in progress (see "Where it stands"). The
 analysis behind the plan, with the measurements and the options, is in
 [accessibility.md](accessibility.md); read that first. This document turns its section 3 into
 a milestone, decisions and tasks.
@@ -18,30 +18,23 @@ commit): TASK-183 (test harness), TASK-185 (screen reader mode), TASK-184 (menu 
 keyboard), TASK-186 (names, roles, values), TASK-194 (system file dialogs), TASK-192 (physical
 units), TASK-187 (operable controls), TASK-188 (sections, focus order, key map), TASK-189
 (announcements, F2-F4), TASK-193 (dialog roles and focus; merged 2026-11-06 after the work
-resumed, at the user's request). The user's decisions made along the way: TASK-202 (panel keys wait
-while a menu is in use), TASK-203 (ask before replacing a file), TASK-205 (Page Up/Down and
-Home/End on spin buttons), TASK-207 (Enter follows the section), plus the six up-front ones.
+resumed, at the user's request), TASK-190 (the 303 step editor, spoken; merged 2026-11-06
+after two review rounds, at the user's request "Resume and complete Task 190"). The user's
+decisions made along the way: TASK-202 (panel keys wait while a menu is in use), TASK-203 (ask
+before replacing a file), TASK-205 (Page Up/Down and Home/End on spin buttons), TASK-207 (Enter
+follows the section), TASK-209 (the step editor during playback and its arrow keys: move-along
+is the setting Options > Step Editor Follows Playback, off by default, and never speaks; Up/Down
+move the step, Left/Right do nothing), plus the six up-front ones.
 
-Unfinished, each on its own local branch (not on main, not pushed). In the backlog on main
-they are still To Do; their branches hold the work and its notes:
-- TASK-190 (the 303 step editor, spoken): branch `worktree-agent-aa4eb387f6da39059`, one
-  finished commit 4999c4a, Done on its branch. Reviewed on 2026-11-06: send back, because the
-  focused editor's value follows the engine's pattern change in song mode, so NVDA would speak
-  during playback without input. The user then decided (2026-11-06), to be applied in the
-  send-back and recorded as a Done decision task in its commit:
-  - following the playing pattern ("move-along") is a setting, off by default; even when on,
-    it never speaks, because "in accessible programs, movealong doesn't speak"; the position
-    is checked with a key (F2; the editor's text refreshes on the next key press);
-  - on the step editor, Up/Down move the edit step and Left/Right do nothing ("if there's
-    nothing for the left and right to do, the consensus has usually been that up and down
-    should move on steps, and left and right do nothing");
-  - the same move-along rule applies to TASK-191's drum grids.
-  The user chose to fix only TASK-193 first; TASK-190 waits until they say to resume. Expect
-  conflicts with TASK-191 in App::keyboard, announce.rs readout_key, key_help.rs and ui_spec
-  section 10; keep both sides.
+Unfinished, on its own local branch (not on main, not pushed). In the backlog on main it is
+still To Do; its branch holds the work and its notes:
 - TASK-191 (the drum grids): branch `worktree-agent-ae78deeae4d42fe78`, commit e2c1ac2, a
   work-in-progress commit made by the supervisor when work stopped: the agent's files as they
-  were, not finished, not fully tested, not Done. Next: finish it, squash to one commit, review.
+  were, not finished, not fully tested, not Done. Next: rebase on main (expect conflicts with
+  TASK-190 in App::keyboard, announce.rs readout_key, key_help.rs and ui_spec section 10; keep
+  both sides; its decision file task-208 keeps its id, TASK-190's decision took 209), apply
+  TASK-209's move-along rule to the grids (they must not speak or move by themselves during
+  playback), finish it, squash to one commit, review.
 
 Not started: TASK-195 (mod chooser), TASK-196 (docs pass), TASK-197 (the user's NVDA pass,
 whose checklist below has collected every by-ear check deferred by the tasks), and the
@@ -721,7 +714,15 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
 6. F3 reads the transport while playing and while stopped.
 7. In Bass Line 1: set the cutoff with the arrows and with NVDA's own slider commands; set the
    waveform; mute channel 1; choose pattern B3.
-8. Program a 303 pattern with the keys alone; each step is spoken; F2 reads it back.
+8. Program a 303 pattern with the keys alone; each step is spoken; F2 reads it back
+   (TASK-190's deferred check, docs/ui_spec.md 20.5). On the focused "Step editor": each
+   programming key's new state is spoken once, by the value change (`-`, `P`, `[`, a new note),
+   not twice; the same note pressed again is spoken (by the announcer); Up, Down, Home and
+   End speak the new step, Left and Right nothing; in pitch mode (Tab three times, Space) a
+   pitch key speaks the step it set ("Step 1: E") and then the next step's value, both, in
+   that order, neither cut off. Play a song in song mode with the editor focused: nothing is
+   spoken when the song moves to another pattern, with Options > Step Editor Follows Playback
+   off and on; F2 says "Step editor on pattern ..." while off.
 9. In the TR-808: walk the grid, set a bass drum on steps 1, 5, 9, 13, F2 reads it back; same
    on the 909 with an accent and a flam.
 10. Record in song mode: a pattern change and a knob move are recorded; play them back.

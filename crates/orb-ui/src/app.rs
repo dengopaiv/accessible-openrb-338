@@ -17,7 +17,7 @@ use eframe::egui::{
     emath::GuiRounding, epaint,
 };
 
-use crate::a11y::{announce, drive, nav};
+use crate::a11y::{announce, drive, nav, step303};
 use crate::art::{self, KnobDesign};
 use crate::behavior::{self, Mods};
 use crate::browser::{self, Browser, Mode, Poll};
@@ -828,6 +828,8 @@ impl App {
         let now = ui.input(|i| i.time);
         self.panel.held = None;
         let screen_reader = self.screen_reader_mode();
+        // the patterns the 303 step editors edit, before this frame's input acts (task-190)
+        self.pin_303(ui, screen_reader);
         if screen_reader {
             self.follow_section(ui);
             self.window_focus(ui);
@@ -1033,6 +1035,11 @@ impl App {
                 self.release(k);
                 continue;
             }
+            // Screen reader mode, the focus on a 303's step editor: Up, Down, Home and End move
+            // its edit step, auto-repeat included; Left and Right do nothing (task-190).
+            if !modifiers.any() && screen_reader && self.step_editor_key(ui, key, now) {
+                continue;
+            }
             // Screen reader mode: Up, Down, Page Up, Page Down, Home and End change the focused
             // slider, spin button or pattern selector, auto-repeat included, and do not reach
             // the original's keys (task-187).
@@ -1166,6 +1173,11 @@ impl App {
         // (a press without the release before it, e.g. after the window lost the focus)
         self.holds.retain(|h| h.key != k);
         let before = announce::KeyState::of(&self.panel);
+        let before303 = step303::Before::of(&self.panel);
+        let pressed = match &action {
+            Action::Press(id) => Some(id.clone()),
+            _ => None,
+        };
         let mut hold = Hold {
             key: k,
             id: None,
@@ -1200,6 +1212,9 @@ impl App {
             Action::TapDrum(i) => self.panel.tap_drum(self.panel.focus == 2, i),
         }
         self.announce_key_effect(&before);
+        if let Some(id) = pressed {
+            self.announce_303(&before303, &id, self.key_focus);
+        }
         if hold.arrow.is_some() {
             hold.seen = Some(announce::KeyState::of(&self.panel));
         }
@@ -1377,9 +1392,60 @@ impl App {
             // what it did is announced as for a key of the original (task-189): Play and Stop
             // have no state of their own; a focused toggle or switch speaks its own
             let before = announce::KeyState::of(&self.panel);
+            let before303 = step303::Before::of(&self.panel);
             self.mouse_down(&c, now);
             self.announce_key_effect(&before);
+            // a 303's button says the step it changed (task-190)
+            self.announce_303(&before303, &c.id, Some(f));
         }
+    }
+
+    /// Announces what the press of the 303 button `id` did since `before`
+    /// (`step303::press_effect`), egui's focus being `focused` (task-190).
+    fn announce_303(&mut self, before: &step303::Before, id: &str, focused: Option<egui::Id>) {
+        if let Some(text) = step303::press_effect(before, &self.panel, id, focused) {
+            self.announce(text);
+        }
+    }
+
+    /// Keeps the pattern each 303's step editor edits (task-190, `Synth303::pin`): none with the
+    /// mode off (the row's, as the original); in screen reader mode [`step303::pin_of`], so
+    /// that playback moving a row to another pattern never changes the editor without input
+    /// ("move-along doesn't speak", decision task-209). The frame's input is a key or mouse
+    /// button press or an accessibility action.
+    fn pin_303(&mut self, ui: &Ui, screen_reader: bool) {
+        let input = ui.input(|i| {
+            i.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key { pressed: true, .. }
+                        | egui::Event::PointerButton { pressed: true, .. }
+                        | egui::Event::AccessKitActionRequest(_)
+                )
+            })
+        });
+        let follows = self.settings.step_editor_follows;
+        for k in 0..2 {
+            let pin = screen_reader
+                .then(|| step303::pin_of(&self.panel, k, follows, input))
+                .flatten();
+            self.panel.synth[k].pin = pin;
+        }
+    }
+
+    /// Screen reader mode: a key on a focused 303 step editor (task-190, decision task-209): Up
+    /// and Down are its Back and Step buttons (the previous and the next step), Home and End
+    /// the first and the pattern's last step (`step303::move_editor`), Left and Right do
+    /// nothing. True when the key was the editor's.
+    fn step_editor_key(&mut self, ui: &Ui, key: Key, now: f64) -> bool {
+        let Some(k) = ui.memory(|m| m.focused()).and_then(step303::editor_of) else {
+            return false;
+        };
+        let Some(m) = step303::Move::of_key(key) else {
+            return false;
+        };
+        step303::move_editor(&mut self.panel, k, m, now);
+        true
     }
 
     /// A click anywhere inside a row gives the row the focus (`sub_42ADBB`).
@@ -1418,6 +1484,12 @@ impl App {
             "display" => {
                 if drive::is_spin(&c.id) {
                     self.spin_button(ui, c, rect, now);
+                } else if let Some(k) = step303::editor_of_layout(&c.id)
+                    && self.screen_reader_mode()
+                {
+                    // the 303's step editor (task-190): focusable, no click of its own
+                    ui.interact(rect, crate::a11y::hit_id(c), Sense::FOCUSABLE);
+                    step303::describe(ui.ctx(), &self.panel, k);
                 } else {
                     if self.screen_reader_mode() {
                         // a hover-only widget, so that the label's node is in the section's
@@ -1473,7 +1545,9 @@ impl App {
                         i.has_accesskit_action_request(r.id, egui::accesskit::Action::Click)
                     });
                     if ak_click {
+                        let before303 = step303::Before::of(&self.panel);
                         self.mouse_down(c, now);
+                        self.announce_303(&before303, &c.id, Some(r.id));
                     }
                     crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
                 }

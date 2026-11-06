@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-05T19:32:00Z'
-updated_date: '2026-11-06T09:10:00Z'
+updated_date: '2026-11-06T21:22:00Z'
 labels:
   - ui
   - tests
@@ -38,4 +38,5 @@ Planned in docs/accessibility_plan.md as A11Y-13; the analysis is docs/accessibi
 - [ ] #4 In screen reader mode NVDA reads the section's name when Tab or F6 enters a section (the group name, or TASK-189's announcement), and reads the first line of Keyboard Shortcuts when F1 opens it (TASK-188's deferred by-ear check; the tree is tested headless)
 - [ ] #5 NVDA speaks TASK-189's announcements (the status messages, a song opened, a mod chosen, the keyboard mode, the transport keys) and the F2/F3/F4 read-outs, a message repeated twice included (checklist item 21 of docs/accessibility_plan.md)
 - [ ] #6 NVDA checklist item 22 (TASK-193's dialogs and windows): each window is announced as a dialog with its title and its first line is read; Tab reads the lines of About, Keyboard Shortcuts and Mod Info; the error box is announced as an alert and its message is read when the focus lands on OK (if not, the message needs App::announce: a follow-up task); the prompt is read with Save focused; Escape returns the focus.
+- [ ] #7 TASK-190's step editor (NVDA checklist item 8, docs/ui_spec.md 20.5): on the focused Step editor each programming key's new state is spoken once (value change), the same note again is spoken (announcer), Up/Down/Home/End speak the new step and Left/Right nothing, in pitch mode a pitch key speaks the step it set and then the next step, neither cut off; and while a song plays in song mode nothing is spoken when it moves to another pattern, with Options > Step Editor Follows Playback off and on.
 <!-- AC:END -->

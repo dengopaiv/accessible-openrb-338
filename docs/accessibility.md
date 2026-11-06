@@ -207,7 +207,14 @@ section 20.2).
   toggles and switches acting as one mouse down: docs/ui_spec.md section 20.1.
 - The 303 step editor: one node that speaks the step being edited ("Step 5 of 16: C sharp,
   up, accent, slide", or "Step 6: rest") after each of the existing programming keys (the
-  pitch keys, P, `[`, `;`, `'`, `-`, Enter, Backspace). Left and Right move the edit step.
+  pitch keys, P, `[`, `;`, `'`, `-`, Enter, Backspace). Up and Down move the edit step (Left
+  and Right do nothing there, decision task-209).
+  Done in task-190 (docs/ui_spec.md section 20.5): a Slider named "Step editor" in place of
+  the edit step label; the focused editor's value change speaks a key's effect, the announcer
+  where the value cannot (the same note again, a pitch key in pitch mode, the focus
+  elsewhere). It edits its own pattern: playback moving the row to another pattern never
+  changes it without input (Options > Step Editor Follows Playback, off by default, makes it
+  move along, silently, at the next input; decision task-209).
 - The 808 and 909 step grids: Grid role, 12 instrument rows by 16 steps. Up and Down choose
   the instrument (`Panel::select_instrument`), Left and Right the step, Space sets or cycles
   the step as a click does (`set_step808`; `step909_new_value` and `set_step909`, with Ctrl
@@ -249,7 +256,8 @@ or by the original's key map, so all twelve were free.
 - Help > Keyboard Shortcuts lists all of the above when the mode is on.
 
 Done in task-188 (docs/ui_spec.md section 10, "Screen reader mode") and task-189 (F2 to F4,
-docs/ui_spec.md section 20.3); Left / Right are pending (task-190, task-191).
+docs/ui_spec.md section 20.3); Up / Down on the 303 step editor in task-190 (section 20.5),
+on the drum grids pending (task-191).
 
 ### 3.5 Announcements
 
@@ -555,6 +563,12 @@ can take the focus: 194, of them with a name: 194
 names: Transport | Shuffle amount | Tempo | Mode | Play | ... | Bass Line 1 | Pattern section on
   | Pattern | ...
 ```
+
+After task-190 (A11Y-6: the 303 step editors; 2026-11-06), `-ScreenReader on`: 207 elements,
+as before, with 88 Slider (the two 303s' edit step Text elements are now the focusable
+"Step editor" sliders, docs/ui_spec.md 20.5) and no Text; 196 take the focus, all named. With
+the mode off the step editors stay the Text labels "Edit step N": 198 elements, 194 that take
+the focus, as after task-188.
 
 The nine Groups are the sections (docs/ui_spec.md 20.2), each before its controls in the tree.
 The tree lists the controls in the drawing order; the Tab order of the mode is the sections'

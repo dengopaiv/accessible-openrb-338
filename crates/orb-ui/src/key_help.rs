@@ -337,7 +337,10 @@ fn screen_reader_group() -> Group {
             sr_row(
                 "Up / Down",
                 "On a knob or fader: the value by 1. On a spin button: one click of its \
-                 arrow. On a pattern selector: the next / previous pattern",
+                 arrow. On a pattern selector: the next / previous pattern. On a 303's step \
+                 editor: the previous / next step (its Back / Step, wrapping at 16); Home / \
+                 End step 1 / the pattern's last step. The step a programming key changed is \
+                 spoken; F2 reads the whole pattern",
                 value_keys[..2]
                     .iter()
                     .map(|&k| sr(k, Any, SrWant::Nothing))
@@ -358,6 +361,14 @@ fn screen_reader_group() -> Group {
                  length, delay steps and PCF pattern: the end of the range; nothing on \
                  tempo, bar, loop start and loop length",
                 value_keys[4..]
+                    .iter()
+                    .map(|&k| sr(k, Any, SrWant::Nothing))
+                    .collect(),
+            ),
+            sr_row(
+                "Left / Right",
+                "Nothing on a 303's step editor (Up / Down move its step)",
+                [Key::ArrowLeft, Key::ArrowRight]
                     .iter()
                     .map(|&k| sr(k, Any, SrWant::Nothing))
                     .collect(),

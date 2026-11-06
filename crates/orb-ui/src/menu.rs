@@ -109,6 +109,9 @@ pub enum Cmd {
     SetFolder(crate::system_dialog::Folder),
     /// "Speak Raw Values" of the Options menu, shown in screen reader mode (task-192).
     ToggleSpeakRawValues,
+    /// "Step Editor Follows Playback" of the Options menu, shown in screen reader mode
+    /// (task-190).
+    ToggleStepEditorFollows,
     SetKeyMode(KeyMode),
 }
 
@@ -955,6 +958,12 @@ impl App {
                     self.fail(e);
                 }
             }
+            Cmd::ToggleStepEditorFollows => {
+                self.settings.step_editor_follows = !self.settings.step_editor_follows;
+                if let Err(e) = self.settings.save() {
+                    self.fail(e);
+                }
+            }
             Cmd::SetKeyMode(m) => self.set_key_mode(m),
         }
     }
@@ -1289,6 +1298,16 @@ impl App {
                                 && ui.checkbox(&mut raw, "Speak Raw Values").clicked()
                             {
                                 cmd = Some(Cmd::ToggleSpeakRawValues);
+                                ui.close();
+                            }
+                            // task-190: only in screen reader mode
+                            let mut follows = self.settings.step_editor_follows;
+                            if self.screen_reader_mode()
+                                && ui
+                                    .checkbox(&mut follows, "Step Editor Follows Playback")
+                                    .clicked()
+                            {
+                                cmd = Some(Cmd::ToggleStepEditorFollows);
                                 ui.close();
                             }
                             ui.separator();

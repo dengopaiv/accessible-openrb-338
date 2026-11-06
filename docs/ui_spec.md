@@ -812,7 +812,7 @@ wait (the windows paragraph below). With the mode off nothing here applies.
 | Space | Presses or toggles the focused button, toggle or switch: one mouse down, the path of a screen reader's Click (`App::mouse_down`); not Play/Stop; nothing on a knob, fader, spin button or pattern selector |
 | Enter | By the section of the focused control (the user's decision of 2026-11-06, task-207): in a 303's section that 303's Step (Program Synth mode), in the Transport, the drum machines' and the effect sections Play; with no panel control focused, as above by the row focus |
 | Up, Down, PgUp, PgDn, Home, End | Change the focused knob, fader, spin button or pattern selector (section 20.1), auto-repeat included; nothing on another control. Not the row focus |
-| Left, Right | Nothing yet (the 303 step editor and the drum grids, task-190 and task-191) |
+| Up, Down | On a 303's step editor (task-190, section 20.5): the previous / next edit step, the panel's Back / Step (Home / End: step 1 / the pattern's last step); Left and Right do nothing there (decision task-209). The drum grids are task-191 |
 | Ctrl+Up / Ctrl+Down | The row focus to the previous / next row, wrapping (the original's Up / Down), without moving the navigation focus |
 | Ctrl+Tab / Ctrl+Shift+Tab | The original's Tab / Shift+Tab: the playing step of the focused 303 becomes a note / a rest (Program Synth mode) |
 
@@ -1099,6 +1099,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Screen Reader Mode > Automatic, On, Off | `Settings::screen_reader` (`auto` by default, `on`, `off`; key `screen_reader` of `ui.toml`), saved at once (task-185). `App::screen_reader_mode()` is true for On, and for Automatic while the system reports a screen reader (Windows: `SystemParametersInfoW(SPI_GETSCREENREADER)`, asked at start and whenever the window regains the focus; other platforms report none yet). The knobs' and faders' units read it (task-192, section 20); the key changes come in later tasks (docs/accessibility_plan.md) |
 | Options | Speak Raw Values (shown in screen reader mode only) | `Settings::speak_raw_values` (false by default; the bool `speak_raw_values` of `ui.toml`), saved at once (task-192): a knob or fader speaks its 0..127 value after its unit ("1.24 kilohertz, 64"); section 20 |
+| Options | Step Editor Follows Playback (shown in screen reader mode only) | `Settings::step_editor_follows` (false by default; the bool `step_editor_follows` of `ui.toml`), saved at once (task-190, decision task-209): on, a 303's step editor moves to the pattern playback selects, silently, at the next input; off, it stays on the pattern the user chose; section 20.5 |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/openrb-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; below) |
@@ -1722,7 +1723,8 @@ A11Y-4 of docs/accessibility_plan.md; `crates/orb-ui/src/a11y/nav.rs`, tests
   `assets/ui/layout.tsv` (the pattern row, the machine, the mixer channel), except that a
   machine's pattern selector comes first and the transport follows docs/accessibility.md 3.2:
   Play, Stop, Record, Loop, Mode, Tempo, Shuffle amount, Bar, Loop start, Loop length, Rewind,
-  Fast forward. 190 stops: 186 controls and 4 pattern selectors. Tab and Shift+Tab move along
+  Fast forward. 192 stops: 186 controls, 4 pattern selectors and the two 303s' step editors
+  (task-190, section 20.5, after the 303's knobs). Tab and Shift+Tab move along
   it and wrap at the ends of the panel; F6 and Shift+F6 go to the first stop of the next or
   previous section (Play; the four pattern selectors; Master level; PCF on; Delay on;
   Distortion on). With nothing focused, Tab goes to the first stop, Shift+Tab to the last.
@@ -1760,8 +1762,8 @@ tests `crates/orb-ui/tests/a11y_announce.rs`.
     (the tempo spin button for the tempo, the row's pattern selector for its pattern, the
     Record and Loop toggles, the mode switch, the bar spin button); Play and Stop are always
     said. A held tempo, bar or wind key announces its final value when it is released, if it
-    stepped more than once. The 303's and the drums' keys announce nothing here (tasks 190 and
-    191); the row focus moving is task-188's. The keys of screen reader mode that act on the
+    stepped more than once. The 303's keys announce the step they changed (task-190, section
+    20.5); the drums' keys nothing here (task-191); the row focus moving is task-188's. The keys of screen reader mode that act on the
     transport (F5, F9, F11, F12, Enter) go through `App::act` and are announced the same way;
     Space on a focused button, toggle or switch (`App::activate`) is too, so Space on Play or
     Stop says "Playing" or "Stopped" (a toggle or switch with the focus speaks its own new
@@ -1780,7 +1782,8 @@ tests `crates/orb-ui/tests/a11y_announce.rs`.
     machine or its mixer channel), else (the focus elsewhere, in a window or nowhere) of the
     row that has the row focus: "Bass Line 1,
     pattern A1, 16 steps, shuffle off", with ", pattern section off" when the row's power
-    switch is off. Tasks 190 and 191 add the synths' and the drums' steps.
+    switch is off. On a 303, its steps follow (task-190, section 20.5); task-191 adds the
+    drums' steps.
   - F3: the transport: "Stopped, bar 1, 139 BPM, song mode, loop 1 to 8, recording off" ("loop
     off" when the loop is off, "loop bar 3" for a one-bar loop); in pattern mode, where the
     bar, the loop and Record do nothing, "Playing, 140 BPM, pattern mode".
@@ -1829,3 +1832,97 @@ windows, the prompt and the error box are as they were.
 - **Announcer.** Not used: a role plus the focus is what the screen reader reads. Whether NVDA
   reads the AlertDialog's description when the focus enters OK is a hand check (NVDA checklist
   item 22 in docs/accessibility_plan.md); if it does not, `App::announce` takes the message.
+
+### 20.5 The 303 step editor (task-190)
+
+A11Y-6 of docs/accessibility_plan.md; the code is `crates/orb-ui/src/a11y/step303.rs`, the
+tests `crates/orb-ui/tests/a11y_step303.rs`. In screen reader mode only; with the mode off the
+edit step display stays the label "Edit step 5" of section 20.
+
+- **The node.** Each 303's edit step display (`tb303_N.edit_step`) is the "Step editor": a
+  focusable Slider (vertical: Up and Down move it) in its Bass Line's section, in the focus order after the 303's
+  knobs, before Step forward and Step back. Its value is the edit step and what the step holds:
+  "Step 5 of 16: C sharp, octave up, accent, slide". A rest says so first and keeps its note and
+  flags, which the panel's lights also show: "Step 6 of 16: rest, C". ", pitch mode" ends the
+  value while the original's pitch mode is on (section 5: a pitch key then moves the edit step
+  on by itself). An edit step past the pattern's length (Step and Back wrap at 16 whatever the
+  length, section 5) reads "Step 12, past the 8 steps: rest, C". No numeric value, so one move
+  is one value change in UI Automation.
+- **Words.** The notes are the panel's keys, `C F V G B N J M K , L . /`: "C", "C sharp", "D",
+  "D sharp", "E", "F", "F sharp", "G", "G sharp", "A", "A sharp", "B", "high C". The flags, in
+  the order of their buttons: "octave down" (Down, `;`), "octave up" (Up, `'`), "accent" (`P`),
+  "slide" (`[`).
+- **Keys on the focused step editor** (`App::step_editor_key`, before the value keys,
+  auto-repeat counted): Down is the panel's Step (the next step) and Up its Back (the
+  previous one), one move modulo 16, as the original's buttons; Home presses Back and End
+  presses Step until the edit step is step 1 or the pattern's last step
+  (`step303::move_editor`, through `Panel::press` as the mouse; the edit step is the panel's
+  own and sends nothing to the engine). Left and Right do nothing there: the steps are a list,
+  and the user's convention (decision task-209, 2026-11-06): "if there's nothing for the left
+  and right to do, the consensus has usually been that up and down should move on steps, and
+  left and right do nothing". Page Up and Page Down do nothing. Every other key is as in
+  section 10, "Screen reader mode": the programming keys of Program Synth mode, Enter as Step,
+  Backspace as Back.
+- **The editor's pattern, and playback** (decision task-209). The editor edits its own
+  pattern, `Synth303::pin`, which `App::pin_303` keeps at the start of every frame, before
+  the frame's input acts: none with the mode off (the row's pattern, as the original), else
+  `step303::pin_of`. Only a frame with input (a key or mouse button press, a screen reader
+  action) sets a pin. A song loaded (or File > New) gives a new panel without one, and the
+  editor is on the row's pattern until the next input: the song's pattern comes from the
+  engine some frames after the load, and a pin taken earlier would hold the panel's pattern
+  from before that report (the test `the_read_out_keys_on_a_known_song` caught it). The
+  engine's report after a load can therefore change a focused editor's value once, as the
+  load's own result. Playback (song mode, or a pattern change waiting for the bar's end) moves
+  the row's pattern (`Link::follow_values`, `Panel::adopt_pattern`), and the panel's display
+  shows it as before, but the editor's value does not change by itself: a focused editor
+  never speaks without input, the user's rule "in accessible programs, movealong doesn't
+  speak". Options > Step Editor Follows Playback (screen reader mode only, off by default,
+  `Settings::step_editor_follows`) chooses where the editor goes:
+  - off: it stays on its pattern until the user chooses another one on the panel (the
+    pattern selector, the pattern keys, a click; `Panel::press` moves the pin), however
+    playback moves on. The programming keys, Clear, the 303's lights and F2 are of that
+    pattern too;
+  - on: at the next input (a key, a click, a screen reader action) it moves to the pattern
+    the row shows, before the input acts, so the input edits the playing pattern as the
+    original does. The move itself is not announced; the focused editor's value then changes
+    with the input's own change.
+
+  The pattern the editor is on is checked with F2 (below). Tap (Ctrl+Tab) stays the playing
+  step of the playing pattern (`Panel::tap_303`).
+- **What is spoken after a programming key** (`step303::press_effect`, from `App::act`, from
+  Space on a 303 button, `App::activate`, and from a screen reader's Click on one): with the step
+  editor of that 303 focused, the editor's own value change, which the screen reader speaks as
+  it does for any focused control (section 20.3); the announcer instead when the value cannot
+  say it: the same note again (no value change: "Step 1: C"), and a pitch key in pitch mode,
+  whose edit step moves on: "Step 5: D sharp" is announced, the value then gives step 6. With
+  the focus elsewhere (a knob of the 303, a button), the announcer says the step a key changed
+  ("Step 5: D sharp, accent"), where Step and Back went ("Step 6 of 16: rest, C"), the pitch
+  mode button ("Pitch mode on, step 1 of 16: C", "Pitch mode off") and Clear ("Pattern A1
+  cleared"). Tap (Ctrl+Tab) announces nothing.
+- **F2** on a 303's section: the row read-out of section 20.3, then the pattern's steps in its
+  length, compactly: "Bass Line 1, pattern A1, 16 steps, shuffle off. 1 E accent, 2 rest, 3 D
+  sharp octave up slide, 4 high C octave down, ..." (`step303::read_303_pattern`). A rest reads
+  "rest" alone. The steps are those of the editor's pattern; when playback has moved the row
+  to another pattern, that is said before them: "Bass Line 1, pattern A4, 16 steps, shuffle
+  off. Step editor on pattern A1: 1 rest, ...".
+
+**Programming a 303 pattern with a screen reader** (Program Synth mode, Ctrl+F, the default):
+
+1. F6 to "Bass Line 1" (or 2): the row focus goes to that 303. Choose the pattern on the
+   section's first control, the pattern selector (Up and Down).
+2. Tab to "Step editor", after the knobs. It says the step and what it holds: "Step 1 of 16:
+   rest, C".
+3. On each step: a pitch key sets the note (`C` is C, `F` C sharp, `V` D, ... `/` high C);
+   `-` (or `=`) turns the rest into a note and back; `P` accent, `[` slide, `'` octave up, `;`
+   octave down. Each key is answered with the step's new state.
+4. Down or Enter goes to the next step, Up or Backspace to the previous, Home to step 1, End
+   to the pattern's last step. Left and Right do nothing here.
+5. F2 reads the whole pattern back. F5 plays it; edits are heard the next time the step plays.
+   While a song plays, the editor stays on its pattern and says nothing when the song moves
+   on; Options > Step Editor Follows Playback makes it go along with the song instead, still
+   silently, at your next key.
+6. Pitch mode (Tab three times to "Pitch mode", Space; Shift+Tab back to the editor) is the
+   original's quick way to enter the notes alone: each pitch key sets the note and goes to the
+   next step, and the step it set is said. Turning it on starts again at step 1. Then turn it
+   off and set the rests, accents and slides step by step.
+7. "Clear" (Space on it, after "Pitch mode") empties the pattern: every step a rest on C.

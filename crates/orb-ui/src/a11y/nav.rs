@@ -65,11 +65,11 @@ pub fn row_of_section(section: usize) -> Option<usize> {
 }
 
 /// Whether a part takes the focus (`App::control`): the knobs, faders, spin buttons, buttons,
-/// toggles and switches, but not the parts joined into a spin button or a pattern selector,
-/// the LEDs, meters, labels and click areas.
+/// toggles and switches and the 303s' step editors (task-190), but not the parts joined into a
+/// spin button or a pattern selector, the LEDs, meters, labels and click areas.
 pub fn focusable(c: &Ctl) -> bool {
     match c.kind.as_str() {
-        "display" => drive::is_spin(&c.id),
+        "display" => drive::is_spin(&c.id) || super::step303::editor_of_layout(&c.id).is_some(),
         kind => names::is_interactive(kind) && !drive::joined(c),
     }
 }

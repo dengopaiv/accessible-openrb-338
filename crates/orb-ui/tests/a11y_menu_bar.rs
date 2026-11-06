@@ -153,21 +153,24 @@ fn options_open(mode: orb_ui::screen_reader::ScreenReaderSetting) -> AppTree {
     h
 }
 
-/// Task-192: "Speak Raw Values" is an Options item in screen reader mode only.
+/// Task-192: "Speak Raw Values" and task-190: "Step Editor Follows Playback" are Options
+/// items in screen reader mode only, both off by default.
 #[test]
 fn speak_raw_values_shows_in_screen_reader_mode_only() {
     use orb_ui::screen_reader::ScreenReaderSetting;
-    let h = options_open(ScreenReaderSetting::Off);
-    assert!(h.tree().by_name("Speak Raw Values").next().is_none());
-    let h = options_open(ScreenReaderSetting::On);
-    let n = h
-        .tree()
-        .by_name("Speak Raw Values")
-        .next()
-        .expect("the checkbox in screen reader mode")
-        .1;
-    assert_eq!(a11y::role(n), Role::CheckBox);
-    assert_eq!(a11y::toggled(n), Some(Toggled::False));
+    for name in ["Speak Raw Values", "Step Editor Follows Playback"] {
+        let h = options_open(ScreenReaderSetting::Off);
+        assert!(h.tree().by_name(name).next().is_none(), "{name}");
+        let h = options_open(ScreenReaderSetting::On);
+        let n = h
+            .tree()
+            .by_name(name)
+            .next()
+            .expect("the checkbox in screen reader mode")
+            .1;
+        assert_eq!(a11y::role(n), Role::CheckBox, "{name}");
+        assert_eq!(a11y::toggled(n), Some(Toggled::False), "{name}");
+    }
 }
 
 #[test]

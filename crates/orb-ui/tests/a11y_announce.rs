@@ -266,10 +266,11 @@ fn the_read_out_keys_work_with_a_window_open() {
         press(&mut h, Key::F3).as_deref(),
         Some("Stopped, 140 BPM, pattern mode")
     );
-    // F2 reads the row focus's pattern
-    assert_eq!(
-        press(&mut h, Key::F2).as_deref(),
-        Some("Bass Line 1, pattern A1, 16 steps, shuffle off")
+    // F2 reads the row focus's pattern (a 303's: its steps follow, task-190)
+    let f2 = press(&mut h, Key::F2).unwrap();
+    assert!(
+        f2.starts_with("Bass Line 1, pattern A1, 16 steps, shuffle off. 1 rest, 2 rest"),
+        "{f2}"
     );
 }
 
@@ -378,9 +379,14 @@ fn the_read_out_keys_on_a_known_song() {
     let f4 = press(&mut h, Key::F4).unwrap();
     // the song's Bass Line 1 section is switched off; its loop is off; the compressor's LEDs
     // hold the value of the load's engine calls
+    // (a 303's steps follow since task-190)
     assert_eq!(
         f2,
-        "Bass Line 1, pattern A6, 16 steps, shuffle off, pattern section off"
+        "Bass Line 1, pattern A6, 16 steps, shuffle off, pattern section off. \
+         1 A sharp octave down, 2 A sharp octave down, 3 C octave down octave up, 4 C, \
+         5 C octave down, 6 C, 7 D sharp, 8 D sharp, 9 C accent, 10 C accent, \
+         11 C octave down slide, 12 C octave down, 13 C octave up slide, 14 C octave up slide, \
+         15 C slide, 16 C"
     );
     assert_eq!(
         f3,
