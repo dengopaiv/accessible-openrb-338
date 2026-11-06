@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-05T19:32:00Z'
-updated_date: '2026-11-06T23:20:00Z'
+updated_date: '2026-11-06T23:22:00Z'
 labels:
   - ui
   - tests
@@ -60,4 +60,6 @@ The user's marks so far (2026-11-07, read from their uncommitted edit of docs/ac
 - 10 to 22 not yet tried.
 
 Item 4 (tempo with Up / Down, Page Up / Page Down): works (the user, 2026-11-07, "Tempo works."); the empty mark meant not yet marked.
+
+Item 5 (F5, Space on a toggle, F9 / F11 / F12 spoken): works (the user, 2026-11-07: "It works as expected"); the note on it was the user's reminder of which mode records, not a defect. Items 1 to 9 pass by ear; 10 to 22 not yet tried.
 <!-- SECTION:NOTES:END -->
