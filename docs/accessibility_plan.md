@@ -712,15 +712,16 @@ F1 to F12 as in D6, the 303 tap on Ctrl+Tab and Ctrl+Shift+Tab (D6).
 With NVDA (note its version) and the release build, screen reader mode on (by itself, A11Y-1):
 
 1. Start the program: the window title is spoken, the focus is on the first control of the
-   Transport section.
-2. F6 through all sections and back with Shift+F6: each section's name is spoken.
-3. Tab through the Transport section: each control's name, role and value are spoken.
-4. Change the tempo with Up and Down: the new tempo is spoken; Page Up and Page Down.
+   Transport section. (x)
+2. F6 through all sections and back with Shift+F6: each section's name is spoken. (x)
+3. Tab through the Transport section: each control's name, role and value are spoken. (x)
+4. Change the tempo with Up and Down: the new tempo is spoken; Page Up and Page Down. (x)
 5. F5 plays and stops; nothing is spoken by itself while it plays. Space on a focused toggle
-   toggles it and does not play. F9 Record, F11 Loop and F12 mode are spoken when pressed.
-6. F3 reads the transport while playing and while stopped.
+   toggles it and does not play. F9 Record, F11 Loop and F12 mode are spoken when pressed. Loop is F11. F12 is song and pattern. (x)
+
+6. F3 reads the transport while playing and while stopped. (x)
 7. In Bass Line 1: set the cutoff with the arrows and with NVDA's own slider commands; set the
-   waveform; mute channel 1; choose pattern B3.
+   waveform; mute channel 1; choose pattern B3. (x)
 8. Program a 303 pattern with the keys alone; each step is spoken; F2 reads it back
    (TASK-190's deferred check, docs/ui_spec.md 20.5). On the focused "Step editor": each
    programming key's new state is spoken once, by the value change (`-`, `P`, `[`, a new note),
@@ -729,7 +730,7 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
    pitch key speaks the step it set ("Step 1: E") and then the next step's value, both, in
    that order, neither cut off. Play a song in song mode with the editor focused: nothing is
    spoken when the song moves to another pattern, with Options > Step Editor Follows Playback
-   off and on; F2 says "Step editor on pattern ..." while off.
+   off and on; F2 says "Step editor on pattern ..." while off. (x)
 9. In the TR-808: walk the grid, set a bass drum on steps 1, 5, 9, 13, F2 reads it back; same
    on the 909 with an accent and a flam. (TASK-191 checked the tree headless: the grid's active
    cell, its name after each key, F2's text.) By ear: Tab onto the grid speaks "Steps" and the
@@ -738,7 +739,7 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
    Alt+Space and Ctrl+Alt+Space on the 909 give a note, an accent and a flam (Alt+Space also
    opens the system menu, TASK-208); Shift+Space gives an accent and no menu (TASK-210). While a song plays in song mode with the focus on a grid,
    nothing is spoken when the machine moves to another pattern, with Options > Step Editor
-   Follows Playback off and on; F2 says "Grid on pattern ..." while off.
+   Follows Playback off and on; F2 says "Grid on pattern ..." while off. (x)
 10. Record in song mode: a pattern change and a knob move are recorded; play them back.
 11. File > Open in the system dialog; open a song from rb-songs; its name and mod are spoken.
 12. Choose a mod with the mod chooser, with the filter; Mods > Info reads the mod's text;
