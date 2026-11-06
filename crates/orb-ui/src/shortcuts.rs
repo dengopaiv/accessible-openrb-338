@@ -12,6 +12,10 @@ pub const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key
 pub const KEYS_SYNTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);
 /// "Select Patterns from Keyboard".
 pub const KEYS_PATTERNS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
+/// "Choose Mod...", screen reader mode only (task-195).
+pub const CHOOSE_MOD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::M);
+/// In the mod chooser: Mod Info of the selected entry (task-195).
+pub const CHOOSER_INFO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::I);
 /// The file browser's path field.
 pub const EDIT_PATH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::L);
 
@@ -37,8 +41,17 @@ mod tests {
 
     #[test]
     fn text_names_cmd_on_mac_and_ctrl_elsewhere() {
-        let all = [NEW, OPEN, SAVE, KEYS_SYNTH, KEYS_PATTERNS, EDIT_PATH];
-        let keys = ["N", "O", "S", "F", "G", "L"];
+        let all = [
+            NEW,
+            OPEN,
+            SAVE,
+            KEYS_SYNTH,
+            KEYS_PATTERNS,
+            CHOOSE_MOD,
+            CHOOSER_INFO,
+            EDIT_PATH,
+        ];
+        let keys = ["N", "O", "S", "F", "G", "M", "I", "L"];
         for (sc, k) in all.iter().zip(keys) {
             assert_eq!(text_for(sc, true), format!("Cmd+{k}"));
             assert_eq!(text_for(sc, false), format!("Ctrl+{k}"));

@@ -314,8 +314,9 @@ The user asked for everything; the order follows what each step needs.
    buttons, and the four key collisions resolved. After this the whole panel can be operated
    and heard, except for the pattern contents.
 2. Patterns: the pattern selector, the 303 step editor, the drum grids and the read-out keys.
-3. Files and windows: system file dialogs, the mod chooser, dialog focus and roles, the
-   announcement node, the status line.
+3. Files and windows: system file dialogs, the mod chooser (done, task-195: a Tree of
+   TreeItem nodes with the selected item as `active_descendant`, as the drum grid's cells;
+   docs/ui_spec.md 20.7), dialog focus and roles, the announcement node, the status line.
 4. Fine-tuning with NVDA: what is said and in what order, live-region timing, braille output,
    the keyboard help, and a "Screen reader mode" section in docs/ui_spec.md.
 

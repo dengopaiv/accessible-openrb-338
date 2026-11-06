@@ -88,6 +88,9 @@ pub enum Cmd {
     About,
     /// "Choose file..." of the Mods menu: the browser for a mod.
     ChooseModFile,
+    /// "Choose Mod..." of the Mods menu, shown in screen reader mode (task-195): the dialog
+    /// with a filter and the list of mods.
+    ChooseMod,
     /// A kit from the Mods menu (or a mod file the browser chose).
     UseKit(Kit),
     /// A variant in the submenu of mods that share an INFO name (task-151): plays it, or when
@@ -126,12 +129,16 @@ pub struct ModEntry {
     pub name: String,
     /// Empty for a mod with a name of its own; else every file of the name in byte order.
     pub variants: Vec<ModVariant>,
+    /// Whether the mod of `path` embeds a `Demo.rbs` (task-195: the mod chooser says so).
+    pub demo: bool,
 }
 
 /// One file of the submenu of mods that share a name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModVariant {
     pub path: PathBuf,
+    /// Whether the file embeds a `Demo.rbs`.
+    pub demo: bool,
     /// The mod's INFO version ("1.2"); empty when it says "the app's version".
     pub version: String,
 }
@@ -166,6 +173,7 @@ impl ModEntry {
             .or(self.variants.first());
         if let Some(v) = pick {
             self.path = v.path.clone();
+            self.demo = v.demo;
         }
     }
 
@@ -213,13 +221,13 @@ impl App {
             Ok(None) => return Ok(Vec::new()),
             Err(orb_cli::Fail(_, m)) => return Err(m),
         };
-        let found = mods::scan(&dir).map_err(|orb_cli::Fail(_, m)| m)?;
-        let mut groups: Vec<(String, Vec<PathBuf>)> = Vec::new();
-        for (path, name) in found {
+        let found = mods::scan_with_demo(&dir).map_err(|orb_cli::Fail(_, m)| m)?;
+        let mut groups: Vec<(String, Vec<(PathBuf, bool)>)> = Vec::new();
+        for (path, name, demo) in found {
             let Some(name) = name else { continue };
             match groups.iter_mut().find(|(n, _)| mods::names_match(n, &name)) {
-                Some((_, files)) => files.push(path),
-                None => groups.push((name, vec![path])),
+                Some((_, files)) => files.push((path, demo)),
+                None => groups.push((name, vec![(path, demo)])),
             }
         }
         // by name, then by the owner's path as the last tie-break (it never fires, because
@@ -233,8 +241,9 @@ impl App {
                 } else {
                     files
                         .iter()
-                        .map(|p| ModVariant {
+                        .map(|(p, demo)| ModVariant {
                             path: p.clone(),
+                            demo: *demo,
                             version: session::mod_info(p)
                                 .ok()
                                 .and_then(|i| i.version)
@@ -244,9 +253,10 @@ impl App {
                         .collect()
                 };
                 let mut e = ModEntry {
-                    path: files[0].clone(),
+                    path: files[0].0.clone(),
                     name,
                     variants,
+                    demo: files[0].1,
                 };
                 e.resolve(self.settings.preferred_mod(&e.name));
                 e
@@ -928,6 +938,7 @@ impl App {
             Cmd::KeyHelp => self.show_key_help(),
             Cmd::About => self.show_about(),
             Cmd::ChooseModFile => self.open_browser(Mode::ChooseMod),
+            Cmd::ChooseMod => self.show_chooser(),
             Cmd::UseKit(kit) => self.use_kit(kit),
             Cmd::ChooseVariant(p) => self.choose_variant(p),
             Cmd::DemoSong => self.demo_song(),
@@ -1195,6 +1206,13 @@ impl App {
                         }
                         note_button(&mut bar, &file.response);
                         let mods = ui.menu_button("Mods", |ui| {
+                            // task-195: only in screen reader mode
+                            if self.screen_reader_mode() {
+                                if item(ui, "Choose Mod...", Some(&shortcuts::CHOOSE_MOD)) {
+                                    cmd = Some(Cmd::ChooseMod);
+                                }
+                                ui.separator();
+                            }
                             let (std_on, checked) = match &self.mod_list {
                                 Some(Ok(l)) => self.mod_checks(l),
                                 _ => self.mod_checks(&[]),

@@ -244,7 +244,7 @@ fn sr_row(keys: &str, what: &'static str, sr_binds: Vec<SrBind>) -> Row {
 
 /// The keys of screen reader mode (task-188, decisions A11Y-D2 and A11Y-D6), listed first when
 /// the mode is on, with the read-out keys F2 to F4 (task-189).
-fn screen_reader_group() -> Group {
+fn screen_reader_group(is_mac: bool) -> Group {
     use Shift::{Any, No, Yes};
     let press = |s: &str| SrWant::Panel(id(s));
     let s303 = Scope::Synth303;
@@ -312,6 +312,30 @@ fn screen_reader_group() -> Group {
                 "F12",
                 "Song / pattern mode",
                 vec![sr(Key::F12, Any, press("transport.mode"))],
+            ),
+            sr_row(
+                &shortcuts::text_for(&shortcuts::CHOOSE_MOD, is_mac),
+                "Mods > Choose Mod...: a dialog with a filter field and the list of the \
+                 Mods menu's mods, as a tree",
+                vec![],
+            ),
+            sr_row(
+                "In Choose Mod",
+                "Tab / Shift+Tab: between the filter and the list. Typing in the filter \
+                 narrows the list by name, ASCII case ignored. Down in the filter: to the \
+                 list. In the list: Up / Down, Home / End, PgUp / PgDn move the selection; \
+                 Right opens a mod with variants, Left closes it or goes from a variant to \
+                 its mod. Enter (in the filter too) chooses: the mod, for a mod with \
+                 variants the preferred one, or the variant selected. Escape closes",
+                vec![],
+            ),
+            sr_row(
+                &format!(
+                    "{} in Choose Mod",
+                    shortcuts::text_for(&shortcuts::CHOOSER_INFO, is_mac)
+                ),
+                "Mod Info of the selected mod, without loading it",
+                vec![],
             ),
             sr_row(
                 "Tab / Shift+Tab",
@@ -499,7 +523,7 @@ const PATTERN: [[Key; 8]; 4] = [
 pub fn groups(is_mac: bool, screen_reader: bool) -> Vec<Group> {
     let mut g = original_groups(is_mac);
     if screen_reader {
-        g.insert(1, screen_reader_group());
+        g.insert(1, screen_reader_group(is_mac));
     }
     g
 }

@@ -816,6 +816,7 @@ wait (the windows paragraph below). With the mode off nothing here applies.
 | Left, Right | On a drum grid: the step before / after (section 20.6). Nothing elsewhere |
 | Ctrl+Up / Ctrl+Down | The row focus to the previous / next row, wrapping (the original's Up / Down), without moving the navigation focus |
 | Ctrl+Tab / Ctrl+Shift+Tab | The original's Tab / Shift+Tab: the playing step of the focused 303 becomes a note / a rest (Program Synth mode) |
+| Ctrl+M (Cmd+M) | Mods > Choose Mod...: the mod chooser, a dialog with a filter field and the list of mods (task-195, section 20.7). A menu shortcut like Ctrl+N, outside the key map; with the mode off Ctrl+M does nothing (the original's "Select Mod..." was Ctrl+M, section 18.0, which orb has not) |
 
 The F keys act as the buttons' mouse down (`Panel::press` of `transport.play` or `.stop`,
 `.record`, `.loop`, `.mode`) and show the button pressed while held, as the original's keys do.
@@ -1092,6 +1093,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | File | Save (Ctrl+S, Cmd+S on macOS) | writes the song's file; a song with none goes to Save As |
 | File | Save As... | the browser for a `.rbs`; the file becomes the song's file |
 | File | Export Loop as Audio File... | the browser for `.wav`, `.flac` or `.ogg`; enabled in song mode only (the original disables it in pattern mode, section 12) |
+| Mods | Choose Mod... (Ctrl+M, Cmd+M on macOS; shown in screen reader mode only, first item, a separator after it) | the mod chooser dialog: a filter and the list as a tree (section 20.7, task-195) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
 | Mods | Demo Song | opens the `Demo.rbs` of the current song's mod (below); enabled only when that mod file has one, so never for "Standard ReBirth" (task-094) |
@@ -2028,3 +2030,64 @@ reader mode only; with the mode off there is no grid and every key is as before.
 6. While a song plays, the grid stays on its pattern and says nothing when the song moves
    on; Options > Step Editor Follows Playback makes it go along with the song instead, still
    silently, at your next key.
+
+### 20.7 The mod chooser (task-195)
+
+A11Y-10 of docs/accessibility_plan.md; the code is `crates/orb-ui/src/mod_chooser.rs`, the
+tests `crates/orb-ui/tests/a11y_mod_chooser.rs`. Screen reader mode only. The user's decisions
+of 2026-11-07: Ctrl+M opens it, the filter and the list are two focus stops, the list is a tree
+with the variants as children, Ctrl+I shows Mod Info of the selection. With the mode off there
+is no menu item and Ctrl+M does nothing; the dialog closes if the mode goes off under it.
+
+- **Opening.** Mods > Choose Mod... (first item of the Mods menu, with a separator after it) or
+  Ctrl+M (Cmd+M on macOS), from anywhere but under a modal (`shortcuts::CHOOSE_MOD`, consumed
+  in `App::show` like Ctrl+N; `App::show_chooser`). It is a window like the four of 20.4: role
+  Dialog named "Choose Mod", the focus goes into it (to the filter) when it opens, and back to
+  the panel control that had it when it closes (the `Win::Chooser` of `App::window_focus`). The
+  selection starts on the playing mod's entry ("Standard ReBirth" for the built-in kit or a mod
+  outside the folder). The list is built from the cached `App::mods` every frame: no folder
+  read on open (a Refresh List while it is open changes it).
+- **Two stops.** The filter, a text field named "Filter mods", and the list, one Tree node named
+  "Mods" (a child `Ui` that takes the focus, as the drum grid of 20.6: `UiBuilder::sense(
+  FOCUSABLE)` with the explicit id `mod_chooser::list_id`). Tab and Shift+Tab move between
+  them (egui's, as in the other windows; the close button of the title bar is reached with
+  Shift+Tab from the filter). Down in the filter moves to the list; Enter in the filter
+  chooses the selected item. Typing narrows the list live: an item shows when its name has the
+  filter text in it anywhere, ASCII case ignored (`mod_chooser::name_matches`; "Standard
+  ReBirth" is filtered like the rest); the selection goes to the first item that shows. A
+  line under the filter says "N of M mods".
+- **The tree.** Items in the order of the Mods menu: "Standard ReBirth", then each entry. An
+  entry with variants (mods that share an INFO name, docs/rbm.md 11.3) is a collapsed item
+  (`expanded` false); Right opens it, and again moves to its first file; a file is a child
+  item of level 2 (`level`, `position_in_set`, `size_of_set`). Left closes an open entry, or
+  moves from a file to its entry. Up, Down, Home, End, Page Up and Page Down (10 items) move
+  the selection and stop at the ends. The Tree's `active_descendant` is the selected item, so
+  a screen reader speaks it as the focus; each item is a TreeItem node (a widget of the tree's
+  `Ui`, `Sense::CLICK` so that a mouse click selects it and a double click chooses it) with
+  `selected`. The arrows are the list's, not egui's focus moves (a focus lock filter).
+  Every item has a node, 311 entries and all, painted only when in view.
+- **Item text.** An entry: its name, then ", variants: N" when it has variants, ", has demo"
+  when the mod embeds a `Demo.rbs`, ", current" when it holds the playing kit. A file: the
+  submenu's label (file name, two spaces, the INFO version), then ", preferred" for the
+  preferred file (`App::preferred_variant`), ", has demo", ", current" for the playing file.
+  The demo flag comes with the list (`mods::scan_with_demo`, the same read of each file as the
+  names; `ModEntry::demo`, `ModVariant::demo`), so the list costs no file read when it opens.
+- **Choosing** (Enter in the list or the filter, or a double click) closes the dialog and runs
+  the menu's command: "Standard ReBirth" `Cmd::UseKit(Kit::Standard)`; an entry
+  `Cmd::UseKit(Kit::Mod(entry.path))`, which for a merged name is its preferred variant (else
+  the first by file name); a file `Cmd::ChooseVariant(path)`, so as in the submenu the active
+  file chosen again sets (or clears) the preferred file of the name. Both announce "Mod X" and
+  report errors as the menu does.
+- **Mod Info.** Ctrl+I (Cmd+I) opens Mods > Info for the selected item without loading it
+  (`App::show_mod_info_of`; a merged entry shows its preferred file, "Standard ReBirth" the
+  built-in kit): the window shows that kit's splash and facts (`App::mod_info_target`) instead
+  of the playing one, until Mods > Info asks for the playing kit again (`App::show_mod_info`,
+  unchanged). Mod Info opens over the dialog and takes the focus; Escape closes it, and the
+  focus goes back to the stop of the dialog that had it (`Chooser::list_stop`).
+- **Escape** closes the dialog from either stop (Mod Info first when it is open).
+- **Key help.** The Keyboard Shortcuts window lists Ctrl+M, the dialog's keys and Ctrl+I in
+  the screen reader group.
+- **Cost.** With the 311 entries of the rb-mods collection a frame with the dialog open
+  costs 1.6 ms in release, opening 4.9 ms at most (`a11y_mod_chooser.rs`, measured with
+  `ORB_THIRDPARTY_MODS_DIR`); reading the folder (at start and Refresh List) is the existing
+  scan, about 2.8 s for the collection.

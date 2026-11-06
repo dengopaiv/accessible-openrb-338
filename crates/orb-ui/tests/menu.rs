@@ -2831,6 +2831,7 @@ fn mods_that_share_a_name_are_one_entry_with_variants() {
     // a version, when the mod has one, follows the file name
     let v = orb_ui::menu::ModVariant {
         path: first.clone(),
+        demo: false,
         version: "1.2".into(),
     };
     assert_eq!(v.label(), "PBE2.rbm  1.2");

@@ -96,10 +96,18 @@ pub(crate) enum Win {
     Info,
     About,
     ModInfo,
+    /// The mod chooser (task-195).
+    Chooser,
 }
 
 impl Win {
-    pub(crate) const ALL: [Win; 4] = [Win::KeyHelp, Win::Info, Win::About, Win::ModInfo];
+    pub(crate) const ALL: [Win; 5] = [
+        Win::KeyHelp,
+        Win::Info,
+        Win::About,
+        Win::ModInfo,
+        Win::Chooser,
+    ];
 }
 
 /// Screen reader mode: moves the focus into a window (`due`, from `App::window_focus_due`).
@@ -240,6 +248,13 @@ pub struct App {
     pub(crate) mod_info_serial: u32,
     pub(crate) mod_details: Option<crate::mod_info::Cached>,
     pub(crate) mod_info_shown: Option<crate::mod_info::SplashShown>,
+    /// The kit Mod Info shows when it was not asked for the playing one (Ctrl+I in the mod
+    /// chooser, task-195), and its splash.
+    pub(crate) mod_info_target: Option<orb_cli::mods::Kit>,
+    pub(crate) info_splash: Option<(orb_cli::mods::Kit, Option<egui::TextureHandle>)>,
+    /// The mod chooser (task-195) when open, and the number of its opens (its id).
+    pub(crate) chooser: Option<crate::mod_chooser::Chooser>,
+    pub(crate) chooser_serial: u32,
     /// The same for the Help > Keyboard Shortcuts window (`App::key_help_ui`).
     pub(crate) key_help_open: bool,
     pub(crate) key_help_serial: u32,
@@ -334,6 +349,10 @@ impl App {
             mod_info_serial: 0,
             mod_details: None,
             mod_info_shown: None,
+            mod_info_target: None,
+            info_splash: None,
+            chooser: None,
+            chooser_serial: 0,
             key_help_open: false,
             key_help_serial: 0,
             info_shown: None,
@@ -845,6 +864,8 @@ impl App {
             self.window_focus_due = None;
             self.focus_window = None;
             self.modal_was = 0;
+            // the mode went off with the chooser open: it is a screen reader mode dialog
+            self.chooser = None;
         }
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
@@ -860,6 +881,9 @@ impl App {
                 self.open_browser(Mode::OpenSong);
             } else if shortcuts::consume(ui, &shortcuts::SAVE) {
                 self.save();
+            } else if screen_reader && shortcuts::consume(ui, &shortcuts::CHOOSE_MOD) {
+                // Ctrl/Cmd+M: Mods > Choose Mod..., screen reader mode only (task-195)
+                self.show_chooser();
             } else {
                 // Ctrl/Cmd+F and +G: the Options menu's two keyboard modes.
                 if shortcuts::consume(ui, &shortcuts::KEYS_SYNTH) {
@@ -968,6 +992,7 @@ impl App {
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);
         self.mod_info_ui(&ctx);
+        self.chooser_ui(&ctx);
         self.poll_export(&ctx);
         self.update_title(&ctx);
         // last: every message of this frame is in
@@ -1369,6 +1394,16 @@ impl App {
                 ui.memory_mut(|m| m.request_focus(back));
             }
         }
+        // Mod Info opened from the mod chooser (Ctrl+I) closed: the focus goes back into the
+        // chooser under it (task-195)
+        if open
+            && self.windows_open & !mask != 0
+            && !self.focus_window.is_some_and(|w| self.win_open(w))
+            && self.chooser.is_some()
+        {
+            self.focus_window = Some(Win::Chooser);
+            self.window_focus_due = Some(Win::Chooser);
+        }
         self.windows_open = mask;
     }
 
@@ -1379,6 +1414,7 @@ impl App {
             Win::Info => self.info_open,
             Win::About => self.about_open,
             Win::ModInfo => self.mod_info_open,
+            Win::Chooser => self.chooser.is_some(),
         }
     }
 

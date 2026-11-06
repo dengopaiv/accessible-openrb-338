@@ -21,6 +21,7 @@ pub mod layout;
 pub mod link;
 pub mod logo_anim;
 pub mod menu;
+pub mod mod_chooser;
 pub mod mod_info;
 pub mod model;
 pub mod palette;

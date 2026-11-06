@@ -234,6 +234,18 @@ pub(crate) struct Cached {
 impl App {
     /// Mods > Info.
     pub fn show_mod_info(&mut self) {
+        self.mod_info_target = None;
+        self.open_mod_info();
+    }
+
+    /// Mod Info of a kit that is not the one playing, without loading it (Ctrl+I in the mod
+    /// chooser, task-195). The next [`App::show_mod_info`] shows the playing kit again.
+    pub fn show_mod_info_of(&mut self, kit: Kit) {
+        self.mod_info_target = Some(kit);
+        self.open_mod_info();
+    }
+
+    fn open_mod_info(&mut self) {
         if !self.mod_info_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.mod_info_serial += 1;
@@ -282,15 +294,20 @@ impl App {
             return;
         }
         let due = self.window_focus_due(crate::app::Win::ModInfo);
+        // the kit that plays, or the one the mod chooser asked about (task-195)
+        let (kit, name) = match &self.mod_info_target {
+            Some(k) => (k.clone(), String::new()),
+            None => (self.doc.kit.clone(), self.doc.mod_name.clone()),
+        };
         let stale = self
             .mod_details
             .as_ref()
-            .is_none_or(|c| c.kit != self.doc.kit || c.name != self.doc.mod_name);
+            .is_none_or(|c| c.kit != kit || c.name != name);
         if stale {
             self.mod_details = Some(Cached {
-                kit: self.doc.kit.clone(),
-                name: self.doc.mod_name.clone(),
-                details: ModDetails::of(&self.doc.kit),
+                details: ModDetails::of(&kit),
+                kit,
+                name,
             });
         }
         let details = self
@@ -299,9 +316,21 @@ impl App {
             .expect("set above")
             .details
             .clone();
-        let missing = (self.doc.kit == Kit::Standard && self.doc.mod_name != STANDARD)
+        let missing = (self.mod_info_target.is_none()
+            && self.doc.kit == Kit::Standard
+            && self.doc.mod_name != STANDARD)
             .then(|| self.doc.mod_name.clone());
-        let tex = self.splash_texture(ctx);
+        let tex = match self.mod_info_target.clone() {
+            None => self.splash_texture(ctx),
+            Some(k) => {
+                if self.info_splash.as_ref().is_none_or(|(c, _)| *c != k) {
+                    let tex = crate::session::splash_image(&k)
+                        .map(|c| ctx.load_texture("mod-info-splash", c, Default::default()));
+                    self.info_splash = Some((k, tex));
+                }
+                self.info_splash.as_ref().and_then(|(_, t)| t.clone())
+            }
+        };
         let basis = self.splash_basis(ctx);
         let screen = ctx.content_rect();
         let max_width = (screen.width() - 56.0)

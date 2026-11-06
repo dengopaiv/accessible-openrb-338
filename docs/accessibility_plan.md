@@ -32,7 +32,10 @@ move the step, Left/Right do nothing; the same for the drum grids), plus the six
 Then TASK-210: Shift+Space as a second accent key on the TR-909 grid, because Alt+Space also
 opens the window's system menu (the user's decision TASK-208, 2026-11-06: "Add shift+space").
 
-Not started: TASK-195 (mod chooser), TASK-196 (docs pass), TASK-197 (the user's NVDA pass,
+TASK-195 (the mod chooser; the user's decisions of 2026-11-07: Ctrl+M, two stops, a tree for
+the variants, Ctrl+I for Mod Info; docs/ui_spec.md 20.7) is done on its branch `task-mod-chooser`.
+
+Not started: TASK-196 (docs pass), TASK-197 (the user's NVDA pass,
 whose checklist below has collected every by-ear check deferred by the tasks), and the
 follow-ups TASK-199, 200, 201, 204, 206.
 
@@ -601,6 +604,11 @@ F1 to F12 as in D6, the 303 tap on Ctrl+Tab and Ctrl+Shift+Tab (D6).
   2. With the rb-mods collection, the dialog opens with all 311 entries in under 100 ms after
      the list is cached (measure; notes).
   3. With NVDA, the list and the filter are announced as such (by hand; notes).
+- Outcome (2026-11-07): the key is Ctrl+M (Cmd+M), the list a tree (Tree / TreeItem nodes
+  with level, expanded and the active descendant), the filter and the list two stops, Ctrl+I
+  Mod Info of the selection; AC 3 became "the roles and names asserted in tests", the by-ear
+  part is NVDA checklist item 12. Opening costs 4.9 ms at most with the 311 entries.
+  docs/ui_spec.md 20.7.
 
 ### A11Y-11. The menu bar from the keyboard
 
@@ -731,7 +739,15 @@ With NVDA (note its version) and the release build, screen reader mode on (by it
 10. Record in song mode: a pattern change and a knob move are recorded; play them back.
 11. File > Open in the system dialog; open a song from rb-songs; its name and mod are spoken.
 12. Choose a mod with the mod chooser, with the filter; Mods > Info reads the mod's text;
-    Mods > Demo Song.
+    Mods > Demo Song. (TASK-195 checked the tree headless: roles, names, levels, expanded,
+    the keys, the kits.) By ear: Ctrl+M speaks the dialog's name "Choose Mod" and the filter
+    ("Filter mods", edit); typing narrows the list and the count line is readable; Down moves to
+    the list and NVDA speaks "Mods, tree view" and the selected item with its level and
+    "collapsed" for a mod with variants ("Name, variants: 3, collapsed, 5 of 311"); Right
+    speaks "expanded" and then the first file; Left goes back; Up and Down speak each item
+    with "has demo" and "current"; Enter chooses and "Mod X" is spoken; Ctrl+I opens Mod Info
+    and Escape returns to the list; Tab and Shift+Tab move between the two stops; Escape closes
+    and the focus is back where it was.
 13. File > Info: read and edit the song's title.
 14. Save, Save As, and Export Loop as Audio File: the status messages are spoken.
 15. Trigger an error (open a file that is not a song): the error box is spoken and OK closes it.

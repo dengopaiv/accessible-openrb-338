@@ -5,13 +5,14 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-05T19:32:00Z'
-updated_date: '2026-11-06T22:00:00Z'
+updated_date: '2026-11-06T22:39:00Z'
 labels:
   - ui
   - tests
 milestone: m-7
 dependencies:
   - TASK-196
+  - TASK-195
 references:
   - docs/accessibility_plan.md
   - docs/accessibility.md
@@ -40,4 +41,5 @@ Planned in docs/accessibility_plan.md as A11Y-13; the analysis is docs/accessibi
 - [ ] #6 NVDA checklist item 22 (TASK-193's dialogs and windows): each window is announced as a dialog with its title and its first line is read; Tab reads the lines of About, Keyboard Shortcuts and Mod Info; the error box is announced as an alert and its message is read when the focus lands on OK (if not, the message needs App::announce: a follow-up task); the prompt is read with Save focused; Escape returns the focus.
 - [ ] #7 TASK-190's step editor (NVDA checklist item 8, docs/ui_spec.md 20.5): on the focused Step editor each programming key's new state is spoken once (value change), the same note again is spoken (announcer), Up/Down/Home/End speak the new step and Left/Right nothing, in pitch mode a pitch key speaks the step it set and then the next step, neither cut off; and while a song plays in song mode nothing is spoken when it moves to another pattern, with Options > Step Editor Follows Playback off and on.
 - [ ] #8 TASK-191's drum grids (NVDA checklist item 9, docs/ui_spec.md 20.6): NVDA speaks the cell on entering a grid and on each Up, Down, Left, Right, Home and End, and the cell's new state after each Space (its name changes while it keeps the focus); Ctrl+Space, Alt+Space and Ctrl+Alt+Space on the TR-909 give a note, an accent and a flam, and Shift+Space an accent without the system menu (TASK-210); and while a song plays in song mode nothing is spoken when the machine moves to another pattern, with Options > Step Editor Follows Playback off and on.
+- [ ] #9 TASK-195's mod chooser (NVDA checklist item 12, docs/ui_spec.md 20.7): Ctrl+M speaks the dialog Choose Mod and the filter Filter mods as an edit field; typing narrows the list and the N of M mods line is readable; Down from the filter speaks Mods, tree view and the selected item with its level and position; Right speaks expanded and then the first file, Left goes back; Up/Down speak each item with has demo and current; Enter chooses and Mod X is spoken; Ctrl+I opens Mod Info and Escape returns to the chooser; Tab / Shift+Tab move between the two stops; Escape closes and the focus returns where it was.
 <!-- AC:END -->

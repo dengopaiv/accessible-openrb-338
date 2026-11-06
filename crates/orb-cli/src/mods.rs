@@ -158,6 +158,15 @@ pub fn byte_order(a: &Path, b: &Path) -> std::cmp::Ordering {
 
 /// The `.rbm` files of `dir` in [`byte_order`], each with its INFO menu name when it has one.
 pub fn scan(dir: &Path) -> Result<Vec<(PathBuf, Option<String>)>, Fail> {
+    Ok(scan_with_demo(dir)?
+        .into_iter()
+        .map(|(p, n, _)| (p, n))
+        .collect())
+}
+
+/// [`scan`] with, for each file, whether the mod embeds a `Demo.rbs` (task-195: the mod
+/// chooser says "has demo"); the same single read of each file.
+pub fn scan_with_demo(dir: &Path) -> Result<Vec<(PathBuf, Option<String>, bool)>, Fail> {
     let rd = std::fs::read_dir(dir).map_err(|e| {
         fail(
             1,
@@ -174,11 +183,10 @@ pub fn scan(dir: &Path) -> Result<Vec<(PathBuf, Option<String>)>, Fail> {
         .into_iter()
         .map(|p| {
             // a file that is no mod has no name and matches nothing
-            let name = std::fs::read(&p)
-                .ok()
-                .and_then(|b| Rbm::parse(b).ok())
-                .and_then(|r| r.info().map(|i| i.name.clone()));
-            (p, name)
+            let rbm = std::fs::read(&p).ok().and_then(|b| Rbm::parse(b).ok());
+            let name = rbm.as_ref().and_then(|r| r.info().map(|i| i.name.clone()));
+            let demo = rbm.as_ref().is_some_and(|r| r.find("Demo.rbs").is_some());
+            (p, name, demo)
         })
         .collect())
 }
