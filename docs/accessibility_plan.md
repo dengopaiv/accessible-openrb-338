@@ -47,6 +47,7 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 | Task | What | Priority | Who |
 |---|---|---|---|
+| TASK-212 | Menu bar: the focus returns where it was when the bar is left | medium | agent |
 | TASK-211 | An option: a 303 pitch key also turns a rest into a note | medium | agent |
 | TASK-201 | Mods menu: the playing mod's mark in the accessibility tree | medium | agent |
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | low | agent |
@@ -326,6 +327,10 @@ When TASK-211 is merged, its by-ear check joins this list as item 23.
 Each is in the backlog with its description and acceptance criteria; none is started. The user
 says which to start (one agent at a time).
 
+- **TASK-212 (medium): the focus after the menu bar.** Asked by the user 2026-11-07, from the
+  gaps TASK-184 left: after Escape or an item that opens no window, the focus lands on the
+  window, where NVDA has nothing to read, instead of the control it came from; and a second F10
+  or lone Alt does not go back. In screen reader mode, the focus returns to that control.
 - **TASK-211 (medium): pitch keys that turn a rest into a note.** Asked by the user
   2026-11-07, after item 8: a pitch key sets only a step's note, as in the original, so a step
   stays a rest until `-` turns it into a note. A setting in the Options menu, off by default and
