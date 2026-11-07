@@ -17,7 +17,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use a11y::Frames;
-use eframe::egui::accesskit::{Action, NodeId, Role};
+use eframe::egui::accesskit::{Action, NodeId, Role, Toggled};
 use eframe::egui::{Event, Key, Modifiers, Popup, Vec2};
 use orb_cli::mods::{Kit, STANDARD};
 use orb_engine::tables::Tables;
@@ -561,7 +561,11 @@ fn with_the_mode_off_there_is_no_chooser() {
     h.press(Key::ArrowRight);
     h.press(Key::ArrowDown);
     assert!(Popup::is_any_open(&h.f.ctx));
-    assert_eq!(h.focused(), (Role::Button, "Standard ReBirth".to_string()));
+    // (a checked menu item since task-201)
+    assert_eq!(
+        h.focused(),
+        (Role::MenuItemCheckBox, "Standard ReBirth".to_string())
+    );
     assert!(
         h.tree()
             .nodes()
@@ -652,4 +656,91 @@ fn the_collection_opens_in_under_100_ms() {
         open.as_millis() < 100,
         "the dialog opens in {open:?}, not under 100 ms"
     );
+}
+
+// ---- task-201: the Mods menu's entries read which mod plays -------------------------------
+
+impl H {
+    /// F10, Right, Down: the Mods menu open with the focus on its first entry.
+    fn open_mods_menu(&mut self) {
+        self.press(Key::F10);
+        self.press(Key::ArrowRight);
+        self.press(Key::ArrowDown);
+        assert!(Popup::is_any_open(&self.f.ctx));
+    }
+
+    /// The names of every node of the tree that reads as checked, the panel's own controls
+    /// left out: with the Mods menu open these are the menu's checked entries, and nothing
+    /// else may be.
+    fn checked_entries(&self) -> Vec<String> {
+        let t = self.tree();
+        let panel: std::collections::HashSet<_> = orb_ui::layout::controls()
+            .iter()
+            .map(|c| a11y::hit_id(&c.kind, &c.id).accesskit_id())
+            .collect();
+        let mut v: Vec<String> = t
+            .nodes()
+            .filter(|(id, n)| !panel.contains(id) && a11y::toggled(n) == Some(Toggled::True))
+            .map(|(_, n)| a11y::name(n).unwrap_or("").to_string())
+            .collect();
+        v.sort();
+        v
+    }
+}
+
+/// The entry of the playing kit, and only it, is checked in the tree: the built-in kit, a mod
+/// and a variant of a merged name (its submenu button and its file).
+#[test]
+fn the_mods_menu_marks_the_playing_kit() {
+    let dir = folder(&FILES);
+    let all = [
+        "Standard ReBirth",
+        "alpha",
+        "Beta",
+        "Gamma Ray",
+        "Shared",
+        "Zed",
+    ];
+    let mut h = H::new(true, Some(dir.path()));
+    h.open_mods_menu();
+    for n in all {
+        let (_, node) = h.tree().by_name(n).next().expect(n);
+        println!("{n}: {:?} {:?}", a11y::role(node), a11y::toggled(node));
+    }
+    assert_eq!(h.checked_entries(), ["Standard ReBirth"]);
+
+    let mut h = H::new(true, Some(dir.path()));
+    h.app
+        .command(Cmd::UseKit(Kit::Mod(path_of(dir.path(), "5.rbm"))));
+    h.settle(3);
+    h.open_mods_menu();
+    assert_eq!(h.checked_entries(), ["Zed"]);
+    let (_, zed) = h.tree().by_name("Zed").next().unwrap();
+    assert_eq!(a11y::role(zed), Role::MenuItemCheckBox);
+
+    // a variant of a merged name: the submenu button is checked, and in the submenu the file
+    let mut h = H::new(true, Some(dir.path()));
+    h.app
+        .command(Cmd::ChooseVariant(path_of(dir.path(), "4.rbm")));
+    h.settle(3);
+    h.open_mods_menu();
+    assert_eq!(h.checked_entries(), ["Shared"]);
+    // Choose Mod... is the first entry in screen reader mode; Shared is the sixth
+    while h.focused().1 != "Shared" {
+        h.press(Key::ArrowDown);
+    }
+    h.press(Key::ArrowRight);
+    // the submenu button and the playing file, and nothing else
+    let checked = h.checked_entries();
+    println!("{checked:?}");
+    assert_eq!(checked.len(), 2, "{checked:?}");
+    assert_eq!(checked[0], "4.rbm  1.0.0");
+    assert_eq!(checked[1], "Shared");
+    // the other file is in the tree and not checked
+    let other: Vec<_> = h
+        .tree()
+        .by_name("3.rbm  1.0.0")
+        .map(|(_, n)| a11y::toggled(n))
+        .collect();
+    assert_eq!(other, [Some(Toggled::False)]);
 }

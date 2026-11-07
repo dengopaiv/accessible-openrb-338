@@ -1237,7 +1237,7 @@ impl App {
                                 Some(Ok(l)) => self.mod_checks(l),
                                 _ => self.mod_checks(&[]),
                             };
-                            if ui.selectable_label(std_on, STANDARD).clicked() {
+                            if checked_item(ui, std_on, STANDARD).clicked() {
                                 cmd = Some(Cmd::UseKit(Kit::Standard));
                                 ui.close();
                             }
@@ -1268,8 +1268,7 @@ impl App {
                                                                 t.push_str("  (preferred)");
                                                             }
                                                             let me = active == Some(&v.path);
-                                                            if ui.selectable_label(me, t).clicked()
-                                                            {
+                                                            if checked_item(ui, me, t).clicked() {
                                                                 cmd = Some(Cmd::ChooseVariant(
                                                                     v.path.clone(),
                                                                 ));
@@ -1279,7 +1278,7 @@ impl App {
                                                     });
                                                     continue;
                                                 }
-                                                if ui.selectable_label(on, &e.name).clicked() {
+                                                if checked_item(ui, on, &e.name).clicked() {
                                                     cmd =
                                                         Some(Cmd::UseKit(Kit::Mod(e.path.clone())));
                                                     ui.close();
@@ -1511,6 +1510,17 @@ const HELP_ITEMS: &[(&str, Cmd)] = &[
     ("Keyboard Shortcuts...", Cmd::KeyHelp),
     ("About OpenRB-338...", Cmd::About),
 ];
+
+/// A Mods menu entry that marks the playing kit (task-201). It looks and acts as
+/// `selectable_label`; in the accessibility tree it is a checked menu item (egui already sets
+/// `Toggled` from the selection), which a screen reader reads as "menu item, checked".
+fn checked_item(ui: &mut Ui, on: bool, text: impl Into<egui::WidgetText>) -> egui::Response {
+    let r = ui.selectable_label(on, text);
+    ui.ctx().accesskit_node_builder(r.id, |node| {
+        node.set_role(Role::MenuItemCheckBox);
+    });
+    r
+}
 
 /// A menu item with its shortcut; true when clicked (the menu closes).
 fn item(ui: &mut Ui, text: &str, shortcut: Option<&egui::KeyboardShortcut>) -> bool {

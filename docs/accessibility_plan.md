@@ -40,7 +40,8 @@ The document has three parts:
 | A11Y-12 | TASK-196 | Documentation of screen reader mode | df4d002 |
 | A11Y-13 | TASK-197 | The NVDA pass by the user: all 22 checklist items work | (backlog) |
 | (new) | TASK-212 | Menu bar: the focus returns where it was when the bar is left | 3f3fdc7 |
-| (new) | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | `git log --grep task-211` |
+| (new) | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 |
+| (new) | TASK-201 | Mods menu: the playing kit's entry read as "checked" | `git log --grep task-201` |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -49,7 +50,6 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 | Task | What | Priority | Who |
 |---|---|---|---|
-| TASK-201 | Mods menu: the playing mod's mark in the accessibility tree | medium | agent |
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI); on hold | low | agent |
 | TASK-204 | The Export dialog keeps the format the user picks | low | agent |
 | TASK-206 | A system file dialog that cannot open reads as a cancel (Linux); on hold | low | agent |
@@ -156,7 +156,7 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   item 19.
 - **A11Y-11 = TASK-184, the menu bar from the keyboard.** F10, or Alt pressed and released
   alone, focuses File; the arrows walk the bar and the menus, Enter chooses, Escape closes; the
-  Options menu's checkboxes and radios carry their state. The Mods menu's entries do not yet:
+  Options menu's checkboxes and radios carry their state; the Mods menu's entries too, since
   TASK-201. (docs/ui_spec.md section 18.)
 - **A11Y-2 = TASK-186, names, roles, values.** Every control of the panel has a spoken name, its
   section's name, a role and its value or state; LEDs, meters and click areas take no focus.
@@ -220,6 +220,10 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   off by default and only in screen reader mode: a pitch key on a 303 rest step also makes it a
   note (the engine gets the rest cleared, then the note); a note only changes its pitch; `-`,
   `=` and Clear as before. (docs/ui_spec.md 20.5; NVDA checklist item 24.)
+- **TASK-201, the Mods menu's mark.** The entries (Standard ReBirth, each mod, each variant
+  file) are checkable menu items, so the playing kit's entry reads "checked"; the variants
+  submenu of a playing variant is marked too. Both modes; the menu looks and acts as before.
+  (NVDA checklist item 25.)
 
 Also done along the way, outside m-7: TASK-176 (milestone m-5), the third-party songs test
 compares song paths in NFC (commit 4d76af3): 1268 songs equal to the original's renders.
@@ -344,15 +348,18 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     already a note only changes its note. Clear makes every step a rest. The item is saved:
     restart, and it is still on. ( )
 
+25. TASK-201's marks in the Mods menu, with a mod playing (or the built-in kit): open the Mods
+    menu and walk it with Up and Down. NVDA reads the playing kit's entry as a checked menu
+    item ("Zed, menu item, checked") and every other mod entry as not checked; the Standard
+    ReBirth entry is checked when the built-in kit plays. A mod of a shared name: the name's
+    entry (a submenu, read as a button) and, inside it, the playing file read checked. ( )
+
 ### 2.3 Open tasks
 
 Each is in the backlog with its description and acceptance criteria. The user's order of
-2026-11-07: TASK-212 and TASK-211 (both done), TASK-201, TASK-204, then TASK-200, one agent
+2026-11-07: TASK-212, TASK-211 and TASK-201 (done), TASK-204, then TASK-200, one agent
 at a time; TASK-199 and TASK-206 are on hold (they can be checked only on macOS and Linux).
 
-- **TASK-201 (medium): the Mods menu's selected mod in the tree.** The Mods menu's entries carry
-  no checked state, so a screen reader cannot tell which mod plays from the menu (the mod
-  chooser already says "current"). Both modes; it only adds information.
 - **TASK-199 (low): detection on macOS and Linux.** Automatic turns the mode on only on Windows
   today; VoiceOver and AT-SPI detection.
 - **TASK-204 (low): the Export dialog keeps the format.** The system dialog defaults to WAV each
