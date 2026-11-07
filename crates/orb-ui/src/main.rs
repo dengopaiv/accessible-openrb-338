@@ -355,8 +355,12 @@ fn main() -> ExitCode {
         // The minimum is half the native panel size (decision task-040).
         .with_min_inner_size([PANEL_W / 2.0, PANEL_H / 2.0 + MENU_H])
         .with_maximized(!sized);
+    // the graphics adapter: on Windows DirectX 12 first, Vulkan not loaded (task-217)
+    let graphics = orb_ui::graphics::Rule::from_env();
+    runlog::stage(&graphics.describe());
     let options = eframe::NativeOptions {
         viewport,
+        wgpu_options: orb_ui::graphics::wgpu_options(&graphics),
         ..Default::default()
     };
     runlog::stage("creating the window and the graphics (eframe::run_native)");

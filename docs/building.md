@@ -339,6 +339,54 @@ egui-wgpu's list of 6 adapters at `1710 ms`; `2044 ms window created; graphics: 
 DiscreteGpu "Quadro P2000", driver "NVIDIA" 556.12`; `2052 ms first frame drawn`; `4083 ms end:
 the screenshot was saved`.
 
+## The graphics on Windows: DirectX 12 first (task-217)
+
+**The finding.** The debug kit's first report from the user's Windows 10 PC (2026-11-07; HP
+EliteDesk 800 G2 SFF, Windows 10 Pro 22H2 build 19045.7807, Intel Core i5-6500, Intel HD
+Graphics 530 with driver 31.0.101.2111 of 2022-07-19, a 5120 by 2880 screen) had 3 crashed
+starts of 3. In each, the audio output started, egui-wgpu listed four adapters (Vulkan, DX12
+and GL on the HD 530, and the DX12 software adapter "Microsoft Basic Render Driver"), and
+20 ms later the process died with an access violation in `igvk64.dll`, Intel's Vulkan driver,
+before any window. Runs 1 and 3 crashed writing at offset 0x64EA72 of the driver; run 2 crashed
+reading at offset 0x630E61. egui-wgpu takes the
+first adapter of the preferred power, and the Vulkan one is listed first. A crash inside a driver
+cannot be caught and retried in the same process.
+
+**The rule** (`crates/orb-ui/src/graphics.rs`, set through `eframe::NativeOptions::wgpu_options`
+in `main.rs`):
+
+- **Windows, `WGPU_BACKEND` unset or empty:** the wgpu instance has only the DX12 and GL
+  backends, so no Vulkan driver is loaded at all. Among the adapters that can draw to the
+  window, egui-wgpu's `native_adapter_selector` takes DX12 on a discrete GPU, then DX12 on an
+  integrated GPU, then other DX12 hardware, then GL hardware, then the DX12 software adapter, then
+  GL in software (the first listed of equal rank). With none of them, the start fails with an
+  error naming the adapters found (stderr, the run log, the box; task-214).
+- **`WGPU_BACKEND` set** (`vulkan`, `dx12`, `opengl`; the debug kit's `-Backend`): egui-wgpu's own
+  choice among those backends, as before. This is the way to try Vulkan on Windows.
+- **macOS and Linux:** unchanged, egui-wgpu's own choice.
+
+This applies with screen reader mode off as well; the user asked for the fix on 2026-11-07 and
+set the goal of completing task-217 as it was written, mode off included.
+
+Under the Windows rule the fixed order replaces egui-wgpu's power preference, so
+`WGPU_POWER_PREF` has no effect there; with `WGPU_BACKEND` set it works as before. A PC with
+neither DirectX 12 nor OpenGL (Vulkan only) does not start by default: the error names the
+adapters found and `WGPU_BACKEND=vulkan`.
+
+The run log names the rule before the window (`graphics: DirectX 12 preferred on Windows ...`
+or `graphics: WGPU_BACKEND=vulkan, egui-wgpu's own choice`) and, under the Windows rule, the
+adapter chosen before its device is made (`graphics adapter chosen: Dx12 DiscreteGpu "NVIDIA
+Quadro P2000"`), so a crash in the next driver still says which one was tried.
+
+Checked on the development machine (Windows 11, Intel UHD 630 and Quadro P2000, debug build,
+`--demo --screenshot`, 2026-11-07): with `WGPU_BACKEND` unset, `graphics adapter chosen: Dx12
+DiscreteGpu "NVIDIA Quadro P2000"`, first frame at 1605 ms, and none of the Vulkan loader
+warnings the earlier runs logged; with `WGPU_BACKEND=vulkan`, `window created; graphics:
+Vulkan, DiscreteGpu "Quadro P2000"`, first frame at 1425 ms.
+
+Before this change, the workaround on such a PC is `setx WGPU_BACKEND dx12` (a user variable,
+seen by programs started afterwards).
+
 ## Debugging OpenRB-338 on another Windows PC (task-215)
 
 For a PC where OpenRB-338 does not start, or starts only sometimes (the user's Windows 10 PC,

@@ -3,10 +3,11 @@ id: TASK-217
 title: >-
   Windows: prefer DirectX 12 over Vulkan, Intel's Vulkan driver crashes the
   start
-status: To Do
+status: Done
 assignee:
   - '@agent-complex'
 created_date: '2026-11-07T13:36:00Z'
+updated_date: '2026-11-07T14:04:00Z'
 labels:
   - ui
   - docs
@@ -47,10 +48,48 @@ Docs: docs/building.md, the run log section: the Windows 10 finding (the report'
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 On Windows with WGPU_BACKEND unset, the wgpu instance has only the DX12 and GL backends and the adapter is chosen DX12 discrete, DX12 integrated, GL, DX12 software, in that order; with WGPU_BACKEND set, egui-wgpu's default choice is kept; macOS and Linux are unchanged
-- [ ] #2 The choice is a pure function of the adapters' backend and device type, with unit tests for: the Windows 10 PC's list (DX12 Intel HD 530 chosen), a discrete plus integrated list, GL only, software only, and an empty list (an error naming that no adapter was found)
-- [ ] #3 The run log has a stage naming the rule (DX12 preferred on Windows, or WGPU_BACKEND=VALUE) before the device is made, and the window-created stage names the adapter chosen
-- [ ] #4 On this development machine (Windows 11, Intel UHD 630 and Quadro P2000) OpenRB-338 starts with the default (the run log shows a Dx12 adapter) and with WGPU_BACKEND=vulkan (a Vulkan adapter): the run logs in the notes
-- [ ] #5 On the user's Windows 10 PC, win_diag.ps1 with no -Backend gives 3 runs of 3 started (the user's check; the report's summary in the notes)
-- [ ] #6 docs/building.md records the Windows 10 finding and the default graphics choice on Windows; cargo test -p orb-ui, clippy -D warnings and nightly fmt --check pass
+- [x] #1 On Windows with WGPU_BACKEND unset, the wgpu instance has only the DX12 and GL backends and the adapter is chosen DX12 discrete, DX12 integrated, GL, DX12 software, in that order; with WGPU_BACKEND set, egui-wgpu's default choice is kept; macOS and Linux are unchanged
+- [x] #2 The choice is a pure function of the adapters' backend and device type, with unit tests for: the Windows 10 PC's list (DX12 Intel HD 530 chosen), a discrete plus integrated list, GL only, software only, and an empty list (an error naming that no adapter was found)
+- [x] #3 The run log has a stage naming the rule (DX12 preferred on Windows, or WGPU_BACKEND=VALUE) before the device is made, and the window-created stage names the adapter chosen
+- [x] #4 On this development machine (Windows 11, Intel UHD 630 and Quadro P2000) OpenRB-338 starts with the default (the run log shows a Dx12 adapter) and with WGPU_BACKEND=vulkan (a Vulkan adapter): the run logs in the notes
+- [x] #5 docs/building.md records the Windows 10 finding and the default graphics choice on Windows; cargo test -p orb-ui, clippy -D warnings and nightly fmt --check pass
+- [x] #6 The user's check on the Windows 10 PC (3 starts of 3 with the default) is a task of its own for @dengopaiv, with the kit to use and what to record (narrowed 2026-11-07: only the user can run the program on that PC)
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. New module crates/orb-ui/src/graphics.rs: Rule (PreferDx12 on Windows with WGPU_BACKEND unset or empty, Env(value), Default elsewhere) with its run log text; rank/choose, a pure function of (Backend, DeviceType) pairs; wgpu_options(rule): egui-wgpu's default configuration, for PreferDx12 with instance backends DX12|GL and a native_adapter_selector that keeps the adapters able to present to the window's surface, chooses by rank, writes the chosen adapter to the run log before the device is made, and errs naming the adapters found.
+2. main.rs: the rule's stage before run_native; NativeOptions.wgpu_options from it.
+3. Unit tests: the Windows 10 PC's list, discrete plus integrated, GL only, software only, empty, Vulkan only; the rule from os and the variable.
+4. Run here: default (expect Dx12) and WGPU_BACKEND=vulkan (expect Vulkan), run logs in the notes.
+5. docs/building.md: the finding and the default choice.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: task-217-dx12-first (in the main checkout, worked in the foreground by the supervisor).
+
+Done (2026-11-07):
+- crates/orb-ui/src/graphics.rs (new): Rule (PreferDx12 on Windows with WGPU_BACKEND unset or empty; Env(value); Default elsewhere) with describe() for the run log; rank/choose, a pure function of (Backend, DeviceType): Dx12 Discrete 0, Dx12 Integrated 1, Dx12 Virtual/Other 2, Gl hardware 3, Gl Virtual/Other 4, Dx12 Cpu 5, Gl Cpu 6, others (Vulkan, Metal, BrowserWebGpu) never; lowest rank, first listed on a tie; errors "no graphics adapter was found" or "no DirectX 12 or OpenGL graphics adapter among the N found". wgpu_options(rule): egui-wgpu's WgpuConfiguration::default(), and for PreferDx12 instance backends DX12|GL and native_adapter_selector = select (filters adapters by is_surface_supported, chooses, writes "graphics adapter chosen: ..." to the run log before request_device; on error names the adapters found and suggests WGPU_BACKEND).
+- main.rs: Rule::from_env(), its describe() as a run log stage, NativeOptions.wgpu_options.
+- Unit tests (graphics, 6 pass): the Windows 10 PC's list [Vulkan Int, Dx12 Int, Dx12 Cpu, Gl Int] -> 1; the dev machine's list -> Dx12 Discrete; ties -> first; Gl before Dx12 Cpu, Dx12 Cpu before Gl Cpu; Vulkan+Metal only and empty -> the errors; Rule from os and variable (empty and blank = unset); only PreferDx12 changes the configuration (Default and Env equal egui-wgpu's default backends and no selector).
+- Runs here (debug, --demo --size 624x510 --screenshot, temp log dir), run logs:
+  WGPU_BACKEND unset: "55 ms graphics: DirectX 12 preferred on Windows ...", "1321 ms graphics adapter chosen: Dx12 DiscreteGpu "NVIDIA Quadro P2000"", "1599 ms window created; graphics: Dx12, DiscreteGpu "NVIDIA Quadro P2000", driver "32.0.15.5612"", "1605 ms first frame drawn"; no Vulkan loader warnings (earlier runs had several, so no Vulkan instance is made).
+  WGPU_BACKEND=vulkan: "34 ms graphics: WGPU_BACKEND=vulkan, egui-wgpu's own choice", "1418 ms window created; graphics: Vulkan, DiscreteGpu "Quadro P2000", driver "NVIDIA" 556.12", "1425 ms first frame drawn".
+  WGPU_BACKEND="" (empty): PreferDx12, Dx12 Quadro chosen; egui-wgpu's default constructor logs "unknown backend string ''" (harmless, the backends are replaced).
+- cargo test -p orb-ui: all pass (twice; a third run stopped as redundant); clippy -p orb-ui --all-targets -D warnings clean; nightly fmt --check clean.
+- AC #5 narrowed: the user's check on the Windows 10 PC moves to a task of its own for @dengopaiv (as task-197 held the user's by-ear checks), because only the user can run the program on that PC.
+
+Added the exact 'GL only' ([Gl Integrated] -> 0) and 'software only' ([Dx12 Cpu] -> 0) cases to the tests after the AC review; graphics 6 pass, clippy and fmt clean. The user's check is task-218 (@dengopaiv, depends on task-217).
+
+Review round 1 (agent-reviewer, 2026-11-07): merge, no defects. Applied at merge from its notes: select() says 'none of the DirectX 12 or OpenGL graphics adapters can draw to the window' when adapters exist but none supports the window's surface (before, choose's 'no graphics adapter was found' contradicted the list after it); the run log's rule line names the whole order; docs/building.md: the crash offsets in a plain sentence, WGPU_POWER_PREF has no effect under the Windows rule, a Vulkan-only PC does not start by default. Its scope note (mode off): the user set the goal 'complete 217' on the task as written, which states the mode-off change; recorded in docs. After: graphics 6, run_log 5 pass; clippy and nightly fmt clean.
+Merged by the supervisor 2026-11-07: review merge on the first round.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+On Windows, unless WGPU_BACKEND is set, OpenRB-338 now makes its wgpu instance with the DX12 and GL backends only (no Vulkan driver is loaded) and chooses the adapter itself: DX12 discrete, DX12 integrated, other DX12, GL hardware, DX12 software, GL software (crates/orb-ui/src/graphics.rs, an egui-wgpu native_adapter_selector set through NativeOptions.wgpu_options). WGPU_BACKEND keeps egui-wgpu's own choice; macOS and Linux are unchanged. The run log names the rule and the adapter chosen before its device is made. Why: every start on the user's Windows 10 PC crashed in Intel's Vulkan driver igvk64.dll (HD Graphics 530, driver 31.0.101.2111) when wgpu made the Vulkan device. Here: default -> Dx12 Quadro P2000, first frame 1605 ms, no Vulkan loader warnings; WGPU_BACKEND=vulkan -> Vulkan Quadro. graphics unit tests 6 pass, cargo test -p orb-ui all pass, clippy and nightly fmt clean. docs/building.md: The graphics on Windows: DirectX 12 first. The check on the Windows 10 PC is the user's, task-218. Branch task-217-dx12-first.
+<!-- SECTION:FINAL_SUMMARY:END -->
