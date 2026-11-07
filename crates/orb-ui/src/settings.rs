@@ -11,8 +11,9 @@
 //! knob or fader speaks its 0..127 value after its unit; task-192) and `step_editor_follows` (a
 //! bool, false by default: in screen reader mode a 303's step editor follows the playing
 //! pattern; task-190) and `pitch_keys_make_notes` (a bool, false by default: in screen reader
-//! mode a 303's pitch key also turns a rest into a note; task-211), so it can be edited by hand.
-//! Where it lives: `$ORB_UI_CONFIG` if set; else `OpenRB-338/ui.toml` in the platform's
+//! mode a 303's pitch key also turns a rest into a note; task-211) and `export_format` (`wav`,
+//! `flac` or `ogg`: the system Export dialog offers it first; task-204), so it can be edited by
+//! hand. Where it lives: `$ORB_UI_CONFIG` if set; else `OpenRB-338/ui.toml` in the platform's
 //! configuration folder (`$XDG_CONFIG_HOME`, or `~/.config` on Linux, `~/Library/Application
 //! Support` on macOS, `%APPDATA%` on Windows). Reading never fails: a missing or damaged file gives
 //! the defaults (a damaged file stays as it is until the next save), a key of the wrong type is
@@ -29,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::browser::ExportFormat;
 use crate::screen_reader::ScreenReaderSetting;
 
 /// How many recent folders are kept.
@@ -71,6 +73,10 @@ pub struct Settings {
     /// also makes it a note; off (the default), it sets only the note, as the original. Stored
     /// as the bool `pitch_keys_make_notes`.
     pub pitch_keys_make_notes: bool,
+    /// The format of the last export through the system dialog (task-204): that dialog offers
+    /// it first and gives it to a name typed without extension. Stored as the string
+    /// `export_format` (`wav`, `flac` or `ogg`); the in-app browser does not use it.
+    pub export_format: ExportFormat,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
 }
@@ -89,6 +95,7 @@ impl Default for Settings {
             speak_raw_values: false,
             step_editor_follows: false,
             pitch_keys_make_notes: false,
+            export_format: ExportFormat::Wav,
             file: None,
         }
     }
@@ -146,6 +153,7 @@ struct Stored<'a> {
     speak_raw_values: bool,
     step_editor_follows: bool,
     pitch_keys_make_notes: bool,
+    export_format: &'a str,
     recent: Vec<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_song_dir: Option<&'a Path>,
@@ -208,6 +216,11 @@ impl Settings {
         if let Some(b) = table.get("pitch_keys_make_notes").and_then(|v| v.as_bool()) {
             s.pitch_keys_make_notes = b;
         }
+        if let Some(f) =
+            ExportFormat::from_extension(table.get("export_format").and_then(|v| v.as_str()))
+        {
+            s.export_format = f;
+        }
         s.songs_dir = table.get("songs_dir").and_then(path_of);
         s.mods_dir = table.get("mods_dir").and_then(path_of);
         s.last_song_dir = table.get("last_song_dir").and_then(path_of);
@@ -260,6 +273,7 @@ impl Settings {
             speak_raw_values: self.speak_raw_values,
             step_editor_follows: self.step_editor_follows,
             pitch_keys_make_notes: self.pitch_keys_make_notes,
+            export_format: self.export_format.extension(),
             recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
             last_song_dir: self.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),

@@ -449,11 +449,16 @@ impl App {
     fn system_pick(&mut self, mode: Mode) {
         use crate::system_dialog::{Request, with_extension};
         let start = browser::start_dir(mode, &self.settings);
-        let Some(picked) = (self.picker)(Request::File(mode), &start, self.parent.as_ref()) else {
+        let format = self.settings.export_format;
+        let request = match mode {
+            Mode::Export => Request::Export(format),
+            _ => Request::File(mode),
+        };
+        let Some(picked) = (self.picker)(request, &start, self.parent.as_ref()) else {
             self.after_save = None;
             return;
         };
-        let path = match with_extension(mode, picked.clone()) {
+        let path = match with_extension(mode, picked.clone(), format) {
             Ok(p) => p,
             Err(e) => {
                 self.after_save = None;
@@ -483,6 +488,16 @@ impl App {
         }
         let failure = browser::note_choice(mode, &path, &mut self.settings);
         self.fail_many(failure);
+        // The next Export dialog offers the format of this one first (task-204).
+        if mode == Mode::Export
+            && let Some(f) = browser::ExportFormat::of_path(&path)
+            && f != self.settings.export_format
+        {
+            self.settings.export_format = f;
+            if let Err(e) = self.settings.save() {
+                self.fail(e);
+            }
+        }
         self.chosen(mode, path);
     }
 

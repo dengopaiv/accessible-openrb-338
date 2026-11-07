@@ -13,6 +13,7 @@ mod a11y;
 use eframe::egui;
 use eframe::egui::accesskit::{Action, NodeId, Role};
 use orb_ui::app::App;
+use orb_ui::browser::ExportFormat::{self, Flac, Ogg, Wav};
 use orb_ui::browser::Mode;
 use orb_ui::menu::Cmd;
 use orb_ui::model::Panel;
@@ -91,7 +92,7 @@ fn the_dialog_starts_in_the_folder_the_browser_starts_in() {
     let want = [
         (Request::File(Mode::OpenSong), &songs),
         (Request::File(Mode::SaveSong), &songs),
-        (Request::File(Mode::Export), &songs),
+        (Request::Export(Wav), &songs),
         (Request::File(Mode::ChooseMod), &mods),
     ];
     assert_eq!(asked.len(), 4);
@@ -143,22 +144,83 @@ fn a_chosen_path_goes_through_the_same_chosen_as_the_browsers() {
 #[test]
 fn typed_names_get_the_browsers_extensions() {
     let p = |s: &str| PathBuf::from(s);
-    assert_eq!(with_extension(Mode::SaveSong, p("a")).unwrap(), p("a.rbs"));
     assert_eq!(
-        with_extension(Mode::SaveSong, p("a.RBS")).unwrap(),
+        with_extension(Mode::SaveSong, p("a"), Wav).unwrap(),
+        p("a.rbs")
+    );
+    assert_eq!(
+        with_extension(Mode::SaveSong, p("a.RBS"), Wav).unwrap(),
         p("a.RBS")
     );
     assert_eq!(
-        with_extension(Mode::SaveSong, p("a.txt")).unwrap(),
+        with_extension(Mode::SaveSong, p("a.txt"), Wav).unwrap(),
         p("a.txt.rbs")
     );
-    assert_eq!(with_extension(Mode::Export, p("a")).unwrap(), p("a.wav"));
     assert_eq!(
-        with_extension(Mode::Export, p("a.Flac")).unwrap(),
+        with_extension(Mode::Export, p("a"), Wav).unwrap(),
+        p("a.wav")
+    );
+    assert_eq!(
+        with_extension(Mode::Export, p("a.Flac"), Wav).unwrap(),
         p("a.Flac")
     );
-    assert!(with_extension(Mode::Export, p("a.mp3")).is_err());
-    assert_eq!(with_extension(Mode::OpenSong, p("a.x")).unwrap(), p("a.x"));
+    assert!(with_extension(Mode::Export, p("a.mp3"), Wav).is_err());
+    assert_eq!(
+        with_extension(Mode::OpenSong, p("a.x"), Wav).unwrap(),
+        p("a.x")
+    );
+}
+
+/// Task-204: after an export as FLAC the next Export dialog offers FLAC first, a name typed
+/// without extension gets `.flac`, and the choice survives a restart (ui.toml).
+#[test]
+fn the_export_dialog_keeps_the_format_the_user_picked() {
+    let d = tempfile::tempdir().unwrap();
+    let mut app = app(d.path(), ScreenReaderSetting::On);
+    let asked: Rc<RefCell<Vec<Request>>> = Rc::default();
+    let answers: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
+    let (log, ans) = (asked.clone(), answers.clone());
+    app.set_picker(Box::new(move |request, _, _| {
+        log.borrow_mut().push(request);
+        Some(ans.borrow_mut().remove(0))
+    }));
+    assert_eq!(app.settings.export_format, Wav);
+    answers.borrow_mut().push(d.path().join("a.flac"));
+    app.open_browser(Mode::Export);
+    assert_eq!(asked.borrow()[0], Request::Export(Wav));
+    assert_eq!(app.settings.export_format, Flac);
+    // the next dialog offers FLAC first; a bare name gets .flac (the export itself fails here
+    // for lack of a song, which is not the point; b.flac exists, so the app asks to replace)
+    std::fs::write(d.path().join("b.flac"), b"x").unwrap();
+    answers.borrow_mut().push(d.path().join("b"));
+    app.open_browser(Mode::Export);
+    assert_eq!(asked.borrow()[1], Request::Export(Flac));
+    assert!(
+        app.replacing(),
+        "b became b.flac, which exists: the app asks"
+    );
+    // other dialogs are asked as before
+    answers.borrow_mut().push(d.path().join("c.rbs"));
+    app.open_browser(Mode::SaveSong);
+    assert_eq!(asked.borrow()[2], Request::File(Mode::SaveSong));
+    // remembered across a restart, and a later OGG replaces it
+    let mut again = self::app(d.path(), ScreenReaderSetting::On);
+    assert_eq!(again.settings.export_format, Flac);
+    let (picker, _) = fake(Some(d.path().join("e.ogg")));
+    again.set_picker(picker);
+    again.open_browser(Mode::Export);
+    let saved = Settings::load_from(&d.path().join("ui.toml"));
+    assert_eq!(saved.export_format, Ogg);
+    let _: ExportFormat = saved.export_format;
+    // with_extension gives the remembered format to a bare name only
+    assert_eq!(
+        with_extension(Mode::Export, PathBuf::from("n"), Ogg).unwrap(),
+        PathBuf::from("n.ogg")
+    );
+    assert_eq!(
+        with_extension(Mode::Export, PathBuf::from("n.wav"), Ogg).unwrap(),
+        PathBuf::from("n.wav")
+    );
 }
 
 /// `App::new` asks the real system nothing and has no real dialog: with the setting `auto` the

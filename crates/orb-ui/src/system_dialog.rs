@@ -30,6 +30,9 @@ use crate::palette::{INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 pub enum Request {
     /// A file: an `.rbs` song, a `.rbm` mod, or a file to write.
     File(Mode),
+    /// The file to export, with the format offered first (the last one exported): its filter
+    /// comes first, which is the default extension of a name typed without one (task-204).
+    Export(ExportFormat),
     /// A folder, for the songs folder (`Songs`) or the mods folder (`Mods`) setting.
     Folder(Folder),
 }
@@ -110,15 +113,8 @@ pub fn system_picker() -> Picker {
                 .set_title("Save song")
                 .add_filter("ReBirth song (*.rbs)", &["rbs"])
                 .save_file(),
-            Request::File(Mode::Export) => {
-                let mut dialog = dialog.set_title("Export audio");
-                for f in ExportFormat::ALL {
-                    let ext = f.extension();
-                    dialog = dialog
-                        .add_filter(format!("{} audio (*.{ext})", ext.to_uppercase()), &[ext]);
-                }
-                dialog.save_file()
-            }
+            Request::File(Mode::Export) => export_dialog(dialog, ExportFormat::Wav),
+            Request::Export(first) => export_dialog(dialog, first),
             Request::File(Mode::ChooseMod) => dialog
                 .set_title("Choose mod")
                 .add_filter("ReBirth mod (*.rbm)", &["rbm"])
@@ -128,10 +124,25 @@ pub fn system_picker() -> Picker {
     })
 }
 
+/// The export dialog with one filter per format, `first` first.
+fn export_dialog(dialog: rfd::FileDialog, first: ExportFormat) -> Option<PathBuf> {
+    let mut dialog = dialog.set_title("Export audio");
+    for f in std::iter::once(first).chain(ExportFormat::ALL.into_iter().filter(|f| *f != first)) {
+        let ext = f.extension();
+        dialog = dialog.add_filter(format!("{} audio (*.{ext})", ext.to_uppercase()), &[ext]);
+    }
+    dialog.save_file()
+}
+
 /// The path a writing dialog returned, with the extension the browser would give a typed name:
 /// a song gets `.rbs` (unless it has it), an export keeps `.wav`, `.flac` or `.ogg` and gets
-/// `.wav` when it has none; any other extension of an export is an error.
-pub fn with_extension(mode: Mode, path: PathBuf) -> Result<PathBuf, String> {
+/// the extension of `export_format` (the last one exported, task-204) when it has none; any
+/// other extension of an export is an error.
+pub fn with_extension(
+    mode: Mode,
+    path: PathBuf,
+    export_format: ExportFormat,
+) -> Result<PathBuf, String> {
     let ext = path.extension().and_then(|e| e.to_str());
     match mode {
         Mode::SaveSong => {
@@ -145,7 +156,7 @@ pub fn with_extension(mode: Mode, path: PathBuf) -> Result<PathBuf, String> {
         }
         Mode::Export => match (ext, ExportFormat::from_extension(ext)) {
             (_, Some(_)) => Ok(path),
-            (None, _) => Ok(path.with_extension("wav")),
+            (None, _) => Ok(path.with_extension(export_format.extension())),
             (Some(_), None) => Err(format!(
                 "{}: the extension must be .wav, .flac or .ogg.",
                 path.display()

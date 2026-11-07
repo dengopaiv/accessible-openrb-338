@@ -41,7 +41,8 @@ The document has three parts:
 | A11Y-13 | TASK-197 | The NVDA pass by the user: all 22 checklist items work | (backlog) |
 | (new) | TASK-212 | Menu bar: the focus returns where it was when the bar is left | 3f3fdc7 |
 | (new) | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 |
-| (new) | TASK-201 | Mods menu: the playing kit's entry read as "checked" | `git log --grep task-201` |
+| (new) | TASK-201 | Mods menu: the playing kit's entry read as "checked" | 78129ba |
+| (new) | TASK-204 | The Export dialog keeps the format the user picks | `git log --grep task-204` |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -51,7 +52,6 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 | Task | What | Priority | Who |
 |---|---|---|---|
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI); on hold | low | agent |
-| TASK-204 | The Export dialog keeps the format the user picks | low | agent |
 | TASK-206 | A system file dialog that cannot open reads as a cancel (Linux); on hold | low | agent |
 | TASK-200 | crash.rs's release backtrace check fails on Windows (not m-7) | low | agent |
 
@@ -224,6 +224,10 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   file) are checkable menu items, so the playing kit's entry reads "checked"; the variants
   submenu of a playing variant is marked too. Both modes; the menu looks and acts as before.
   (NVDA checklist item 25.)
+- **TASK-204, the Export format.** In screen reader mode the system Export dialog lists the
+  last format exported first (the default extension on Windows) and gives a name typed without
+  an extension that format; it is kept in ui.toml (`export_format`) across restarts. The in-app
+  browser is unchanged. (NVDA checklist item 26.)
 
 Also done along the way, outside m-7: TASK-176 (milestone m-5), the third-party songs test
 compares song paths in NFC (commit 4d76af3): 1268 songs equal to the original's renders.
@@ -353,17 +357,21 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     item ("Zed, menu item, checked") and every other mod entry as not checked; the Standard
     ReBirth entry is checked when the built-in kit plays. A mod of a shared name: the name's
     entry (a submenu, read as a button) and, inside it, the playing file read checked. ( )
+26. TASK-204's export format, in screen reader mode with a song in song
+    mode: File > Export Loop as Audio File opens the system dialog with WAV as the type; save
+    as `a.flac` (pick FLAC in the type list or type the extension); export again: the type
+    list offers FLAC first and NVDA reads it as the file type; a name typed without extension
+    (`b`) is saved as `b.flac`. Restart the program: the dialog still offers FLAC first. With
+    the mode off the in-app browser starts on WAV as before. ( )
 
 ### 2.3 Open tasks
 
 Each is in the backlog with its description and acceptance criteria. The user's order of
-2026-11-07: TASK-212, TASK-211 and TASK-201 (done), TASK-204, then TASK-200, one agent
+2026-11-07: TASK-212, TASK-211, TASK-201 and TASK-204 (done), then TASK-200, one agent
 at a time; TASK-199 and TASK-206 are on hold (they can be checked only on macOS and Linux).
 
 - **TASK-199 (low): detection on macOS and Linux.** Automatic turns the mode on only on Windows
   today; VoiceOver and AT-SPI detection.
-- **TASK-204 (low): the Export dialog keeps the format.** The system dialog defaults to WAV each
-  time; the in-app browser remembers the format picked.
 - **TASK-206 (low): a system dialog that cannot open (Linux).** Without the XDG portal, rfd
   returns nothing and Open seems to do nothing; tell the user and fall back to the browser.
 - **TASK-200 (low, not in m-7): crash.rs.** The release-build backtrace assertion fails on
