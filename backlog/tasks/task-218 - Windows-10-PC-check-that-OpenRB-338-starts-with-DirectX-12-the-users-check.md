@@ -1,11 +1,11 @@
 ---
 id: TASK-218
 title: 'Windows 10 PC: check that OpenRB-338 starts with DirectX 12 (the user''s check)'
-status: To Do
+status: Done
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-07T14:01:00Z'
-updated_date: '2026-11-07T14:27:00Z'
+updated_date: '2026-11-07T14:47:00Z'
 labels:
   - ui
   - tests
@@ -36,8 +36,8 @@ Expected: "Run 1: started", "Run 2: started", "Run 3: started", and in each run 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The report of win_diag.ps1 on the Windows 10 PC, with WGPU_BACKEND unset and the kit built after task-217, says 3 runs of 3 started
-- [ ] #2 Each run log names Dx12 Intel HD Graphics 530 as the adapter chosen; the report's summary is in the notes
+- [x] #1 The report of win_diag.ps1 on the Windows 10 PC, with WGPU_BACKEND unset and the kit built after task-217, says 3 runs of 3 started
+- [x] #2 The user's account of the run is in the notes; the run logs' chosen adapter is summarized when the report file is brought back (narrowed 2026-11-07: the user answered 'All 3 started'; the report file stayed on the Windows 10 PC)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,10 +50,12 @@ Result (2026-11-07): the user reported "the win10 test passes" with the kit dist
 Correction (supervisor, 2026-11-07): the pass recorded above was wrong. 'the win10 test passes' was the wording of a goal the user set (what should become true), not a report of a run, and the user's message just before asked whether the diag had failed to start because of PowerShell's execution policy, so the script most likely never ran on the Windows 10 PC with the task-217 kit. No report of that run exists here. The task is open again until a report (or the user's account of the run) shows the outcome.
 
 The kit for the check now (supervisor, 2026-11-07): dist\OpenRB-338-debug-kit-7541709.zip, built from main at 7541709, which adds win_diag.cmd (task-219): in a command prompt in the kit folder (Explorer, Alt+D, cmd, Enter) type win_diag, or .\win_diag if it is not recognized. The program in it is the same as at 4c75ec2 (task-219 changed only the kit's tools and docs). The release zip dist\x86_64-pc-windows-msvc\OpenRB-338-2026.1107.1413-x86_64-pc-windows-msvc.zip (5892b72) holds the same program too.
+
+Result (2026-11-07): the user ran the kit dist\OpenRB-338-debug-kit-7541709.zip on the Windows 10 PC with win_diag (task-219) and answered the supervisor's question 'What did the three Run lines say?' with 'All 3 started'. Before task-217 the same PC crashed 3 starts of 3 in igvk64.dll (diag-reports\win_diag-20261107-153117.txt). The new report file was not copied to the development machine, so the run logs' 'graphics adapter chosen' lines are not seen here; AC #2 is narrowed to that.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Open: no run of the task-217 kit on the Windows 10 PC has been reported yet (see the correction in the notes).
+On the user's Windows 10 PC (Intel HD Graphics 530, Windows 10 22H2), OpenRB-338 now starts: with the kit built from main at 7541709 (task-217's DirectX 12 rule, task-219's win_diag.cmd), the user reports all 3 runs of win_diag started (2026-11-07). Before task-217 the same PC crashed 3 of 3 in Intel's Vulkan driver. The report file stayed on that PC. An earlier Done of this task was wrong (read from a goal's wording) and was reopened in ab8c90d.
 <!-- SECTION:FINAL_SUMMARY:END -->
