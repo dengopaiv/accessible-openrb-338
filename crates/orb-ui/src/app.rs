@@ -612,6 +612,8 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
+        // the run log's "first frame drawn" (task-214); an atomic load after the first
+        crate::runlog::frame();
         egui_extras::install_image_loaders(ui.ctx());
         let focused = ui.input(|i| i.focused);
         self.check_screen_reader(focused);
@@ -2107,6 +2109,7 @@ impl App {
             let path = shot.path.clone();
             ctx.request_screenshot(Box::new(move |image: std::sync::Arc<egui::ColorImage>| {
                 save_png(&path, &image).expect("writing the screenshot");
+                crate::runlog::end("the screenshot was saved");
                 std::process::exit(0);
             }));
         }

@@ -94,30 +94,55 @@ pub fn report(p: &Panic) -> String {
     r
 }
 
-/// The file name of the log of Unix time `secs`.
+/// The prefix of the crash logs' names (the run logs of [`crate::runlog`] have `run`).
+pub const PREFIX: &str = "crash";
+
+/// The file name of the crash log of Unix time `secs`.
 pub fn file_name(secs: i64) -> String {
-    let [y, mo, d, h, mi, s] = utc(secs);
-    format!("crash-{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}.log")
+    file_name_of(PREFIX, secs)
 }
 
-/// Writes `text` as the log of `secs` into `dir` (made if missing) and removes the oldest logs
-/// beyond the newest `keep`. A second panic in the same second gets `-2`, `-3` ... before the
-/// extension, so no log is overwritten. Returns the path.
+/// The file name of a log of kind `prefix` (`crash`, `run`) and Unix time `secs`.
+pub fn file_name_of(prefix: &str, secs: i64) -> String {
+    let [y, mo, d, h, mi, s] = utc(secs);
+    format!("{prefix}-{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}.log")
+}
+
+/// Writes `text` as the crash log of `secs` into `dir` (made if missing) and removes the
+/// oldest crash logs beyond the newest `keep`. A second panic in the same second gets `-2`,
+/// `-3` ... before the extension, so no log is overwritten. Returns the path.
 pub fn write_log(dir: &Path, secs: i64, text: &str, keep: usize) -> std::io::Result<PathBuf> {
+    let (path, mut file) = create_log(dir, PREFIX, secs)?;
+    file.write_all(text.as_bytes())?;
+    file.flush()?;
+    drop(file);
+    let _ = rotate(dir, PREFIX, keep);
+    Ok(path)
+}
+
+/// Creates a new, empty log of kind `prefix` and Unix time `secs` in `dir` (made if missing),
+/// named as [`write_log`] names it (`-2`, `-3` ... for the same second), and returns it open
+/// for writing. Does not rotate.
+pub fn create_log(
+    dir: &Path,
+    prefix: &str,
+    secs: i64,
+) -> std::io::Result<(PathBuf, std::fs::File)> {
     std::fs::create_dir_all(dir)?;
-    let name = file_name(secs);
+    let name = file_name_of(prefix, secs);
     let stem = name.trim_end_matches(".log");
     // one past the highest sequence of this second still in the folder: a rotated-away "X.log"
     // must not be given out again, or the newest log would look the oldest
-    let key = order_key(Path::new(&name)).0;
+    let key = order_key(prefix, Path::new(&name)).0;
     let mut n = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok())
-        .map(|e| order_key(&e.path()))
+        .filter(|e| is_log(prefix, &e.path()))
+        .map(|e| order_key(prefix, &e.path()))
         .filter(|(k, _)| *k == key)
         .map(|(_, s)| s + 1)
         .max()
         .unwrap_or(1);
-    let (path, mut file) = loop {
+    loop {
         let candidate = if n == 1 {
             dir.join(&name)
         } else {
@@ -128,32 +153,31 @@ pub fn write_log(dir: &Path, secs: i64, text: &str, keep: usize) -> std::io::Res
             .create_new(true)
             .open(&candidate)
         {
-            Ok(f) => break (candidate, f),
+            Ok(f) => return Ok((candidate, f)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && n < 1000 => n += 1,
             Err(e) => return Err(e),
         }
-    };
-    file.write_all(text.as_bytes())?;
-    file.flush()?;
-    drop(file);
-    let _ = rotate(dir, keep);
-    Ok(path)
+    }
 }
 
-/// Removes the oldest `crash-*.log` files of `dir` beyond the newest `keep` (the names sort by
-/// time; other files stay).
-pub fn rotate(dir: &Path, keep: usize) -> std::io::Result<()> {
+/// Whether `p` is a log of kind `prefix` (`prefix-*.log`).
+fn is_log(prefix: &str, p: &Path) -> bool {
+    p.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_prefix(prefix))
+        .is_some_and(|n| n.starts_with('-') && n.ends_with(".log"))
+}
+
+/// Removes the oldest logs of kind `prefix` (`prefix-*.log`) of `dir` beyond the newest `keep`
+/// (the names sort by time; other files, the other kinds of log among them, stay).
+pub fn rotate(dir: &Path, prefix: &str, keep: usize) -> std::io::Result<()> {
     let mut logs: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("crash-") && n.ends_with(".log"))
-        })
+        .filter(|p| is_log(prefix, p))
         .collect();
     // by (time, sequence): "X-2.log" is newer than "X.log", though it sorts before it as text
-    logs.sort_by_key(|p| order_key(p));
+    logs.sort_by_key(|p| order_key(prefix, p));
     let extra = logs.len().saturating_sub(keep);
     for p in &logs[..extra] {
         let _ = std::fs::remove_file(p);
@@ -162,9 +186,13 @@ pub fn rotate(dir: &Path, keep: usize) -> std::io::Result<()> {
 }
 
 /// The sort key of a log's path: the time part of the name and the sequence (1 with no `-N`).
-fn order_key(p: &Path) -> (String, u32) {
+fn order_key(prefix: &str, p: &Path) -> (String, u32) {
     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    let stem = name.trim_start_matches("crash-").trim_end_matches(".log");
+    let stem = name
+        .strip_prefix(prefix)
+        .and_then(|n| n.strip_prefix('-'))
+        .unwrap_or(name)
+        .trim_end_matches(".log");
     // `YYYYMMDD-HHMMSS` or `YYYYMMDD-HHMMSS-N`
     let mut parts = stem.splitn(3, '-');
     let date = parts.next().unwrap_or("");
@@ -196,8 +224,9 @@ pub fn box_text(message: &str, location: Option<&str>, log: &Result<PathBuf, Str
 }
 
 /// Whether the box is turned off (`ORB_UI_NO_CRASH_DIALOG` set and not empty or `0`): for
-/// tests, and for a machine with no desktop.
-fn no_dialog() -> bool {
+/// tests, and for a machine with no desktop. Also turns off the box of a start error and the
+/// Windows Error Reporting box of a native crash ([`crate::runlog`]).
+pub fn no_dialog() -> bool {
     std::env::var_os("ORB_UI_NO_CRASH_DIALOG").is_some_and(|v| !v.is_empty() && v != "0")
 }
 
@@ -271,6 +300,15 @@ fn handle(version: &str, info: &PanicHookInfo) {
             "OpenRB-338: the crash log could not be saved: {e}"
         )),
     }
+    let at = location
+        .as_deref()
+        .map(|l| format!(" ({l})"))
+        .unwrap_or_default();
+    let saved = match &log {
+        Ok(p) => format!("crash log {}", p.display()),
+        Err(e) => format!("no crash log: {e}"),
+    };
+    crate::runlog::end(&format!("panic on thread {thread}: {message}{at}; {saved}"));
     if !no_dialog() {
         let _ = rfd::MessageDialog::new()
             .set_level(rfd::MessageLevel::Error)
@@ -379,6 +417,56 @@ mod tests {
         assert_eq!(texts.len(), KEEP);
         assert!(texts.contains(&"later".to_string()));
         assert!(!texts.contains(&"log 5".to_string()));
+    }
+
+    #[test]
+    fn run_logs_and_crash_logs_are_named_and_rotated_apart() {
+        let t = tempfile::tempdir().unwrap();
+        for i in 0..3 {
+            write_log(t.path(), T + i, "crash", KEEP).unwrap();
+        }
+        for i in 0..5 {
+            let (p, _) = create_log(t.path(), "run", T).unwrap();
+            let name = p.file_name().unwrap().to_str().unwrap().to_string();
+            let want = if i == 0 {
+                "run-20261030-091507.log".to_string()
+            } else {
+                format!("run-20261030-091507-{}.log", i + 1)
+            };
+            assert_eq!(name, want);
+        }
+        rotate(t.path(), "run", 2).unwrap();
+        let mut names: Vec<String> = std::fs::read_dir(t.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "crash-20261030-091507.log",
+                "crash-20261030-091508.log",
+                "crash-20261030-091509.log",
+                "run-20261030-091507-4.log",
+                "run-20261030-091507-5.log",
+            ]
+        );
+        // the crash logs' rotation leaves the run logs
+        rotate(t.path(), PREFIX, 1).unwrap();
+        let n = |p: &str| {
+            std::fs::read_dir(t.path())
+                .unwrap()
+                .filter(|e| {
+                    e.as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_str()
+                        .unwrap()
+                        .starts_with(p)
+                })
+                .count()
+        };
+        assert_eq!((n("crash-"), n("run-")), (1, 2));
     }
 
     #[test]

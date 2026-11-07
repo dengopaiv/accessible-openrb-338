@@ -38,7 +38,9 @@
 // build keeps the console, for `dbg!` and panics.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+use std::io::Write as _;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::sync::Arc;
 
 use eframe::egui;
@@ -49,6 +51,7 @@ use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::link::Link;
 use orb_ui::menu::MENU_H;
 use orb_ui::model::Panel;
+use orb_ui::runlog;
 use orb_ui::session;
 use orb_ui::settings::Settings;
 
@@ -71,6 +74,21 @@ struct Args {
     song: Option<PathBuf>,
     browse: Option<Mode>,
     debug_panic: Option<DebugPanic>,
+    debug_fail: Option<DebugFail>,
+}
+
+/// The failures of a start that are not panics, on purpose (task-214): tests of the run log.
+/// Both happen at the start, before any window (they run with no display).
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum DebugFail {
+    /// `--debug-start-error`: the path of an error of `eframe::run_native`.
+    StartError,
+    /// `--debug-native-crash`: a write to an invalid address (on Windows an access violation,
+    /// which the run log's exception filter writes down).
+    NativeCrash,
+    /// `--debug-hang`: the watchdog set to 1 s, then 3 s with no frame (its line), then the
+    /// start error path.
+    Hang,
 }
 
 /// Where `--debug-panic` panics on purpose (task-157): tests of the crash hook.
@@ -107,6 +125,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Exit> {
         song: None,
         browse: None,
         debug_panic: None,
+        debug_fail: None,
     };
     let mut args = args.into_iter();
     while let Some(a) = args.next() {
@@ -119,6 +138,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Exit> {
             "--debug-panic" => r.debug_panic = Some(DebugPanic::Start),
             "--debug-panic-window" => r.debug_panic = Some(DebugPanic::Window),
             "--debug-panic-thread" => r.debug_panic = Some(DebugPanic::Thread),
+            "--debug-start-error" => r.debug_fail = Some(DebugFail::StartError),
+            "--debug-native-crash" => r.debug_fail = Some(DebugFail::NativeCrash),
+            "--debug-hang" => r.debug_fail = Some(DebugFail::Hang),
             "--size" => {
                 let v = args.next().ok_or(Exit::Bad)?;
                 let (w, h) = v.split_once('x').ok_or(Exit::Bad)?;
@@ -200,7 +222,29 @@ fn attach_parent_console() {
     }
 }
 
-fn main() -> eframe::Result {
+/// A start that failed without a panic (an error of `eframe::run_native`, task-214): the error
+/// goes to stderr, the run log and the native box (unless `ORB_UI_NO_CRASH_DIALOG`), and the
+/// exit code is 1. Started from Explorer or the Start menu the release build has no visible
+/// stderr, so before this such a start showed nothing at all.
+fn start_failed(error: &str) -> ExitCode {
+    let _ = writeln!(std::io::stderr(), "OpenRB-338: {error}");
+    runlog::end(&format!("start error: {error}"));
+    if !orb_ui::crash::no_dialog() {
+        let log = match runlog::path() {
+            Some(p) => format!("The run log is {}.", p.display()),
+            None => "No run log could be written.".to_string(),
+        };
+        let _ = rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title("OpenRB-338")
+            .set_description(format!("OpenRB-338 could not start.\n\n{error}\n\n{log}"))
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }
+    ExitCode::from(1)
+}
+
+fn main() -> ExitCode {
     #[cfg(all(windows, not(debug_assertions)))]
     attach_parent_console();
     // before anything that can panic: a panic writes a crash log and shows a box (task-157)
@@ -217,9 +261,34 @@ fn main() -> eframe::Result {
         song,
         browse,
         debug_panic,
+        debug_fail,
     } = parse_args(std::env::args().skip(1)).unwrap_or_else(|e| usage(e));
+    // the run log of this start (task-214), before anything that can fail
+    let watchdog = match debug_fail {
+        Some(DebugFail::Hang) => std::time::Duration::from_secs(1),
+        _ => runlog::WATCHDOG,
+    };
+    runlog::start(orb_ui::about::VERSION, watchdog);
     if debug_panic == Some(DebugPanic::Start) {
         panic!("--debug-panic: a deliberate panic");
+    }
+    match debug_fail {
+        Some(DebugFail::StartError) => {
+            return start_failed("--debug-start-error: a deliberate start error");
+        }
+        Some(DebugFail::Hang) => {
+            runlog::stage("--debug-hang: waiting 3 s with no window");
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            return start_failed("--debug-hang: the wait is over");
+        }
+        Some(DebugFail::NativeCrash) => {
+            runlog::stage("--debug-native-crash: writing to address 0x8");
+            // SAFETY: not safe: undefined behavior on purpose, a write that faults to test the
+            // native crash line. 8 is aligned and not null, so the pointer
+            // checks of a debug build pass and the write itself faults.
+            unsafe { std::ptr::without_provenance_mut::<u32>(8).write_volatile(1) };
+        }
+        None => {}
     }
 
     let panel = if demo { Panel::demo() } else { Panel::new() };
@@ -237,22 +306,37 @@ fn main() -> eframe::Result {
         let (l, audio) = Link::new(Arc::new(Tables::new()), samples.clone());
         // The song named on the command line is opened by the app (with its mod).
         if let Some(path) = &song {
+            runlog::stage(&format!("opening the song {}", path.display()));
             match session::open_song(path) {
-                Ok(o) => startup = Some((path.clone(), o)),
+                Ok(o) => {
+                    runlog::stage("song opened");
+                    startup = Some((path.clone(), o));
+                }
                 // the app starts on the new song, with the error in its message box
                 Err(e) => {
                     eprintln!("OpenRB-338: {e}");
+                    runlog::stage(&format!("the song did not open: {e}"));
                     start_errors.push(e);
                 }
             }
         }
+        runlog::stage("starting the audio output");
         match orb_player::output::start(audio) {
             Ok(s) => {
+                runlog::stage(&format!(
+                    "audio output: \"{}\", {} Hz, {} channels, {}{}",
+                    s.device,
+                    s.config.sample_rate,
+                    s.config.channels,
+                    s.format,
+                    if s.resampled { ", resampled" } else { "" }
+                ));
                 audio_health = Some(s.health());
                 _stream = Some(s);
             }
             Err(e) => {
                 eprintln!("OpenRB-338: audio output: {e}; the panel runs without sound");
+                runlog::stage(&format!("audio output failed: {e}"));
                 // the one failure at the launch is an error the user expects to hear of: the
                 // box. Later audio errors repeat: `App::notify`.
                 start_errors.push(format!("Audio output: {e}; the panel runs without sound"));
@@ -275,18 +359,26 @@ fn main() -> eframe::Result {
         viewport,
         ..Default::default()
     };
-    eframe::run_native(
+    runlog::stage("creating the window and the graphics (eframe::run_native)");
+    let run = eframe::run_native(
         "OpenRB-338",
         options,
         Box::new(move |cc| {
             // always dark, whatever the system theme (task-127; `App::show` keeps it)
             cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
-            // ORB_GPU_INFO=1 prints the adapter wgpu chose (scripts/appimage-smoke.sh)
-            if std::env::var_os("ORB_GPU_INFO").is_some_and(|v| v == "1")
-                && let Some(rs) = &cc.wgpu_render_state
-            {
-                let i = rs.adapter.get_info();
-                eprintln!("gpu: {:?} {:?} {}", i.backend, i.device_type, i.name);
+            match &cc.wgpu_render_state {
+                Some(rs) => {
+                    let i = rs.adapter.get_info();
+                    runlog::stage(&format!(
+                        "window created; graphics: {:?}, {:?} \"{}\", driver \"{}\" {}",
+                        i.backend, i.device_type, i.name, i.driver, i.driver_info
+                    ));
+                    // ORB_GPU_INFO=1 prints the adapter wgpu chose (scripts/appimage-smoke.sh)
+                    if std::env::var_os("ORB_GPU_INFO").is_some_and(|v| v == "1") {
+                        eprintln!("gpu: {:?} {:?} {}", i.backend, i.device_type, i.name);
+                    }
+                }
+                None => runlog::stage("window created; graphics: no wgpu state"),
             }
             if let Some(ppp) = ppp {
                 cc.egui_ctx.set_pixels_per_point(ppp);
@@ -337,9 +429,17 @@ fn main() -> eframe::Result {
             if play {
                 app.panel.press("transport.play", 0.0);
             }
+            runlog::stage("the app is ready; waiting for the first frame");
             Ok(Box::new(app))
         }),
-    )
+    );
+    match run {
+        Ok(()) => {
+            runlog::end("the window was closed");
+            ExitCode::SUCCESS
+        }
+        Err(e) => start_failed(&e.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -400,6 +500,27 @@ mod tests {
         assert_eq!(a.ppp, Some(2.0));
         assert_eq!(a.browse, Some(Mode::Export));
         assert_eq!(a.shot, Some("out.png".into()));
+        assert_eq!(a.debug_panic, None);
+        assert_eq!(a.debug_fail, None);
+    }
+
+    #[test]
+    fn the_debug_failures_parse() {
+        let a = parse(&["--debug-panic-window"]).unwrap();
+        assert_eq!(a.debug_panic, Some(DebugPanic::Window));
+        let a = parse(&["--debug-start-error"]).unwrap();
+        assert_eq!(a.debug_fail, Some(DebugFail::StartError));
+        let a = parse(&["--debug-native-crash"]).unwrap();
+        assert_eq!(a.debug_fail, Some(DebugFail::NativeCrash));
+        let a = parse(&["--debug-hang"]).unwrap();
+        assert_eq!(a.debug_fail, Some(DebugFail::Hang));
+        for hidden in [
+            "--debug-start-error",
+            "--debug-native-crash",
+            "--debug-hang",
+        ] {
+            assert!(!USAGE.contains(hidden), "{hidden}");
+        }
     }
 
     #[test]

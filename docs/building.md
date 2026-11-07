@@ -224,8 +224,9 @@ and `OPENRB_` names are not read any more and have no deprecated alias.
 | `ORB_MOD_DIR` | `orb render`, `compare`, `play`, `info`; OpenRB-338 | the folder of recrypted `.rbm` mods (`--mod-dir` wins) | `RB_MOD_DIR` |
 | `ORB_RB20FUL` | `orb mod recrypt` | the path of `RB20FUL.DAT` (`--rb20ful` wins); also the default of `tools/rbcorpus.py` | `RB_RB20FUL` |
 | `ORB_UI_CONFIG` | OpenRB-338 | the settings file to use instead of `OpenRB-338/ui.toml` in the configuration folder | `RB_UI_CONFIG` |
-| `ORB_UI_LOG_DIR` | OpenRB-338 (`crates/orb-ui/src/crash.rs`, task-157) | the folder of the crash logs instead of the platform's (below); tests set it | none |
-| `ORB_UI_NO_CRASH_DIALOG` | OpenRB-338 | any non-empty value except `0` turns off the native box after a panic (the log and stderr stay); tests set `1` | none |
+| `ORB_UI_LOG_DIR` | OpenRB-338 (`crates/orb-ui/src/crash.rs`, task-157; `runlog.rs`, task-214) | the folder of the crash logs and run logs instead of the platform's (below); tests set it | none |
+| `ORB_UI_NO_CRASH_DIALOG` | OpenRB-338 | any non-empty value except `0` turns off the native box after a panic and after a start error, and the Windows Error Reporting box of a native crash (the logs and stderr stay; a native crash then ends the process with its exception code); tests set `1` | none |
+| `ORB_LOG` | OpenRB-338 (`crates/orb-ui/src/runlog.rs`, task-214) | the level of the libraries' messages in the run log: `off`, `error`, `warn` (the default), `info`, `debug`, `trace` | none |
 | `ORB_LOGO_T` | OpenRB-338 | seconds: freezes the logo's startup animation at that time (pictures; task-114, `crates/orb-ui/src/logo_anim.rs`) | none |
 | `ORB_GPU_INFO` | OpenRB-338 | `1` prints the graphics adapter wgpu chose (`scripts/appimage-smoke.sh`) | `OPENRB_GPU_INFO` |
 | `ORB_UI_FRAME_STATS` | OpenRB-338 (`FrameStats`, `crates/orb-ui/src/app.rs`, task-153) | `1` prints, every 2 s of frames, the frames drawn per second and eframe's mean CPU time of a frame | none |
@@ -261,6 +262,9 @@ work as ever.
 | | `--info` | starts with File > Info's Song Information window open (task-117) |
 | | `--screenshot OUT.png` | saves the window to a PNG after a few frames and quits |
 | | `--debug-panic` / `--debug-panic-window` / `--debug-panic-thread` | panic on purpose: at the start (no display needed), once the window is up, on another thread half a second later (the crash hook, task-157) |
+| | `--debug-start-error` | fails the start as an error of `eframe::run_native` does, before any window: stderr, the run log, the box, exit code 1 (task-214) |
+| | `--debug-native-crash` | writes to address 0x8 at the start, before any window: on Windows an access violation that the run log's exception filter writes down (task-214) |
+| | `--debug-hang` | sets the run log's watchdog to 1 s, waits 3 s before any window (the watchdog's line), then fails the start as `--debug-start-error` does (task-214) |
 | | `--play` | presses Play once the song is open (CPU measurements of the playing panel, task-153) |
 | | `ORB_LOGO_T=SECONDS` (variable) | freezes the logo's startup animation (task-114) at that time, on the panel and in About, for pictures of a moment |
 | | `ORB_UI_FRAME_STATS=1` (variable) | prints the frame rate and the CPU time per frame every 2 s (task-153) |
@@ -288,6 +292,52 @@ built `OpenRB-338` and `orb` in the Docker image for `x86_64-unknown-linux-gnu` 
 for both Windows targets (x86_64 with the `CL` variable above, which the scripts set); `cargo
 check -p orb-ui` passed for `x86_64-apple-darwin`, and the host build is `aarch64-apple-darwin`.
 Not run: the packages (`scripts/package.sh`) and the CI matrix. Details: docs/ui_spec.md 18.0.1.
+
+## The run log, for a start that fails (task-214)
+
+Why: on the user's Windows 10 PC OpenRB-338 often did not start (2026-11-07), and such a start
+left nothing to read. The Windows release build is a GUI-subsystem program, so started from
+Explorer or the Start menu its stderr goes nowhere, and only a panic wrote a log. An error of
+`eframe::run_native` (no usable graphics adapter, no window), a native crash in a driver and a
+hang during the start left no trace.
+
+Every start of OpenRB-338 (not `--help` or a bad option) now writes `run-YYYYMMDD-HHMMSS.log`
+into the folder of the crash logs (above; `ORB_UI_LOG_DIR` for tests). The newest 20 are kept,
+rotated apart from the crash logs. Each line is flushed as it is written, so a hang or a native
+crash keeps the lines before it. The code is `crates/orb-ui/src/runlog.rs`; the stages are
+written in `crates/orb-ui/src/main.rs`.
+
+- **The header:** time (UTC), version, the system (on Windows the real build from `RtlGetVersion`
+  with the update revision and release from the registry, for example `Windows 10 22H2
+  (10.0.19045.5737)`; Windows 11 is told apart by a build of 22000 or more), architecture,
+  executable, arguments, whether the system reports a screen reader (`SPI_GETSCREENREADER`), and
+  the `ORB_*`, `WGPU_*` and `RUST_*` variables that are set.
+- **The stages,** each with the milliseconds since the start: the song of the command line
+  (opened, or the error); the audio output (the device, rate, channels, sample format and whether
+  it is resampled, or the error); the window and graphics being created (`eframe::run_native`);
+  the window created, with the graphics adapter wgpu chose (backend, type, name, driver); the
+  app ready; the first frame drawn.
+- **The libraries' messages** through the `log` crate (wgpu, winit, eframe, cpal, AccessKit):
+  warnings and errors, more with `ORB_LOG=info`, `debug` or `trace`; at most 2000 per run.
+- **The watchdog:** if no frame has been drawn 15 s after the start, a line says so and names
+  the last stage reached (a hang, and where).
+- **The end:** `end: the window was closed`; `end: start error: ...` (an error of
+  `run_native`, also on stderr and in a native box, exit code 1); `end: panic on thread ...`
+  naming its crash log; on Windows `end: native crash: access violation (0xC0000005) writing
+  address 0x8, at 0x..., C:\...\X.dll+0x...` (an unhandled-exception filter writes it and then
+  leaves the crash to Windows Error Reporting, so its box and LocalDumps still happen).
+- **A log with no end line** ended in a way nothing could write down. That is a hang, a kill,
+  or a fail-fast abort (exit code `0xC0000409`): Rust's `abort` and a panic while panicking use
+  it, and no exception filter sees it.
+
+The filter is set at the start; a library that sets its own later (a graphics driver might) would
+replace it. Under a debugger it is not called.
+
+A run on the development machine (Windows 11, `--demo --screenshot`, `ORB_LOG=info`, debug
+build, 2026-11-07) logged: `41 ms` creating the window; Vulkan loader warnings at `1189 ms`;
+egui-wgpu's list of 6 adapters at `1710 ms`; `2044 ms window created; graphics: Vulkan,
+DiscreteGpu "Quadro P2000", driver "NVIDIA" 556.12`; `2052 ms first frame drawn`; `4083 ms end:
+the screenshot was saved`.
 
 ## GitHub Actions (`.github/workflows/`)
 

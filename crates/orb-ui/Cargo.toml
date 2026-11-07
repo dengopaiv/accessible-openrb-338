@@ -27,6 +27,9 @@ orb-cli = { path = "../orb-cli" }
 serde = { version = "1", features = ["derive"] }
 toml = "=0.9.12"
 eframe = "0.37.0"
+# The run log (task-214) takes the libraries' messages (wgpu, winit, eframe, cpal, AccessKit);
+# the version they use.
+log = "0.4"
 egui_extras = { version = "0.37.0", features = ["svg"] }
 # Renders the window icon and gives the panel's part rasterizing its options; the version
 # egui_extras' SVG loader uses.

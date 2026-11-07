@@ -17,6 +17,21 @@ fn run(log_dir: &std::path::Path, home: &std::path::Path) -> std::process::Outpu
         .unwrap()
 }
 
+/// The crash logs of `dir` (it also holds the run logs, task-214).
+fn crash_logs(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("crash-")
+        })
+        .collect()
+}
+
 #[test]
 fn a_deliberate_panic_exits_101_and_writes_the_log() {
     let t = tempfile::tempdir().unwrap();
@@ -27,10 +42,8 @@ fn a_deliberate_panic_exits_101_and_writes_the_log() {
     assert!(err.contains("--debug-panic: a deliberate panic"), "{err}");
     assert!(err.contains("crash log saved to"), "{err}");
 
-    let files: Vec<_> = std::fs::read_dir(&logs)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
+    // the crash log, beside the run log of the start (task-214)
+    let files = crash_logs(&logs);
     assert_eq!(files.len(), 1, "{files:?}");
     let name = files[0].file_name().unwrap().to_str().unwrap();
     assert!(
@@ -73,5 +86,5 @@ fn a_second_crash_adds_a_second_log() {
     for _ in 0..2 {
         assert_eq!(run(&logs, t.path()).status.code(), Some(101));
     }
-    assert_eq!(std::fs::read_dir(&logs).unwrap().count(), 2);
+    assert_eq!(crash_logs(&logs).len(), 2);
 }

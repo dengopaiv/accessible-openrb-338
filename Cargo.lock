@@ -2984,6 +2984,7 @@ dependencies = [
  "egui_extras",
  "embed-resource",
  "image",
+ "log",
  "orb-cli",
  "orb-engine",
  "orb-player",
