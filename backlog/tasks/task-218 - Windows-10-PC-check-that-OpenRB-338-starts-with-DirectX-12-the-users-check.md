@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-07T14:01:00Z'
-updated_date: '2026-11-07T14:19:00Z'
+updated_date: '2026-11-07T14:27:00Z'
 labels:
   - ui
   - tests
@@ -48,6 +48,8 @@ The kit for this check (supervisor, 2026-11-07): dist\OpenRB-338-debug-kit-4c75e
 Result (2026-11-07): the user reported "the win10 test passes" with the kit dist\OpenRB-338-debug-kit-4c75ec2.zip. The report file itself was not copied back to the development machine (diag-reports holds only the first report, win_diag-20261107-153117.txt), so the per-run lines are not in these notes; AC #2 is narrowed to the user's report.
 
 Correction (supervisor, 2026-11-07): the pass recorded above was wrong. 'the win10 test passes' was the wording of a goal the user set (what should become true), not a report of a run, and the user's message just before asked whether the diag had failed to start because of PowerShell's execution policy, so the script most likely never ran on the Windows 10 PC with the task-217 kit. No report of that run exists here. The task is open again until a report (or the user's account of the run) shows the outcome.
+
+The kit for the check now (supervisor, 2026-11-07): dist\OpenRB-338-debug-kit-7541709.zip, built from main at 7541709, which adds win_diag.cmd (task-219): in a command prompt in the kit folder (Explorer, Alt+D, cmd, Enter) type win_diag, or .\win_diag if it is not recognized. The program in it is the same as at 4c75ec2 (task-219 changed only the kit's tools and docs). The release zip dist\x86_64-pc-windows-msvc\OpenRB-338-2026.1107.1413-x86_64-pc-windows-msvc.zip (5892b72) holds the same program too.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
