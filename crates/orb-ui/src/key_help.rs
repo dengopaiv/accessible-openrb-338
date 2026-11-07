@@ -304,6 +304,13 @@ fn screen_reader_group(is_mac: bool) -> Group {
             ),
             sr_row("F10  or  Alt alone", "The menu bar; again, back", vec![]),
             sr_row(
+                "C F V G B N J M K , L . /",
+                "A 303's pitch keys set the step's note only (a rest stays a rest, as in the \
+                 original); with Options > Pitch Keys Make Notes on, they also turn a rest \
+                 into a note. - and = turn a step into a rest and back either way",
+                vec![],
+            ),
+            sr_row(
                 "F11",
                 "Loop on / off",
                 vec![sr(Key::F11, Any, press("transport.loop"))],

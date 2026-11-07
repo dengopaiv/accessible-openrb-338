@@ -1107,6 +1107,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Screen Reader Mode > Automatic, On, Off | `Settings::screen_reader` (`auto` by default, `on`, `off`; key `screen_reader` of `ui.toml`), saved at once (task-185). `App::screen_reader_mode()` is true for On, and for Automatic while the system reports a screen reader (Windows: `SystemParametersInfoW(SPI_GETSCREENREADER)`, asked at start and whenever the window regains the focus; other platforms report none yet). The knobs' and faders' units read it (task-192, section 20); the key changes come in later tasks (docs/accessibility_plan.md) |
 | Options | Speak Raw Values (shown in screen reader mode only) | `Settings::speak_raw_values` (false by default; the bool `speak_raw_values` of `ui.toml`), saved at once (task-192): a knob or fader speaks its 0..127 value after its unit ("1.24 kilohertz, 64"); section 20 |
+| Options | Pitch Keys Make Notes (shown in screen reader mode only) | `Settings::pitch_keys_make_notes` (false by default; the bool `pitch_keys_make_notes` of `ui.toml`), saved at once (task-211): on, a 303's pitch key on a rest also makes it a note; section 20.5 |
 | Options | Step Editor Follows Playback (shown in screen reader mode only) | `Settings::step_editor_follows` (false by default; the bool `step_editor_follows` of `ui.toml`), saved at once (task-190, decision task-209): on, a 303's step editor and a drum grid (task-191) move to the pattern playback selects, silently, at the next input; off, they stay on the pattern the user chose; sections 20.5 and 20.6 |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
@@ -1909,6 +1910,19 @@ edit step display stays the label "Edit step 5" of section 20.
 
   The pattern the editor is on is checked with F2 (below). Tap (Ctrl+Tab) stays the playing
   step of the playing pattern (`Panel::tap_303`).
+- **Pitch Keys Make Notes** (task-211, decision of the user 2026-11-07 for the label). In the
+  original, as on the TB-303, a pitch key sets only the step's note (`sub_43F590`, section 5
+  "Keys"); the step stays a rest until Note/Pause flips it, and a new or cleared pattern is
+  all rests. Options > Pitch Keys Make Notes (screen reader mode only, off by default,
+  `Settings::pitch_keys_make_notes`, the bool `pitch_keys_make_notes` of `ui.toml`, saved at
+  once) makes a pitch key on a rest also clear the rest. `App::pin_patterns` sets
+  `Panel::pitch_makes_notes` each frame (`mode && setting`, so it is false with the mode off,
+  and every key is the original's); `Panel::press_303`'s `key*` branch then sets `rest =
+  false` and sends the Step303 event of field 5 (value 0) before the note's field 0, for the
+  keyboard (time and pitch mode) and the panel's note keys alike. A step that is already a
+  note only changes its note; `-` / `=` and Clear are as before. The spoken answer is the
+  step's new state ("Step 1: D" instead of "Step 1: rest, D"). Tests: `wired.rs`
+  `pitch_keys_make_notes_on_the_real_engine` (the engine plays the step), `a11y_step303.rs`.
 - **What is spoken after a programming key** (`step303::press_effect`, from `App::act`, from
   Space on a 303 button, `App::activate`, and from a screen reader's Click on one): with the step
   editor of that 303 focused, the editor's own value change, which the screen reader speaks as
@@ -1932,9 +1946,10 @@ edit step display stays the label "Edit step 5" of section 20.
    section's first control, the pattern selector (Up and Down).
 2. Tab to "Step editor", after the knobs. It says the step and what it holds: "Step 1 of 16:
    rest, C".
-3. On each step: a pitch key sets the note (`C` is C, `F` C sharp, `V` D, ... `/` high C);
-   `-` (or `=`) turns the rest into a note and back; `P` accent, `[` slide, `'` octave up, `;`
-   octave down. Each key is answered with the step's new state.
+3. On each step: a pitch key sets the note (`C` is C, `F` C sharp, `V` D, ... `/` high C),
+   and a rest stays a rest, as in the original, unless Options > Pitch Keys Make Notes is on
+   (below); `-` (or `=`) turns the rest into a note and back; `P` accent, `[` slide, `'`
+   octave up, `;` octave down. Each key is answered with the step's new state.
 4. Down or Enter goes to the next step, Up or Backspace to the previous, Home to step 1, End
    to the pattern's last step. Left and Right do nothing here.
 5. F2 reads the whole pattern back. F5 plays it; edits are heard the next time the step plays.
@@ -1942,7 +1957,8 @@ edit step display stays the label "Edit step 5" of section 20.
    on; Options > Step Editor Follows Playback makes it go along with the song instead, still
    silently, at your next key.
 6. Pitch mode (Tab three times to "Pitch mode", Space; Shift+Tab back to the editor) is the
-   original's quick way to enter the notes alone: each pitch key sets the note and goes to the
+   original's quick way to enter the notes alone (with Pitch Keys Make Notes on, each also
+   makes its step a note, so the pattern plays at once): each pitch key sets the note and goes to the
    next step, and the step it set is said. Turning it on starts again at step 1. Then turn it
    off and set the rests, accents and slides step by step.
 7. "Clear" (Space on it, after "Pitch mode") empties the pattern: every step a rest on C.

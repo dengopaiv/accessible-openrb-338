@@ -18,6 +18,8 @@ fn the_settings_round_trip_through_toml() {
     assert!(s.startup_sound);
     assert!(!s.step_editor_follows, "task-190: off by default");
     s.step_editor_follows = true;
+    assert!(!s.pitch_keys_make_notes, "task-211: off by default");
+    s.pitch_keys_make_notes = true;
     s.songs_dir = Some(p("/songs"));
     s.mods_dir = Some(p("/mods dir/with \"quotes\" and \\"));
     s.recent = vec![p("/b"), p("/a")];
@@ -29,6 +31,7 @@ fn the_settings_round_trip_through_toml() {
     assert_eq!(t["songs_dir"].as_str(), Some("/songs"));
     assert_eq!(t["startup_sound"].as_bool(), Some(false));
     assert_eq!(t["step_editor_follows"].as_bool(), Some(true));
+    assert_eq!(t["pitch_keys_make_notes"].as_bool(), Some(true));
     assert_eq!(t["recent"].as_array().unwrap().len(), 2);
     let r = Settings::load_from(&file);
     assert_eq!(r, s);

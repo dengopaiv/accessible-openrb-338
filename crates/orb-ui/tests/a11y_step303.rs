@@ -384,3 +384,38 @@ fn the_editor_keys_move_the_edit_step_only_on_the_editor() {
     assert_eq!(m.app.panel.synth[0].edit, 0);
     assert_eq!(m.app.announcer.text(), None);
 }
+
+/// Task-211: with Options > Pitch Keys Make Notes on, a pitch key on a rest says the step as a
+/// note ("Step 1 of 16: D"); off, it stays "rest, D"; with screen reader mode off, the model
+/// never clears the rest.
+#[test]
+fn pitch_keys_make_notes_is_spoken_and_only_in_screen_reader_mode() {
+    let mut a = app(true);
+    a.app.settings.pitch_keys_make_notes = true;
+    a.frame(vec![]);
+    focus(&mut a, step303::editor_id(0));
+    take(&mut a);
+    a.key(Key::V);
+    assert_eq!(editor(&a, 0), "Step 1 of 16: D");
+    let ev = |field, value| Out::Step303 {
+        synth: 0,
+        pattern: 0,
+        step: 0,
+        field,
+        value,
+    };
+    assert_eq!(take(&mut a), vec![ev(5, 0), ev(0, 2)]);
+    // the setting off: a rest stays a rest
+    a.app.settings.pitch_keys_make_notes = false;
+    a.key(Key::Minus);
+    a.frame(vec![]);
+    assert_eq!(editor(&a, 0), "Step 1 of 16: rest, D");
+    a.key(Key::G);
+    assert_eq!(editor(&a, 0), "Step 1 of 16: rest, D sharp");
+    // screen reader mode off: the model never clears the rest
+    let mut m = app(false);
+    m.app.settings.pitch_keys_make_notes = true;
+    m.frame(vec![]);
+    click(&mut m, "tb303_1.key2");
+    assert!(m.app.panel.synth[0].patterns[0][0].rest);
+}

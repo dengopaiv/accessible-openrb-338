@@ -719,6 +719,69 @@ fn a_song_whose_pattern_select_is_past_31_opens_on_pattern_32() {
     }
 }
 
+/// Task-211: Options > Pitch Keys Make Notes (with screen reader mode on) makes a pitch key
+/// clear the rest too, and the real engine plays the step; off, the key leaves the rest.
+#[test]
+fn pitch_keys_make_notes_on_the_real_engine() {
+    use orb_ui::screen_reader::ScreenReaderSetting;
+    let mut h = Harness::new();
+    h.app.settings.screen_reader = ScreenReaderSetting::On;
+    // the setting off: as the original, the rest stays
+    h.frame(vec![]);
+    h.click("tb303_1.key7");
+    assert_eq!(h.take_log(), vec![dev(Device::Tb303_1, 45, &[0, 0, 0, 7])]);
+    assert!(h.app.panel.synth[0].patterns[0][0].rest);
+    // on: the pitch key sets the note and clears the rest (fields 5 and 0), in time mode ...
+    h.app.settings.pitch_keys_make_notes = true;
+    h.frame(vec![]);
+    h.click("tb303_1.key9");
+    assert_eq!(
+        h.take_log(),
+        [[0, 0, 5, 0], [0, 0, 0, 9]].map(|d| dev(Device::Tb303_1, 45, &d))
+    );
+    assert!(!h.app.panel.synth[0].patterns[0][0].rest);
+    // ... a step that is already a note only changes its note ...
+    h.click("tb303_1.key2");
+    assert_eq!(h.take_log(), vec![dev(Device::Tb303_1, 45, &[0, 0, 0, 2])]);
+    // ... Note/Pause still makes it a rest
+    h.click("tb303_1.note_pause");
+    assert_eq!(h.take_log(), vec![dev(Device::Tb303_1, 45, &[0, 0, 5, 1])]);
+    assert!(h.app.panel.synth[0].patterns[0][0].rest);
+    // and in pitch mode (step 1, then step 2)
+    h.click_at(Harness::center("tb303_1.pitch_button"));
+    h.click("tb303_1.key4");
+    h.click("tb303_1.key5");
+    assert_eq!(
+        h.take_log(),
+        [[0, 0, 5, 0], [0, 0, 0, 4], [0, 1, 5, 0], [0, 1, 0, 5]].map(|d| dev(
+            Device::Tb303_1,
+            45,
+            &d
+        ))
+    );
+    h.calls(2);
+    let pat = h.engine_patterns(0);
+    assert_eq!(
+        &pat[2..8],
+        &[4, 0, 0, 0, 0, 0],
+        "step 1 plays: a note, rest 0"
+    );
+    assert_eq!(&pat[8..14], &[5, 0, 0, 0, 0, 0], "step 2 plays");
+    // Clear makes every step a rest again
+    h.click("tb303_1.clear");
+    assert!(h.app.panel.synth[0].patterns[0].iter().all(|s| s.rest));
+    // screen reader mode off: the setting does nothing
+    h.app.settings.screen_reader = ScreenReaderSetting::Off;
+    h.frame(vec![]);
+    h.take_log();
+    h.click("tb303_1.key3");
+    let edit = h.app.panel.synth[0].edit as usize;
+    assert!(
+        h.app.panel.synth[0].patterns[0][edit].rest,
+        "mode off: still a rest"
+    );
+}
+
 #[test]
 fn the_303_step_editor_edits_the_pattern_as_the_original() {
     let mut h = Harness::new();

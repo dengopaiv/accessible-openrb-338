@@ -288,6 +288,10 @@ pub struct Panel {
     /// while playback moves the row to other patterns, as a 303's [`Synth303::pin`]. `None`
     /// (always with the mode off): the row's pattern, as the original.
     pub drum_pin: [Option<u8>; 2],
+    /// "Pitch Keys Make Notes" (task-211, screen reader mode only; `App` sets it): a 303's pitch
+    /// key on a rest also clears the rest. Always `false` with the mode or the setting off, as
+    /// the original.
+    pub pitch_makes_notes: bool,
     /// The playing step (the running light), from the engine; `None` when stopped.
     pub playing_step808: Option<usize>,
     pub playing_step909: Option<usize>,
@@ -343,6 +347,7 @@ impl Panel {
             steps808: [[false; 16]; 12],
             steps909: [[0; 16]; 12],
             drum_pin: [None; 2],
+            pitch_makes_notes: false,
             playing_step808: None,
             playing_step909: None,
             playing_step303: [None; 2],
@@ -808,14 +813,31 @@ impl Panel {
 
     fn press_303(&mut self, k: usize, name: &str, now: f64) {
         let pattern = self.edit_pattern(k);
+        let makes_notes = self.pitch_makes_notes;
         let s = &mut self.synth[k];
         let edit = s.edit as usize;
         let mut sent: Option<(u8, u8)> = None;
         if let Some(n) = name.strip_prefix("key") {
             let note: u8 = n.parse().unwrap_or(0);
-            s.patterns[pattern as usize][edit].note = note;
+            let st = &mut s.patterns[pattern as usize][edit];
+            st.note = note;
+            // task-211: the rest goes too, and the engine is told (field 5, value 0)
+            let unrest = makes_notes && st.rest;
+            if unrest {
+                st.rest = false;
+            }
             s.flash_until = now + NOTE_FLASH;
             sent = Some((0, note));
+            if unrest {
+                self.events.push(Event::Step303 {
+                    synth: k,
+                    pattern,
+                    step: edit,
+                    field: 5,
+                    value: 0,
+                });
+            }
+            let s = &mut self.synth[k];
             if s.pitch_mode {
                 s.move_edit(1);
             }

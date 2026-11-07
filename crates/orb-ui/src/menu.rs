@@ -115,6 +115,7 @@ pub enum Cmd {
     /// "Step Editor Follows Playback" of the Options menu, shown in screen reader mode
     /// (task-190; the drum grids too, task-191).
     ToggleStepEditorFollows,
+    TogglePitchKeysMakeNotes,
     SetKeyMode(KeyMode),
 }
 
@@ -975,6 +976,12 @@ impl App {
                     self.fail(e);
                 }
             }
+            Cmd::TogglePitchKeysMakeNotes => {
+                self.settings.pitch_keys_make_notes = !self.settings.pitch_keys_make_notes;
+                if let Err(e) = self.settings.save() {
+                    self.fail(e);
+                }
+            }
             Cmd::SetKeyMode(m) => self.set_key_mode(m),
         }
     }
@@ -1339,6 +1346,14 @@ impl App {
                                     .clicked()
                             {
                                 cmd = Some(Cmd::ToggleStepEditorFollows);
+                                ui.close();
+                            }
+                            // task-211: only in screen reader mode
+                            let mut makes = self.settings.pitch_keys_make_notes;
+                            if self.screen_reader_mode()
+                                && ui.checkbox(&mut makes, "Pitch Keys Make Notes").clicked()
+                            {
+                                cmd = Some(Cmd::TogglePitchKeysMakeNotes);
                                 ui.close();
                             }
                             ui.separator();

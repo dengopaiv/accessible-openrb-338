@@ -75,7 +75,7 @@ mods) needs no mode.
 default: on while Windows reports a running screen reader, such as NVDA), On and Off. On
 other systems Automatic stays off; choose On. Options > Speak Raw Values adds the 0 to 127
 number after a knob's physical value ("1.24 kilohertz, 64"). Options > Step Editor Follows
-Playback is explained under programming a pattern. F1 opens Help > Keyboard Shortcuts, which
+Playback and Options > Pitch Keys Make Notes are explained under programming a pattern. F1 opens Help > Keyboard Shortcuts, which
 lists the keys of the mode that are in force and reads line by line (Tab walks the lines).
 
 **The sections.** The panel is nine sections: Transport, Bass Line 1, Bass Line 2, TR-808,
@@ -119,7 +119,8 @@ Nothing is spoken by itself while the music plays.
 **Programming a 303 pattern.** Press F6 until "Bass Line 1" (or 2) and choose the pattern
 on its first control, the pattern selector (Up and Down). Tab to "Step editor"; it says the
 step and what it holds, for example "Step 1 of 16: rest, C". On each step, a pitch key sets
-the note (`C` is C, `F` C sharp, `V` D, and so on up to `/` for high C), `-` or `=` turns the
+the note (`C` is C, `F` C sharp, `V` D, and so on up to `/` for high C) and leaves a rest a
+rest, as the original does, unless Options > Pitch Keys Make Notes is on; `-` or `=` turns the
 rest into a note and back, `P` is accent, `[` slide, `'` octave up and `;` octave down. Down
 (or Enter, in Program Synth mode) goes to the next step, Up or Backspace to the previous one, Home to step 1 and End
 to the last step; Left and Right do nothing. Each key is answered with the step's new state,

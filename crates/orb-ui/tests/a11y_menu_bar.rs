@@ -158,7 +158,11 @@ fn options_open(mode: orb_ui::screen_reader::ScreenReaderSetting) -> AppTree {
 #[test]
 fn speak_raw_values_shows_in_screen_reader_mode_only() {
     use orb_ui::screen_reader::ScreenReaderSetting;
-    for name in ["Speak Raw Values", "Step Editor Follows Playback"] {
+    for name in [
+        "Speak Raw Values",
+        "Step Editor Follows Playback",
+        "Pitch Keys Make Notes",
+    ] {
         let h = options_open(ScreenReaderSetting::Off);
         assert!(h.tree().by_name(name).next().is_none(), "{name}");
         let h = options_open(ScreenReaderSetting::On);

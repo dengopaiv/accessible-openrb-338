@@ -39,7 +39,8 @@ The document has three parts:
 | A11Y-10 | TASK-195 | A mod chooser with a filter | 6cc85ab |
 | A11Y-12 | TASK-196 | Documentation of screen reader mode | df4d002 |
 | A11Y-13 | TASK-197 | The NVDA pass by the user: all 22 checklist items work | (backlog) |
-| (new) | TASK-212 | Menu bar: the focus returns where it was when the bar is left | `git log --grep task-212` |
+| (new) | TASK-212 | Menu bar: the focus returns where it was when the bar is left | 3f3fdc7 |
+| (new) | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | `git log --grep task-211` |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -48,7 +49,6 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 | Task | What | Priority | Who |
 |---|---|---|---|
-| TASK-211 | An option: a 303 pitch key also turns a rest into a note | medium | agent |
 | TASK-201 | Mods menu: the playing mod's mark in the accessibility tree | medium | agent |
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI); on hold | low | agent |
 | TASK-204 | The Export dialog keeps the format the user picks | low | agent |
@@ -193,7 +193,7 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   programming key's result is spoken; Up / Down (and Enter / Backspace) move the step, Home /
   End to the first / last; F2 reads the whole pattern compactly; TASK-209's setting. A how-to is
   in docs/ui_spec.md 20.5. A rest stays a rest when a pitch key sets its note, as in the
-  original: TASK-211 adds an option.
+  original: TASK-211 adds the option Pitch Keys Make Notes.
 - **A11Y-7 = TASK-191, the drum grids.** In each drum section a grid of the instruments by the
   steps: Up / Down the instrument, Left / Right the step, Space sets the step as a click does
   (on the TR-909 with Ctrl, Alt, Ctrl+Alt, and Shift+Space from TASK-210); each cell reads
@@ -216,6 +216,10 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   Alt) gives the focus back to the panel control that had it; a window opened from a menu
   returns it to that control when it closes. With the mode off, the menu bar is as before.
   (docs/ui_spec.md 18.2; NVDA checklist item 23.)
+- **TASK-211, Pitch Keys Make Notes.** Asked by the user after checklist item 8. An Options item,
+  off by default and only in screen reader mode: a pitch key on a 303 rest step also makes it a
+  note (the engine gets the rest cleared, then the note); a note only changes its pitch; `-`,
+  `=` and Clear as before. (docs/ui_spec.md 20.5; NVDA checklist item 24.)
 
 Also done along the way, outside m-7: TASK-176 (milestone m-5), the third-party songs test
 compares song paths in NFC (commit 4d76af3): 1268 songs equal to the original's renders.
@@ -331,18 +335,21 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     > Step Editor Follows Playback chosen with Enter: the control is read. Help > Keyboard
     Shortcuts: the window is read, and Escape returns to the control, not to "window". ( )
 
-When TASK-211 is merged, its by-ear check joins this list as item 24.
+24. TASK-211's option (docs/ui_spec.md 20.5), in screen reader mode on a 303's step editor on
+    an empty pattern: with Options > Pitch Keys Make Notes off (the default), the pitch key `V`
+    answers "Step 1: rest, D" and the step stays a rest. Turn the item on (Enter on the
+    checkbox; NVDA reads its state): `V` answers "Step 1: D", the editor reads "Step 1 of 16: D"
+    with no "rest", and F5 plays the step. `-` makes it a rest again. In pitch mode each key
+    makes its step a note, the step it set is said, and F5 plays all of them. A step that is
+    already a note only changes its note. Clear makes every step a rest. The item is saved:
+    restart, and it is still on. ( )
 
 ### 2.3 Open tasks
 
 Each is in the backlog with its description and acceptance criteria. The user's order of
-2026-11-07: TASK-211, TASK-201, TASK-204, then TASK-200, one agent at a time; TASK-199 and
-TASK-206 are on hold (they can be checked only on macOS and Linux).
+2026-11-07: TASK-212 and TASK-211 (both done), TASK-201, TASK-204, then TASK-200, one agent
+at a time; TASK-199 and TASK-206 are on hold (they can be checked only on macOS and Linux).
 
-- **TASK-211 (medium): pitch keys that turn a rest into a note.** Asked by the user
-  2026-11-07, after item 8: a pitch key sets only a step's note, as in the original, so a step
-  stays a rest until `-` turns it into a note. A setting in the Options menu, off by default and
-  only in screen reader mode, makes a pitch key on a rest also make it a note.
 - **TASK-201 (medium): the Mods menu's selected mod in the tree.** The Mods menu's entries carry
   no checked state, so a screen reader cannot tell which mod plays from the menu (the mod
   chooser already says "current"). Both modes; it only adds information.

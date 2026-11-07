@@ -1512,6 +1512,7 @@ impl App {
             })
         });
         let follows = self.settings.step_editor_follows;
+        self.panel.pitch_makes_notes = screen_reader && self.settings.pitch_keys_make_notes;
         let drums = self.panel.drum_pin;
         for r in 0..4 {
             let pin = screen_reader
