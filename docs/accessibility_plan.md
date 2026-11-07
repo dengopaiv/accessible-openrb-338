@@ -42,7 +42,7 @@ The document has three parts:
 | (new) | TASK-212 | Menu bar: the focus returns where it was when the bar is left | 3f3fdc7 |
 | (new) | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 |
 | (new) | TASK-201 | Mods menu: the playing kit's entry read as "checked" | 78129ba |
-| (new) | TASK-204 | The Export dialog keeps the format the user picks | `git log --grep task-204` |
+| (new) | TASK-204 | The Export dialog keeps the format the user picks | 771ce7c |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -53,10 +53,9 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 |---|---|---|---|
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI); on hold | low | agent |
 | TASK-206 | A system file dialog that cannot open reads as a cancel (Linux); on hold | low | agent |
-| TASK-200 | crash.rs's release backtrace check fails on Windows (not m-7) | low | agent |
 
-The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); TASK-200 is
-not part of it.
+The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); both are on hold
+by the user's choice (2026-11-07), since they can be checked only on macOS and Linux.
 
 ## The milestone
 
@@ -231,6 +230,10 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
 
 Also done along the way, outside m-7: TASK-176 (milestone m-5), the third-party songs test
 compares song paths in NFC (commit 4d76af3): 1268 songs equal to the original's renders.
+And TASK-200 (no milestone): crates/orb-ui/tests/crash.rs no longer fails in a Windows release
+build, whose crash log cannot name `orb_ui::crash` without debug info; there it checks for a
+`std::panicking` frame, everywhere else still for `orb_ui::crash`. `cargo test --release -p
+orb-ui` now passes in full.
 
 ### 1.3 What the work measured
 
@@ -366,16 +369,15 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
 
 ### 2.3 Open tasks
 
-Each is in the backlog with its description and acceptance criteria. The user's order of
-2026-11-07: TASK-212, TASK-211, TASK-201 and TASK-204 (done), then TASK-200, one agent
-at a time; TASK-199 and TASK-206 are on hold (they can be checked only on macOS and Linux).
+Each is in the backlog with its description and acceptance criteria. The user's round of
+2026-11-07 finished TASK-212, TASK-211, TASK-201, TASK-204 and TASK-200, one agent at a time;
+TASK-199 and TASK-206 are on hold (they can be checked only on macOS and Linux). The by-ear
+checks of the round are checklist items 23 to 26.
 
 - **TASK-199 (low): detection on macOS and Linux.** Automatic turns the mode on only on Windows
   today; VoiceOver and AT-SPI detection.
 - **TASK-206 (low): a system dialog that cannot open (Linux).** Without the XDG portal, rfd
   returns nothing and Open seems to do nothing; tell the user and fall back to the browser.
-- **TASK-200 (low, not in m-7): crash.rs.** The release-build backtrace assertion fails on
-  Windows (likely no debug info); the one known test failure of `cargo test --release -p orb-ui`.
 
 ---
 

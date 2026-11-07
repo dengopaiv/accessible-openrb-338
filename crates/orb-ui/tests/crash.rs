@@ -53,7 +53,17 @@ fn a_deliberate_panic_exits_101_and_writes_the_log() {
     }
     // a backtrace with a frame of the hook, though RUST_BACKTRACE is not set
     let bt = log.split_once("\nbacktrace:\n").unwrap().1;
-    assert!(bt.contains("orb_ui::crash"), "{log}");
+    assert!(bt.contains("   0: "), "{log}");
+    // The frame of the hook is named only where symbols exist. A Windows (MSVC) release build
+    // has no debug info (the profile, a decision of the user), so the frames come from the
+    // exe's public symbols only: the hook's closure is named after a neighbouring function
+    // (`default_read_to_end`, `TEXtChunk::encode`; task-200) and `orb_ui::crash` is absent. The
+    // debug build, which CI runs, has the PDB and keeps the check.
+    if cfg!(all(windows, not(debug_assertions))) {
+        assert!(bt.contains("std::panicking"), "{log}");
+    } else {
+        assert!(bt.contains("orb_ui::crash"), "{log}");
+    }
 }
 
 #[test]
