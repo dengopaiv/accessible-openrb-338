@@ -51,11 +51,13 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 | Task | What | Priority | Who |
 |---|---|---|---|
+| TASK-213 | Knobs and faders: an arrow key moves to the next value that sounds different | medium | agent |
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI); on hold | low | agent |
 | TASK-206 | A system file dialog that cannot open reads as a cancel (Linux); on hold | low | agent |
 
-The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); both are on hold
-by the user's choice (2026-11-07), since they can be checked only on macOS and Linux.
+The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); TASK-199 and
+TASK-206 are on hold by the user's choice (2026-11-07), since they can be checked only on macOS
+and Linux.
 
 ## The milestone
 
@@ -374,6 +376,11 @@ Each is in the backlog with its description and acceptance criteria. The user's 
 TASK-199 and TASK-206 are on hold (they can be checked only on macOS and Linux). The by-ear
 checks of the round are checklist items 23 to 26.
 
+- **TASK-213 (medium): an arrow key that always changes the value.** Found by the user
+  2026-11-07: on many knobs (most of the TR-808's and TR-909's, the 303's Tune, the shuffle)
+  neighboring positions have the same spoken value, so an arrow press is silent. The user's
+  choice: Up / Down jump to the next position whose value differs (with Speak Raw Values on,
+  one position per press as now).
 - **TASK-199 (low): detection on macOS and Linux.** Automatic turns the mode on only on Windows
   today; VoiceOver and AT-SPI detection.
 - **TASK-206 (low): a system dialog that cannot open (Linux).** Without the XDG portal, rfd
