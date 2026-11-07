@@ -261,7 +261,10 @@ fn replace_frame(app: &mut App, events: Vec<egui::Event>) {
         events,
         ..Default::default()
     };
-    let _ = ctx.run_ui(input, |ui| app.replace_ui(&ui.ctx().clone()));
+    let mut out = ctx.run_ui(input, |ui| app.replace_ui(&ui.ctx().clone()));
+    // no renderer applies the frame's textures here; dropping them unhandled trips epaint's
+    // debug_assert in debug builds, as in the other tests' harnesses
+    out.textures_delta.clear();
 }
 
 #[test]
