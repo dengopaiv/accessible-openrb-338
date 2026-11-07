@@ -43,6 +43,7 @@ The document has three parts:
 | (new) | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 |
 | (new) | TASK-201 | Mods menu: the playing kit's entry read as "checked" | 78129ba |
 | (new) | TASK-204 | The Export dialog keeps the format the user picks | 771ce7c |
+| (new) | TASK-213 | Knobs and faders: an arrow key moves to the next value that sounds different | `git log --grep task-213` |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -51,7 +52,6 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 | Task | What | Priority | Who |
 |---|---|---|---|
-| TASK-213 | Knobs and faders: an arrow key moves to the next value that sounds different | medium | agent |
 | TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI); on hold | low | agent |
 | TASK-206 | A system file dialog that cannot open reads as a cancel (Linux); on hold | low | agent |
 
@@ -229,6 +229,13 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   last format exported first (the default extension on Windows) and gives a name typed without
   an extension that format; it is kept in ui.toml (`export_format`) across restarts. The in-app
   browser is unchanged. (NVDA checklist item 26.)
+- **TASK-213, a key press that always changes the value.** Found by the user: on many knobs
+  neighboring positions have the same spoken value (tr808.bd_tone: 8 values over 128
+  positions), so an arrow press was silent. In screen reader mode Up / Down and NVDA's
+  Increment / Decrement go to the next position whose spoken value differs, Page Up / Page Down
+  at least 8 positions and on to a different value; where no different value lies that way,
+  nothing moves. With Speak Raw Values on, one position per press as before. (NVDA checklist
+  item 27.)
 
 Also done along the way, outside m-7: TASK-176 (milestone m-5), the third-party songs test
 compares song paths in NFC (commit 4d76af3): 1268 songs equal to the original's renders.
@@ -368,19 +375,22 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     list offers FLAC first and NVDA reads it as the file type; a name typed without extension
     (`b`) is saved as `b.flac`. Restart the program: the dialog still offers FLAC first. With
     the mode off the in-app browser starts on WAV as before. ( )
+27. TASK-213's jump to the next value that sounds different, in screen reader mode (Speak Raw
+    Values off): focus the TR-808 Bass drum tone and press Up repeatedly from 0: every press
+    is spoken with a new value ("42.9 hertz", then the next one), and Down comes back the same
+    way; Page Up lands on a different value; in the top group of values (120 to 127) Up and Page Up
+    do not move.
+    The 303's Cutoff moves one position per press. Turn Options > Speak Raw Values on: each
+    press moves one position and speaks the number. With the mode off nothing of this applies.
+    ( )
 
 ### 2.3 Open tasks
 
 Each is in the backlog with its description and acceptance criteria. The user's round of
-2026-11-07 finished TASK-212, TASK-211, TASK-201, TASK-204 and TASK-200, one agent at a time;
-TASK-199 and TASK-206 are on hold (they can be checked only on macOS and Linux). The by-ear
-checks of the round are checklist items 23 to 26.
+2026-11-07 finished TASK-212, TASK-211, TASK-201, TASK-204, TASK-200 and TASK-213 (found on
+the way), one agent at a time; TASK-199 and TASK-206 are on hold (they can be checked only on
+macOS and Linux). The by-ear checks of the round are checklist items 23 to 27.
 
-- **TASK-213 (medium): an arrow key that always changes the value.** Found by the user
-  2026-11-07: on many knobs (most of the TR-808's and TR-909's, the 303's Tune, the shuffle)
-  neighboring positions have the same spoken value, so an arrow press is silent. The user's
-  choice: Up / Down jump to the next position whose value differs (with Speak Raw Values on,
-  one position per press as now).
 - **TASK-199 (low): detection on macOS and Linux.** Automatic turns the mode on only on Windows
   today; VoiceOver and AT-SPI detection.
 - **TASK-206 (low): a system dialog that cannot open (Linux).** Without the XDG portal, rfd

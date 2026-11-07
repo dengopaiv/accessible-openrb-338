@@ -217,8 +217,8 @@ section 20.2).
 ### 3.3 Controls
 
 - Knobs and faders: Slider with the value 0 to 127 (the value the original sends:
-  `behavior::knob_send`, `fader_send`). Up and Down change it by 1, Page Up and Page Down by
-  8, Home and End go to 0 and 127, and NVDA's own slider commands use the Increment,
+  `behavior::knob_send`, `fader_send`). Up and Down go to the next value whose spoken text differs (by 1 with Speak Raw Values
+  on; TASK-213), Page Up and Page Down by 8 or more to a different text (nothing moves when none lies that way), Home and End go to 0 and 127, and NVDA's own slider commands use the Increment,
   Decrement and SetValue actions. The value is spoken in physical units derived from the
   engine's code, as precisely as it allows ("Cutoff 1.24 kilohertz", "Decay 350
   milliseconds", "Level minus 6.5 decibels"; decision 5, plan task A11Y-14), with a setting

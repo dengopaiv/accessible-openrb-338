@@ -1111,7 +1111,8 @@ impl App {
                 && let Some(step) = drive::Step::of_key(key)
                 && let Some(t) = self.focused_target(ui)
             {
-                drive::step(&mut self.panel, &t, step, now);
+                let speech = self.speech();
+                drive::step(&mut self.panel, &t, step, speech, now);
                 continue;
             }
             if screen_reader {
@@ -1725,8 +1726,9 @@ impl App {
     /// screen reader mode with the focus on it, egui's focus kept from the Up and Down keys
     /// (they change the value: `App::keyboard`).
     fn drive_value(&mut self, ui: &Ui, r: &Response, t: &drive::Target, now: f64) {
+        let speech = self.speech();
         for req in drive::requests(ui, r.id) {
-            drive::request(&mut self.panel, t, req, now);
+            drive::request(&mut self.panel, t, req, speech, now);
         }
         if r.has_focus() && self.screen_reader_mode() {
             let filter = egui::EventFilter {

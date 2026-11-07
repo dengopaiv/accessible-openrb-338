@@ -103,8 +103,8 @@ and programs the synths (Ctrl+F) or selects patterns (Ctrl+G).
 | Tab / Shift+Tab | Next / previous control |
 | Space | Presses the focused button, toggle or switch |
 | Enter | In a 303's section the 303's Step (Program Synth mode); in any other section Play |
-| Up / Down | On a knob or fader: the value by 1; on a spin button (tempo, bar, lengths): one click; on a pattern selector: the next / previous pattern |
-| Page Up / Page Down | Knob or fader by 8; spin button by 10 clicks; pattern selector by one bank |
+| Up / Down | On a knob or fader: to the next value that is spoken differently (by 1 with Options > Speak Raw Values on); on a spin button (tempo, bar, lengths): one click; on a pattern selector: the next / previous pattern |
+| Page Up / Page Down | Knob or fader by 8 or more, to a value spoken differently, nothing when none lies that way (by 8 with Speak Raw Values on); spin button by 10 clicks; pattern selector by one bank |
 | Home / End | Knob or fader to 0 / 127; pattern selector to A1 / D8; on a short spin button (pattern length, delay steps, PCF pattern) its ends; nothing on tempo, bar and loop |
 | Left / Right | On a drum grid: the step before / after, within the pattern's length. Nothing elsewhere, and nothing on a 303's step editor (Up / Down move its step) |
 | Ctrl+Up / Ctrl+Down | Moves the row focus to the previous / next row without moving where you are |

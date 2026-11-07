@@ -1711,8 +1711,16 @@ song-mode recording records them as clicks (tests `crates/orb-ui/tests/a11y_driv
   of a focused widget on Space or Enter still does nothing on the panel, so with screen reader
   mode off the keys are as before.
 - **Keys, in screen reader mode only** (`App::keyboard`): with the focus on a slider, a spin
-  button or a pattern selector, Up and Down change it by one (a slider's value, one arrow
-  click, one pattern), Page Up and Page Down by 8 (a slider) or one bank (a selector), Home
+  button or a pattern selector, Up and Down change it by one (one arrow click, one pattern) or,
+  on a slider, go to the nearest position whose spoken text (the Units text of the panel's
+  context, `drive::next_different`) differs from the current one, and do nothing at an end
+  with no different text further on (TASK-213, the user's decision of 2026-11-07: many knobs
+  have neighboring positions of one text, and NVDA says nothing when the text stays). Page Up
+  and Page Down move a slider by 8 or more, to the nearest position of a different text (nothing moves when
+  no different text lies that way), or a
+  selector by one bank. With Options > Speak Raw Values on every slider press is one position
+  (the number is spoken each time), and NVDA's Increment and Decrement follow the same rule as
+  Up and Down. Home, End and SetValue are unchanged. Home
   and End go to 0 and 127 (a slider) or A1 and D8 (a selector). Auto-repeat counts. These keys
   then do not reach the original's key map (Up and Down are its row focus), and the focused
   control keeps egui from moving the focus on Up and Down (its focus lock filter). On a spin

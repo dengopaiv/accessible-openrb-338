@@ -1,10 +1,11 @@
 ---
 id: TASK-213
 title: 'Knobs and faders: an arrow key moves to the next value that sounds different'
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-07T09:39:00Z'
+updated_date: '2026-11-07T09:54:00Z'
 labels:
   - ui
 milestone: m-7
@@ -39,8 +40,32 @@ Code: crates/orb-ui/src/a11y/drive.rs (`step`, `request`; they need the panel's 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 In screen reader mode, Up on tr808.bd_tone from 0 changes the spoken text in one press and crosses the range in as many presses as the knob has distinct texts; Down likewise; tests cover a quantized knob (bd_tone or a decay), a rounding case (pcf.q), and a control whose every position differs (tb303 cutoff moves one position)
-- [ ] #2 Page Up / Page Down move at least 8 positions and land on a different text; at the ends nothing moves; Home / End and SetValue are unchanged (tests)
-- [ ] #3 With Speak Raw Values on, and NVDA's Increment / Decrement with it on, a press moves one position as before; with screen reader mode off the keys and the panel behave as upstream (tests)
-- [ ] #4 docs/ui_spec.md, the key help and the README describe it; the by-ear check is a new item of the NVDA checklist
+- [x] #1 In screen reader mode, Up on tr808.bd_tone from 0 changes the spoken text in one press and crosses the range in as many presses as the knob has distinct texts; Down likewise; tests cover a quantized knob (bd_tone or a decay), a rounding case (pcf.q), and a control whose every position differs (tb303 cutoff moves one position)
+- [x] #2 Page Up / Page Down move at least 8 positions and land on a different text; at the ends nothing moves; Home / End and SetValue are unchanged (tests)
+- [x] #3 With Speak Raw Values on, and NVDA's Increment / Decrement with it on, a press moves one position as before; with screen reader mode off the keys and the panel behave as upstream (tests)
+- [x] #4 docs/ui_spec.md, the key help and the README describe it; the by-ear check is a new item of the NVDA checklist
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. drive::step / request take the Speech style; Units makes Up/Down walk to the nearest position whose names::control_value_text differs (next_different), Page keys start 8 away then continue, clamped; UnitsAndRaw (and Plain) one position as before. 2. app.rs passes self.speech(). 3. Tests in drive.rs; slider_steps_clamp runs with UnitsAndRaw (its old one-position meaning). 4. Docs: ui_spec 20, accessibility.md, README, key help, plan checklist item 27.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-a4d9911bfb5d99039
+
+Down lands on the last position of the previous text group (nearest differing in that direction), so Down does not retrace Up's positions, only its texts; tests compare texts. Page Up/Down with no different text beyond clamp to the end. Increment/Decrement requests follow the same rule. Checks: fmt, clippy --release --workspace --all-targets -D warnings, cargo test --release -p orb-ui --no-fail-fast all pass.
+
+Review round 1: (1) Page Up/Down no longer fall back to 127/0 when no different text lies that way: nothing moves (drive.rs step; docs/ui_spec, accessibility.md, README, key_help say so). (2) Tests: Page Down text checked, Up/Page inside the first/last group of bd_tone do not move, new the_mode_off_moves_by_position (Speech::Plain: one position, 8 for Page, clamped, Increment/Decrement). fmt, clippy, orb-ui tests pass.
+
+Merged by the supervisor 2026-11-07: review round 1 sent back the silent Page fallback to 127 / 0 and test gaps (Page Down text, the first and last groups, Speech::Plain), fixed in c22b82c; re-review merge. cargo test --release -p orb-ui --no-fail-fast passes in full on main after the squash (lib 137, every test target ok).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+In screen reader mode with the units only, Up/Down and NVDA Increment/Decrement on a knob or fader jump to the nearest position whose spoken unit text differs (drive.rs next_different); Page keys move 8+ then on to a different text, clamped; Home/End/SetValue unchanged; Speak Raw Values on and mode off keep one position per press. Tests: up_and_down_move_to_the_next_different_text (bd_tone, bd_decay, pcf.q, tb303 cutoff), page_keys_land_on_a_different_text_and_the_ends_hold, raw_values_move_one_position, slider_steps_clamp (raw). Docs: ui_spec 20, accessibility.md, README, key_help, plan checklist item 27 (unchecked). Branch worktree-agent-a4d9911bfb5d99039.
+<!-- SECTION:FINAL_SUMMARY:END -->

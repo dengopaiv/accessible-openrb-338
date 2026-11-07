@@ -375,7 +375,8 @@ fn screen_reader_group(is_mac: bool) -> Group {
             ),
             sr_row(
                 "Up / Down",
-                "On a knob or fader: the value by 1. On a spin button: one click of its \
+                "On a knob or fader: to the next value that is spoken differently (one position \
+                 with Options > Speak Raw Values on). On a spin button: one click of its \
                  arrow. On a pattern selector: the next / previous pattern. On a 303's step \
                  editor: the previous / next step (its Back / Step, wrapping at 16); Home / \
                  End step 1 / the pattern's last step. The step a programming key changed is \
@@ -388,7 +389,8 @@ fn screen_reader_group(is_mac: bool) -> Group {
             ),
             sr_row(
                 "PgUp / PgDn",
-                "On a knob or fader: by 8. On a spin button: 10 clicks. On a pattern \
+                "On a knob or fader: by 8 or more, to a value spoken differently, nothing when none \
+                 lies that way (by 8 with Speak Raw Values on). On a spin button: 10 clicks. On a pattern \
                  selector: the next / previous bank",
                 value_keys[2..4]
                     .iter()

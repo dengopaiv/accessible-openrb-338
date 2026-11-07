@@ -9,6 +9,7 @@
 
 use eframe::egui::{self, accesskit};
 
+use super::names::{self, Speech};
 use crate::behavior;
 use crate::layout::Ctl;
 use crate::model::Panel;
@@ -151,21 +152,50 @@ pub fn requests(ui: &egui::Ui, id: egui::Id) -> Vec<Request> {
 
 /// Does what a request asks of a value control. A spin button and a pattern selector take
 /// Increment and Decrement only.
-pub fn request(panel: &mut Panel, t: &Target, req: Request, now: f64) {
+pub fn request(panel: &mut Panel, t: &Target, req: Request, speech: Speech, now: f64) {
     match (t, req) {
         (Target::Slider { id, fader }, Request::SetValue(v)) => {
             if v.is_finite() {
                 set_slider(panel, id, *fader, v.round().clamp(0.0, 127.0) as i32);
             }
         }
-        (_, Request::Increment) => step(panel, t, Step::Up, now),
-        (_, Request::Decrement) => step(panel, t, Step::Down, now),
+        (_, Request::Increment) => step(panel, t, Step::Up, speech, now),
+        (_, Request::Decrement) => step(panel, t, Step::Down, speech, now),
         _ => {}
     }
 }
 
-/// Does what a key asks of a value control.
-pub fn step(panel: &mut Panel, t: &Target, s: Step, now: f64) {
+/// The first position from `from` in the direction `dir` (+1 or -1) whose spoken text differs
+/// from the text at `v` (TASK-213, the user, 2026-11-07), or None when no position further on
+/// reads differently. Only `Speech::Units` skips positions: with the raw number spoken every
+/// position reads differently, and `Plain` is not screen reader mode.
+fn next_different(
+    panel: &Panel,
+    id: &str,
+    (v, from, dir): (i32, i32, i32),
+    speech: Speech,
+) -> Option<i32> {
+    if speech != Speech::Units {
+        return (0..=127).contains(&from).then_some(from);
+    }
+    let text = |p: i32| names::control_value_text(panel, id, p as u8, speech);
+    let here = text(v);
+    let mut p = from;
+    while (0..=127).contains(&p) {
+        if text(p) != here {
+            return Some(p);
+        }
+        p += dir;
+    }
+    None
+}
+
+/// Does what a key asks of a value control. In screen reader mode without the raw numbers
+/// (`Speech::Units`), Up and Down on a knob or fader go to the next position that reads
+/// differently, and Page Up and Page Down to the first such position at least 8 away; with
+/// none further on nothing moves (a move with the text unchanged would be silent); Home, End, the
+/// raw numbers and the other controls are as they were.
+pub fn step(panel: &mut Panel, t: &Target, s: Step, speech: Speech, now: f64) {
     match t {
         Target::Slider { id, fader } => {
             let Some(v) = panel.value(id) else {
@@ -173,14 +203,16 @@ pub fn step(panel: &mut Panel, t: &Target, s: Step, now: f64) {
             };
             let v = i32::from(v);
             let new = match s {
-                Step::Up => v + 1,
-                Step::Down => v - 1,
-                Step::PageUp => v + 8,
-                Step::PageDown => v - 8,
-                Step::Home => 0,
-                Step::End => 127,
+                Step::Up => next_different(panel, id, (v, v + 1, 1), speech),
+                Step::Down => next_different(panel, id, (v, v - 1, -1), speech),
+                Step::PageUp => next_different(panel, id, (v, (v + 8).min(127), 1), speech),
+                Step::PageDown => next_different(panel, id, (v, (v - 8).max(0), -1), speech),
+                Step::Home => Some(0),
+                Step::End => Some(127),
             };
-            set_slider(panel, id, *fader, new.clamp(0, 127));
+            if let Some(new) = new {
+                set_slider(panel, id, *fader, new);
+            }
         }
         // TASK-205 (the user, 2026-11-06): Page Up / Page Down are 10 clicks, Home / End click
         // to the end of a short range only (tempo and the transport positions: nothing)
@@ -338,14 +370,14 @@ mod tests {
         let mut p = Panel::new();
         p.events.clear();
         let t = Target::Pattern(1);
-        step(&mut p, &t, Step::PageUp, 0.0);
+        step(&mut p, &t, Step::PageUp, Speech::Units, 0.0);
         assert_eq!((p.rows[1].pattern, p.rows[1].bank), (8, 1));
-        step(&mut p, &t, Step::Down, 0.0);
+        step(&mut p, &t, Step::Down, Speech::Units, 0.0);
         assert_eq!((p.rows[1].pattern, p.rows[1].bank), (7, 0));
-        step(&mut p, &t, Step::End, 0.0);
-        step(&mut p, &t, Step::Up, 0.0);
-        step(&mut p, &t, Step::Home, 0.0);
-        step(&mut p, &t, Step::Down, 0.0);
+        step(&mut p, &t, Step::End, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Up, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Down, Speech::Units, 0.0);
         let pats: Vec<u8> = p
             .events
             .iter()
@@ -366,23 +398,181 @@ mod tests {
             fader: false,
         };
         p.events.clear();
-        step(&mut p, &t, Step::Home, 0.0);
+        step(&mut p, &t, Step::Home, Speech::UnitsAndRaw, 0.0);
         assert_eq!(p.value("tb303_1.cutoff"), Some(0));
-        step(&mut p, &t, Step::Down, 0.0);
-        step(&mut p, &t, Step::PageUp, 0.0);
+        step(&mut p, &t, Step::Down, Speech::UnitsAndRaw, 0.0);
+        step(&mut p, &t, Step::PageUp, Speech::UnitsAndRaw, 0.0);
         assert_eq!(p.value("tb303_1.cutoff"), Some(8));
-        step(&mut p, &t, Step::End, 0.0);
-        step(&mut p, &t, Step::Up, 0.0);
+        step(&mut p, &t, Step::End, Speech::UnitsAndRaw, 0.0);
+        step(&mut p, &t, Step::Up, Speech::UnitsAndRaw, 0.0);
         assert_eq!(p.value("tb303_1.cutoff"), Some(127));
         let f = Target::Slider {
             id: "pcf.freq".into(),
             fader: true,
         };
-        request(&mut p, &f, Request::SetValue(126.6), 0.0);
+        request(
+            &mut p,
+            &f,
+            Request::SetValue(126.6),
+            Speech::UnitsAndRaw,
+            0.0,
+        );
         assert_eq!(p.value("pcf.freq"), Some(127));
-        request(&mut p, &f, Request::Decrement, 0.0);
+        request(&mut p, &f, Request::Decrement, Speech::UnitsAndRaw, 0.0);
         assert_eq!(p.value("pcf.freq"), Some(126));
-        request(&mut p, &f, Request::SetValue(f64::NAN), 0.0);
+        request(
+            &mut p,
+            &f,
+            Request::SetValue(f64::NAN),
+            Speech::UnitsAndRaw,
+            0.0,
+        );
         assert_eq!(p.value("pcf.freq"), Some(126));
+    }
+
+    fn knob(id: &str) -> Target {
+        Target::Slider {
+            id: id.into(),
+            fader: false,
+        }
+    }
+
+    fn text(p: &Panel, id: &str) -> String {
+        names::control_value_text(p, id, p.value(id).unwrap(), Speech::Units)
+    }
+
+    /// TASK-213: every Up press changes the spoken text; the knob is crossed in as many presses
+    /// as it has distinct texts, and Down goes back one text per press.
+    #[test]
+    fn up_and_down_move_to_the_next_different_text() {
+        for id in ["tr808.bd_tone", "tr808.bd_decay", "pcf.q", "tb303_1.cutoff"] {
+            let t = knob(id);
+            let mut p = Panel::new();
+            step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+            let mut texts = vec![text(&p, id)];
+            loop {
+                step(&mut p, &t, Step::Up, Speech::Units, 0.0);
+                let now = text(&p, id);
+                if &now == texts.last().unwrap() {
+                    break;
+                }
+                texts.push(now);
+            }
+            // the distinct texts of 0..=127, in order
+            let mut want: Vec<String> = Vec::new();
+            for v in 0..=127u8 {
+                let s = names::control_value_text(&p, id, v, Speech::Units);
+                if want.last() != Some(&s) {
+                    want.push(s);
+                }
+            }
+            assert_eq!(texts, want, "{id}");
+            // Down walks the texts back, one text per press
+            for want in texts.iter().rev().skip(1) {
+                step(&mut p, &t, Step::Down, Speech::Units, 0.0);
+                assert_eq!(&text(&p, id), want, "{id}");
+            }
+        }
+        let mut p = Panel::new();
+        let t = knob("tr808.bd_tone");
+        step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Up, Speech::Units, 0.0);
+        assert!(p.value("tr808.bd_tone").unwrap() > 1);
+        let t = knob("tb303_1.cutoff");
+        step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Up, Speech::Units, 0.0);
+        assert_eq!(p.value("tb303_1.cutoff"), Some(1));
+    }
+
+    #[test]
+    fn page_keys_land_on_a_different_text_and_the_ends_hold() {
+        let id = "tr808.bd_tone";
+        let t = knob(id);
+        let mut p = Panel::new();
+        step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+        let before = text(&p, id);
+        step(&mut p, &t, Step::PageUp, Speech::Units, 0.0);
+        let v = p.value(id).unwrap();
+        assert!(v >= 8);
+        assert_ne!(text(&p, id), before);
+        step(&mut p, &t, Step::PageDown, Speech::Units, 0.0);
+        assert!(v - p.value(id).unwrap() >= 8 || p.value(id) == Some(0));
+        assert_ne!(
+            text(&p, id),
+            names::control_value_text(&p, id, v, Speech::Units)
+        );
+        // inside the last / first text group no key moves (the text would stay)
+        step(&mut p, &t, Step::End, Speech::Units, 0.0);
+        let last = text(&p, id);
+        for k in [Step::Up, Step::PageUp] {
+            step(&mut p, &t, k, Speech::Units, 0.0);
+            assert_eq!(p.value(id), Some(127));
+        }
+        request(&mut p, &t, Request::SetValue(121.0), Speech::Units, 0.0);
+        assert_eq!(text(&p, id), last);
+        step(&mut p, &t, Step::PageUp, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Up, Speech::Units, 0.0);
+        assert_eq!(p.value(id), Some(121));
+        step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+        let first = text(&p, id);
+        request(&mut p, &t, Request::SetValue(1.0), Speech::Units, 0.0);
+        assert_eq!(text(&p, id), first);
+        step(&mut p, &t, Step::PageDown, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Down, Speech::Units, 0.0);
+        assert_eq!(p.value(id), Some(1));
+        step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+        step(&mut p, &t, Step::Down, Speech::Units, 0.0);
+        assert_eq!(p.value(id), Some(0));
+        request(&mut p, &t, Request::SetValue(5.0), Speech::Units, 0.0);
+        assert_eq!(p.value(id), Some(5));
+    }
+
+    /// Screen reader mode off (Plain): one position, 8 for Page, clamped, as upstream.
+    #[test]
+    fn the_mode_off_moves_by_position() {
+        let id = "tr808.bd_tone";
+        let t = knob(id);
+        let mut p = Panel::new();
+        let s = Speech::Plain;
+        step(&mut p, &t, Step::Home, s, 0.0);
+        step(&mut p, &t, Step::Down, s, 0.0);
+        step(&mut p, &t, Step::PageDown, s, 0.0);
+        assert_eq!(p.value(id), Some(0));
+        step(&mut p, &t, Step::Up, s, 0.0);
+        request(&mut p, &t, Request::Increment, s, 0.0);
+        assert_eq!(p.value(id), Some(2));
+        request(&mut p, &t, Request::Decrement, s, 0.0);
+        assert_eq!(p.value(id), Some(1));
+        step(&mut p, &t, Step::PageUp, s, 0.0);
+        assert_eq!(p.value(id), Some(9));
+        step(&mut p, &t, Step::End, s, 0.0);
+        step(&mut p, &t, Step::PageUp, s, 0.0);
+        step(&mut p, &t, Step::Up, s, 0.0);
+        assert_eq!(p.value(id), Some(127));
+        step(&mut p, &t, Step::PageDown, s, 0.0);
+        assert_eq!(p.value(id), Some(119));
+    }
+
+    /// Speak Raw Values: one position per press, Increment and Decrement too.
+    #[test]
+    fn raw_values_move_one_position() {
+        let id = "tr808.bd_tone";
+        let t = knob(id);
+        let mut p = Panel::new();
+        let s = Speech::UnitsAndRaw;
+        step(&mut p, &t, Step::Home, s, 0.0);
+        step(&mut p, &t, Step::Up, s, 0.0);
+        assert_eq!(p.value(id), Some(1));
+        request(&mut p, &t, Request::Increment, s, 0.0);
+        assert_eq!(p.value(id), Some(2));
+        request(&mut p, &t, Request::Decrement, s, 0.0);
+        step(&mut p, &t, Step::Down, s, 0.0);
+        assert_eq!(p.value(id), Some(0));
+        step(&mut p, &t, Step::PageUp, s, 0.0);
+        assert_eq!(p.value(id), Some(8));
+        // with the units only, Increment skips like the key
+        step(&mut p, &t, Step::Home, Speech::Units, 0.0);
+        request(&mut p, &t, Request::Increment, Speech::Units, 0.0);
+        assert!(p.value(id).unwrap() > 1);
     }
 }
