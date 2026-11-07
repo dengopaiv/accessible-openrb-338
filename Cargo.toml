@@ -20,3 +20,11 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# The profile of the Windows debug kit (scripts/win-debug-kit.ps1, task-215): the release build
+# with line tables and not stripped, so its .pdb names the functions and lines of a panic's
+# backtrace and of a crash dump. The release and dist profiles keep their debug info (task-200).
+[profile.diag]
+inherits = "release"
+debug = "line-tables-only"
+strip = "none"

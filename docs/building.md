@@ -339,6 +339,110 @@ egui-wgpu's list of 6 adapters at `1710 ms`; `2044 ms window created; graphics: 
 DiscreteGpu "Quadro P2000", driver "NVIDIA" 556.12`; `2052 ms first frame drawn`; `4083 ms end:
 the screenshot was saved`.
 
+## Debugging OpenRB-338 on another Windows PC (task-215)
+
+For a PC where OpenRB-338 does not start, or starts only sometimes (the user's Windows 10 PC,
+2026-11-07). Everything it gives is plain text, read with a screen reader in a console or a text
+file; nothing goes online.
+
+**1. Make the kit** on the development machine:
+
+    powershell -ExecutionPolicy Bypass -File scripts\win-debug-kit.ps1
+
+It builds `OpenRB-338.exe` and `orb.exe` with the cargo profile `diag` (Cargo.toml: the release
+build with `debug = "line-tables-only"`, not stripped; about 6 minutes from a clean `target\diag`)
+and puts them, their symbols (`OpenRB_338.pdb`, `orb.pdb`: the crate names, as the exes name
+them), `tools/win_diag.ps1` and a `README.txt` into `dist\debug-kit\`, and zips that as
+`dist\OpenRB-338-debug-kit-<commit>.zip` (about 42 MB). The packages of `scripts/package.sh` are
+not changed: the `dist` profile keeps no debug info (task-200). With the symbols, a panic's
+backtrace in the crash log names functions and files (`crates\orb-ui\src\main.rs:273:9`).
+
+**2. Copy and unpack** the zip on the other PC, in a folder of the user's own.
+
+**3. Run the script** there: in Explorer in that folder, Alt+D, type `powershell`, Enter; then
+
+    powershell -ExecutionPolicy Bypass -File .\win_diag.ps1
+
+It starts OpenRB-338 three times (`-Runs N` for more), each with `RUST_BACKTRACE=full` and
+`ORB_LOG=info`, with the user's own settings, and watches the run log (task-214). The console
+says one line per run and the report's path. Options: `-Timeout S` (30), `-Backend
+dx12|vulkan|opengl` (`WGPU_BACKEND`), `-Demo` (no sound), `-Song PATH`, `-ExtraArgs 'TEXT'`
+(passed as typed), `-LogLevel`, `-Exe PATH`.
+
+**4. Read the report**, `diag-reports\win_diag-YYYYMMDD-HHMMSS.txt` beside the program. Its
+outcome per run:
+
+- `started; first frame after N s`: the window drew its first frame; the script waited 3 s and
+  closed it as a user would.
+- `start error (exit code 1)`, `panic (exit code 101)`, `bad arguments (exit code 2)`, with the
+  run log's end line. When the program's message box is still open 5 s after its end line, the
+  script stops it, and the outcome is the run log's end. A process the script stopped (this, a
+  hang, a window that would not close) has no exit code of its own; the report says so.
+- Each run's run log and crash log are the files that appeared in the log folder during that run
+  (the folder is listed before each run), whatever the timing.
+- `native crash: NAME (0xCODE)`: an exit code that is a Windows exception code, named (access
+  violation, stack overflow, heap corruption, fail-fast abort ...); the run log's end line names
+  the module and offset. The script gives Windows Error Reporting 60 s to finish.
+- `could not be started: MESSAGE`: Windows refused to start the program (SmartScreen, AppLocker,
+  an antivirus, a missing file); the script goes on with the next run and the report.
+- `could not be loaded: a DLL was not found (0xC0000135)`, and no run log: Windows could not load
+  the program at all.
+  The report's system section says whether `vcruntime140.dll` is there: OpenRB-338 links the
+  Visual C++ runtime dynamically (the exe imports `VCRUNTIME140.dll`, 2026-11-07) and the
+  installer does not ship it.
+- `hang; no frame after N s; the run log's last line: ...`: the last stage reached. With cdb
+  found, a dump of the hung process (`dumps\hang-*.dmp`) before the script stops it.
+
+Then the system: Windows edition, version and build, last boot, processor, memory, the graphics
+adapters with driver version and date, the audio endpoints, the screen readers running, the
+antivirus products, the Visual C++ runtime, whether the program file carries the
+downloaded-from-the-internet mark (SmartScreen may hold it back when started from Explorer), and
+whether crash dumps are on. Then each run's standard error, run log and crash log; the
+Application log's Application Error, Application Hang and Windows Error Reporting events of
+`OpenRB-338.exe` during the session; and the crash dumps of the session.
+
+**5. Crash dumps**, for a native crash: `-EnableDumps` (Windows asks for administrator rights;
+the script runs itself elevated only to write the key) sets Windows Error Reporting's LocalDumps
+for `OpenRB-338.exe` (`HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\
+OpenRB-338.exe`: the `dumps` folder beside the program, at most 10, `-DumpType Full` (the
+default) or `Mini`). It stays on, for starts outside the script too, until `-DisableDumps -Runs
+0`. When `cdb.exe` (Windows SDK, Debugging Tools for Windows) is installed, the report adds `!analyze
+-v` and the stack of each dump, with the kit's folder as the symbol path (and `_NT_SYMBOL_PATH`
+if the user has set one; the script sets no symbol server).
+
+**Outside the script**, every start writes its run log anyway: after a failed start from the
+Start menu, `%LOCALAPPDATA%\OpenRB-338\logs\run-*.log` (the newest) tells what happened.
+
+Checked on 2026-11-07 on the development machine (Windows 11 26H2 build 26340, Windows
+PowerShell 5.1.26100 and PowerShell 7.6.9), with the kit's `OpenRB-338.exe`, `ORB_UI_LOG_DIR` and
+`ORB_UI_CONFIG` pointed at a temp folder:
+
+- a normal start (`-Demo -ExtraArgs '--size 624x510'`, 5.1): `started; first frame after 3.6 s;
+  closed by the script`, exit code 0;
+- with `ORB_UI_NO_CRASH_DIALOG=1` (7): `--debug-start-error` gave `start error (exit code 1)`;
+  `--debug-panic` gave `panic (exit code 101)` with the crash log; `--debug-native-crash` gave
+  `native crash: access violation (0xC0000005)` (also in 5.1); `--debug-hang -Timeout 2` gave
+  `hang; no frame after 2 s` with the watchdog's line as the last line;
+- with the boxes on (5.1): `--debug-start-error` left its box open, and the script gave `the run
+  log's end: start error: ...; its message box was still open; stopped by the script`;
+  `--debug-native-crash` went through Windows Error Reporting: the report has the Application
+  Error event 1000 (exception code 0xc0000005, fault offset 0x9960, the same offset as the run
+  log's `OpenRB-338.exe+0x9960`) and two Windows Error Reporting events 1001;
+- `-EnableDumps -ExtraArgs --debug-native-crash` (5.1; the user approved the administrator
+  prompt): the report says `Crash dumps: on, into ...\dumps (type 2, at most 10)` and lists
+  `OpenRB-338.exe.21516.dmp, 77 MB`; then `-DisableDumps -Runs 0` (a second prompt) removed the
+  key (`Test-Path` False) and the report says `Crash dumps: off`.
+
+- after the review (same day): `--debug-panic` in 5.1 gave `panic (exit code 101)` naming
+  `crates\orb-ui\src\main.rs:273:9`; a text file named `OpenRB-338.exe` (5.1, `-Runs 2`) gave
+  `could not be started: ... not compatible with the version of Windows ...` for both runs and
+  the report was still written; three `--debug-start-error` runs back to back (7) each got their
+  own run log; a start error's box left open (5.1) gave `Exit code: none of its own; the script
+  stopped the process`; a normal start in 7 gave `started; first frame after 2.0 s`, exit code 0.
+
+Not checked: the cdb analysis of a dump and the cdb dump of a hang (cdb is not installed on the
+development machine).
+
 ## GitHub Actions (`.github/workflows/`)
 
 Decisions of the user (2026-10-28): the cost of six release package jobs and the three-OS CI
