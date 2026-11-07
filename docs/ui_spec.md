@@ -807,7 +807,7 @@ wait (the windows paragraph below). With the mode off nothing here applies.
 | F6 / Shift+F6 | The first control of the next / previous section (wraps) |
 | F7, F8 | Free |
 | F9 | The Record button (Insert still records) |
-| F10, or Alt alone | The menu bar (section 18.2, both modes) |
+| F10, or Alt alone | The menu bar; again, back to the control (section 18.2) |
 | F11 | The Loop button |
 | F12 | The mode switch (song / pattern) |
 | Tab / Shift+Tab | The next / previous control of the panel, in section order, wrapping at its ends (the menu bar is reached with F10) |
@@ -1557,15 +1557,24 @@ accessibility test harness, `crates/orb-ui/tests/a11y_menu_bar.rs`):
   submenu and focuses its first item (these read from the egui source, not measured), Enter on
   an item clicks it, Escape closes the menu (measured). After Enter on an item the focus is
   not on the title but on the Window node (measured in `enter_on_an_item_runs_it`, for Help >
-  Keyboard Shortcuts, which opens a window; for an item that opens none this is read from
-  egui's close, not measured).
+  Keyboard Shortcuts, which opens a window, in the first frame; in screen reader mode the
+  focus is then given back, see below).
 
 What OpenRB-338 adds (`menu.rs`, `menu_bar_key`, `open_on_down`, `menu_has_keys`):
 
 - F10 focuses File, and Alt pressed and released alone does the same (no key press and no
   mouse press between; Alt+key and Alt+click do not). Neither opens a menu; both work in every
-  mode (F10 and a lone Alt were unused). F10 is consumed. Not done: a second F10 or Alt does
-  not hand the focus back to where it was.
+  mode (F10 and a lone Alt were unused). F10 is consumed.
+- Screen reader mode, the focus back (task-212; `App::menu_bar_focus`, `menu_return`): when the
+  focus goes to a title or a menu opens, the panel control that had the focus last
+  (`panel_focus`) is remembered. When the bar is left (Escape on a title or in a menu, an item
+  that opens no window, a second F10 or lone Alt on a title or in an open menu, which also
+  closes the menu; measured: one Escape in a menu opened with Down is enough) and the focus is not then on a panel control, in a window or in a modal,
+  that control gets it back. An item that opens a window moves the focus into it as before,
+  and the control gets it back when the last window closes (20.4; measured: the control, not
+  the Window node). With the mode off a second F10 or Alt focuses File again, as before. If
+  the control no longer exists the focus is left as egui has it (the fallback to the section's
+  first control is not done).
 - Down on a focused title opens its menu and focuses the first item (the opening frame takes
   the Down away from the panel's focus move; the next frame sends egui the Down for the menu).
   The focus reaches the item one frame later.

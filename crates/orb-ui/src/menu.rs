@@ -1161,7 +1161,20 @@ impl App {
         let enabled =
             !self.browsing() && !self.prompting() && self.replace.is_none() && !self.error_open();
         // F10, or Alt pressed and released alone, focuses the File menu (task-184)
-        let focus_file = menu_bar_key(ui) && enabled;
+        let key = menu_bar_key(ui) && enabled;
+        // screen reader mode (task-212): a second F10 or lone Alt, with the focus on a title or
+        // a menu open, leaves the bar: the menu closes and the focus goes back to the control
+        // that had it
+        let sr = self.screen_reader_mode();
+        let leave = key && sr && self.bar_active;
+        let focus_file = key && !leave;
+        if leave {
+            egui::Popup::close_all(ui.ctx());
+            if let Some(back) = self.menu_return {
+                ui.memory_mut(|m| m.request_focus(back));
+            }
+            self.bar_active = false;
+        }
         let mut bar: Vec<(Id, Id)> = vec![];
         if enabled {
             open_on_down(ui);
@@ -1376,9 +1389,24 @@ impl App {
                     });
                 });
             });
+        let on_title = {
+            let f = ui.memory(|m| m.focused());
+            bar.iter().any(|(b, _)| Some(*b) == f)
+        };
         ui.data_mut(|d| d.insert_temp(bar_id(), bar));
         if let Some(c) = cmd {
             self.command(c);
+        }
+        if sr {
+            if leave {
+                // this frame's focus is still the title: the request above acts at the next
+                self.bar_active = false;
+            } else {
+                let active = on_title || egui::Popup::is_any_open(ui.ctx());
+                self.menu_bar_focus(ui, active);
+            }
+        } else {
+            self.bar_active = false;
         }
     }
 }

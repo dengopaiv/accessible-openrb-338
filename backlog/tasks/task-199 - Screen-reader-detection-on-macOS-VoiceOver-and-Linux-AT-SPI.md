@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-05T19:59:00Z'
+updated_date: '2026-11-07T08:47:00Z'
 labels:
   - ui
 milestone: m-7
@@ -31,3 +32,9 @@ Work: implement system_reports_screen_reader() for macOS (VoiceOver running: NSW
 - [ ] #2 On Linux with Orca running, Automatic reports the mode on, without it off (checked by hand, recorded in the notes)
 - [ ] #3 Other platforms and a failed query still report false; cargo test -p orb-ui passes on all three CI platforms
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+On hold (the user, 2026-11-07): it can be checked only on macOS and Linux with a screen reader, and this machine is Windows. Not started.
+<!-- SECTION:NOTES:END -->

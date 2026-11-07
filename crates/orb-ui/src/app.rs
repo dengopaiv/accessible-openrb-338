@@ -287,7 +287,11 @@ pub struct App {
     focus_window: Option<Win>,
     /// Tab was pressed with the focus in a window (`App::window_focus`).
     window_tab: bool,
-    panel_focus: Option<egui::Id>,
+    pub(crate) panel_focus: Option<egui::Id>,
+    /// Screen reader mode, the menu bar (task-212): the focus was on a bar title or a menu was
+    /// open at the end of the last frame, and the panel control that had the focus before.
+    pub(crate) bar_active: bool,
+    pub(crate) menu_return: Option<egui::Id>,
     /// A modal (the unsaved-changes prompt, the error box, Replace, the file browser) was open
     /// at the last frame (1), or closed at it so that the focus is to go back now (2), else 0
     /// (`App::window_focus`).
@@ -370,6 +374,8 @@ impl App {
             focus_window: None,
             window_tab: false,
             panel_focus: None,
+            bar_active: false,
+            menu_return: None,
             modal_was: 0,
             prompt_focused: false,
             error_focused: false,
@@ -1405,6 +1411,29 @@ impl App {
             self.window_focus_due = Some(Win::Chooser);
         }
         self.windows_open = mask;
+    }
+
+    /// Screen reader mode, end of the menu bar's frame (task-212): `active` is whether the
+    /// focus is on a bar title or a menu is open. When it turns on, the panel control that has
+    /// the focus is remembered; when it turns off and the focus did not go to a window, a
+    /// modal or a panel control (Escape, an item that opens no window), that control gets it
+    /// back. A window that opened has its own return (`window_focus`).
+    pub(crate) fn menu_bar_focus(&mut self, ui: &Ui, active: bool) {
+        let focused = ui.memory(|m| m.focused());
+        if active && !self.bar_active {
+            self.menu_return = self.panel_focus;
+        } else if !active && self.bar_active {
+            let busy = self.browser.is_some()
+                || self.prompt.is_some()
+                || self.replace.is_some()
+                || self.error_open()
+                || Win::ALL.iter().any(|w| self.win_open(*w));
+            let on_panel = focused.is_some_and(|f| nav::section_of(&self.nav, f).is_some());
+            if let Some(back) = self.menu_return.filter(|_| !busy && !on_panel) {
+                ui.memory_mut(|m| m.request_focus(back));
+            }
+        }
+        self.bar_active = active;
     }
 
     /// Whether the window `w` is open.

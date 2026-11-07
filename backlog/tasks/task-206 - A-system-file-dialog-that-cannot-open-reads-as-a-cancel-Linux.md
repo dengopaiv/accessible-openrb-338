@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-06T05:52:00Z'
+updated_date: '2026-11-07T08:47:00Z'
 labels:
   - ui
 milestone: m-7
@@ -31,3 +32,9 @@ What: find out what rfd 0.17.2 exposes of a failure (its log output, or a way to
 - [ ] #1 On Linux with no portal or no D-Bus session (test it in a container or with DBUS_SESSION_BUS_ADDRESS unset), choosing File > Open in screen reader mode shows the error box or the in-app browser instead of doing nothing
 - [ ] #2 A cancelled dialog still changes nothing and shows nothing
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+On hold (the user, 2026-11-07): it needs a Linux setup to test, and the fork is used on Windows. Not started.
+<!-- SECTION:NOTES:END -->

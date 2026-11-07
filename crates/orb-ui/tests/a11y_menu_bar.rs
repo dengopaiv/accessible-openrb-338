@@ -205,3 +205,158 @@ fn the_options_items_read_their_state() {
     assert!(radios.iter().any(|(_, t)| *t == Some(Toggled::True)));
     assert!(radios.iter().any(|(_, t)| *t == Some(Toggled::False)));
 }
+
+// ---- task-212: the focus returns where it was when the bar is left ----------------------
+
+fn play_id() -> eframe::egui::Id {
+    a11y::hit_id("trigger", "transport.play")
+}
+
+/// An app in screen reader mode with the focus on the Play button.
+fn on_play() -> AppTree {
+    let mut h = AppTree::new();
+    h.app.settings.screen_reader = orb_ui::screen_reader::ScreenReaderSetting::On;
+    h.frame(vec![]);
+    h.frames.ctx.memory_mut(|m| m.request_focus(play_id()));
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    assert!(has_play(&h), "{:?}", focus(&h));
+    h
+}
+
+fn has_play(h: &AppTree) -> bool {
+    h.tree().focused_id() == play_id().accesskit_id()
+}
+
+/// A lone Alt: press and release.
+fn lone_alt(h: &mut AppTree) {
+    h.frame(vec![Event::ModifiersChanged(Modifiers::ALT)]);
+    h.frame(vec![Event::ModifiersChanged(Modifiers::NONE)]);
+    h.frame(vec![]);
+}
+
+#[test]
+fn escape_on_a_title_gives_the_focus_back() {
+    let mut h = on_play();
+    h.key(Key::F10);
+    assert_eq!(focus(&h), (Role::Button, "File".to_string()));
+    h.key(Key::Escape);
+    h.frame(vec![]);
+    assert!(has_play(&h), "{:?}", focus(&h));
+
+    let mut h = on_play();
+    lone_alt(&mut h);
+    assert_eq!(focus(&h), (Role::Button, "File".to_string()));
+    h.key(Key::Escape);
+    h.frame(vec![]);
+    assert!(has_play(&h), "{:?}", focus(&h));
+}
+
+#[test]
+fn escape_in_an_open_menu_gives_the_focus_back() {
+    for alt in [false, true] {
+        let mut h = on_play();
+        if alt {
+            lone_alt(&mut h);
+        } else {
+            h.key(Key::F10);
+        }
+        open_with_down(&mut h);
+        assert!(menu_open(&h));
+        h.key(Key::Escape);
+        h.frame(vec![]);
+        println!("alt {alt}, after Escape in the menu: {:?}", focus(&h));
+        // one Escape closes the menu and gives the focus back
+        assert!(!menu_open(&h));
+        assert!(has_play(&h), "{:?}", focus(&h));
+    }
+}
+
+#[test]
+fn a_second_f10_or_alt_gives_the_focus_back() {
+    // on a title
+    let mut h = on_play();
+    h.key(Key::F10);
+    h.key(Key::F10);
+    h.frame(vec![]);
+    assert!(has_play(&h), "{:?}", focus(&h));
+    let mut h = on_play();
+    lone_alt(&mut h);
+    lone_alt(&mut h);
+    assert!(has_play(&h), "{:?}", focus(&h));
+    // with a menu open
+    let mut h = on_play();
+    h.key(Key::F10);
+    open_with_down(&mut h);
+    assert!(menu_open(&h));
+    h.key(Key::F10);
+    h.frame(vec![]);
+    assert!(!menu_open(&h), "the menu closed");
+    assert!(has_play(&h), "{:?}", focus(&h));
+    let mut h = on_play();
+    lone_alt(&mut h);
+    open_with_down(&mut h);
+    assert!(menu_open(&h));
+    lone_alt(&mut h);
+    assert!(!menu_open(&h), "the menu closed");
+    assert!(has_play(&h), "{:?}", focus(&h));
+    // and F10 asks for the bar again afterwards
+    h.key(Key::F10);
+    assert_eq!(focus(&h), (Role::Button, "File".to_string()));
+}
+
+#[test]
+fn an_item_that_opens_no_window_gives_the_focus_back() {
+    let mut h = on_play();
+    assert!(!h.app.settings.step_editor_follows);
+    h.key(Key::F10);
+    for _ in 0..2 {
+        h.key(Key::ArrowRight);
+    }
+    open_with_down(&mut h);
+    for _ in 0..4 {
+        h.key(Key::ArrowDown);
+    }
+    println!("on: {:?}", focus(&h));
+    assert!(
+        is(&h, Role::CheckBox, "Step Editor Follows Playback"),
+        "{:?}",
+        focus(&h)
+    );
+    h.key(Key::Enter);
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.settings.step_editor_follows, "the item ran");
+    assert!(!menu_open(&h));
+    assert!(has_play(&h), "{:?}", focus(&h));
+}
+
+#[test]
+fn an_item_that_opens_a_window_returns_to_the_control_when_it_closes() {
+    let mut h = on_play();
+    h.key(Key::F10);
+    for _ in 0..3 {
+        h.key(Key::ArrowRight);
+    }
+    open_with_down(&mut h);
+    h.key(Key::Enter);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.key_help_is_open());
+    assert!(!has_play(&h));
+    println!("in the window: {:?}", focus(&h));
+    assert_ne!(
+        focus(&h),
+        (Role::Window, String::new()),
+        "the focus is inside"
+    );
+    h.key(Key::Escape);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    assert!(!h.app.key_help_is_open(), "Escape closed the window");
+    assert!(has_play(&h), "{:?}", focus(&h));
+}

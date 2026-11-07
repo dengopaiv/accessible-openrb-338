@@ -302,7 +302,7 @@ fn screen_reader_group(is_mac: bool) -> Group {
                 "Record (Insert too)",
                 vec![sr(Key::F9, Any, press("transport.record"))],
             ),
-            sr_row("F10  or  Alt alone", "The menu bar", vec![]),
+            sr_row("F10  or  Alt alone", "The menu bar; again, back", vec![]),
             sr_row(
                 "F11",
                 "Loop on / off",

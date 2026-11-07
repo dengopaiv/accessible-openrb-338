@@ -39,6 +39,7 @@ The document has three parts:
 | A11Y-10 | TASK-195 | A mod chooser with a filter | 6cc85ab |
 | A11Y-12 | TASK-196 | Documentation of screen reader mode | df4d002 |
 | A11Y-13 | TASK-197 | The NVDA pass by the user: all 22 checklist items work | (backlog) |
+| (new) | TASK-212 | Menu bar: the focus returns where it was when the bar is left | `git log --grep task-212` |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -47,12 +48,11 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 | Task | What | Priority | Who |
 |---|---|---|---|
-| TASK-212 | Menu bar: the focus returns where it was when the bar is left | medium | agent |
 | TASK-211 | An option: a 303 pitch key also turns a rest into a note | medium | agent |
 | TASK-201 | Mods menu: the playing mod's mark in the accessibility tree | medium | agent |
-| TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | low | agent |
+| TASK-199 | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI); on hold | low | agent |
 | TASK-204 | The Export dialog keeps the format the user picks | low | agent |
-| TASK-206 | A system file dialog that cannot open reads as a cancel (Linux) | low | agent |
+| TASK-206 | A system file dialog that cannot open reads as a cancel (Linux); on hold | low | agent |
 | TASK-200 | crash.rs's release backtrace check fails on Windows (not m-7) | low | agent |
 
 The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); TASK-200 is
@@ -211,6 +211,11 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   docs/ui_spec.md section 20 and section 10 checked against the code; Help > Keyboard Shortcuts
   complete for the mode, with tests (the keys of `keys::map_screen_reader` by behavior, the
   keys handled elsewhere by name); the measurement below.
+- **TASK-212, the focus after the menu bar.** Asked by the user after the NVDA pass. In screen
+  reader mode, leaving the menu bar (Escape, an item that opens no window, a second F10 or lone
+  Alt) gives the focus back to the panel control that had it; a window opened from a menu
+  returns it to that control when it closes. With the mode off, the menu bar is as before.
+  (docs/ui_spec.md 18.2; NVDA checklist item 23.)
 
 Also done along the way, outside m-7: TASK-176 (milestone m-5), the third-party songs test
 compares song paths in NFC (commit 4d76af3): 1268 songs equal to the original's renders.
@@ -319,18 +324,21 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     `App::announce`); Escape or Enter closes it and the focus returns, also to the window
     under it. The unsaved-changes prompt (item 16) is read with its question and the focus
     is on Save. (x)
+23. TASK-212's focus return (docs/ui_spec.md 18.2), in screen reader mode with the focus on a
+    panel control (a knob, Play): F10 (or Alt alone), then Escape: NVDA reads the control
+    again. F10, Down, one Escape: the same. F10 and F10 again, and Alt and Alt
+    again, on a title and with a menu open: the menu closes and NVDA reads the control. Options
+    > Step Editor Follows Playback chosen with Enter: the control is read. Help > Keyboard
+    Shortcuts: the window is read, and Escape returns to the control, not to "window". ( )
 
-When TASK-211 is merged, its by-ear check joins this list as item 23.
+When TASK-211 is merged, its by-ear check joins this list as item 24.
 
 ### 2.3 Open tasks
 
-Each is in the backlog with its description and acceptance criteria; none is started. The user
-says which to start (one agent at a time).
+Each is in the backlog with its description and acceptance criteria. The user's order of
+2026-11-07: TASK-211, TASK-201, TASK-204, then TASK-200, one agent at a time; TASK-199 and
+TASK-206 are on hold (they can be checked only on macOS and Linux).
 
-- **TASK-212 (medium): the focus after the menu bar.** Asked by the user 2026-11-07, from the
-  gaps TASK-184 left: after Escape or an item that opens no window, the focus lands on the
-  window, where NVDA has nothing to read, instead of the control it came from; and a second F10
-  or lone Alt does not go back. In screen reader mode, the focus returns to that control.
 - **TASK-211 (medium): pitch keys that turn a rest into a note.** Asked by the user
   2026-11-07, after item 8: a pitch key sets only a step's note, as in the original, so a step
   stays a rest until `-` turns it into a note. A setting in the Options menu, off by default and
