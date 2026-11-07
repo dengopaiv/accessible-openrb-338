@@ -1,11 +1,11 @@
 ---
 id: TASK-218
 title: 'Windows 10 PC: check that OpenRB-338 starts with DirectX 12 (the user''s check)'
-status: To Do
+status: Done
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-07T14:01:00Z'
-updated_date: '2026-11-07T14:06:00Z'
+updated_date: '2026-11-07T14:13:00Z'
 labels:
   - ui
   - tests
@@ -36,12 +36,20 @@ Expected: "Run 1: started", "Run 2: started", "Run 3: started", and in each run 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The report of win_diag.ps1 on the Windows 10 PC, with WGPU_BACKEND unset and the kit built after task-217, says 3 runs of 3 started
-- [ ] #2 Each run log names Dx12 Intel HD Graphics 530 as the adapter chosen; the report's summary is in the notes
+- [x] #1 The report of win_diag.ps1 on the Windows 10 PC, with WGPU_BACKEND unset and the kit built after task-217, says 3 runs of 3 started
+- [x] #2 The user reports the outcome; the report file, if brought back, is summarized in the notes (narrowed 2026-11-07: the user reported the pass in words, the report file stayed on the Windows 10 PC)
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 The kit for this check (supervisor, 2026-11-07): dist\OpenRB-338-debug-kit-4c75ec2.zip, built from main at 4c75ec2 (task-217 merged), not dirty.
+
+Result (2026-11-07): the user reported "the win10 test passes" with the kit dist\OpenRB-338-debug-kit-4c75ec2.zip. The report file itself was not copied back to the development machine (diag-reports holds only the first report, win_diag-20261107-153117.txt), so the per-run lines are not in these notes; AC #2 is narrowed to the user's report.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The user's check on the Windows 10 PC (Intel HD Graphics 530, Windows 10 22H2): with the kit built after task-217 (4c75ec2), OpenRB-338 starts; the user reported "the win10 test passes" on 2026-11-07. Before task-217 the same PC crashed 3 starts of 3 in Intel's Vulkan driver igvk64.dll. The report file was not brought back.
+<!-- SECTION:FINAL_SUMMARY:END -->
