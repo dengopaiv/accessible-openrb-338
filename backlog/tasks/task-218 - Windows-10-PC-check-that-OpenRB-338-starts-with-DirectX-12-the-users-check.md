@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-07T14:01:00Z'
+updated_date: '2026-11-07T14:06:00Z'
 labels:
   - ui
   - tests
@@ -38,3 +39,9 @@ Expected: "Run 1: started", "Run 2: started", "Run 3: started", and in each run 
 - [ ] #1 The report of win_diag.ps1 on the Windows 10 PC, with WGPU_BACKEND unset and the kit built after task-217, says 3 runs of 3 started
 - [ ] #2 Each run log names Dx12 Intel HD Graphics 530 as the adapter chosen; the report's summary is in the notes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The kit for this check (supervisor, 2026-11-07): dist\OpenRB-338-debug-kit-4c75ec2.zip, built from main at 4c75ec2 (task-217 merged), not dirty.
+<!-- SECTION:NOTES:END -->
