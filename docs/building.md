@@ -400,16 +400,35 @@ file; nothing goes online.
 It builds `OpenRB-338.exe` and `orb.exe` with the cargo profile `diag` (Cargo.toml: the release
 build with `debug = "line-tables-only"`, not stripped; about 6 minutes from a clean `target\diag`)
 and puts them, their symbols (`OpenRB_338.pdb`, `orb.pdb`: the crate names, as the exes name
-them), `tools/win_diag.ps1` and a `README.txt` into `dist\debug-kit\`, and zips that as
-`dist\OpenRB-338-debug-kit-<commit>.zip` (about 42 MB). The packages of `scripts/package.sh` are
+them), `tools/win_diag.ps1`, `tools/win_diag.cmd` and a `README.txt` into `dist\debug-kit\`,
+and zips that as `dist\OpenRB-338-debug-kit-<commit>.zip` (about 42 MB; `-dirty` is added to
+the name when the tree has uncommitted changes). The packages of `scripts/package.sh` are
 not changed: the `dist` profile keeps no debug info (task-200). With the symbols, a panic's
 backtrace in the crash log names functions and files (`crates\orb-ui\src\main.rs:273:9`).
 
 **2. Copy and unpack** the zip on the other PC, in a folder of the user's own.
 
-**3. Run the script** there: in Explorer in that folder, Alt+D, type `powershell`, Enter; then
+**3. Run the script** there: in Explorer in that folder, Alt+D, type `cmd`, Enter; then type
 
-    powershell -ExecutionPolicy Bypass -File .\win_diag.ps1
+    win_diag
+
+`win_diag.cmd` (task-219) runs `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+win_diag.ps1` with the options as typed (`win_diag -Runs 10`; a path with spaces in double
+quotes). Windows 10's default execution policy runs no PowerShell script file: typing
+`.\win_diag.ps1` fails with "running scripts is disabled on this system", and pressing Enter on a
+`.ps1` in Explorer opens it in Notepad. `-ExecutionPolicy Bypass` lifts that for the one run and
+changes no setting; a batch file is not subject to the policy. Started from Explorer or from
+PowerShell, `win_diag.cmd` waits for a key at the end (so the window does not close before the
+report's path is heard); typed in a command prompt, it returns at once. In PowerShell it must
+be typed `.\win_diag.cmd`: a bare `.\win_diag` there takes `win_diag.ps1` first, which the
+policy stops. Where `NoDefaultCurrentDirectoryInExePath` is set (Claude Code's shell sets it),
+a command prompt does not look in the current folder, and `.\win_diag` is needed. The long form,
+`powershell -ExecutionPolicy Bypass -File .\win_diag.ps1`, works as well. The user's check of
+the task-217 kit (task-218) most likely stopped at the policy on 2026-11-07; no report of it
+came back. The kit script writes the batch file with CRLF line endings, and `.gitattributes`
+checks `*.cmd` out with CRLF. `win_diag.cmd` reads the command line with delayed expansion
+instead of echoing it into a pipe, so a folder name with `&` in it (`Music & Songs`) does not
+break the test of how it was started (the review's note; checked with a folder `a & b`).
 
 It starts OpenRB-338 three times (`-Runs N` for more), each with `RUST_BACKTRACE=full` and
 `ORB_LOG=info`, with the user's own settings, and watches the run log (task-214). The console

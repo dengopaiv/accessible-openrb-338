@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
     Makes the Windows debug kit (task-215): OpenRB-338 and orb built with symbols, their .pdb
-    files, tools/win_diag.ps1 and a README, in dist\debug-kit and a zip.
+    files, tools/win_diag.ps1 with tools/win_diag.cmd and a README, in dist\debug-kit and a
+    zip.
 
 .DESCRIPTION
     For a Windows PC where OpenRB-338 does not start (the user's Windows 10 PC, 2026-11-07).
@@ -51,6 +52,12 @@ foreach ($f in 'OpenRB-338.exe', 'OpenRB_338.pdb', 'orb.exe', 'orb.pdb') {
     Copy-Item -Path $src -Destination $Out
 }
 Copy-Item -Path (Join-Path $root 'tools\win_diag.ps1') -Destination $Out
+# the batch file with CRLF line endings: the repository stores text with LF (.gitattributes),
+# and cmd.exe misreads LF-only batch files in places (task-219)
+$cmdText = [IO.File]::ReadAllText((Join-Path $root 'tools\win_diag.cmd'))
+$ascii = New-Object System.Text.ASCIIEncoding
+[IO.File]::WriteAllText((Join-Path $Out 'win_diag.cmd'), ($cmdText -replace "`r?`n", "`r`n"),
+    $ascii)
 
 $readme = @"
 OpenRB-338 debug kit ($hash)
@@ -58,25 +65,33 @@ OpenRB-338 debug kit ($hash)
 This folder is for finding out why OpenRB-338 does not start on a Windows PC. It holds:
 - OpenRB-338.exe and orb.exe, built with symbols (the cargo profile diag);
 - OpenRB_338.pdb and orb.pdb, their symbols (keep them beside the programs);
-- win_diag.ps1, the script that starts OpenRB-338 a few times and writes a report.
+- win_diag.ps1, the script that starts OpenRB-338 a few times and writes a report;
+- win_diag.cmd, which starts that script. Use it: Windows runs no PowerShell script file
+  by default (its execution policy), and win_diag.cmd lifts that for its one run only,
+  without changing any setting of the PC.
 
 1. Unpack the zip into a folder of your own, for example Documents\OpenRB-338-debug.
-2. Open PowerShell in that folder: in Explorer, in the folder, press Alt+D (the address
-   bar), type powershell and press Enter.
-3. Type:
-       powershell -ExecutionPolicy Bypass -File .\win_diag.ps1
+2. Open a command prompt in that folder: in Explorer, in the folder, press Alt+D (the
+   address bar), type cmd and press Enter.
+3. Type  win_diag  and press Enter. (If the command prompt says it is not recognized, type
+   .\win_diag instead.)
    The program window opens and closes three times. The console says one line per run and,
    at the end, the path of the report.
+   Other ways: pressing Enter on win_diag.cmd in Explorer (that window waits for a key at
+   the end so the report's path can be read); in PowerShell, typing  .\win_diag.cmd  with
+   the .cmd (without it PowerShell takes win_diag.ps1, and the policy stops it with
+   "running scripts is disabled on this system"); or the long way in PowerShell:
+       powershell -ExecutionPolicy Bypass -File .\win_diag.ps1
 4. Read the report (diag-reports\win_diag-DATE-TIME.txt in this folder) or send it.
 
-More:
-- More runs, for a failure that comes and goes:  -Runs 10
+More, typed after win_diag:
+- More runs, for a failure that comes and goes:  win_diag -Runs 10
 - Crash dumps of native crashes (Windows asks for administrator rights once; the setting
-  stays until -DisableDumps):  -EnableDumps
-- Another graphics backend:  -Backend dx12   (or vulkan, or opengl)
-- Without sound:  -Demo
-- A song:  -Song 'C:\My Songs\song.rbs'
-- Turn crash dumps off again:  -DisableDumps -Runs 0
+  stays until -DisableDumps):  win_diag -EnableDumps
+- Another graphics backend:  win_diag -Backend dx12   (or vulkan, or opengl)
+- Without sound:  win_diag -Demo
+- A song:  win_diag -Song "C:\My Songs\song.rbs"
+- Turn crash dumps off again:  win_diag -DisableDumps -Runs 0
 
 The program also writes a run log of every start, also when it is started from the Start
 menu, in %LOCALAPPDATA%\OpenRB-338\logs (run-DATE-TIME.log; crash-DATE-TIME.log after an

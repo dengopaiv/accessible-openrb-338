@@ -2,6 +2,8 @@
 # hashes that read the JSON/SVG/TSV fixtures, and the shell scripts, depend on it. This line is
 # first: git applies the last matching line, so the binary rules below override it.
 * text=auto eol=lf
+# batch files with CRLF: cmd.exe misreads LF-only batch files in places (task-219)
+*.cmd text eol=crlf
 
 *.i64 binary
 *.rbs binary
