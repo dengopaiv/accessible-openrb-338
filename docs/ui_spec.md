@@ -1586,9 +1586,11 @@ What OpenRB-338 adds (`menu.rs`, `menu_bar_key`, `open_on_down`, `menu_has_keys`
   the menu's own keys" and "only in screen reader mode": task-202.
 - The tree: a title is a Button named File, Mods, Options or Help; an item is a Button named by
   its text with the shortcut appended ("New Ctrl+N"); the Options checkboxes are CheckBox nodes
-  and the two key modes RadioButton nodes with the Toggled state. The Mods entries are
-  selectable labels: Button nodes without a checked state (the selected mod is not in the
-  tree; a follow-up).
+  and the two key modes RadioButton nodes with the Toggled state. The Mods entries (Standard
+  ReBirth, each mod, each file of a merged name's submenu) are MenuItemCheckBox nodes, checked
+  for the playing kit only, in both modes (`menu.rs` `checked_item`, task-201): NVDA reads
+  "menu item, checked". They look and act as before (selectable labels). The button of a merged
+  name's submenu stays a Button, with the Toggled state when one of its files plays.
 
 ## 19. OpenRB-338's own panel art and placement (task-115)
 

@@ -1,15 +1,18 @@
 # Screen reader accessibility: a proposal
 
-Status, 2026-11-07: the proposal of section 3 is implemented, as screen reader mode (Options >
+Status, 2026-11-09: the proposal of section 3 is implemented, as screen reader mode (Options >
 Screen Reader Mode), by TASK-184 to TASK-196 and TASK-210 (docs/accessibility_plan.md, part 1;
 the behavior is docs/ui_spec.md section 20, the user's guide the README's "Using OpenRB-338
 with a screen reader"), and the user's pass with NVDA (TASK-197) found every item of its
-checklist working by ear. The follow-ups are in the plan's part 2. The text below is the proposal as written on 2026-11-05, kept
-for its reasons; section 1.1 has the measurement of that day and of 2026-11-07. The first
-target is NVDA on
-Windows (the user's choice); AccessKit, the layer proposed here, also serves Narrator and JAWS
-through UI Automation, VoiceOver on macOS and Orca on Linux, so the other platforms come along,
-with less testing.
+checklist working by ear. The follow-ups found on the way (TASK-201, TASK-204, TASK-211 to
+TASK-213) are done, though their by-ear checks (checklist items 23 to 27) are not yet marked.
+The program now also starts on the user's Windows 10 PC (TASK-214 to TASK-219,
+docs/building.md). What is open is in the plan's part 2. The text below is the proposal as
+written on 2026-11-05, kept for its reasons; section 1.1 has the measurement of that day and of
+2026-11-07. The first target is NVDA on Windows (the user's choice); AccessKit, the layer
+proposed here, also serves Narrator and JAWS through UI Automation, VoiceOver on macOS and Orca
+on Linux, so the other platforms would come along, with less testing. For now the fork is built
+for Windows only (the user, 2026-11-07).
 
 The document has these parts: what a screen reader gets today (measured), the options, the
 proposal, the decisions made on it, the third-party mods and songs, and a reference for

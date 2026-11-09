@@ -1,7 +1,9 @@
 # Screen reader accessibility: the plan
 
-**State on 2026-11-07: everything planned is built and merged, and the user's NVDA pass
-(TASK-197) found every item of its checklist working. What is left are the follow-ups.**
+**State on 2026-11-09: everything planned is built and merged, and the user's NVDA pass
+(TASK-197) found every item of its checklist working. The follow-ups of 2026-11-07 are done too,
+and so is the start on the user's Windows 10 PC (TASK-214 to TASK-219). What is left, TASK-199
+and TASK-206, is on hold: the fork is Windows only for now (the user, 2026-11-07).**
 
 The analysis behind the plan, with the measurements and the options, is in
 [accessibility.md](accessibility.md); the behavior in detail is in docs/ui_spec.md section 20,
@@ -12,7 +14,8 @@ says what the milestone is, what of it is finished and what is still to do.
 The document has three parts:
 
 1. [Finished](#part-1-finished): the decisions, the work, and what was measured.
-2. [To do](#part-2-to-do): the open tasks, and the NVDA checklist (all items pass).
+2. [To do](#part-2-to-do): the open tasks, and the NVDA checklist (items 1 to 22 pass; 23 to 27,
+   the follow-ups' by-ear checks, wait for the user).
 3. [Reference](#part-3-reference): the ground rules, the risks, and how the plan was turned into
    tasks.
 
@@ -43,7 +46,13 @@ The document has three parts:
 | (new) | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 |
 | (new) | TASK-201 | Mods menu: the playing kit's entry read as "checked" | 78129ba |
 | (new) | TASK-204 | The Export dialog keeps the format the user picks | 771ce7c |
-| (new) | TASK-213 | Knobs and faders: an arrow key moves to the next value that sounds different | `git log --grep task-213` |
+| (new) | TASK-213 | Knobs and faders: an arrow key moves to the next value that sounds different | 3b5c2bd |
+| (new) | TASK-214 | A run log of each start; a failed start leaves a trace | 2b76d08 |
+| (new) | TASK-215 | A Windows debug kit: OpenRB-338 with symbols and tools/win_diag.ps1 | 91c1e8d |
+| (new) | TASK-216 | A system_dialog test that failed in debug builds (test only) | 7db8369 |
+| (new) | TASK-217 | Windows: DirectX 12 before Vulkan (Intel's Vulkan driver crashed the start) | 4c75ec2 |
+| (new) | TASK-219 | Debug kit: win_diag.cmd, so the execution policy need not be typed | 7541709 |
+| (new) | TASK-218 | The user's check: the Windows 10 PC starts OpenRB-338, 3 runs of 3 | (backlog) |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -57,7 +66,13 @@ TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
 
 The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); TASK-199 and
 TASK-206 are on hold by the user's choice (2026-11-07), since they can be checked only on macOS
-and Linux.
+and Linux, and the fork builds and ships for Windows only for now (the user, 2026-11-07: "We
+will not have a linux, mac or currently at least anything other than windows"). In the backlog
+m-7 stands at 39 of 41 done.
+
+Also open, outside the backlog: the by-ear checks of the follow-ups, NVDA checklist items 23 to
+27 (TASK-212, TASK-211, TASK-201, TASK-204, TASK-213; section 2.2). Their tests pass; the
+user has not marked them yet.
 
 ## The milestone
 
@@ -244,6 +259,18 @@ build, whose crash log cannot name `orb_ui::crash` without debug info; there it 
 `std::panicking` frame, everywhere else still for `orb_ui::crash`. `cargo test --release -p
 orb-ui` now passes in full.
 
+**The start on Windows 10 (TASK-214 to TASK-219, 2026-11-07).** OpenRB-338 did not start on
+the user's Windows 10 PC (Intel HD Graphics 530). TASK-214 made every start write a run log
+(`run-YYYYMMDD-HHMMSS.log`: the stages, the libraries' messages, a watchdog, a native crash
+line), TASK-215 a debug kit (a build with symbols, `tools/win_diag.ps1` that starts the program
+several times and writes a report), and TASK-219 `tools/win_diag.cmd`, so the user need not
+type PowerShell's execution policy. The kit's report showed a crash in Intel's Vulkan driver,
+3 starts of 3; TASK-217 makes OpenRB-338 prefer DirectX 12 on Windows unless `WGPU_BACKEND` is
+set (`crates/orb-ui/src/graphics.rs`), and with it the user's PC started 3 runs of 3
+(TASK-218). TASK-216 fixed a test that failed in debug builds only. All of it is in
+docs/building.md: "The run log, for a start that fails", "The graphics on Windows: DirectX 12
+first" and "Debugging OpenRB-338 on another Windows PC".
+
 ### 1.3 What the work measured
 
 The real window, read through UI Automation with `tools/uia_tree.ps1` (docs/accessibility.md
@@ -389,7 +416,9 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
 Each is in the backlog with its description and acceptance criteria. The user's round of
 2026-11-07 finished TASK-212, TASK-211, TASK-201, TASK-204, TASK-200 and TASK-213 (found on
 the way), one agent at a time; TASK-199 and TASK-206 are on hold (they can be checked only on
-macOS and Linux). The by-ear checks of the round are checklist items 23 to 27.
+macOS and Linux). The by-ear checks of the round are checklist items 23 to 27, not yet marked
+(2026-11-09). The Windows 10 round that followed (TASK-214 to TASK-219, section 1.2) needed no
+NVDA check: the user's check was that the program starts (TASK-218).
 
 - **TASK-199 (low): detection on macOS and Linux.** Automatic turns the mode on only on Windows
   today; VoiceOver and AT-SPI detection.
@@ -403,7 +432,9 @@ macOS and Linux). The by-ear checks of the round are checklist items 23 to 27.
 ### Ground rules of every task of the milestone
 
 - With screen reader mode off, the app behaves exactly as upstream, key for key, except where
-  the user decided otherwise: the panel's keys wait while a menu is in use (TASK-202). The
+  the user decided otherwise: the panel's keys wait while a menu is in use (TASK-202). Outside
+  the keys, two changes of the Windows 10 round apply in both modes: the run log of each start
+  (TASK-214) and DirectX 12 before Vulkan on Windows (TASK-217). The
   existing tests of `crates/orb-ui/tests` (keyboard.rs in particular) pass unchanged.
 - Every accessible action goes through the same `model::Panel` method as the mouse or the
   original's key (`press`, `arrow`, `set_knob`, `set_fader`, `set_switch`,
@@ -435,6 +466,21 @@ macOS and Linux). The by-ear checks of the round are checklist items 23 to 27.
   do not change are cached.
 - **Upstream.** With the mode off nothing changes, so rebasing on upstream stays easy and the
   work can be offered upstream as it is.
+
+  Checked on 2026-11-09: upstream's main is still cbca449 (its tag v2026.1103.0917), the
+  commit the fork started from, so there is nothing to merge. Open on upstream:
+  - Pull request #4 ("Save engine tracks for all songs", opened 2026-11-09 by a contributor, not
+    merged) is an implementation of TASK-143, which is open in this backlog too: every Save
+    writes the engine's tracks, so an unedited save no longer gives back the file byte for
+    byte. It changes `document.rs`, `link.rs`, `menu.rs` (`App::song_bytes` takes `&mut self`;
+    `composed_song` becomes `song_for_save`), tests and docs/ui_spec.md's Save sections. Merged
+    into the fork's main it gives no text conflict (`git merge-tree`), and the fork adds no
+    caller of the changed functions; it was not built or tested here.
+  - Issue #2 asks whether OpenRB-338 can work without `assets/Standard.rbm` (ReBirth's own drum
+    samples and panel pictures, which Debian cannot redistribute). It applies to the fork as
+    well, whose repository and Windows zips carry the same file; no answer upstream yet.
+  - Issues #1 and #3 (a VST, LV2 or CLAP plug-in) and #5 (no sound on macOS) do not touch the
+    fork: it is a local, Windows-only program.
 - **Units that are only estimates.** docs/control_units.md marks each unit [C], [D] or [G], and
   Options > Speak Raw Values gives the exact stored number next to it.
 - **Space no longer plays in screen reader mode.** A habit from ReBirth (D2). F5 plays, Enter

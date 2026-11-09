@@ -60,14 +60,16 @@ This repository, accessible-openrb-338, is a fork of
 [OpenRB-338](https://github.com/pingw33n/openrb-338) whose aim is to make OpenRB-338 usable
 with a screen reader, NVDA on Windows first.
 
-**Where it stands (2026-11-07): built and checked with NVDA.** Screen reader mode is
+**Where it stands (2026-11-09): built and checked with NVDA.** Screen reader mode is
 implemented and tested through the accessibility tree (every control has a name, a role and a
 value; Tab stops at 198 places, all named), and a blind user went through the whole checklist
-with NVDA on Windows and found it working. Other screen readers and systems are less tested.
-With the
-mode off, OpenRB-338 behaves exactly as upstream, and the sound engine is not touched, so the
-output stays identical to the original's. The `orb` command line tool (render, play, info,
-mods) needs no mode.
+with NVDA on Windows and found it working. Other screen readers and systems are less tested;
+the fork is built for Windows only. With the mode off, OpenRB-338 behaves as upstream, with
+three exceptions in both modes: the panel's keys wait while a menu is in use, and on Windows
+the program prefers DirectX 12 for its graphics and writes a run log of each start (both so it
+starts on more PCs; a start that fails is described in [docs/building.md](docs/building.md)).
+The sound engine is not touched, so the output stays identical to the original's. The `orb`
+command line tool (render, play, info, mods) needs no mode.
 
 ### Using OpenRB-338 with a screen reader
 

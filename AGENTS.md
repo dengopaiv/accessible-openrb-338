@@ -35,7 +35,8 @@ rebasing on upstream stays simple.
   `docs/accessibility.md` is the analysis (measured state, options, proposal, egui's
   accessibility API, how to measure), `docs/accessibility_plan.md` the plan: milestone m-7 with
   its decisions and tasks, written so each entry can be created in the backlog as it stands.
-  With screen reader mode off, the app must behave exactly as upstream.
+  With screen reader mode off, the app must behave exactly as upstream, except where the user
+  decided otherwise (listed in docs/accessibility_plan.md, part 3, "Ground rules").
 - **The third-party collections.** Upstream's public mod and song collections
   (github.com/pingw33n/rb-mods, github.com/pingw33n/rb-songs) are cloned next to this checkout,
   never into it (the user's decision, 2026-11-05: 1.1 GB of third-party files with no stated
@@ -45,6 +46,14 @@ rebasing on upstream stays simple.
   2026-11-05).
 - **Windows.** The development machine is Windows 11. `tools/uia_tree.ps1` shows what a screen
   reader can see of the window (docs/accessibility.md section 6.3).
+- **Windows only, for now.** The user, 2026-11-07: "We will not have a linux, mac or currently
+  at least anything other than windows. But make sure the zip is in the dist." The fork builds,
+  tests and ships `x86_64-pc-windows-msvc` only (`scripts/package.sh x86_64-pc-windows-msvc`,
+  the zip moved to the top of `dist\`); the other five targets, Docker and cargo-xwin are not
+  used. Upstream's CI, release workflow and docs for all six targets stay as they are until a
+  task, decided by the user, removes them. TASK-199 and TASK-206 (macOS and Linux) are on hold
+  for this reason. A Windows start that fails: docs/building.md, the run log and the debug kit
+  (task-214, task-215, task-219).
 
 ## Where things are
 
