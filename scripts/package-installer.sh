@@ -24,9 +24,20 @@ case $target in
     *) echo "not a Windows target: $target" >&2; exit 2 ;;
 esac
 makensis=${MAKENSIS:-makensis}
+# Windows: NSIS's installer does not put makensis on PATH; take its default folder (task-221)
+nsis_default="/c/Program Files (x86)/NSIS/makensis.exe"
+if [ -z "${MAKENSIS:-}" ] && ! command -v makensis >/dev/null && [ -x "$nsis_default" ]; then
+    makensis=$nsis_default
+fi
 command -v "$makensis" >/dev/null || {
     echo "makensis is missing (brew install makensis; apt install nsis; choco install nsis)" >&2
     exit 1
+}
+# The paths given to makensis. Windows' makensis (under Git Bash, where cygpath exists) finds no
+# file at a C:/... path in `File "/oname=..." "C:/.../path.ps1"` (openrb.nsi, "no files
+# found"), so there it gets Windows paths; elsewhere the path stays as it is (task-221).
+nsis_path() {
+    if command -v cygpath >/dev/null; then cygpath -aw "$1"; else printf '%s\n' "$1"; fi
 }
 export SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(date +%s)}
 version=$("$root/scripts/version.sh")
@@ -54,6 +65,8 @@ OpenRB-338.exe is the desktop app (Start menu: OpenRB-338). orb.exe is the comma
   orb render SONG.rbs -o SONG.flac    render a song to FLAC, Ogg Vorbis or WAV
   orb --help                          all commands
 
+$(cat "$root/scripts/fork-readme.txt")
+
 To run orb from any folder, add this folder to your PATH: run the installer again with "Add orb to
 the PATH of the current user" ticked, or add it in Settings > System > About > Advanced system
 settings > Environment Variables. The uninstaller (Settings > Apps) removes what the installer
@@ -76,9 +89,9 @@ out=$dist/$target/OpenRB-338-$version-$arch-setup.exe
 rm -f "$out"
 # shellcheck disable=SC2086  # the flags are words on purpose
 # -WX (the default of MAKENSIS_FLAGS; set it empty to drop it): a warning fails the build. The time inside the file comes from SOURCE_DATE_EPOCH.
-"$makensis" -V2 ${MAKENSIS_FLAGS--WX} "-DICON=$root/assets/app_icon.ico" \
-    "-DVERSION=$version" "-DARCH=$arch" "-DBINDIR=$stage" "-DSTAGEDIR=$stage" \
-    "-DPATHPS1=$stage/path.ps1" "-DOUTFILE=$out" \
-    "$root/scripts/installer/openrb.nsi"
+"$makensis" -V2 ${MAKENSIS_FLAGS--WX} "-DICON=$(nsis_path "$root/assets/app_icon.ico")" \
+    "-DVERSION=$version" "-DARCH=$arch" "-DBINDIR=$(nsis_path "$stage")" \
+    "-DSTAGEDIR=$(nsis_path "$stage")" "-DPATHPS1=$(nsis_path "$stage/path.ps1")" \
+    "-DOUTFILE=$(nsis_path "$out")" "$(nsis_path "$root/scripts/installer/openrb.nsi")"
 rm -rf "$stage"
 ls -l "$out"

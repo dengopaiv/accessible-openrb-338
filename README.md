@@ -9,7 +9,7 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/pingw33n/openrb-338/releases"><b>Download</b></a> ·
+  <a href="https://github.com/dengopaiv/accessible-openrb-338/releases"><b>Download</b></a> ·
   <a href="assets/readme/screenshot.png"><b>Screenshot</b></a> ·
   <a href="https://github.com/pingw33n/rb-songs"><b>Song collection</b></a> ·
   <a href="https://github.com/pingw33n/rb-mods"><b>Mod collection</b></a>
@@ -148,7 +148,9 @@ without loading it, and Escape closes the dialog.
 **Files.** File > Open, Save As and Export use the system's own file dialogs in this mode.
 
 **Known limits.**
-- It has not been tried with NVDA by the person it is made for yet; expect rough places.
+- It has been checked by ear with NVDA on Windows by the person it is made for (2026-11-07,
+  the checklist in [docs/accessibility_plan.md](docs/accessibility_plan.md)); outside what the
+  checklist covers, expect rough places.
 - Detection of a running screen reader in Automatic is Windows only. Narrator, JAWS,
   VoiceOver and Orca are not tested.
 - The drum grids are not a real table to the screen reader: each cell carries its
@@ -163,19 +165,25 @@ without loading it, and Escape closes the dialog.
 
 ## Quick start
 
-1. **Download** the package for your system and CPU from
-   [Releases](https://github.com/pingw33n/openrb-338/releases):
+1. **Download** from this fork's
+   [Releases](https://github.com/dengopaiv/accessible-openrb-338/releases), which has screen
+   reader mode. The fork is built for Windows x64 only: the installer
+   `OpenRB-338-<version>-x64-setup.exe`, or the zip
+   `OpenRB-338-<version>-x86_64-pc-windows-msvc.zip` with the two programs to run from any
+   folder. For macOS, Linux and Windows on ARM, OpenRB-338's own
+   [Releases](https://github.com/pingw33n/openrb-338/releases) has these packages, without
+   screen reader mode:
 
    | System | File |
    |---|---|
    | macOS, Apple silicon | `OpenRB-338-<version>-aarch64-apple-darwin.dmg` |
    | macOS, Intel | `OpenRB-338-<version>-x86_64-apple-darwin.dmg` |
-   | Windows, x64 | `OpenRB-338-<version>-x64-setup.exe` |
    | Windows, ARM64 | `OpenRB-338-<version>-arm64-setup.exe` |
    | Linux, x86_64 | `OpenRB-338-<version>-x86_64.AppImage` |
    | Linux, ARM64 | `OpenRB-338-<version>-aarch64.AppImage` |
 
-   Plain archives (`.tar.gz`, or `.zip` on Windows) with the two binaries are there too.
+   OpenRB-338's Releases also has plain archives (`.tar.gz`, or `.zip` on Windows) with the two
+   binaries.
 
 2. **Install it.**
    - macOS: open the `.dmg` and drag OpenRB-338 to Applications.

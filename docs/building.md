@@ -713,7 +713,11 @@ user decided, 2026-10-28; task-133 for the version) with NSIS: `scripts/installe
 NSIS rather than Inno Setup because `makensis` runs on macOS, Linux and Windows, so the same
 script builds on this Mac and on a CI runner (Inno Setup needs Windows or Wine). The installer
 itself is a 32-bit x86 program (the NSIS stub), which Windows on Arm runs under emulation; what
-it installs is the native x64 or arm64 build.
+it installs is the native x64 or arm64 build. On Windows the script runs in Git Bash with NSIS's
+own makensis.exe (found on PATH or in `C:\Program Files (x86)\NSIS`), which gets Windows paths
+through `cygpath -aw`: with a `C:/...` path its `File "/oname=..."` finds no file (task-221;
+first built on Windows 2026-11-09, NSIS 3.13). The README.txt of the zip and of the installer
+carries the fork's paragraph, `scripts/fork-readme.txt` (task-221).
 
 **What it installs.** Per user, to `%LOCALAPPDATA%\Programs\OpenRB-338` (`/D=DIR` changes it):
 `OpenRB-338.exe`, `orb.exe`, `LICENSE.txt` (the GPLv3, also the

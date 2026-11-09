@@ -28,8 +28,15 @@ cp "$dist/$target/bin/"* "$stage/"
 cp "$root/LICENSE" "$stage/LICENSE"
 
 case $target in
-    *-windows-*) run="OpenRB-338.exe (the app) and orb.exe (the command line)" ;;
-    *) run="OpenRB-338 (the app) and orb (the command line)" ;;
+    *-windows-*)
+        run="OpenRB-338.exe (the app) and orb.exe (the command line)"
+        unsigned='The programs are not signed, so Windows SmartScreen may say "Windows protected
+your PC" when one of them first starts: choose "More info", then "Run anyway".'
+        ;;
+    *)
+        run="OpenRB-338 (the app) and orb (the command line)"
+        unsigned="The programs are not signed, so the system may warn before the first start."
+        ;;
 esac
 cat > "$stage/README.txt" <<EOF
 OpenRB-338 $version ($target)
@@ -43,7 +50,9 @@ Neither needs any file of the original program: the standard drum kit is built i
   orb --help                          all commands
   OpenRB-338                          the desktop UI
 
-The binaries are not signed (docs/building.md says what the system shows for that).
+$(cat "$root/scripts/fork-readme.txt")
+
+$unsigned
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE).
 EOF
 
