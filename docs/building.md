@@ -288,8 +288,8 @@ A panic in OpenRB-338 (any thread) shows a native box and writes `crash-YYYYMMDD
 fork's zip, `portable.txt` next to the program; task-223) writes to `data\logs\` beside the
 program instead. Ask for that file with a bug report. The box comes from the crate `rfd`
 0.17 (MIT, GPL-3.0 compatible) with no default features: it links no system library on any
-target (macOS AppKit and Windows come with the system; on Linux `zenity` runs the box at run time, so with no zenity only the log and stderr
-happen), so the Docker image needs nothing new. Checked on 2026-10-30 (task-157): `scripts/build.sh`
+target (macOS AppKit and Windows come with the system; on Linux `zenity` runs the box at run
+time, so with no zenity only the log and stderr happen), so the Docker image needs nothing new. Checked on 2026-10-30 (task-157): `scripts/build.sh`
 built `OpenRB-338` and `orb` in the Docker image for `x86_64-unknown-linux-gnu` and
 `aarch64-unknown-linux-gnu` (the image unchanged, `--locked`); `cargo xwin check -p orb-ui` passed
 for both Windows targets (x86_64 with the `CL` variable above, which the scripts set); `cargo
