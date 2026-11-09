@@ -31,7 +31,8 @@
 //! Info's Song Information window (task-117). `--play` presses Play once the song is open (CPU
 //! measurements, task-153).
 //! `--browse MODE` starts with the browser open for a mode. The browser's folders are kept in the
-//! settings file (`OpenRB-338/ui.toml` in the configuration folder, or `$ORB_UI_CONFIG`).
+//! settings file (`$ORB_UI_CONFIG`, else in portable mode `data/ui.toml` beside the program,
+//! task-223, else `OpenRB-338/ui.toml` in the configuration folder).
 
 // The Windows release build is a GUI-subsystem program: no console window opens behind the
 // panel (task-111). `orb` is not affected (this attribute is in the UI binary only). A debug
@@ -269,6 +270,21 @@ fn main() -> ExitCode {
         _ => runlog::WATCHDOG,
     };
     runlog::start(orb_ui::about::VERSION, watchdog);
+    // portable mode (task-223) and where the settings and the logs really are (ORB_UI_CONFIG
+    // and ORB_UI_LOG_DIR win over it)
+    let shown = |p: Option<std::path::PathBuf>| match p {
+        Some(p) => p.display().to_string(),
+        None => "none".to_string(),
+    };
+    let mode = match orb_ui::portable::root() {
+        Some(_) => format!("portable ({} found)", orb_ui::portable::MARKER),
+        None => "not portable".to_string(),
+    };
+    runlog::note(&format!(
+        "{mode}: settings file {}; logs in {}",
+        shown(orb_ui::settings::default_file()),
+        shown(orb_ui::crash::log_dir())
+    ));
     if debug_panic == Some(DebugPanic::Start) {
         panic!("--debug-panic: a deliberate panic");
     }

@@ -26,6 +26,7 @@ pub mod mod_chooser;
 pub mod mod_info;
 pub mod model;
 pub mod palette;
+pub mod portable;
 pub mod runlog;
 pub mod screen_reader;
 pub mod session;

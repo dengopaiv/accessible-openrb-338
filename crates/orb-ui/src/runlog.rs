@@ -1,6 +1,7 @@
 //! The run log (task-214): every start of OpenRB-338 writes `run-YYYYMMDD-HHMMSS.log` beside the
-//! crash logs ([`crate::crash::log_dir`]: `ORB_UI_LOG_DIR`, else `%LOCALAPPDATA%\OpenRB-338\logs`
-//! on Windows), so that a start that fails leaves a trace that can be read afterwards as plain
+//! crash logs ([`crate::crash::log_dir`]: `ORB_UI_LOG_DIR`, else in portable mode `data\logs`
+//! beside the program (task-223), else `%LOCALAPPDATA%\OpenRB-338\logs` on Windows), so that
+//! a start that fails leaves a trace that can be read afterwards as plain
 //! text. Started from Explorer or the Start menu the Windows release build has no visible
 //! stderr, and before this an error of `eframe::run_native` (no graphics adapter, no window), a
 //! native crash in a driver or a hang during the start left nothing at all.

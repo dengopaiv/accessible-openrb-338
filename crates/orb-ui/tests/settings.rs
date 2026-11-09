@@ -270,3 +270,130 @@ fn the_screen_reader_mode_combines_the_setting_and_the_system() {
         assert_eq!(Auto.active(sys), sys);
     }
 }
+
+/// Portable mode (task-223): the folders inside the portable folder are written relative to it
+/// and read back inside it; on another drive letter they follow the folder.
+#[test]
+fn a_portable_copy_stores_its_own_folders_relative() {
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().join("OpenRB");
+    let file = root.join("data").join("ui.toml");
+    let elsewhere = d.path().join("elsewhere");
+    let mut s = Settings::load_from_in(&file, Some(&root));
+    assert_eq!(s.base.as_deref(), Some(root.as_path()));
+    s.songs_dir = Some(root.join("songs"));
+    s.mods_dir = Some(root.join("mods").join("acid"));
+    s.last_song_dir = Some(root.clone());
+    s.last_mod_dir = Some(elsewhere.clone());
+    s.note_recent(&elsewhere);
+    s.note_recent(&root.join("songs"));
+    s.save().unwrap();
+
+    let table: toml::Table = fs::read_to_string(&file).unwrap().parse().unwrap();
+    let text = |k: &str| table[k].as_str().unwrap().to_string();
+    assert_eq!(text("songs_dir"), "songs");
+    assert_eq!(p(&text("mods_dir")), p("mods").join("acid"));
+    assert_eq!(text("last_song_dir"), ".");
+    assert_eq!(
+        p(&text("last_mod_dir")),
+        elsewhere,
+        "a folder elsewhere stays full"
+    );
+    let recent: Vec<&str> = table["recent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(recent, ["songs", elsewhere.to_str().unwrap()]);
+
+    // read back in the same place: the same full paths
+    assert_eq!(Settings::load_from_in(&file, Some(&root)), s);
+
+    // the folder moved (a USB stick on another letter): the relative folders follow it
+    let moved = d.path().join("Moved");
+    let t = Settings::load_from_in(&file, Some(&moved));
+    assert_eq!(t.songs_dir, Some(moved.join("songs")));
+    assert_eq!(t.mods_dir, Some(moved.join("mods").join("acid")));
+    assert_eq!(t.last_song_dir, Some(moved.clone()));
+    assert_eq!(t.last_mod_dir, Some(elsewhere.clone()));
+    assert_eq!(t.recent, [moved.join("songs"), elsewhere]);
+}
+
+/// Not portable (the default): every folder is written as a full path, as before task-223.
+#[test]
+fn without_a_portable_folder_the_paths_stay_full() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    let mut s = Settings::load_from(&file);
+    assert_eq!(s.base, None);
+    s.songs_dir = Some(d.path().join("songs"));
+    s.save().unwrap();
+    let table: toml::Table = fs::read_to_string(&file).unwrap().parse().unwrap();
+    assert_eq!(
+        p(table["songs_dir"].as_str().unwrap()),
+        d.path().join("songs")
+    );
+    // a relative path in a file read without a portable folder stays relative
+    fs::write(&file, "songs_dir = \"songs\"\n").unwrap();
+    assert_eq!(Settings::load_from(&file).songs_dir, Some(p("songs")));
+}
+
+/// A relative entry and a full entry naming the same folder are one recent folder.
+#[test]
+fn a_portable_copy_merges_a_recent_folder_named_twice() {
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().join("OpenRB");
+    let file = d.path().join("ui.toml");
+    let full = root.join("songs");
+    let text = format!(
+        "recent = [\"songs\", {}]\n",
+        toml::Value::from(full.to_str().unwrap())
+    );
+    fs::write(&file, text).unwrap();
+    assert_eq!(Settings::load_from_in(&file, Some(&root)).recent, [full]);
+}
+
+/// Where the settings file is (task-223): `ORB_UI_CONFIG`, then the portable data folder, then
+/// the platform's configuration folder.
+#[test]
+fn orb_ui_config_wins_over_a_portable_folder() {
+    use orb_ui::settings::file_for;
+    use std::ffi::OsStr;
+    let data = p("E:/OpenRB/data");
+    let config = OsStr::new("C:/t/ui.toml");
+    assert_eq!(file_for(Some(config), Some(&data)), Some(p("C:/t/ui.toml")));
+    assert_eq!(file_for(None, Some(&data)), Some(data.join("ui.toml")));
+    // an empty ORB_UI_CONFIG counts as unset
+    assert_eq!(
+        file_for(Some(OsStr::new("")), Some(&data)),
+        Some(data.join("ui.toml"))
+    );
+    // not portable: the platform's folder, not the data folder
+    if let Some(f) = file_for(None, None) {
+        assert!(
+            f.ends_with(p("OpenRB-338").join("ui.toml")),
+            "{}",
+            f.display()
+        );
+    }
+}
+
+/// On Windows a recent folder written in another case is the same folder (task-223).
+#[cfg(windows)]
+#[test]
+fn a_portable_copy_merges_a_recent_folder_in_another_case() {
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().join("OpenRB");
+    let file = d.path().join("ui.toml");
+    let upper = root.join("Songs").to_str().unwrap().to_uppercase();
+    let text = format!(
+        "recent = [\"songs\", {}]\n",
+        toml::Value::from(upper.as_str())
+    );
+    fs::write(&file, text).unwrap();
+    assert_eq!(
+        Settings::load_from_in(&file, Some(&root)).recent,
+        [root.join("songs")]
+    );
+}

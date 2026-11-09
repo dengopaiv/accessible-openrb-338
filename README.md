@@ -167,10 +167,10 @@ without loading it, and Escape closes the dialog.
 
 1. **Download** from this fork's
    [Releases](https://github.com/dengopaiv/accessible-openrb-338/releases), which has screen
-   reader mode. The fork is built for Windows x64 only: the installer
-   `OpenRB-338-<version>-x64-setup.exe`, or the zip
-   `OpenRB-338-<version>-x86_64-pc-windows-msvc.zip` with the two programs to run from any
-   folder. For macOS, Linux and Windows on ARM, OpenRB-338's own
+   reader mode. The fork is built for Windows x64 only, as one portable zip,
+   `OpenRB-338-<version>-x86_64-pc-windows-msvc.zip`: nothing to install, and it keeps its
+   settings and logs in its own folder (step 2). For macOS, Linux and Windows on ARM,
+   OpenRB-338's own
    [Releases](https://github.com/pingw33n/openrb-338/releases) has these packages, without
    screen reader mode:
 
@@ -187,7 +187,12 @@ without loading it, and Escape closes the dialog.
 
 2. **Install it.**
    - macOS: open the `.dmg` and drag OpenRB-338 to Applications.
-   - Windows: run the installer. It can add `orb` to the PATH.
+   - Windows, this fork's zip: unpack it anywhere you can write to, a USB stick too, and run
+     `OpenRB-338.exe` in the unpacked folder. It is portable: while `portable.txt` lies next to
+     the program, the settings and the logs are kept in the folder `data` beside it, not in
+     AppData, and the songs and mods folders chosen inside the folder are remembered relative
+     to it, so they work under any drive letter. Delete `portable.txt` to use AppData instead.
+   - Windows, OpenRB-338's installer: run it. It can add `orb` to the PATH.
    - Linux: make the AppImage executable (`chmod +x OpenRB-338-*.AppImage`).
 
 3. **Optionally, get songs and mods:** download the

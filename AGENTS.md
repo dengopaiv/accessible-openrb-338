@@ -50,8 +50,11 @@ rebasing on upstream stays simple.
   at least anything other than windows. But make sure the zip is in the dist." The fork builds,
   tests and ships `x86_64-pc-windows-msvc` only (`scripts/package.sh x86_64-pc-windows-msvc`,
   the zip moved to the top of `dist\`); the other five targets, Docker and cargo-xwin are not
-  used. Upstream's CI, release workflow and docs for all six targets stay as they are until a
-  task, decided by the user, removes them. TASK-199 and TASK-206 (macOS and Linux) are on hold
+  used. A release is that one zip, portable (`portable.txt`: settings and logs in `data\`
+  beside the program), and no installer (the user, 2026-11-09, task-222); the steps are in
+  docs/building.md, "The portable Windows zip and the fork's releases". Upstream's CI,
+  release workflow and docs for all six targets stay as they are until a task, decided by the
+  user, removes them. TASK-199 and TASK-206 (macOS and Linux) are on hold
   for this reason. A Windows start that fails: docs/building.md, the run log and the debug kit
   (task-214, task-215, task-219).
 

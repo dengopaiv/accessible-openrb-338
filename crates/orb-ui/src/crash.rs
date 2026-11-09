@@ -32,10 +32,30 @@ pub const KEEP: usize = 20;
 /// The exit code after a panic (what Rust's own unhandled panic gives).
 pub const EXIT_CODE: i32 = 101;
 
-/// The folder of the logs, from the environment: `ORB_UI_LOG_DIR` if set (tests), else
-/// the platform's.
+/// The folder of the logs, from the environment: `ORB_UI_LOG_DIR` if set (tests), else in
+/// portable mode `data/logs` beside the program ([`crate::portable`], task-223), else the
+/// platform's.
 pub fn log_dir() -> Option<PathBuf> {
-    platform_dir(std::env::consts::OS, |k| std::env::var_os(k))
+    log_dir_for(
+        std::env::consts::OS,
+        |k| std::env::var_os(k),
+        crate::portable::data_dir().as_deref(),
+    )
+}
+
+/// [`log_dir`] for the system `os`, an environment lookup and the portable data folder
+/// (`portable_data`, task-223): `ORB_UI_LOG_DIR` (empty counts as unset), then
+/// `portable_data/logs`, then [`platform_dir`].
+pub fn log_dir_for(
+    os: &str,
+    env: impl Fn(&str) -> Option<OsString>,
+    portable_data: Option<&Path>,
+) -> Option<PathBuf> {
+    let set = env("ORB_UI_LOG_DIR").is_some_and(|v| !v.is_empty());
+    if !set && let Some(data) = portable_data {
+        return Some(data.join("logs"));
+    }
+    platform_dir(os, env)
 }
 
 /// [`log_dir`] for the system `os` (`std::env::consts::OS`) and an environment lookup:
@@ -507,6 +527,39 @@ mod tests {
             Some("/t".into())
         );
         assert_eq!(platform_dir("linux", env(&[])), None);
+    }
+
+    /// Portable mode (task-223): `data/logs`, unless `ORB_UI_LOG_DIR` names another folder.
+    #[test]
+    fn a_portable_copy_logs_beside_itself_unless_overridden() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                pairs
+                    .iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| OsString::from(v))
+            }
+        };
+        let data = Path::new("E:\\OpenRB\\data");
+        let win = env(&[("LOCALAPPDATA", "C:\\L")]);
+        assert_eq!(
+            log_dir_for("windows", win, Some(data)),
+            Some(data.join("logs"))
+        );
+        assert_eq!(
+            log_dir_for("windows", env(&[("ORB_UI_LOG_DIR", "/t")]), Some(data)),
+            Some("/t".into())
+        );
+        // an empty override counts as unset
+        assert_eq!(
+            log_dir_for("windows", env(&[("ORB_UI_LOG_DIR", "")]), Some(data)),
+            Some(data.join("logs"))
+        );
+        // not portable: the platform's folder, as before
+        assert_eq!(
+            log_dir_for("windows", env(&[("LOCALAPPDATA", "C:\\L")]), None),
+            Some(PathBuf::from("C:\\L").join("OpenRB-338").join("logs"))
+        );
     }
 
     #[test]

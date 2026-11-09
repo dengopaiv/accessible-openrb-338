@@ -13,9 +13,14 @@
 //! pattern; task-190) and `pitch_keys_make_notes` (a bool, false by default: in screen reader
 //! mode a 303's pitch key also turns a rest into a note; task-211) and `export_format` (`wav`,
 //! `flac` or `ogg`: the system Export dialog offers it first; task-204), so it can be edited by
-//! hand. Where it lives: `$ORB_UI_CONFIG` if set; else `OpenRB-338/ui.toml` in the platform's
+//! hand. Where it lives: `$ORB_UI_CONFIG` if set; else, in portable mode (a `portable.txt` next
+//! to the program, [`crate::portable`], task-223), `data/ui.toml` beside the program; else
+//! `OpenRB-338/ui.toml` in the platform's
 //! configuration folder (`$XDG_CONFIG_HOME`, or `~/.config` on Linux, `~/Library/Application
-//! Support` on macOS, `%APPDATA%` on Windows). Reading never fails: a missing or damaged file gives
+//! Support` on macOS, `%APPDATA%` on Windows). In portable mode the folders (`songs_dir`,
+//! `mods_dir`, `recent`, `last_song_dir`, `last_mod_dir`) that lie inside the program's folder
+//! are written relative to it and read back inside it ([`Settings::base`]), so a copy on a USB
+//! stick finds them under any drive letter. Reading never fails: a missing or damaged file gives
 //! the defaults (a damaged file stays as it is until the next save), a key of the wrong type is
 //! skipped and the others kept, and unknown keys are
 //! ignored. Saving writes the whole file through a temporary file and a rename, and returns
@@ -25,6 +30,7 @@
 //! fall back to the default. An empty `$ORB_UI_CONFIG` counts as unset. The old `ui.conf` is
 //! neither read nor deleted.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -79,6 +85,10 @@ pub struct Settings {
     pub export_format: ExportFormat,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
+    /// The portable folder (task-223): a folder inside it is written relative to it, and a
+    /// relative folder of the file is read inside it. `None` (not portable): full paths, as
+    /// before.
+    pub base: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -97,6 +107,7 @@ impl Default for Settings {
             pitch_keys_make_notes: false,
             export_format: ExportFormat::Wav,
             file: None,
+            base: None,
         }
     }
 }
@@ -126,8 +137,21 @@ pub fn home_dir() -> Option<PathBuf> {
 
 /// The settings file's default place (see the module text).
 pub fn default_file() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("ORB_UI_CONFIG").filter(|p| !p.is_empty()) {
+    file_for(
+        std::env::var_os("ORB_UI_CONFIG").as_deref(),
+        crate::portable::data_dir().as_deref(),
+    )
+}
+
+/// [`default_file`] for the value of `ORB_UI_CONFIG` (`config`; empty counts as unset) and the
+/// portable data folder (`portable_data`, task-223), in that order of precedence, else the
+/// platform's configuration folder.
+pub fn file_for(config: Option<&std::ffi::OsStr>, portable_data: Option<&Path>) -> Option<PathBuf> {
+    if let Some(p) = config.filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(p));
+    }
+    if let Some(data) = portable_data {
+        return Some(data.join("ui.toml"));
     }
     let base = if cfg!(windows) {
         std::env::var_os("APPDATA").map(PathBuf::from)
@@ -145,20 +169,20 @@ pub fn default_file() -> Option<PathBuf> {
 #[derive(Serialize)]
 struct Stored<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    songs_dir: Option<&'a Path>,
+    songs_dir: Option<Cow<'a, Path>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mods_dir: Option<&'a Path>,
+    mods_dir: Option<Cow<'a, Path>>,
     startup_sound: bool,
     screen_reader: &'a str,
     speak_raw_values: bool,
     step_editor_follows: bool,
     pitch_keys_make_notes: bool,
     export_format: &'a str,
-    recent: Vec<&'a Path>,
+    recent: Vec<Cow<'a, Path>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    last_song_dir: Option<&'a Path>,
+    last_song_dir: Option<Cow<'a, Path>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    last_mod_dir: Option<&'a Path>,
+    last_mod_dir: Option<Cow<'a, Path>>,
     // a table, so last
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     preferred_mods: BTreeMap<&'a str, &'a str>,
@@ -179,14 +203,51 @@ impl Settings {
     /// Reads the settings from the default file (the defaults when there is none).
     pub fn load() -> Self {
         match default_file() {
-            Some(f) => Self::load_from(&f),
+            Some(f) => Self::load_from_in(&f, crate::portable::root()),
             None => Self::default(),
         }
     }
 
     /// Reads `file`; a missing or unreadable file gives the defaults. Later writes go to
-    /// `file`.
+    /// `file`. Not portable: the folders are full paths.
     pub fn load_from(file: &Path) -> Self {
+        Self::load_from_in(file, None)
+    }
+
+    /// [`Settings::load_from`] with the portable folder `base` (task-223): a relative folder of
+    /// the file is read inside `base`, and later writes store the folders inside `base`
+    /// relative to it.
+    pub fn load_from_in(file: &Path, base: Option<&Path>) -> Self {
+        let mut s = Self::read(file);
+        if let Some(b) = base {
+            let full = |p: &mut PathBuf| *p = crate::portable::resolve(b, p);
+            for p in [
+                &mut s.songs_dir,
+                &mut s.mods_dir,
+                &mut s.last_song_dir,
+                &mut s.last_mod_dir,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                full(p);
+            }
+            s.recent.iter_mut().for_each(full);
+            // "songs" and a full path to the same folder (in any case, on Windows) are one
+            // recent folder
+            let mut seen: Vec<PathBuf> = Vec::new();
+            s.recent.retain(|p| {
+                let new = !seen.iter().any(|q| crate::portable::same(q, p));
+                seen.push(p.clone());
+                new
+            });
+            s.base = Some(b.to_path_buf());
+        }
+        s
+    }
+
+    /// The file's values as stored.
+    fn read(file: &Path) -> Self {
         let mut s = Self {
             file: Some(file.to_path_buf()),
             ..Self::default()
@@ -266,17 +327,17 @@ impl Settings {
             return Ok(());
         };
         let text = toml::to_string(&Stored {
-            songs_dir: self.songs_dir.as_deref().and_then(storable),
-            mods_dir: self.mods_dir.as_deref().and_then(storable),
+            songs_dir: self.songs_dir.as_deref().and_then(|p| self.stored(p)),
+            mods_dir: self.mods_dir.as_deref().and_then(|p| self.stored(p)),
             startup_sound: self.startup_sound,
             screen_reader: self.screen_reader.key(),
             speak_raw_values: self.speak_raw_values,
             step_editor_follows: self.step_editor_follows,
             pitch_keys_make_notes: self.pitch_keys_make_notes,
             export_format: self.export_format.extension(),
-            recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
-            last_song_dir: self.last_song_dir.as_deref().and_then(storable),
-            last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),
+            recent: self.recent.iter().filter_map(|p| self.stored(p)).collect(),
+            last_song_dir: self.last_song_dir.as_deref().and_then(|p| self.stored(p)),
+            last_mod_dir: self.last_mod_dir.as_deref().and_then(|p| self.stored(p)),
             preferred_mods: self
                 .preferred_mods
                 .iter()
@@ -298,6 +359,20 @@ impl Settings {
                 let _ = std::fs::remove_file(&tmp);
                 format!("{}: cannot write: {e}", file.display())
             })
+    }
+
+    /// A folder as the file stores it: left out when TOML cannot hold it ([`storable`]),
+    /// relative to [`Settings::base`] when it lies inside it (task-223), else the full path.
+    fn stored<'a>(&self, p: &'a Path) -> Option<Cow<'a, Path>> {
+        let p = storable(p)?;
+        match self
+            .base
+            .as_deref()
+            .and_then(|b| crate::portable::relative(b, p))
+        {
+            Some(r) => Some(Cow::Owned(r)),
+            None => Some(Cow::Borrowed(p)),
+        }
     }
 
     /// Puts `dir` first in the recent folders.

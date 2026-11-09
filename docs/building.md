@@ -244,6 +244,8 @@ still set it, to check that it is ignored), `RB_MOD_ORIG_DIR`, `RB_CD_REBIRTH_EX
 for `tools/rbm_test.py` only; `RBM` is the mod format), and the variables of other tools
 (`SOURCE_DATE_EPOCH`, `GITHUB_REF_NAME`, `WGPU_BACKEND`). The settings folder is `OpenRB-338`
 (`OpenRB-338/ui.toml`); settings of the old `rb/` folder are not carried over (no migration).
+In portable mode the settings and the logs are in `data\` beside the program instead (section
+"The portable Windows zip and the fork's releases").
 
 ## Developer options hidden from the help (task-137)
 
@@ -282,10 +284,11 @@ The parser is `parse_args` in `crates/orb-ui/src/main.rs` (unit tests there and 
 A panic in OpenRB-338 (any thread) shows a native box and writes `crash-YYYYMMDD-HHMMSS.log`
 (version, OS, thread, message, location, backtrace; the newest 20 are kept) to
 `~/Library/Logs/OpenRB-338/` (macOS), `%LOCALAPPDATA%\OpenRB-338\logs\` (Windows) or
-`$XDG_STATE_HOME/OpenRB-338/` (`~/.local/state/OpenRB-338/`, Linux). Ask for that file with a
-bug report. The box comes from the crate `rfd` 0.17 (MIT, GPL-3.0 compatible) with no default
-features: it links no system library on any target (macOS AppKit and Windows come with the
-system; on Linux `zenity` runs the box at run time, so with no zenity only the log and stderr
+`$XDG_STATE_HOME/OpenRB-338/` (`~/.local/state/OpenRB-338/`, Linux); a portable copy (the
+fork's zip, `portable.txt` next to the program; task-223) writes to `data\logs\` beside the
+program instead. Ask for that file with a bug report. The box comes from the crate `rfd`
+0.17 (MIT, GPL-3.0 compatible) with no default features: it links no system library on any
+target (macOS AppKit and Windows come with the system; on Linux `zenity` runs the box at run time, so with no zenity only the log and stderr
 happen), so the Docker image needs nothing new. Checked on 2026-10-30 (task-157): `scripts/build.sh`
 built `OpenRB-338` and `orb` in the Docker image for `x86_64-unknown-linux-gnu` and
 `aarch64-unknown-linux-gnu` (the image unchanged, `--locked`); `cargo xwin check -p orb-ui` passed
@@ -477,8 +480,10 @@ default) or `Mini`). It stays on, for starts outside the script too, until `-Dis
 -v` and the stack of each dump, with the kit's folder as the symbol path (and `_NT_SYMBOL_PATH`
 if the user has set one; the script sets no symbol server).
 
-**Outside the script**, every start writes its run log anyway: after a failed start from the
-Start menu, `%LOCALAPPDATA%\OpenRB-338\logs\run-*.log` (the newest) tells what happened.
+**Outside the script**, every start writes its run log anyway: after a failed start, the newest
+`run-*.log` in `%LOCALAPPDATA%\OpenRB-338\logs\` (an installed copy), or in `data\logs\` beside
+`OpenRB-338.exe` (the fork's portable zip, task-223), tells what happened. `win_diag.ps1` looks
+in the same folder the program uses.
 
 Checked on 2026-11-07 on the development machine (Windows 11 26H2 build 26340, Windows
 PowerShell 5.1.26100 and PowerShell 7.6.9), with the kit's `OpenRB-338.exe`, `ORB_UI_LOG_DIR` and
@@ -509,6 +514,53 @@ PowerShell 5.1.26100 and PowerShell 7.6.9), with the kit's `OpenRB-338.exe`, `OR
 
 Not checked: the cdb analysis of a dump and the cdb dump of a hang (cdb is not installed on the
 development machine).
+
+## The portable Windows zip and the fork's releases (task-223)
+
+The user's decision (2026-11-09, task-222): this fork's releases are one portable zip for
+Windows x64, `OpenRB-338-<version>-x86_64-pc-windows-msvc.zip`, with `SHA256SUMS.txt`; no
+installer (the installer script still builds, "The Windows installer", but is not released).
+
+**Portable mode** (`crates/orb-ui/src/portable.rs`). When a file `portable.txt` lies next to
+the running `OpenRB-338.exe`, the settings file is `data\ui.toml` and the crash and run logs go
+to `data\logs\`, both beside the program, instead of `%APPDATA%\OpenRB-338\ui.toml` and
+`%LOCALAPPDATA%\OpenRB-338\logs\`. `ORB_UI_CONFIG` and `ORB_UI_LOG_DIR` still win. The folders
+the settings remember (`songs_dir`, `mods_dir`, `recent`, `last_song_dir`, `last_mod_dir`)
+are written relative to the program's folder when they lie inside it (Windows compares
+without case) and read back inside it, so a copy on a USB stick keeps them under another
+drive letter; folders elsewhere stay full paths. The run log's first line after the header
+names the mode and the settings file and log folder actually used, overrides included
+(`portable (portable.txt found): settings file ...\data\ui.toml; logs in ...\data\logs`, or
+`not portable: ...`). `tools/win_diag.ps1` reads the logs from the same folder. The program
+writes nothing else of its own: songs, exports and mods go where the user chooses. The folder
+must be writable (not under `C:\Program Files`): otherwise the settings cannot be saved and
+the logs are not written. Without the file nothing changes, so upstream's packages and the
+installer behave as before.
+
+`scripts/package.sh` puts `scripts/portable.txt` (it explains itself) into the Windows zip, and
+its README.txt says the copy is portable; the `.tar.gz` of the other targets has neither.
+
+Checked on 2026-11-09 (Windows 11): `OpenRB-338.exe --debug-start-error` with
+`ORB_UI_NO_CRASH_DIALOG=1`, copied into a folder with `portable.txt`, wrote its run log to
+`data\logs\` beside it and nothing to `%LOCALAPPDATA%`; without the file, to
+`%LOCALAPPDATA%\OpenRB-338\logs\`. The settings round trip is
+`crates/orb-ui/tests/settings.rs` (`a_portable_copy_stores_its_own_folders_relative` and
+the two after it) and the unit tests of `portable.rs`.
+
+**Making a release of the fork.** By hand on the Windows machine; upstream's `release.yml`
+builds six platforms and the fork does not use it (GitHub Actions has not run on the fork).
+
+1. `cargo test --release --workspace` on main, pushed to `origin`.
+2. Pick the tag, `TAG=v$(date -u +%Y.%m%d.%H%M)`, then `eval "$(bash scripts/release-env.sh
+   $TAG)"` and export `SOURCE_DATE_EPOCH` and `ORB_BUILD_BRANCH`, so the binaries and the file
+   name carry the tag's version.
+3. `bash scripts/package.sh x86_64-pc-windows-msvc`.
+4. Unpack the zip and run its `orb.exe compare --manifest tests/refs/manifest.json --set
+   diag,shipped` (all equal).
+5. `sha256sum` of the zip into `SHA256SUMS.txt`; the notes are a short introduction and
+   `scripts/changelog.sh PREV HEAD` (with upstream's tags fetched, PREV is the last release).
+6. `gh release create $TAG --draft --target <commit> --title ... --notes-file ... ZIP
+   SHA256SUMS.txt`. The user publishes the draft; publishing creates the tag.
 
 ## GitHub Actions (`.github/workflows/`)
 

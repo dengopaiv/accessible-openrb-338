@@ -1,0 +1,13 @@
+This file makes this copy of OpenRB-338 portable.
+
+While portable.txt lies next to OpenRB-338.exe, the program keeps its settings
+(data\ui.toml) and its logs (data\logs) in the folder data beside it, and writes nothing to
+AppData. The whole folder can live on a USB stick or anywhere you can write to (not in
+C:\Program Files, which needs administrator rights to write).
+
+The songs and mods folders you choose inside this folder are remembered relative to it, so
+they still work when the stick has another drive letter. Folders elsewhere are remembered as
+full paths.
+
+Delete this file to keep the settings in %APPDATA%\OpenRB-338 and the logs in
+%LOCALAPPDATA%\OpenRB-338\logs instead, as an installed program does.

@@ -1072,9 +1072,14 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   place, the Mods menu's folder). "Use as songs/mods folder" in the dialog sets those to the
   folder shown. The last 8 folders a file was chosen in are the recent folders. All of it is a
   TOML file (task-107) of `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
-  (an array) and `startup_sound` at `$ORB_UI_CONFIG`, else `OpenRB-338/ui.toml` (task-068;
+  (an array) and `startup_sound` at `$ORB_UI_CONFIG`, else in portable mode (a `portable.txt`
+  next to the program, the fork's Windows zip; task-223) `data/ui.toml` beside the program,
+  else `OpenRB-338/ui.toml` (task-068;
   settings of the old `rb/` folder are not carried over) in `$XDG_CONFIG_HOME` (Linux
-  `~/.config`, macOS `~/Library/Application Support`, Windows `%APPDATA%`); it is rewritten
+  `~/.config`, macOS `~/Library/Application Support`, Windows `%APPDATA%`). In portable mode
+  the folders that lie inside the program's folder are stored relative to it and read back
+  inside it, so they follow a USB stick to another drive letter (`crates/orb-ui/src/portable.rs`;
+  folders elsewhere stay full paths). The file is rewritten
   whole, through a temporary file and a rename, when a path is chosen or a folder set. A
   missing or damaged file means the defaults (a damaged one stays until the next save), a key
   of the wrong type is skipped, unknown keys are ignored. A path that is not valid UTF-8 is
@@ -1435,7 +1440,8 @@ crash report for a Rust panic.
   message, the location and a backtrace (`Backtrace::force_capture`, so no `RUST_BACKTRACE`
   is needed). The newest 20 stay. The folder: macOS `~/Library/Logs/OpenRB-338/`, Windows
   `%LOCALAPPDATA%\OpenRB-338\logs\`, others `$XDG_STATE_HOME/OpenRB-338/` or
-  `~/.local/state/OpenRB-338/`; `ORB_UI_LOG_DIR` replaces it.
+  `~/.local/state/OpenRB-338/`; in portable mode (task-223) `data/logs/` beside the program;
+  `ORB_UI_LOG_DIR` replaces any of them.
 - The box (native, blocking, one OK button; `rfd` 0.17, MIT; on Linux `zenity` runs it, and
   with no zenity nothing shows, the log and stderr still happen) says "OpenRB-338 stopped
   because of an internal error. A crash log was saved to PATH." (or that it could not be

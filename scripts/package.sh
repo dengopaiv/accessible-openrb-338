@@ -32,10 +32,16 @@ case $target in
         run="OpenRB-338.exe (the app) and orb.exe (the command line)"
         unsigned='The programs are not signed, so Windows SmartScreen may say "Windows protected
 your PC" when one of them first starts: choose "More info", then "Run anyway".'
+        # the fork's Windows zip is portable (task-223; the user's decision, task-222)
+        cp "$root/scripts/portable.txt" "$stage/portable.txt"
+        portable='This copy is portable: unpack the folder anywhere, a USB stick too, and run
+OpenRB-338.exe. While portable.txt lies next to it, the settings and the logs are kept in the
+folder data beside it and nothing is written to AppData (portable.txt says more).'
         ;;
     *)
         run="OpenRB-338 (the app) and orb (the command line)"
         unsigned="The programs are not signed, so the system may warn before the first start."
+        portable=""
         ;;
 esac
 cat > "$stage/README.txt" <<EOF
@@ -49,7 +55,9 @@ Neither needs any file of the original program: the standard drum kit is built i
   orb render SONG.rbs -o SONG.flac    render a song to FLAC, Ogg Vorbis or WAV
   orb --help                          all commands
   OpenRB-338                          the desktop UI
-
+${portable:+
+$portable
+}
 $(cat "$root/scripts/fork-readme.txt")
 
 $unsigned

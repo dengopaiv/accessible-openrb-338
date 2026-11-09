@@ -228,8 +228,15 @@ function Get-ExitKind {
     return "ended with exit code $Code"
 }
 
+# The program's log folder, by its own rule (crates/orb-ui/src/crash.rs log_dir):
+# ORB_UI_LOG_DIR, else data\logs beside a portable program (portable.txt next to it, task-223),
+# else %LOCALAPPDATA%\OpenRB-338\logs.
 function Get-LogDir {
+    param([string]$ExeDir)
     if ($env:ORB_UI_LOG_DIR) { return $env:ORB_UI_LOG_DIR }
+    if (Test-Path -LiteralPath (Join-Path $ExeDir 'portable.txt') -PathType Leaf) {
+        return (Join-Path $ExeDir 'data\logs')
+    }
     return (Join-Path $env:LOCALAPPDATA 'OpenRB-338\logs')
 }
 
@@ -308,7 +315,7 @@ $Exe = Find-Exe $Exe
 $exeDir = Split-Path $Exe
 $reportDir = Join-Path $exeDir 'diag-reports'
 $dumpDir = Join-Path $exeDir 'dumps'
-$logDir = Get-LogDir
+$logDir = Get-LogDir $exeDir
 $sessionStart = Get-Date
 $stamp = $sessionStart.ToString('yyyyMMdd-HHmmss')
 New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
