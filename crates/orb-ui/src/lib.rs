@@ -25,6 +25,7 @@ pub mod menu;
 pub mod mod_chooser;
 pub mod mod_info;
 pub mod model;
+pub mod numpad;
 pub mod palette;
 pub mod portable;
 pub mod runlog;

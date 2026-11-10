@@ -28,6 +28,7 @@ use crate::link::Link;
 use crate::logo_anim;
 use crate::menu::{Job, MENU_H, ModEntry, Then};
 use crate::model::Panel;
+use crate::numpad;
 use crate::palette::BG;
 use crate::settings::Settings;
 use crate::shortcuts;
@@ -927,6 +928,10 @@ impl App {
         } else {
             self.holds.clear();
         }
+        // What no key event of this frame claimed is dropped, whether `keyboard` ran or not (a
+        // dialog, a text field or the menu bar has the keys): a numpad `*` pressed there does
+        // not fire later, and no entry tags a later main-keyboard key (numpad.rs).
+        numpad::end_frame();
 
         for (name, x, y) in layout::backgrounds() {
             let (w, h) = part_size(name);
@@ -1078,6 +1083,16 @@ impl App {
             ui.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
         }
         self.key_focus = ui.memory(|m| m.focused());
+        // Numpad `*` has no egui key: it is Record, as Insert is (a press, and the release that
+        // lets go of the button), numpad.rs (task-225). A window that has the keys keeps it.
+        for pressed in numpad::take_multiply() {
+            if !pressed {
+                self.release(Key::Insert);
+            } else if focused && !(screen_reader && window_has_keys) {
+                let a = Action::Press("transport.record".into());
+                self.act(Key::Insert, a, now);
+            }
+        }
         for ev in events {
             let egui::Event::Key {
                 key,
@@ -1090,13 +1105,15 @@ impl App {
                 continue;
             };
             let k = keys::position(key, physical_key);
+            // whether the numpad's key (the hook of numpad.rs; always false off Windows)
+            let numpad = numpad::claim(k, physical_key.is_some(), pressed);
             if !pressed {
                 self.release(k);
                 continue;
             }
             // Screen reader mode, the focus on a 303's step editor: Up, Down, Home and End move
             // its edit step, auto-repeat included; Left and Right do nothing (task-190).
-            if !modifiers.any() && screen_reader && self.step_editor_key(ui, key, now) {
+            if !numpad && !modifiers.any() && screen_reader && self.step_editor_key(ui, key, now) {
                 continue;
             }
             // Screen reader mode, the focus on a drum grid: the arrows, Home, End and Space
@@ -1154,18 +1171,25 @@ impl App {
                 let section = ui
                     .memory(|m| m.focused())
                     .and_then(|f| nav::section_of(&self.nav, f));
-                let enter = k == Key::Enter && !ctrl;
+                // The numpad's Enter is Play whatever has the focus (task-225).
+                let enter = k == Key::Enter && !ctrl && !numpad;
                 let mapped = match (enter, section) {
                     (true, Some(s)) => match nav::row_of_section(s) {
-                        Some(r) if r < 2 => {
-                            keys::map_screen_reader(k, modifiers.shift, ctrl, self.key_mode, r)
-                        }
+                        Some(r) if r < 2 => keys::map_screen_reader(
+                            k,
+                            modifiers.shift,
+                            ctrl,
+                            false,
+                            self.key_mode,
+                            r,
+                        ),
                         _ => Some(SrAction::Panel(Action::Press("transport.play".into()))),
                     },
                     _ => keys::map_screen_reader(
                         k,
                         modifiers.shift,
                         ctrl,
+                        numpad,
                         self.key_mode,
                         self.panel.focus,
                     ),
@@ -1195,7 +1219,8 @@ impl App {
             if repeat || modifiers.command || modifiers.ctrl {
                 continue;
             }
-            if let Some(a) = keys::map(k, modifiers.shift, self.key_mode, self.panel.focus) {
+            if let Some(a) = keys::map(k, modifiers.shift, numpad, self.key_mode, self.panel.focus)
+            {
                 self.act(k, a, now);
             }
         }

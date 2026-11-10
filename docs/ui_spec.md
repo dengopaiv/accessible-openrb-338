@@ -759,23 +759,44 @@ down on its button (`App::keyboard`), the button shows pressed while the key is 
 tempo, bar, rewind or fast forward key repeats on the mouse's schedule. The panel takes no key
 while a browser is open. Ctrl+F / Ctrl+G (Cmd on macOS) set `App::key_mode` (default Program Synth).
 
-egui 0.37 cannot tell numpad keys from the keys they share a name with (egui-winit's
-`key_from_key_code`: `Numpad0..9` = `Num0..9`, `NumpadEnter` = `Enter`, `NumpadSubtract` =
-`Minus`, `NumpadDivide` = `Slash`; `NumpadAdd` = `Plus` is distinct; `NumpadMultiply` gives no key
-at all, so Insert is the only record key). What works everywhere: Space, Insert, numpad `+`. The
-original keeps the others on separate codes; OpenRB-338 resolves them by mode and focus (`keys::map`):
-- digits `1`..`8` are pattern keys in Select Patterns mode (so numpad 1 2 4 5 7 8 are not
-  transport keys there; numpad 0 still stops); in Program Synth mode digits are the numpad's;
+**The numpad (task-225, the user's decision of 2026-11-10; Windows).** egui 0.37 cannot tell numpad
+keys from the keys they share a name with (egui-winit's `key_from_key_code`: `Numpad0..9` =
+`Num0..9`, `NumpadEnter` = `Enter`, `NumpadSubtract` = `Minus`, `NumpadDivide` = `Slash`;
+`NumpadAdd` = `Plus` is distinct; `NumpadMultiply` and `NumpadDecimal` give no physical key). The
+fork builds for Windows only, so it asks Windows: winit's message hook (`numpad.rs`, installed
+through `NativeOptions::event_loop_builder` and `EventLoopBuilderExtWindows::with_msg_hook`) sees
+each `WM_KEYDOWN` / `WM_KEYUP` with its virtual key (`VK_NUMPAD0..9`, `VK_ADD`, `VK_SUBTRACT`,
+`VK_DIVIDE`, `VK_DECIMAL`, `VK_MULTIPLY`, and `VK_RETURN` with the extended-key bit 24 of `lParam`)
+before egui reads it, and `App::keyboard` pairs each egui key event (same key, same press or
+release) with it. `keys::map` gets the result as its `numpad` flag, and a numpad key is then the
+original's numpad code in every mode and every focus, in screen reader mode too: `+` `-` tempo
+up / down, Enter Play, `0` Stop, `1` / `2` locate to the loop start / end, `4` / `5` Rewind / Fast
+forward, `7` / `8` Bar down / up, `/` Loop; `3 6 9` and `.` do nothing, as in the original;
+`*` (Record, no egui key) is taken from the hook as Insert. **Keep Num Lock on**: with it off
+Windows turns only the digits and the decimal point into Insert, End, the arrows and Delete
+(`+ - / *` and Enter keep their virtual keys), and NVDA's desktop keyboard layout "makes heavy
+use of the numpad (with Num Lock off)" (NVDA 2024.1 User Guide; its key commands give numpad
+`+` alone as "Say all with review", numpad `-` only with the NVDA key), so with Num Lock on the
+keys reach the program (Help > Keyboard Shortcuts says so). Other platforms
+have no hook and the flag is always false.
+
+The main keyboard keeps what it did, resolved by mode and focus as follows (`keys::map`, `numpad`
+false); the original keeps these on separate codes:
+- digits `1`..`8` are pattern keys in Select Patterns mode (so main-row 1 2 4 5 7 8 are not
+  transport keys there; main-row 0 still stops); in Program Synth mode main-row digits are the
+  numpad's;
 - Enter is the 303's Step when a 303 has the focus in Program Synth mode, else Play;
 - `/` is the 303's high C there, else the loop switch;
-- `-` is Note/Pause (303) or AC (drums) in Program Synth mode, else tempo down. So in Program
-  Synth mode tempo down has no key.
+- `-` is Note/Pause (303) or AC (drums) in Program Synth mode, else tempo down. So on the main
+  keyboard tempo down has no key in Program Synth mode; numpad `-` is tempo down.
 - `=` with Shift (`+` on a US keyboard) is tempo up, not the Note/Pause/AC alias.
 
 **Where OpenRB-338 differs from the original here.** In Program Synth mode (the default) the main-row
 digits `0 1 2 4 5 7 8` act as transport keys, Enter as Play outside a 303 and `/` as loop,
 whereas the original's main-row digits do nothing in that mode; the pattern keys work only in
-Select Patterns mode. This is a trade-off forced by egui 0.37 (no numpad identity).
+Select Patterns mode. The main keyboard keeps this so that nothing learned moves; the numpad,
+which Windows tells apart (above), has the original's meaning in every mode. Where the hook is
+not available (not Windows) the numpad is the main keyboard's keys.
 
 **PgUp / PgDn are not wired.** OpenRB-338's panel is a fixed, letterboxed 624 x 510 image with no
 scrolling rack, so there is nothing to scroll (the open [G] in section 15 stays open).
@@ -1131,9 +1152,10 @@ is one more entry.
   true: every bind is run through `keys::map`, and every (key, Shift, mode, row) for which
   `keys::map` gives an action (over all of egui's `Key::ALL`) must be covered by a bind with
   that action. The menu lines take their text from `shortcuts.rs`. OpenRB-338's deviations from the
-  original (section 10) are written in the window: tempo down has no key in Program Synth mode,
-  Enter and `/` change meaning with a 303 focused, PgUp / PgDn do nothing, numpad `*` gives no
-  key. The groups "Windows and the file browser" and "Prompts and questions" (the unsaved-changes
+  original (section 10) are written in the window: the group "The numpad" (with the Num Lock /
+  screen reader note) and, for the main keyboard, tempo down has no key in Program Synth mode,
+  Enter and `/` change meaning with a 303 focused, PgUp / PgDn do nothing (task-225). The
+  groups "Windows and the file browser" and "Prompts and questions" (the unsaved-changes
   prompt: S/Y/Enter save, D/N do not, Esc cancels; the browser's overwrite question: Y replaces,
   Enter/Esc/N go back) are listed by hand from `prompt_ui` (`menu.rs`) and the browser's key
   handler (`browser.rs`); no test checks them.

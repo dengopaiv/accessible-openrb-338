@@ -4,8 +4,11 @@
 //!
 //! egui 0.37 cannot tell a numpad key from the key it shares a name with (egui-winit maps
 //! `Numpad4` and `Digit4` both to `Key::Num4`, `NumpadEnter` to `Enter`, `NumpadSubtract` to
-//! `Minus`, `NumpadDivide` to `Slash`; `NumpadMultiply` gives no key at all). So the keys the
-//! original keeps apart on its own codes are resolved by the mode and the focus, see [`map`].
+//! `Minus`, `NumpadDivide` to `Slash`; `NumpadMultiply` gives no key at all). On Windows the
+//! window's message hook knows which key it was (`numpad.rs`, task-225) and `map` gets it as
+//! its `numpad` flag: a numpad key has the original's numpad meaning in every mode and focus.
+//! The main keyboard's keys that the original keeps on the same codes are resolved by the mode
+//! and the focus, see [`map`].
 
 use eframe::egui::Key;
 
@@ -132,7 +135,17 @@ pub fn position(key: Key, physical: Option<Key>) -> Key {
 /// - `-` is Note/Pause (303) or AC (drums) in Synth mode, else tempo down.
 ///
 /// `=` is the alias of Note/Pause and AC (the main keyboard's OEM plus key), only in Synth mode.
-pub fn map(k: Key, shift: bool, mode: KeyMode, focus: usize) -> Option<Action> {
+///
+/// `numpad`: the key is on the numpad (`numpad.rs`; `k` is the key egui names it). Then it is
+/// the original's numpad code, whatever the mode, the focus and `shift` (`sub_42D1D3`,
+/// `sub_492312`, docs/ui_spec.md section 10): `+` `-` tempo up / down, `0` Stop, `1` / `2`
+/// locate to the loop start / end, `4` / `5` Rewind / Fast forward, `7` / `8` Bar down / up,
+/// Enter Play, `/` Loop. `3`, `6`, `9` and `.` do nothing. (`*`, Record, has no egui key: the
+/// app gives it as Insert.)
+pub fn map(k: Key, shift: bool, numpad: bool, mode: KeyMode, focus: usize) -> Option<Action> {
+    if numpad {
+        return map_numpad(k);
+    }
     let synth = mode == KeyMode::Synth;
     let is303 = focus < 2;
     let press = |id: &str| Some(Action::Press(id.into()));
@@ -199,6 +212,25 @@ pub fn map(k: Key, shift: bool, mode: KeyMode, focus: usize) -> Option<Action> {
     }
 }
 
+/// The original's numpad keys, in every mode (see [`map`]).
+fn map_numpad(k: Key) -> Option<Action> {
+    let press = |id: &str| Some(Action::Press(id.into()));
+    match k {
+        Key::Plus => Some(Action::Arrow("transport.tempo_up")),
+        Key::Minus => Some(Action::Arrow("transport.tempo_down")),
+        Key::Enter => press("transport.play"),
+        Key::Num0 => press("transport.stop"),
+        Key::Slash => press("transport.loop"),
+        Key::Num4 => Some(Action::Arrow("transport.rewind")),
+        Key::Num5 => Some(Action::Arrow("transport.ff")),
+        Key::Num7 => Some(Action::Arrow("transport.bar_down")),
+        Key::Num8 => Some(Action::Arrow("transport.bar_up")),
+        Key::Num1 => Some(Action::Locate(false)),
+        Key::Num2 => Some(Action::Locate(true)),
+        _ => None,
+    }
+}
+
 /// What a key does in screen reader mode (task-188, decisions A11Y-D2 and A11Y-D6,
 /// docs/ui_spec.md section 10, "Screen reader mode").
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -217,7 +249,8 @@ pub enum SrAction {
 }
 
 /// What the key `k` does in screen reader mode, with `shift` and `ctrl` (Ctrl or Cmd) held, in
-/// `mode`, with the row `focus` (see [`map`]). Up, Down, Page Up, Page Down, Home and End change
+/// `mode`, with the row `focus` (see [`map`]; `numpad` as there, a numpad key with Ctrl held is
+/// nothing). Up, Down, Page Up, Page Down, Home and End change
 /// a focused value control (`App::keyboard`, task-187) and are nothing here; Left and Right are
 /// kept for the step editor and the grids (task-190, task-191); F2 to F4 for the read-out keys
 /// (task-189); F10 is the menu bar's (task-184). Every other key is [`map`]'s.
@@ -225,15 +258,23 @@ pub fn map_screen_reader(
     k: Key,
     shift: bool,
     ctrl: bool,
+    numpad: bool,
     mode: KeyMode,
     focus: usize,
 ) -> Option<SrAction> {
     let panel = |a: Option<Action>| a.map(SrAction::Panel);
     let press = |id: &str| Some(SrAction::Panel(Action::Press(id.into())));
+    if numpad {
+        return if ctrl {
+            None
+        } else {
+            panel(map(k, shift, true, mode, focus))
+        };
+    }
     if ctrl {
         // the original's Tab / Shift+Tab and Up / Down, moved; other keys are the menu's
         return match k {
-            Key::Tab => panel(map(Key::Tab, shift, mode, focus)),
+            Key::Tab => panel(map(Key::Tab, shift, false, mode, focus)),
             Key::ArrowUp if !shift => Some(SrAction::Panel(Action::Focus(-1))),
             Key::ArrowDown if !shift => Some(SrAction::Panel(Action::Focus(1))),
             _ => None,
@@ -256,7 +297,7 @@ pub fn map_screen_reader(
         | Key::PageDown
         | Key::Home
         | Key::End => None,
-        _ => panel(map(k, shift, mode, focus)),
+        _ => panel(map(k, shift, false, mode, focus)),
     }
 }
 
@@ -266,7 +307,8 @@ mod tests {
 
     #[test]
     fn screen_reader_mode_moves_the_colliding_keys() {
-        let sr = |k, shift, ctrl, focus| map_screen_reader(k, shift, ctrl, KeyMode::Synth, focus);
+        let sr =
+            |k, shift, ctrl, focus| map_screen_reader(k, shift, ctrl, false, KeyMode::Synth, focus);
         assert_eq!(
             sr(Key::Tab, false, false, 0),
             Some(SrAction::Control(false))
@@ -315,31 +357,97 @@ mod tests {
     fn minus_and_equals_are_note_pause_or_ac() {
         for k in [Key::Minus, Key::Equals] {
             assert_eq!(
-                map(k, false, KeyMode::Synth, 1),
+                map(k, false, false, KeyMode::Synth, 1),
                 Some(Action::Press("tb303_2.note_pause".into()))
             );
-            assert_eq!(map(k, false, KeyMode::Synth, 3), Some(Action::TapDrum(0)));
+            assert_eq!(
+                map(k, false, false, KeyMode::Synth, 3),
+                Some(Action::TapDrum(0))
+            );
         }
         assert_eq!(
-            map(Key::Minus, false, KeyMode::Patterns, 0),
+            map(Key::Minus, false, false, KeyMode::Patterns, 0),
             Some(Action::Arrow("transport.tempo_down"))
         );
-        assert_eq!(map(Key::Equals, false, KeyMode::Patterns, 0), None);
+        assert_eq!(map(Key::Equals, false, false, KeyMode::Patterns, 0), None);
     }
 
     #[test]
     fn patterns_mode_digits_select_and_synth_mode_digits_are_the_numpad() {
         assert_eq!(
-            map(Key::Num5, false, KeyMode::Patterns, 3),
+            map(Key::Num5, false, false, KeyMode::Patterns, 3),
             Some(Action::Press("pattern1.pattern5".into()))
         );
         assert_eq!(
-            map(Key::Comma, false, KeyMode::Patterns, 0),
+            map(Key::Comma, false, false, KeyMode::Patterns, 0),
             Some(Action::Press("pattern4.pattern8".into()))
         );
         assert_eq!(
-            map(Key::Num5, false, KeyMode::Synth, 0),
+            map(Key::Num5, false, false, KeyMode::Synth, 0),
             Some(Action::Arrow("transport.ff"))
         );
+    }
+
+    #[test]
+    fn numpad_keys_are_the_originals_in_every_mode_and_focus() {
+        let arrow = |a| Some(Action::Arrow(a));
+        let press = |id: &str| Some(Action::Press(id.into()));
+        let table = [
+            (Key::Plus, arrow("transport.tempo_up")),
+            (Key::Minus, arrow("transport.tempo_down")),
+            (Key::Num4, arrow("transport.rewind")),
+            (Key::Num5, arrow("transport.ff")),
+            (Key::Num7, arrow("transport.bar_down")),
+            (Key::Num8, arrow("transport.bar_up")),
+            (Key::Num1, Some(Action::Locate(false))),
+            (Key::Num2, Some(Action::Locate(true))),
+            (Key::Num0, press("transport.stop")),
+            (Key::Enter, press("transport.play")),
+            (Key::Slash, press("transport.loop")),
+            (Key::Num3, None),
+            (Key::Num6, None),
+            (Key::Num9, None),
+            (Key::Period, None),
+            (Key::B, None),
+        ];
+        for (k, want) in table {
+            for mode in [KeyMode::Synth, KeyMode::Patterns] {
+                for focus in 0..4 {
+                    for shift in [false, true] {
+                        assert_eq!(map(k, shift, true, mode, focus), want, "{k:?} {mode:?}");
+                        let sr = map_screen_reader(k, shift, false, true, mode, focus);
+                        assert_eq!(sr, want.clone().map(SrAction::Panel), "sr {k:?}");
+                        assert_eq!(map_screen_reader(k, shift, true, true, mode, focus), None);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn main_keyboard_keys_keep_their_meaning() {
+        let press = |id: &str| Some(Action::Press(id.into()));
+        let m = |k, mode, focus| map(k, false, false, mode, focus);
+        // the key right of 0: Note/Pause or AC in Synth mode, tempo down in Patterns mode
+        assert_eq!(
+            m(Key::Minus, KeyMode::Synth, 0),
+            press("tb303_1.note_pause")
+        );
+        assert_eq!(m(Key::Minus, KeyMode::Synth, 2), Some(Action::TapDrum(0)));
+        assert_eq!(
+            m(Key::Minus, KeyMode::Patterns, 2),
+            Some(Action::Arrow("transport.tempo_down"))
+        );
+        // main-row digits, Enter and `/`
+        assert_eq!(
+            m(Key::Num5, KeyMode::Patterns, 0),
+            press("pattern1.pattern5")
+        );
+        assert_eq!(m(Key::Enter, KeyMode::Synth, 1), press("tb303_2.step"));
+        assert_eq!(m(Key::Enter, KeyMode::Synth, 3), press("transport.play"));
+        assert_eq!(m(Key::Slash, KeyMode::Synth, 0), press("tb303_1.key12"));
+        assert_eq!(m(Key::Slash, KeyMode::Patterns, 0), press("transport.loop"));
+        // the main keyboard's period is the 303's B pitch key (numpad `.` is nothing)
+        assert_eq!(m(Key::Period, KeyMode::Synth, 0), press("tb303_1.key11"));
     }
 }

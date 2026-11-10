@@ -45,6 +45,11 @@ rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] 
 # (task-194); the version eframe, winit and rfd use.
 raw-window-handle = "0.6"
 
+# The message hook that tells the numpad's keys apart (task-225): the extension trait of the
+# event loop builder; the version eframe uses (no new crate).
+[target.'cfg(windows)'.dependencies]
+winit = { version = "0.30.13", default-features = false }
+
 [dev-dependencies]
 orb-ui-art = { path = "../orb-ui-art" }
 # The gated tests' external inputs (task-121).

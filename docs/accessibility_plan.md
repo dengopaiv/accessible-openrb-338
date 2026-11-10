@@ -53,6 +53,7 @@ The document has three parts:
 | (new) | TASK-217 | Windows: DirectX 12 before Vulkan (Intel's Vulkan driver crashed the start) | 4c75ec2 |
 | (new) | TASK-219 | Debug kit: win_diag.cmd, so the execution policy need not be typed | 7541709 |
 | (new) | TASK-218 | The user's check: the Windows 10 PC starts OpenRB-338, 3 runs of 3 | (backlog) |
+| (new) | TASK-225 | Numpad keys apart from the main keyboard on Windows (message hook) | (see task) |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
@@ -68,11 +69,11 @@ The milestone is done when the m-7 tasks above are done (Part 3, "Done when"); T
 TASK-206 are on hold by the user's choice (2026-11-07), since they can be checked only on macOS
 and Linux, and the fork builds and ships for Windows only for now (the user, 2026-11-07: "We
 will not have a linux, mac or currently at least anything other than windows"). In the backlog
-m-7 stands at 39 of 41 done.
+m-7 stands at 43 of 46 done (TASK-227, the numpad hook's app-level tests, added 2026-11-10).
 
 Also open, outside the backlog: the by-ear checks of the follow-ups, NVDA checklist items 23 to
-27 (TASK-212, TASK-211, TASK-201, TASK-204, TASK-213; section 2.2). Their tests pass; the
-user has not marked them yet.
+27 (TASK-212, TASK-211, TASK-201, TASK-204, TASK-213; section 2.2) and item 28 (TASK-225,
+the numpad keys). Their tests pass; the user has not marked them yet.
 
 ## The milestone
 
@@ -410,6 +411,16 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     The 303's Cutoff moves one position per press. Turn Options > Speak Raw Values on: each
     press moves one position and speaks the number. With the mode off nothing of this applies.
     ( )
+28. TASK-225's numpad keys, with Num Lock on, in screen reader mode and Program Synth mode
+    (the default): numpad - lowers the tempo and numpad + raises it, and the new tempo is
+    announced as for the tempo buttons (a held key keeps repeating and the end value is spoken
+    on release). The main key right of 0 is still Note/Pause on a focused 303. Numpad Enter
+    plays even with a 303's section focused; numpad / switches Loop; numpad * starts Record
+    like Insert; numpad 0 stops; numpad . does nothing (no pitch key B). In Select Patterns
+    mode numpad 4 / 5 still wind and numpad 1 / 2 locate while the main-row digits select
+    patterns. With Num Lock off, NVDA's desktop layout takes the numpad (numpad + is its
+    Say all with review) and the digits become Insert, End and the arrows, as Help >
+    Keyboard Shortcuts says. ( )
 
 ### 2.3 Open tasks
 
@@ -434,7 +445,9 @@ NVDA check: the user's check was that the program starts (TASK-218).
 - With screen reader mode off, the app behaves exactly as upstream, key for key, except where
   the user decided otherwise: the panel's keys wait while a menu is in use (TASK-202). Outside
   the keys, two changes of the Windows 10 round apply in both modes: the run log of each start
-  (TASK-214) and DirectX 12 before Vulkan on Windows (TASK-217). The
+  (TASK-214) and DirectX 12 before Vulkan on Windows (TASK-217). The numpad's keys have the
+  original's meaning in every mode and both screen reader modes (the user, 2026-11-10,
+  TASK-225); the main keyboard's keys do not change. The
   existing tests of `crates/orb-ui/tests` (keyboard.rs in particular) pass unchanged.
 - Every accessible action goes through the same `model::Panel` method as the mouse or the
   original's key (`press`, `arrow`, `set_knob`, `set_fader`, `set_switch`,

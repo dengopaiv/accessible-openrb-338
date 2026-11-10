@@ -120,6 +120,8 @@ pub struct Bind {
     pub shift: Shift,
     pub scope: Scope,
     pub want: Want,
+    /// The key is the numpad's (`keys::map`'s `numpad` flag; `key` is the egui key it gives).
+    pub numpad: bool,
 }
 
 fn bind(key: Key, scope: Scope, want: Want) -> Bind {
@@ -128,6 +130,15 @@ fn bind(key: Key, scope: Scope, want: Want) -> Bind {
         shift: Shift::Any,
         scope,
         want,
+        numpad: false,
+    }
+}
+
+/// A numpad key (task-225): the same in every mode and row.
+fn numpad(key: Key, want: Want) -> Bind {
+    Bind {
+        numpad: true,
+        ..bind(key, Scope::Always, want)
     }
 }
 
@@ -619,12 +630,12 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
                     vec![bind(Key::Insert, Scope::Always, id("transport.record"))],
                 ),
                 row(
-                    "Numpad 0 (and the main-row 0)",
+                    "Main-row 0",
                     "Stop",
                     vec![bind(Key::Num0, Scope::Always, id("transport.stop"))],
                 ),
                 row(
-                    "Numpad +  or  Shift+=",
+                    "Shift+=",
                     "Tempo up (held keys repeat)",
                     vec![
                         bind(Key::Plus, Scope::Always, Want::Arrow("transport.tempo_up")),
@@ -647,10 +658,79 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
             ],
         },
         Group {
-            title: "Transport keys that depend on the mode",
+            title: "The numpad",
             mode: None,
-            note: "egui cannot tell the numpad from the main keyboard, so these keys are \
-                   resolved by the mode and the focus.",
+            note: "The original's numpad keys, in both keyboard modes whatever row has the \
+                   focus. Keep Num Lock on: with it off Windows turns the numpad's digits and \
+                   point into Insert, End, the arrows and Delete, and NVDA's desktop \
+                   keyboard layout takes the numpad keys for its own commands (numpad + is \
+                   its Say all with review) instead of passing them to the program.",
+            rows: vec![
+                row(
+                    "Numpad +  /  Numpad -",
+                    "Tempo up / down (held keys repeat)",
+                    vec![
+                        numpad(Key::Plus, Want::Arrow("transport.tempo_up")),
+                        numpad(Key::Minus, Want::Arrow("transport.tempo_down")),
+                    ],
+                ),
+                row(
+                    "Numpad Enter",
+                    "Play",
+                    vec![numpad(Key::Enter, id("transport.play"))],
+                ),
+                row(
+                    "Numpad 0",
+                    "Stop",
+                    vec![numpad(Key::Num0, id("transport.stop"))],
+                ),
+                row(
+                    "Numpad 4 / 5",
+                    "Rewind / Fast forward",
+                    vec![
+                        numpad(Key::Num4, Want::Arrow("transport.rewind")),
+                        numpad(Key::Num5, Want::Arrow("transport.ff")),
+                    ],
+                ),
+                row(
+                    "Numpad 7 / 8",
+                    "Bar down / Bar up",
+                    vec![
+                        numpad(Key::Num7, Want::Arrow("transport.bar_down")),
+                        numpad(Key::Num8, Want::Arrow("transport.bar_up")),
+                    ],
+                ),
+                row(
+                    "Numpad 1 / 2",
+                    "Locate to the loop start / end",
+                    vec![
+                        numpad(Key::Num1, Want::Locate(false)),
+                        numpad(Key::Num2, Want::Locate(true)),
+                    ],
+                ),
+                row(
+                    "Numpad /",
+                    "Loop on / off",
+                    vec![numpad(Key::Slash, id("transport.loop"))],
+                ),
+                row("Numpad *", "Record (like Insert)", vec![]),
+                row(
+                    "Numpad 3, 6, 9 and .",
+                    "Nothing, as in the original",
+                    vec![
+                        numpad(Key::Num3, Want::Nothing),
+                        numpad(Key::Num6, Want::Nothing),
+                        numpad(Key::Num9, Want::Nothing),
+                        numpad(Key::Period, Want::Nothing),
+                    ],
+                ),
+            ],
+        },
+        Group {
+            title: "Main-keyboard transport keys that depend on the mode",
+            mode: None,
+            note: "The main keyboard's keys that the original keeps on the same codes as the \
+                   numpad's, so they are resolved by the mode and the focus.",
             rows: vec![
                 row(
                     "Enter",
@@ -667,7 +747,7 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
                 row(
                     "-",
                     "Tempo down (held keys repeat). Select Patterns mode only: in \
-                     Program Synth mode `-` is Note/Pause or AC, so tempo down has no key",
+                     Program Synth mode `-` is Note/Pause or AC (use Numpad - for tempo down)",
                     vec![bind(
                         Key::Minus,
                         Scope::Patterns,
@@ -697,11 +777,6 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
                         bind(Key::Num1, Scope::Synth, Want::Locate(false)),
                         bind(Key::Num2, Scope::Synth, Want::Locate(true)),
                     ],
-                ),
-                row(
-                    "Numpad *",
-                    "Nothing: egui gives no key for it (Insert records)",
-                    vec![],
                 ),
             ],
         },
@@ -1006,11 +1081,30 @@ mod tests {
             for &shift in b.shift.states() {
                 for (mode, focus) in b.scope.cases() {
                     assert_eq!(
-                        keys::map_screen_reader(b.key, shift, b.ctrl, mode, focus),
+                        keys::map_screen_reader(b.key, shift, b.ctrl, false, mode, focus),
                         b.want.action(focus),
                         "{:?} shift={shift} ctrl={} {mode:?} focus={focus}",
                         b.key,
                         b.ctrl
+                    );
+                }
+            }
+        }
+    }
+
+    /// The numpad's keys are the same in screen reader mode (task-225).
+    #[test]
+    fn the_numpad_keys_are_the_same_in_screen_reader_mode() {
+        let all: Vec<Bind> = binds(false).into_iter().filter(|b| b.numpad).collect();
+        assert!(all.len() > 12, "{} numpad binds", all.len());
+        for b in &all {
+            for &shift in b.shift.states() {
+                for (mode, focus) in b.scope.cases() {
+                    assert_eq!(
+                        keys::map_screen_reader(b.key, shift, false, true, mode, focus),
+                        b.want.action(focus).map(SrAction::Panel),
+                        "{:?} {mode:?} focus={focus}",
+                        b.key
                     );
                 }
             }
@@ -1028,11 +1122,11 @@ mod tests {
                 for shift in [false, true] {
                     for mode in [KeyMode::Synth, KeyMode::Patterns] {
                         for focus in 0..4 {
-                            let got = keys::map_screen_reader(key, shift, ctrl, mode, focus);
+                            let got = keys::map_screen_reader(key, shift, ctrl, false, mode, focus);
                             let plain = if ctrl {
                                 None
                             } else {
-                                keys::map(key, shift, mode, focus).map(SrAction::Panel)
+                                keys::map(key, shift, false, mode, focus).map(SrAction::Panel)
                             };
                             if got == plain {
                                 continue;
@@ -1115,7 +1209,7 @@ mod tests {
             for &shift in b.shift.states() {
                 for (mode, focus) in b.scope.cases() {
                     assert_eq!(
-                        keys::map(b.key, shift, mode, focus),
+                        keys::map(b.key, shift, b.numpad, mode, focus),
                         b.want.action(focus),
                         "{:?} shift={shift} {mode:?} focus={focus}",
                         b.key
@@ -1131,15 +1225,16 @@ mod tests {
         let all = binds(false);
         let mut mapped = 0;
         for &key in Key::ALL {
-            for shift in [false, true] {
+            for (shift, numpad) in [(false, false), (true, false), (false, true), (true, true)] {
                 for mode in [KeyMode::Synth, KeyMode::Patterns] {
                     for focus in 0..4 {
-                        let Some(action) = keys::map(key, shift, mode, focus) else {
+                        let Some(action) = keys::map(key, shift, numpad, mode, focus) else {
                             continue;
                         };
                         mapped += 1;
                         let listed = all.iter().any(|b| {
                             b.key == key
+                                && b.numpad == numpad
                                 && b.shift.states().contains(&shift)
                                 && b.scope.cases().contains(&(mode, focus))
                                 && b.want.action(focus).as_ref() == Some(&action)
@@ -1162,7 +1257,7 @@ mod tests {
         let all = binds(false);
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
-                if a.key != b.key {
+                if a.key != b.key || a.numpad != b.numpad {
                     continue;
                 }
                 if !a

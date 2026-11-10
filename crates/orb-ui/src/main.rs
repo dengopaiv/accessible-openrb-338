@@ -374,11 +374,20 @@ fn main() -> ExitCode {
     // the graphics adapter: on Windows DirectX 12 first, Vulkan not loaded (task-217)
     let graphics = orb_ui::graphics::Rule::from_env();
     runlog::stage(&graphics.describe());
-    let options = eframe::NativeOptions {
+    #[allow(unused_mut)]
+    let mut options = eframe::NativeOptions {
         viewport,
         wgpu_options: orb_ui::graphics::wgpu_options(&graphics),
         ..Default::default()
     };
+    // Windows: the numpad's keys apart from the main keyboard's (task-225)
+    #[cfg(windows)]
+    {
+        use winit::platform::windows::EventLoopBuilderExtWindows;
+        options.event_loop_builder = Some(Box::new(|builder| {
+            builder.with_msg_hook(orb_ui::numpad::hook);
+        }));
+    }
     runlog::stage("creating the window and the graphics (eframe::run_native)");
     let run = eframe::run_native(
         "OpenRB-338",
