@@ -1,10 +1,11 @@
 ---
 id: TASK-220
 title: 'Decide: upstream pull request #4, Save writes the engine''s tracks (TASK-143)'
-status: To Do
+status: Done
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-09T17:33:00Z'
+updated_date: '2026-11-10T19:47:00Z'
 labels:
   - decision
   - ui
@@ -38,5 +39,11 @@ Recommendation: A. The PR's own text calls it a proposal for upstream's maintain
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user has chosen A, B or C; the outcome and date are in the final summary
+- [x] #1 The user has chosen A, B or C; the outcome and date are in the final summary
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Outcome (the user, 2026-11-10): include it. Upstream merged pull request #4 on 2026-11-10 as 32a642d ("tools: Save writes the engine's tracks for every song (#4)", task-143 and decision task-080 upstream), which settles option A's condition; the user: "since it's now answered, [it] should then also be included". A merge of the fork's main (cc62823) with 32a642d conflicts in one place, crates/orb-ui/src/menu.rs in App::open (upstream drops the 1.x set_engine_tracks copy; the fork adds the "Opened ..., mod ..." announcement of task-189). The merge is its own task (the next task created).
+<!-- SECTION:FINAL_SUMMARY:END -->
