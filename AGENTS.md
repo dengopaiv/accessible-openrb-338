@@ -57,6 +57,11 @@ rebasing on upstream stays simple.
   user, removes them. TASK-199 and TASK-206 (macOS and Linux) are on hold
   for this reason. A Windows start that fails: docs/building.md, the run log and the debug kit
   (task-214, task-215, task-219).
+- **Upstream PR #6.** The user, 2026-11-10: the beat cookbook is taken (docs/beats.md and
+  examples/, TASK-226), orb-mcp is not. The fork is for a person making music; AI is welcome for
+  building the tools, not for making the music, so nothing that lets an AI write songs belongs
+  here. A later upstream merge of PR #6 drops orb-mcp, docs/mcp.md, `.mcp.json` and the PR's
+  scripts, and renumbers the incoming task-176 and task-177, whose ids the fork already uses.
 
 ## Where things are
 
@@ -89,6 +94,8 @@ rebasing on upstream stays simple.
 - Later tasks add `test_machine.md`, `song_load.md`, `export_state.md` and `rbm.md`.
 - `docs/accessibility.md` and `docs/accessibility_plan.md` are the fork's screen reader work
   (section "This fork").
+- `docs/beats.md` is the beat cookbook, how to write a song with `tools/rbs.py` and hear it
+  (by gaolivaresm, upstream PR #6); `examples/` holds the song it builds on.
 - `docs/original_bugs.md` lists the defects of the original (what, addresses, trigger, effect, corpus songs, orb's model, [C]/[G]). A newly found defect of the original goes into `docs/original_bugs.md` as well as its home document.
 - A new fact about the original goes into the document it belongs to, with addresses, in the same commit as the work.
 

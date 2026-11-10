@@ -53,7 +53,7 @@ The document has three parts:
 | (new) | TASK-217 | Windows: DirectX 12 before Vulkan (Intel's Vulkan driver crashed the start) | 4c75ec2 |
 | (new) | TASK-219 | Debug kit: win_diag.cmd, so the execution policy need not be typed | 7541709 |
 | (new) | TASK-218 | The user's check: the Windows 10 PC starts OpenRB-338, 3 runs of 3 | (backlog) |
-| (new) | TASK-225 | Numpad keys apart from the main keyboard on Windows (message hook) | (see task) |
+| (new) | TASK-225 | Numpad keys apart from the main keyboard on Windows (message hook) | e909060 |
 
 Decisions made along the way, all Done: TASK-198 (a local editor only), TASK-202, TASK-203,
 TASK-205, TASK-207, TASK-208, TASK-209 (section 1.1).
