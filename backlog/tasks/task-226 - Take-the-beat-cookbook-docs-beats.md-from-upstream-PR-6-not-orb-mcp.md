@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-10T19:48:00Z'
+updated_date: '2026-11-10T20:09:00Z'
 labels:
   - docs
 dependencies: []
@@ -32,3 +33,9 @@ Later upstream merges: if upstream merges PR #6, the fork's next upstream merge 
 - [ ] #3 Each command in the cookbook was run on Windows (or given its Windows form) and its result recorded in the notes; examples/empuje.py rewrites examples/empuje.rbs byte for byte
 - [ ] #4 AGENTS.md's fork section notes the decision about PR #6 (cookbook yes, orb-mcp no) and the task-176 / task-177 id clash for a later upstream merge
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The user's reason for leaving orb-mcp out (2026-11-10): AI is welcome for building the music tools, not for making the music; nothing that lets an AI write songs (an MCP server or similar) belongs in the fork. The AGENTS.md note of this task should give that reason, so a later upstream merge drops such parts too. The cookbook stays because it is for a person writing songs.
+<!-- SECTION:NOTES:END -->
