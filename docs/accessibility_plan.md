@@ -467,15 +467,22 @@ NVDA check: the user's check was that the program starts (TASK-218).
 - **Upstream.** With the mode off nothing changes, so rebasing on upstream stays easy and the
   work can be offered upstream as it is.
 
-  Checked on 2026-11-09: upstream's main is still cbca449 (its tag v2026.1103.0917), the
-  commit the fork started from, so there is nothing to merge. Open on upstream:
-  - Pull request #4 ("Save engine tracks for all songs", opened 2026-11-09 by a contributor, not
-    merged) is an implementation of TASK-143, which is open in this backlog too: every Save
-    writes the engine's tracks, so an unedited save no longer gives back the file byte for
-    byte. It changes `document.rs`, `link.rs`, `menu.rs` (`App::song_bytes` takes `&mut self`;
-    `composed_song` becomes `song_for_save`), tests and docs/ui_spec.md's Save sections. Merged
-    into the fork's main it gives no text conflict (`git merge-tree`), and the fork adds no
-    caller of the changed functions; it was not built or tested here.
+  Checked on 2026-11-10: the fork started from upstream's cbca449 (its tag v2026.1103.0917).
+  Since then upstream has one commit, 32a642d, merged into the fork by TASK-224:
+  - Pull request #4 ("Save engine tracks for all songs", by a contributor, merged upstream on
+    2026-11-10 as 32a642d) implements TASK-143: every Save writes the engine's tracks, so an
+    unedited save no longer gives back the file byte for byte. It changes `document.rs`,
+    `link.rs`, `menu.rs` (`App::song_bytes` takes `&mut self`; `composed_song` becomes
+    `song_for_save`), `info.rs`, tests and docs/ui_spec.md's Save sections. The user decided to
+    include it (TASK-220, 2026-11-10). TASK-224 merged it as a merge commit, so that later
+    upstream merges start from the right base. The one conflict was `menu.rs` `App::open`. It
+    was resolved to upstream's `settle` call, because the 1.x copy of the engine's tracks moved
+    into `document::compose`, followed by the fork's TASK-189 "Opened ..., mod ..."
+    announcement. The fork's Export calls `song_bytes`, which now refreshes the tracks too, as
+    upstream intends.
+  - Pull request #6 (open) adds `orb-mcp`, an MCP server, and `docs/beats.md`, a cookbook for
+    writing songs. The user decided on 2026-11-10 to take the cookbook without the server
+    (TASK-226). Its task files task-176 and task-177 use ids this backlog already has.
   - Issue #2 asks whether OpenRB-338 can work without `assets/Standard.rbm` (ReBirth's own drum
     samples and panel pictures, which Debian cannot redistribute). It applies to the fork as
     well, whose repository and Windows zips carry the same file; no answer upstream yet.
