@@ -34,9 +34,14 @@ case $target in
 your PC" when one of them first starts: choose "More info", then "Run anyway".'
         # the fork's Windows zip is portable (task-223; the user's decision, task-222)
         cp "$root/scripts/portable.txt" "$stage/portable.txt"
+        # the fork's changes per release as plain text with CRLF (task-228): no heading marks,
+        # bold, backticks or link targets, which a screen reader would read out
+        sed -E -e 's/^#+ +//' -e 's/\*\*//g' -e 's/`//g' -e 's/\[([^]]*)\]\([^)]*\)/\1/g' \
+            "$root/CHANGELOG.md" | awk '{ printf "%s\r\n", $0 }' >"$stage/CHANGELOG.txt"
         portable='This copy is portable: unpack the folder anywhere, a USB stick too, and run
 OpenRB-338.exe. While portable.txt lies next to it, the settings and the logs are kept in the
-folder data beside it and nothing is written to AppData (portable.txt says more).'
+folder data beside it and nothing is written to AppData (portable.txt says more).
+CHANGELOG.txt lists what changed in each release of the fork.'
         ;;
     *)
         run="OpenRB-338 (the app) and orb (the command line)"

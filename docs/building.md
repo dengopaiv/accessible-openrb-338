@@ -537,8 +537,9 @@ must be writable (not under `C:\Program Files`): otherwise the settings cannot b
 the logs are not written. Without the file nothing changes, so upstream's packages and the
 installer behave as before.
 
-`scripts/package.sh` puts `scripts/portable.txt` (it explains itself) into the Windows zip, and
-its README.txt says the copy is portable; the `.tar.gz` of the other targets has neither.
+`scripts/package.sh` puts `scripts/portable.txt` (it explains itself) and the fork's
+`CHANGELOG.md`, as `CHANGELOG.txt` (task-228), into the Windows zip, and its README.txt says the
+copy is portable and names the changelog; the `.tar.gz` of the other targets has none of them.
 
 Checked on 2026-11-09 (Windows 11): `OpenRB-338.exe --debug-start-error` with
 `ORB_UI_NO_CRASH_DIALOG=1`, copied into a folder with `portable.txt`, wrote its run log to
@@ -550,17 +551,23 @@ the two after it) and the unit tests of `portable.rs`.
 **Making a release of the fork.** By hand on the Windows machine; upstream's `release.yml`
 builds six platforms and the fork does not use it (GitHub Actions has not run on the fork).
 
-1. `cargo test --release --workspace` on main, pushed to `origin`.
-2. Pick the tag, `TAG=v$(date -u +%Y.%m%d.%H%M)`, then `eval "$(bash scripts/release-env.sh
-   $TAG)"` and export `SOURCE_DATE_EPOCH` and `ORB_BUILD_BRANCH`, so the binaries and the file
-   name carry the tag's version.
-3. `bash scripts/package.sh x86_64-pc-windows-msvc`.
-4. Unpack the zip and run its `orb.exe compare --manifest tests/refs/manifest.json --set
+1. Pick the tag, `TAG=v$(date -u +%Y.%m%d.%H%M)`.
+2. Write the release's section at the top of `CHANGELOG.md` (task-228), headed `## <version>
+   (<date>)`, the version being the tag without its `v` (`## 2026.1111.1330 (2026-11-11)`):
+   what a user notices since the last release, in plain language and lists, with no
+   tables, so it reads well with a screen reader. `scripts/changelog.sh PREV HEAD` (PREV is
+   the last release) lists the commits to go through. Commit it on main and push to `origin`.
+3. `cargo test --release --workspace` on that main.
+4. `eval "$(bash scripts/release-env.sh $TAG)"` and export `SOURCE_DATE_EPOCH` and
+   `ORB_BUILD_BRANCH`, so the binaries and the file name carry the tag's version.
+5. `bash scripts/package.sh x86_64-pc-windows-msvc`. The zip carries `CHANGELOG.md` as
+   `CHANGELOG.txt`.
+6. Unpack the zip and run its `orb.exe compare --manifest tests/refs/manifest.json --set
    diag,shipped` (all equal).
-5. `sha256sum` of the zip into `SHA256SUMS.txt`; the notes are a short introduction and
-   `scripts/changelog.sh PREV HEAD` (with upstream's tags fetched, PREV is the last release).
-6. `gh release create $TAG --draft --target <commit> --title ... --notes-file ... ZIP
-   SHA256SUMS.txt`. The user publishes the draft; publishing creates the tag.
+7. `sha256sum` of the zip into `SHA256SUMS.txt`; the notes are a short introduction and the
+   release's section of `CHANGELOG.md`.
+8. `gh release create $TAG --draft --target <commit> --title ... --notes-file ... ZIP
+   SHA256SUMS.txt`. The user publishes the draft, or says to; publishing creates the tag.
 
 ## GitHub Actions (`.github/workflows/`)
 

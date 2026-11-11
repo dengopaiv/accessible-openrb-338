@@ -69,7 +69,8 @@ three exceptions in both modes: the panel's keys wait while a menu is in use, an
 the program prefers DirectX 12 for its graphics and writes a run log of each start (both so it
 starts on more PCs; a start that fails is described in [docs/building.md](docs/building.md)).
 The sound engine is not touched, so the output stays identical to the original's. The `orb`
-command line tool (render, play, info, mods) needs no mode.
+command line tool (render, play, info, mods) needs no mode. What changed in each release of the
+fork is in [CHANGELOG.md](CHANGELOG.md).
 
 ### Using OpenRB-338 with a screen reader
 

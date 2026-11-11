@@ -52,9 +52,10 @@ rebasing on upstream stays simple.
   the zip moved to the top of `dist\`); the other five targets, Docker and cargo-xwin are not
   used. A release is that one zip, portable (`portable.txt`: settings and logs in `data\`
   beside the program), and no installer (the user, 2026-11-09, task-222); the steps are in
-  docs/building.md, "The portable Windows zip and the fork's releases". Upstream's CI,
-  release workflow and docs for all six targets stay as they are until a task, decided by the
-  user, removes them. TASK-199 and TASK-206 (macOS and Linux) are on hold
+  docs/building.md, "The portable Windows zip and the fork's releases"; each release first gets
+  its section in `CHANGELOG.md`, in plain language, which the zip carries (task-228).
+  Upstream's CI, release workflow and docs for all six targets stay as they are until a task,
+  decided by the user, removes them. TASK-199 and TASK-206 (macOS and Linux) are on hold
   for this reason. A Windows start that fails: docs/building.md, the run log and the debug kit
   (task-214, task-215, task-219).
 - **Upstream PR #6.** The user, 2026-11-10: the beat cookbook is taken (docs/beats.md and
