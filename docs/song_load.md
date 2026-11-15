@@ -410,19 +410,22 @@ changes, all as msg 41 with the device's own sub id.
 `sub_431747`, `sub_438D43` … `sub_43A637` excluded). The "Called from" column is the xrefs; the
 polls are the ones `docs/ui_spec.md` read, the other callers' roles (the pattern section's
 buttons, Clear, the Edit menu, the tap keys) are from their place and are [G] where not read
-in `docs/ui_spec.md`; the ones marked [G: not read] are probably MIDI remote control:
+in `docs/ui_spec.md`. The ones marked [MIDI] are MIDI remote control's handlers, called from its
+dispatcher `sub_42EAAF` [C] (task-182, `docs/standard_midi_mapping.md`): `sub_4405B5`,
+`sub_443C92`, `sub_447D9D`, `sub_40821A`, `sub_40827C`, `sub_408C36`, `sub_408C98`,
+`sub_404736`, `sub_404798`, `sub_41BE32`, `sub_41BE94`, `sub_413256`, `sub_4137E2`:
 
 | Device | Sub | Payload | Exe sender | Called from |
 |---|---|---|---|---|
-| TB-303 | 40 | `{ctrl, v}` | `sub_43EC83` | the poll `sub_43ED76` (the six knobs, the waveform), the pattern section's on/off and pattern buttons (`sub_43D3C0`, `sub_43D3F3`, `sub_43D48F`), `sub_4405B5` [G: not read] |
+| TB-303 | 40 | `{ctrl, v}` | `sub_43EC83` | the poll `sub_43ED76` (the six knobs, the waveform), the pattern section's on/off and pattern buttons (`sub_43D3C0`, `sub_43D3F3`, `sub_43D48F`), `sub_4405B5` [MIDI] |
 | TB-303 | 42 | `{p, field, v}` | `sub_43ECCA` | `sub_43D426`, `sub_43D45B` (the pattern section's Shuffle, Steps) |
 | TB-303 | 44 | `{p, 98 bytes}` | `sub_43F617` | Clear (`sub_43F5F5`), the Edit menu's pattern functions `sub_42B319`, `sub_42B928`, `sub_42C204` |
 | TB-303 | 45 | `{p, step, field, v}` | `sub_43ED1D` | the step editor (`sub_43ED76`, the keys `sub_43F590`), the tap keys `sub_440213` |
-| TR-808 | 57 | `{ctrl, v}` | `sub_441C82` | the poll `sub_441E79`, the pattern section (`sub_440C3C`, `sub_440C6F`, `sub_440D0B`), `sub_443C92` [G] |
+| TR-808 | 57 | `{ctrl, v}` | `sub_441C82` | the poll `sub_441E79`, the pattern section (`sub_440C3C`, `sub_440C6F`, `sub_440D0B`), `sub_443C92` [MIDI] |
 | TR-808 | 59 | `{p, field, v}` | `sub_441CC9` | `sub_440CA2`, `sub_440CD7` |
 | TR-808 | 61 | `{p, 194 bytes}` | `sub_443257` | `sub_42B319`, `sub_42B928`, `sub_42C204` |
 | TR-808 | 62 | `{p, step, inst, v}` | `sub_441D1C` | `sub_44305C` (the step buttons, the tap keys) |
-| TR-909 | 74 | `{ctrl, v}` | `sub_445C41` | the poll `sub_445FB0`, the pattern section (`sub_4447C2`, `sub_4447F5`, `sub_444B43`), `sub_447D9D` [G] |
+| TR-909 | 74 | `{ctrl, v}` | `sub_445C41` | the poll `sub_445FB0`, the pattern section (`sub_4447C2`, `sub_4447F5`, `sub_444B43`), `sub_447D9D` [MIDI] |
 | TR-909 | 76 | `{p, field, v}` | `sub_445C88` | `sub_444ADA`, `sub_444B0F` |
 | TR-909 | 78 | `{p, 194 bytes}` | `sub_4471C5` | `sub_42B319`, `sub_42B928`, `sub_42C204` |
 | TR-909 | 79 | `{p, step, inst, v}` | `sub_445CDB` | `sub_447153` (the step buttons; it also clears the other hi-hat) |

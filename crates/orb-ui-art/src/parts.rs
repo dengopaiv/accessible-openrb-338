@@ -909,7 +909,7 @@ fn transport_bg(out: &mut Vec<Part>) {
         stext(s, 8.0, 37.6, "0", 5.4, l);
         stext(s, 32.4, 37.6, "10", 5.4, l);
         stext(s, 20.0, 45.8, "SHUFFLE", 5.6, l.w(700).ls(0.1));
-        // Sync and MIDI: drawn, dark (MIDI is out of scope)
+        // Sync and MIDI: drawn, dark (until task-184 and task-188 light them)
         led_round(s, 44.5, 7.5, 1.9, "G", false);
         stext(s, 50.0, 10.2, "Sync", 7.2, l.start().fill(LIGHT));
         led_round(s, 79.5, 7.5, 1.9, "G", false);

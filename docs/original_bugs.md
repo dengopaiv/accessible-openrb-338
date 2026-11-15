@@ -479,6 +479,41 @@ See OB-8 for the unclean buffer.
   the mod.
 - **Home.** `docs/rbm.md` section 11.2.
 
+## 6. MIDI remote control (Rebirth.exe)
+
+### OB-24: a note-on of velocity 0 acts as a note-on [C: the code; G: the effect]
+
+- **What.** The Standard Mapping takes a note's "on" from its status alone (0x90), never reading
+  the velocity, so the common note-off form (note-on, velocity 0) is a second note-on.
+- **Where.** The callback `sub_408FD4` queues 0x90 with no velocity test (0x4090A6); the dispatch
+  `sub_42EAAF` sets "on" with `cmp dword ptr [ecx+8], 90h` / `setz dl` (0x42EAF5..0x42EAFC) and
+  reads the velocity (`+0x0D`) only for control changes (0x42EEA7). Read in IDA's disassembly
+  (a headless copy of the exe database), not with llvm-objdump.
+- **Trigger.** A keyboard or sequencer that sends its releases as note-on 0 (most do, with running
+  status), on the remote-control channel.
+- **Effect.** Each key press toggles twice: a mute, an effect's switch, Record, a pattern
+  section's on/off or the keyboard mode (note 64) ends as it was; Play, Stop, a bank or pattern
+  selection runs twice.
+- **Corpus.** None (no song data involved).
+- **orb.** Deviates: `crates/orb-player/src/midi.rs` (`StandardMapping::message`) takes a
+  velocity-0 note-on as a note-off.
+- **Home.** `docs/standard_midi_mapping.md` sections 1 and 10.
+
+### OB-25: the synth's Step has no MIDI note; notes 30 and 31 both press Back [C]
+
+- **What.** In Program Synth mode the manual gives note 30 to Back and 31 to Step (p. 202); the
+  303 handler sends both to the same button, the one Backspace presses (Back).
+- **Where.** `sub_4402AB`'s jump table 0x440561: case 30 → 0x44050C and case 31 → 0x440527, both
+  `add ecx, 2B0h` / `call [eax+60h]`; the key translation `sub_492312` gives Backspace key code
+  30 and Enter 44, and the 303's key handler `sub_43F673` presses `+0x2B0` for 30 and `+0x280`
+  for 44 (Step). Read in IDA's disassembly (a headless copy), not with llvm-objdump.
+- **Trigger.** Note 31 on the remote channel with Program Synth from Keyboard on and a synth
+  focused.
+- **Effect.** UI only: the step cursor moves back instead of forward.
+- **Corpus.** None.
+- **orb.** Not mapped yet (orb's MIDI layer ignores the Program Synth notes).
+- **Home.** `docs/standard_midi_mapping.md` sections 7 and 9.
+
 ## Quirks that are not claimed as defects
 
 ### Q-1: the export's frame count is one frame short of an exact length [C]

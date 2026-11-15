@@ -212,8 +212,8 @@ Section (16, 0, 592, 50). Layout `sub_4298B9`, ctor `sub_4291E9`, poll `sub_42A0
 | Control | x | y | w | h | x/W | y/H | w/W | h/H | Kind | Drives |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Shuffle knob | 11 | 13 | 18 | 19 | 0.0433 | 0.0255 | 0.0288 | 0.0373 | knob | msg 35 id 20 (GLOB shuffle 0..127) |
-| Sync LED | 39 | 2 | 11 | 11 | 0.0881 | 0.0039 | 0.0176 | 0.0216 | led | MIDI sync (out of scope) |
-| MIDI LED | 74 | 2 | 11 | 11 | 0.1442 | 0.0039 | 0.0176 | 0.0216 | led | MIDI input (out of scope) |
+| Sync LED | 39 | 2 | 11 | 11 | 0.0881 | 0.0039 | 0.0176 | 0.0216 | led | MIDI sync (task-184) |
+| MIDI LED | 74 | 2 | 11 | 11 | 0.1442 | 0.0039 | 0.0176 | 0.0216 | led | MIDI input (task-188) |
 | Tempo display (3 digits) | 44 | 27 | 27 | 16 | 0.0962 | 0.0529 | 0.0433 | 0.0314 | display | tempo / 1000 |
 | Tempo up | 73 | 26 | 11 | 9 | 0.1426 | 0.0510 | 0.0176 | 0.0176 | repeat | msg 35 id 4, +1000 |
 | Tempo down | 73 | 35 | 11 | 9 | 0.1426 | 0.0686 | 0.0176 | 0.0176 | repeat | msg 35 id 4, -1000 |
@@ -280,8 +280,8 @@ Behavior (all [C], `sub_42A058` and its callees, ticks: 768 per bar):
   transport's own right edge (592 in transport coordinates), so the effective area is clipped to
   x 458..591, y 1..48 in transport coordinates, i.e. panel x 474..607 (the table row: x 458,
   w 134, h 48).
-- The Sync and MIDI LEDs (three frames: off, green, red) belong to MIDI, which is out of scope;
-  draw them dark.
+- The Sync and MIDI LEDs (three frames: off, green, red) belong to MIDI, in scope since m-7
+  (`docs/midi.md`); until task-184 (sync) and task-188 (the MIDI LED) light them, draw them dark.
 
 ![transport in song mode](ui_spec/transport_song_mode.png)
 

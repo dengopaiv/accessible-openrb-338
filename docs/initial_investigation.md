@@ -3,7 +3,8 @@
 Goal: a Rust engine that renders `.rbs` (+ optional `.rbm`) to a WAV that matches ReBirth 2.01's
 "Export Loop as Audio File" output sample for sample, allowing small floating-point tolerances.
 Reference WAVs are produced by the original app on a Windows test machine. The UI comes later and
-only needs a similar look and feel. MIDI, ReWire and the realtime audio drivers are out of scope.
+only needs a similar look and feel. ReWire and the realtime audio drivers are out of scope; MIDI
+came into scope in m-7 (2026-11-13, `docs/midi.md`).
 
 Sources:
 - `/Volumes/downloads/rebirth_2.01_manual.pdf`, the user manual. It describes behaviour but has no DSP numbers.

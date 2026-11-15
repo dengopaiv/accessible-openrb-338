@@ -79,7 +79,13 @@
 //! [`Player::tracks`] gives the UI the current song's tracks ([`Tracks`], copied by the callback
 //! into a second triple buffer whenever they change), which is what a save of a recorded song
 //! writes.
+//!
+//! # MIDI
+//!
+//! [`midi`] turns timed MIDI bytes into these commands with the original's Standard Mapping
+//! (task-182, `docs/standard_midi_mapping.md`), whatever the source of the bytes.
 
+pub mod midi;
 pub mod output;
 
 use std::sync::Arc;

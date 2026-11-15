@@ -912,6 +912,15 @@ impl Link {
         self.flush_marked();
     }
 
+    /// Sends player commands that do not come from the panel, such as MIDI remote control's
+    /// (`orb_player::midi`, task-182), the way the panel's own go: the panel takes the engine's
+    /// values only from a snapshot that can show them, and then shows them as it shows a mouse
+    /// change ([`Link::follow`]).
+    pub fn send(&mut self, commands: impl IntoIterator<Item = Command>) {
+        self.backlog.extend(commands);
+        self.flush_marked();
+    }
+
     /// Flushes the backlog and sets `mark` to the first snapshot that can show the commands:
     /// the call that has already started when they are pushed does not drain them, so the
     /// snapshot after the next call is the first (`frames` of the snapshot read before the push,
