@@ -441,7 +441,9 @@ and before the moves of Rewind, Fast forward, Bar down and Stop (`sub_42A058`, 0
 controller messages call it after their store with the message's own controller and value (303
 sub 40 controllers 0..8, 808 57 0..28, 909 74 0..29 raw, delay 84, distortion 92, compressor 102
 and PCF 114 every controller, mixer 145 ids 1 and 2, mixer 147 fields 1..4 as `5 + 6c + k`;
-`docs/song_load.md` §4.10). The 303's MIDI input `sub_100261F0` calls it too (out of scope).
+`docs/song_load.md` §4.10). `sub_100261F0` calls it too: once called "the 303's MIDI input", it
+is a DLL-side copy of the 303's remote control (vtable slot 12; [G] no caller found), not live
+play; the original plays no device from MIDI notes (`docs/midi.md` §4, task-183).
 ```
 if !songMode or !record: return                         // 0x10021352, 0x10021367
 [pool free count 99, 50 or < 10: top-level msg 79 to the host, sub_1001D440 (a warning only)]

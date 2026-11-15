@@ -2,8 +2,9 @@
 
 MIDI came into scope on 2026-11-13 (milestone m-7). This is the general MIDI document: the
 original's MIDI input, its settings, and what orb does with them. Tasks extend it: task-182 (this
-document and the Standard Mapping), task-183 (notes played live), task-184 (MIDI clock), task-188
-(the standalone app's ports, Quick Mapping, the MIDI LED, recording by MIDI).
+document and the Standard Mapping), task-183 (notes played live: the original has none, section
+4), task-184 (MIDI clock), task-188 (the standalone app's ports, Quick Mapping, the MIDI LED,
+recording by MIDI).
 
 **The mapping itself** (which CC and which note moves which control, with the addresses and the
 differences from the manual) is `docs/standard_midi_mapping.md`; this document does not repeat it.
@@ -80,3 +81,75 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
 - **Not mapped yet.** The Program Synth notes (step programming;
   `docs/standard_midi_mapping.md` section 7): task-189.
 - **Differences from the original**: `docs/standard_midi_mapping.md` section 10.
+
+## 4. Live play: notes that sound a device (task-183)
+
+**The original plays no device from MIDI notes**: not the two 303s, not the 808, not the 909.
+A note on the remote channel is always a panel function of the Standard Mapping (pattern
+selection, step programming, switches; `docs/standard_midi_mapping.md` sections 4..7), and a
+note on another channel is dropped (section 1). The manual says so: "you can not play the sounds
+in ReBirth RB-338 via MIDI. It would feel just awful." ("About Latency", printed page 183). The
+DLL facts below were read in a read-only headless copy of `ReBirth.dll.i64` (2026-11-15); the
+exe's note dispatch is task-182's reading of `Rebirth.exe.i64` (`docs/standard_midi_mapping.md`),
+not re-read here.
+
+### 4.1 The evidence
+
+- **The 303's voice has one caller** [C]. Its note-on `0x10023CD4` is called only by the step
+  function `0x100253A0` (at 0x10025589), its note-off `0x10023C74` only by the step function
+  (0x10025442, 0x10025499, 0x1002556B) and by slot 6 (0x1002563D, stop). Nothing outside the
+  sequencer starts or ends a 303 note.
+- **The exe's MIDI input** sends notes to `sub_42EAAF` only (section 1), whose every case is a
+  Standard Mapping function (task-182; `docs/standard_midi_mapping.md`). None reaches a voice.
+- **The drums have no MIDI handler** [C]. The device vtable's slot 12 (offset 0x30, the slot of
+  `sub_100261F0`, 4.2) is `nullsub_4` (0x10010380, `retn 0Ch`) in every device class but the
+  303: 24 vtable references, among them the 808's at 0x10034184 and the 909's at 0x100342C4.
+- **The only MIDI status test in the DLL** is in `sub_100261F0` (0x1002621C `cmp edx, 90h`,
+  0x10026228 `cmp edx, 0B0h`); a search of `.text` for compares with 0x80, 0x90, 0xB0 and
+  0xF0..0xFF finds no other MIDI one.
+
+### 4.2 `sub_100261F0`: a copy of the 303's remote control, apparently unreachable
+
+`docs/initial_investigation.md` 5.3 called `sub_100261F0` "the 303's MIDI input". It is slot 12
+of the `CTB303Device` vtable (base 0x10033FD4, the entry at 0x10034004, between setParam
+0x10026180 and the panel update 0x10026700), `(msg*, on, programMode)`, `retn 0Ch`; it reads the
+status at `msg+8`, the data bytes at `+0xC` and `+0xD`. It plays nothing: it is the 303's part of
+the Standard Mapping, done on the device's own bytes (`dev` = `sub_10010350`, 1 or 2):
+
+- **0xB0**: CC `7*dev + 16 + k` (23..29, 30..36): k = 0 the waveform, `v >= 64` (0x100262B9);
+  k = 1..6 tune, cutoff, reso, env mod, decay, accent, raw. Each stores the live byte
+  (`+0xC7E..+0xC84`), sets its changed flag (`+0xC88` + controller) and calls the record hook
+  `sub_10012BC0(dev, ctrl, v)`. The same as the exe's `sub_4405B5`.
+- **0x90, programMode 0**: note `13*dev - 1 + k` (12..24, 25..37): k = 0 toggles the enable
+  `+0xC7C` (`setz`, 0x100264DD) and records controller 0; k = 1..4 set the shown bank `+0xC86`;
+  k = 5..12 set the pattern `8*bank + k - 5` (`+0xC7D`, 0x1002654B) and record controller 1. The
+  `on` argument is not tested here.
+- **0x90, programMode set, on**: edits the step under the cursor `+0xC87` of the live pattern
+  (`+0x3C + 98*pattern + 2 + 6*step`): notes 12..24 set the pitch `n - 12` (0x100265D3); 25 toggles
+  octave down, 26 octave up, 27 accent, 28 slide, 29 the rest flag; 30 moves the cursor back
+  (0 wraps to 15, 0x1002669E), 31 forward (15 wraps to 0, 0x100266B8); 32 does nothing (the jump
+  table 0x10153D38 sends it to the default).
+- **0x80** is never tested: a note-off does nothing. No velocity byte is read.
+
+What it does (the list above) is [C], read in the disassembly.
+
+**It seems to have no caller** [G]. What was checked: IDA's cross-references to 0x100261F0 are
+only the vtable entry (data, 0x10034004); the DLL's virtual calls load the slot into a register
+and call it (`mov reg, [reg+N]` / `call reg`), and none of the 57 `+30h]` operands in `.text` is
+such a load of slot 12. Not ruled out: a dispatch that reaches the slot by an indexed, `add` or
+`lea` address. Whether it is called or not, it plays nothing, and the "no live play" conclusion
+rests on the voice's callers (4.1), which are [C]. In 2.01 the exe does all of this itself
+(`docs/standard_midi_mapping.md`). [G] A leftover of an earlier DLL-side remote control: its note
+31 steps forward, as the manual's "G0 31 Step" (p. 202), where the exe's presses Back (OB-25).
+
+### 4.3 What orb does
+
+orb follows the original: its MIDI layer (`crates/orb-player/src/midi.rs`) gives no action that
+sounds a device, on any channel, in either keyboard mode (tested there). Live play as the plugin
+would use it (pitch = note, accent = velocity, slide = overlapping notes, the conventions of the
+303 clones) is not in the original, so adding it is a decision: task-194 (Decide), implemented
+by task-195 if chosen. `sub_100261F0` is not modelled: no caller of it was found ([G], 4.2), and the Standard
+Mapping already does what it does (task-182; its step editing is task-189's, following the
+exe).
+
+**Differences from the manual**: none on this point (p. 183 and the binary agree).

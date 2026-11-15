@@ -28,7 +28,8 @@
 //!
 //! Only the Standard Mapping, on one channel ([`StandardMapping::channel`], default channel 1
 //! as the original's preferences). Quick Mapping, ports, the MIDI LED and recording by MIDI in
-//! the app are task-188's; notes as notes are task-183's; MIDI clock is task-184's. The notes
+//! the app are task-188's; MIDI clock is task-184's. No note sounds a device: the original has no
+//! live play (`docs/midi.md` section 4; adding it is task-194's decision). The notes
 //! below 64 in "Program Synth from Keyboard" mode (the original's step programming by MIDI) are
 //! not mapped (`docs/standard_midi_mapping.md` section 7; task-189).
 
@@ -911,6 +912,40 @@ mod tests {
         ]);
         bytes.extend([0x90, 0, 100, 0x90, 11, 100, 0x90, 97, 100, 0x90, 127, 100]);
         assert!(one(&bytes).is_empty());
+    }
+
+    /// The original plays no device from notes (`docs/midi.md` section 4, task-183): a note is a
+    /// panel function on the remote channel and nothing on the others, in both keyboard modes.
+    #[test]
+    fn no_note_sounds_a_device() {
+        for mode in [KeyMode::Patterns, KeyMode::Synth] {
+            let mut m = StandardMapping::new();
+            m.mode = mode;
+            // every note on and off on the other channels, and every note-off on the remote one
+            let mut bytes = vec![];
+            for ch in 1..16u8 {
+                for n in 0..128u8 {
+                    bytes.extend([0x90 | ch, n, 100, 0x80 | ch, n, 0]);
+                }
+            }
+            for n in 0..128u8 {
+                bytes.extend([0x80, n, 64, 0x90, n, 0]);
+            }
+            assert!(run(&mut m, &bytes).is_empty(), "{mode:?}");
+            // a note-on on the remote channel: one panel function at most, never a voice;
+            // the only device controllers a note moves are a section's on switch and pattern
+            for n in 0..128u8 {
+                let mut m = StandardMapping::new();
+                m.mode = mode;
+                let acts = run(&mut m, &[0x90, n, 127]);
+                assert!(acts.len() <= 1, "note {n}: {acts:?}");
+                for a in acts {
+                    if let Action::DeviceParam { ctrl, .. } = a {
+                        assert!(ctrl <= 1, "note {n}: {a:?}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

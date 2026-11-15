@@ -182,7 +182,8 @@ In mode 10 a note below 64 goes to the focused section (`+0x8C`; 0x42EBC4) for s
   Accent (`+0x250`), 28 Slide (`+0x220`) ([G] these four names are the manual's; the buttons were
   not identified), 29 Note/Pause (`+0x2E0`, OB-13's button), **30 and
   31 both Back** (`+0x2B0`, the button Backspace presses: key code 30, `sub_492312` case 8; the
-  jump table 0x440561 gives cases 30 and 31 the same code, 0x44050C and 0x440527) (OB-25), 32
+  jump table 0x440561 gives cases 30 and 31 the same code, 0x44050C and 0x440527) (OB-25; the
+  DLL's copy `sub_100261F0`, with no caller found, treats 31 as Step: section 9 item 4), 32
   Pitch Mode (`+0x310`). Each passes "on" to the button (vtable +0x60): pressed on the note-on,
   released on the note-off, as the computer keyboard does.
 - **808** (`sub_4435D9`): notes 12..27 toggle step 1..16 of the selected instrument in the shown
@@ -224,7 +225,9 @@ except where section 10 says otherwise).
    0x429C62, 0x429CA1, 0x429CC9). orb: the same.
 4. **Synth "Step" and "Back"** (p. 202, "Synth Section Switches"): "G0 31 Step", "F#0 30 Back".
    The binary sends both notes to the Back button (section 7, OB-25); Step has no note. orb: not
-   mapped (section 7).
+   mapped (section 7). (The DLL holds a copy of the 303's mapping with no caller found, `sub_100261F0`,
+   whose note 31 does step forward as the manual says; the exe never uses it: `docs/midi.md`
+   4.2.)
 5. **909 note 40** (p. 204 lists 12..39): in Program Synth mode the binary toggles the 909 view's
    byte `+0x6BC` on note 40 (section 7). orb: not mapped.
 6. **PCF Pattern range** (p. 198 gives no range; p. 206, Appendix D: "the 34 PCF patterns"): CC
@@ -273,4 +276,5 @@ pattern-selection table.
   (`docs/midi.md`).
 - **The Program Synth notes** (section 7) are not mapped yet.
 - **The focus note** (65..68) gives orb's view its focus; the original's song msg 35 `{22, row}`
-  is not sent (orb's engine has no use for it; [G] task-183's live notes may need it).
+  is not sent (orb's engine has no use for it; the original has no live notes that could need
+  it, `docs/midi.md` section 4).
