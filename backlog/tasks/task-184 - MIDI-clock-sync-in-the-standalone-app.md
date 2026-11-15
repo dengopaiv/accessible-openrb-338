@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-13T18:20:00Z'
+updated_date: '2026-11-15T12:11:00Z'
 labels:
   - re
   - player
@@ -12,7 +13,7 @@ labels:
   - docs
 milestone: m-7
 dependencies:
-  - TASK-182
+  - TASK-188
 references:
   - docs/initial_investigation.md
   - docs/ui_spec.md
@@ -29,7 +30,7 @@ The user decided (2026-11-13) to bring MIDI into scope in milestone m-7, with MI
 
 What is known: the DLL export `SetMIDISyncActive` sets `transport+0x160`; while it is set, the sequencer takes its tempo from the MIDI clock (`sub_1001BCC0`) and Stop does not locate to the bar start (`docs/initial_investigation.md` section 5, transport messages). The panel's tempo control is ignored while synced (`sub_4094D4`) and has a Sync LED (`docs/ui_spec.md`). How the original turns clock pulses into a tempo (smoothing, rounding) and how it handles Start, Continue and Song Position Pointer is not known.
 
-Reverse engineering is deliberately minimal: enough to follow the original's behavior (what the clock drives, what Start/Stop/Continue/SPP do in song and pattern mode, what the panel shows). The output does not have to match the original sample for sample, since it depends on when the clock pulses arrive; it should stay in time with the clock source without drift and react to transport messages as a user would expect. Testing happens on a Mac with no MIDI hardware: a DAW (for example a Reaper trial) sending clock to the IAC Driver or to orb's virtual port. It uses the MIDI input and port selection of task-182. The user's IDA databases are read only.
+Reverse engineering is deliberately minimal: enough to follow the original's behavior (what the clock drives, what Start/Stop/Continue/SPP do in song and pattern mode, what the panel shows). The output does not have to match the original sample for sample, since it depends on when the clock pulses arrive; it should stay in time with the clock source without drift and react to transport messages as a user would expect. Testing happens on a Mac with no MIDI hardware: a DAW (for example a Reaper trial) sending clock to the IAC Driver or to orb's virtual port. It uses the MIDI layer of task-182 and the standalone app's MIDI port input of task-188. The user's IDA databases are read only.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
