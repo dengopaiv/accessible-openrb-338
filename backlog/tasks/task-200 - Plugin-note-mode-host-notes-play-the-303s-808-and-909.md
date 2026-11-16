@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-16T07:47:00Z'
+updated_date: '2026-11-16T09:43:00Z'
 labels:
   - engine
   - player
@@ -13,6 +14,7 @@ dependencies:
   - TASK-185
   - TASK-197
   - TASK-199
+  - TASK-207
 references:
   - backlog task-185 (final summary)
   - docs/midi.md
@@ -28,7 +30,7 @@ ordinal: 213000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-With orb stopped, the plugin is in note mode (task-185's final summary): host notes on channels 2..5 play the devices, by the note mapping in docs/midi.md (task-199). The original never plays a device from a note (task-183), so this is new engine behavior; pattern playback must stay bit-exact.
+With orb stopped, the plugin is in note mode (task-185's final summary): host notes on the device channels 1..4 (303 #1 = 1, 303 #2 = 2, 808 = 3, 909 = 4; task-207) play the devices, by the note mapping in docs/midi.md (task-199). The original never plays a device from a note (task-183), so this is new engine behavior; pattern playback must stay bit-exact.
 
 - **303:** a monophonic voice driven by notes: pitch from the note, accent at velocity >= 100, slide when notes overlap (the next note slides from the held one), tie on same-pitch overlap, last-note priority, legato, gate = note length. Use the engine's own step machinery (note-on, slide, accent, gate) rather than a new synth, so the sound is the 303's.
 - **808 and 909:** each note triggers its voice, as a pattern step would, with the accent factor of its velocity band (808 normal/AC; 909 low/high/low+AC/high+AC). A shared-slot note (tom/conga, rim/claves, clap/maracas) plays the voice it names for that hit only; the switch parameter is not changed. One voice per slot as the engine has it (the second note cuts the first). Chokes and the BD's two alternating voices as in pattern playback.

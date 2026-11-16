@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-16T07:47:00Z'
-updated_date: '2026-11-16T08:45:00Z'
+updated_date: '2026-11-16T09:43:00Z'
 labels:
   - ui
 milestone: m-7
@@ -15,6 +15,8 @@ dependencies:
   - TASK-185
   - TASK-197
   - TASK-198
+  - TASK-207
+  - TASK-208
 references:
   - backlog task-185 (final summary)
   - https://codeberg.org/RustAudio/nice-plug
@@ -54,4 +56,5 @@ The plugin (task-197, task-198) gets its editor: orb-ui's panel inside the host'
 - [ ] #6 The user reviewed the plugin's look and behavior (screenshots or a build) and approved it before merge
 - [ ] #7 cargo test, clippy -D warnings and nightly fmt pass
 - [ ] #8 In Reaper (VST3 and CLAP), a song opened with File > Open plays its patterns audibly in pattern mode, at 44.1 kHz and at 48 kHz (the plugin core's real-host check, moved here from task-197)
+- [ ] #9 The Standard Mapping (Remote MIDI) on/off and channel setting is in the panel as task-208 decides
 <!-- AC:END -->

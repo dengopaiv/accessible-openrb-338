@@ -7,12 +7,14 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-16T07:47:00Z'
+updated_date: '2026-11-16T09:43:00Z'
 labels:
   - docs
   - re
 milestone: m-7
 dependencies:
   - TASK-185
+  - TASK-207
 references:
   - backlog task-185 (final summary)
   - docs/midi.md
@@ -29,9 +31,9 @@ ordinal: 212000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-task-185 defines orb's own note mapping for the plugin, separate from the original's Standard Mapping (which stays as it is on its own channel). It is used by note mode (live play), pattern mode's pattern selection and the pattern drag-out. Write it down as one reference, in a new section of docs/midi.md, with what is still to be found:
+task-185 defines orb's own note mapping for the plugin, separate from the original's Standard Mapping (which stays as it is on its own channel, off by default in the plugin: task-207). It is used by note mode (live play), pattern mode's pattern selection and the pattern drag-out. Write it down as one reference, in a new section of docs/midi.md, with what is still to be found:
 
-- **Channels:** 303 #1 = 2, 303 #2 = 3, 808 = 4, 909 = 5 (1-based). The Standard Mapping's channel (default 1) must differ.
+- **Channels:** 303 #1 = 1, 303 #2 = 2, 808 = 3, 909 = 4 (1-based; changed from 2..5 on 2026-11-16, task-207). The Standard Mapping, when turned on, uses a channel outside 1..4 (default 16).
 - **Pattern mode:** notes 0..31 = patterns 1..32 (banks A-D x 8), latched.
 - **303 in note mode:** pitch = note; find the MIDI note of ReBirth's C at the Tune knob's center (is ReBirth's tuning concert pitch? the 303's pitch computation, crates/orb-engine/src/tb303.rs and the DLL), and the range: every note the 303's oscillator computes sensibly and audibly (pattern steps reach about 3 octaves with up/down; live notes may go further if the pitch computation allows). Accent = velocity >= 100; overlap = slide; same-pitch overlap = tie; last-note priority, legato.
 - **Drums (General MIDI):** BD 36, RS 37, SD 38, CP 39, CH 42, OH 46, LT/MT/HT 43/47/50, 808 congas L/M/H 64/63/62, claves 75, maracas 70, cowbell 56, 808 cymbal and 909 crash 49, 909 ride 51. A shared-slot note plays the voice it names, for that hit only (the switch parameter is untouched).

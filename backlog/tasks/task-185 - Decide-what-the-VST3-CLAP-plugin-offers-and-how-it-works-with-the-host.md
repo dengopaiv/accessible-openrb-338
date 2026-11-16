@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-14T07:36:00Z'
-updated_date: '2026-11-16T07:48:00Z'
+updated_date: '2026-11-16T09:43:00Z'
 labels:
   - decision
   - ui
@@ -148,4 +148,6 @@ Decided by the user, 2026-11-15/16. Where this differs from the description's re
 **Later (to become tasks).** Song mode in the plugin; recording as import with save as .rbs; per-device pattern/note override; both voices of an 808 shared slot at once; 303 visual feedback in note mode; plugin MIDI output; multi-out (stems); accent threshold setting; .rbs export from the plugin; zoom presets.
 
 **Follow-up tasks (2026-11-16).** task-197 plugin core, task-198 host sync and pattern mode, task-199 note mapping doc, task-200 note mode, task-201 editor, task-202 note-mode visual feedback, task-203 pattern drag-out, task-204 packaging; task-196 decides the 'Later' items. The user reviews task-201, task-202 and task-203 before merge. task-194/195 (live play in general) are untouched: for the plugin, task-200 implements what this task decided.
+
+**Change of 2026-11-16 (the user):** the device channels are 1..4 (303 #1 = 1, 303 #2 = 2, 808 = 3, 909 = 4), not 2..5, and the Standard Mapping is off by default in the plugin (channel 16 when on, any channel but 1..4; its transport notes ignored; the host's MIDI learn is the main controller mapping): task-207. Its UI: task-208. Pattern alignment under other time signatures: task-206, option A.
 <!-- SECTION:FINAL_SUMMARY:END -->
