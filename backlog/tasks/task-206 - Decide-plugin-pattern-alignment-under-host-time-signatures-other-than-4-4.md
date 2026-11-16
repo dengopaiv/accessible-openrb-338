@@ -1,11 +1,11 @@
 ---
 id: TASK-206
 title: 'Decide: plugin pattern alignment under host time signatures other than 4/4'
-status: To Do
+status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-16T09:11:00Z'
-updated_date: '2026-11-16T09:19:00Z'
+updated_date: '2026-11-16T09:38:00Z'
 labels:
   - decision
   - player
@@ -31,3 +31,9 @@ C. A per-instance option between A and B.
 
 Recommendation: A (the original is 4/4-only; B truncates patterns silently), with B as a later option if users ask.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by the user, 2026-11-16: option A. The plugin keeps the quarter-note rule: orb's tick = the host position in quarter notes x 192, whatever the host's time signature (ReBirth is 4/4-only, 768 ticks per bar). Continuous and deterministic; in other signatures a 16-step pattern runs across host bar lines. This is what task-198 implemented (docs/plugin.md section 8.2); no follow-up task. Restarting at every host bar (option B) or a per-instance option (C) only if users ask.
+<!-- SECTION:FINAL_SUMMARY:END -->
