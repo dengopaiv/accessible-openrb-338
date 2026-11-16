@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-14T07:36:00Z'
-updated_date: '2026-11-16T11:46:00Z'
+updated_date: '2026-11-16T14:27:00Z'
 labels:
   - decision
   - ui
@@ -154,4 +154,8 @@ Decided by the user, 2026-11-15/16. Where this differs from the description's re
 **Correction of 2026-11-16 (task-199, checked in the DLL at 0x1002ACAF..0x1002ACD1 and in tr909.rs):** the 909's AC step value is 2, so the AC factor is 1 + knob/16; the four velocity bands (low, high, low+AC, high+AC) get louder in that order only from Accent knob **25** up (at 24 low+AC equals high), not from 16 as written above. docs/midi.md section 5.5 has the gain table.
 
 **Change of 2026-11-16 (the user):** the plugin editor has no keyboard shortcuts at all (no menu accelerators, no keyboard modes or computer-keyboard step entry, no key handling; hosts take keys from plugin windows, and Phoscyon 2 and ABL3 advertise none either). Mouse gestures stay. The menu strip stays as in the standalone app, above the panel and unscaled; host resizing follows height = width x panel ratio + strip height; the transport display shows the host's bar.beat (task-201).
+
+**Change of 2026-11-16 (the user, task-216; built by task-217):** orb's Play/Stop is no longer the mode parameter: `g1` is removed from the host parameters (119 now; states saved with it are not migrated: no compatibility work before the first release). Play/Stop enter and leave a pattern preview: the standalone's pattern mode inside the plugin, free-running at the song's tempo, ignoring all host input (notes, Standard Mapping, parameter changes), with its control edits kept in a preview set in the plugin state and never sent to the host. A pattern/note mode setting in the plugin state (Options menu, saved with the project; default note mode; File > Open sets pattern mode) replaces it: pattern mode plays only while the host plays (no free-run while the host is stopped; pattern-select notes then only change the panel's selection); note mode plays the devices from notes whatever the host's transport does. docs/plugin.md 4, 4.2, 5, 8.2; docs/midi.md 5.2.
+
+**Correction of 2026-11-16 (the user's Reaper check of task-217):** the preview plays at the host's reported tempo (also while the host is stopped; the song's only when the host reports none), still free-running, and the panel's Play light shows only whether the preview runs: the host's start and stop do not change Play and Stop.
 <!-- SECTION:FINAL_SUMMARY:END -->

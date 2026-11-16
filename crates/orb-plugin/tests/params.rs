@@ -57,9 +57,9 @@ fn the_ids_are_unique_and_short() {
 
 /// The visible controls (task-185): every controller of the nine devices (the 303s' and drum
 /// machines' on/off and pattern included, the five 808 voice switches 11, 14, 17, 19, 21), the
-/// mixer's master, inserts, mutes, levels, pans, sends and distortion switches, the shuffle and
-/// the mode. Hidden in the plugin and not parameters: the pattern/song switch, loop, Rewind,
-/// Record, the tempo buttons.
+/// mixer's master, inserts, mutes, levels, pans, sends and distortion switches and the shuffle.
+/// Hidden in the plugin and not parameters: the pattern/song switch, loop, Rewind, Record, the
+/// tempo buttons; not parameters either: Play/Stop (the preview) and the mode (task-217).
 #[test]
 fn every_visible_control_is_a_parameter() {
     use orb_engine::song::Device::*;
@@ -95,10 +95,25 @@ fn every_visible_control_is_a_parameter() {
         Target::CompId,
         Target::PcfId,
         Target::Shuffle,
-        Target::Mode,
     ] {
         assert!(has(t), "{t:?}");
     }
+}
+
+/// task-217: the mode (`g1`, orb's Play/Stop until then) is no host parameter: it is the
+/// plugin state's pattern/note mode, and Play/Stop are the preview.
+#[test]
+fn the_mode_is_no_host_parameter() {
+    let p = OrbParams::new();
+    assert!(p.param("g1").is_none());
+    assert!(!p.ids().iter().any(|i| i == "g1"));
+    assert!(!include_str!("param_ids.txt").contains("g1\t"));
+    assert_eq!(COUNT, 119);
+    assert_eq!(
+        p.param("g20").unwrap().value(),
+        64,
+        "the shuffle keeps its id"
+    );
 }
 
 /// The defaults are the new song's values (`docs/song_load.md` section 4.9): a new instance's

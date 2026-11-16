@@ -183,17 +183,28 @@ Standard Mapping is off by default in the plugin; turned on, it listens on one c
 earlier 2..5 layout; `docs/plugin.md` 5 and 8.2). A keyboard on its default channel 1 plays
 303 #1 without setup.
 
-### 5.2 Pattern mode (orb playing): pattern selection
+### 5.2 Pattern mode: pattern selection
 
 Notes 0..31 on a device's channel select that device's pattern n + 1, i.e. banks A-D x patterns
 1..8 (note 0 = A1, 7 = A8, 8 = B1, 31 = D8). Latched: the pattern changes at once and stays until
 the next note on that channel (or a panel change; the last write wins). A note-off, a velocity-0
 note-on and notes 32..127 do nothing. `docs/plugin.md` 8.2 has how it reaches the engine.
 
-### 5.3 The 303 in note mode (orb stopped)
+Pattern mode is a setting of the plugin's state since task-217 (no longer the host parameter
+`g1`): orb plays the patterns only while the host plays. With the host stopped there is no
+sound, and a pattern-select note only changes the section's selected pattern (the panel shows
+it; the host's start plays it). Stopping from MIDI is the host's transport stop; there is no
+stop note.
+
+**The preview** (the panel's Play, task-217, `docs/plugin.md` 4.2) ignores every host MIDI
+message on every channel (pattern selects, note-mode notes, the Standard Mapping) while it runs;
+the MIDI LED still blinks.
+
+### 5.3 The 303 in note mode
 
 Implemented by task-200 (`docs/plugin.md` section 9: the held notes, the release, what the
-section's On/off does).
+section's On/off does). In note mode orb's song is stopped and notes play the devices whatever
+the host's transport does (task-217: the no-sound-while-stopped rule is pattern mode's only).
 
 **Pitch = note.** The MIDI note of ReBirth's C at the Tune knob's center is **36** (C2 in the
 convention where middle C, 60, is C4), and ReBirth's tuning is **concert pitch**: A4 = 440 Hz,

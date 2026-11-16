@@ -6,12 +6,14 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{Change, activate, host, peak, song_bytes, with_song};
+use common::{Change, activate, host, host_with, peak, song_bytes, with_song};
 use orb_player::{Command, Player};
+use orb_plugin::core::HostTransport;
+use orb_plugin::instance::Mode;
 
 /// Changes of every kind of target: a 303 knob, a pattern selection, an 808 voice switch, the
-/// master, a mixer mute, the shuffle, an effect, and the mode off and on again.
-const CHANGES: [Change; 10] = [
+/// master, a mixer mute, the shuffle, an effect, and the mute off again.
+const CHANGES: [Change; 8] = [
     Change {
         at: 9_000,
         id: "d1c3",
@@ -46,16 +48,6 @@ const CHANGES: [Change; 10] = [
         at: 47_111,
         id: "d5c3",
         value: 120,
-    },
-    Change {
-        at: 55_000,
-        id: "g1",
-        value: 0,
-    },
-    Change {
-        at: 64_000,
-        id: "g1",
-        value: 1,
     },
     Change {
         at: 70_003,
@@ -97,18 +89,38 @@ fn buffer_sizes_give_the_same_output_at_44100() {
     assert_ne!(run(44_100, 512, &[]), want);
 }
 
+/// Pattern mode follows the host's transport (task-217): the host's stop stops the patterns,
+/// its start starts them again; note mode never plays them.
 #[test]
-fn the_mode_stops_and_starts_the_patterns() {
-    let out = run(44_100, 512, &CHANGES[7..9]);
-    // Stop at 55000: from the release on (the delay's tail) quiet until Play at 64000
+fn pattern_mode_stops_and_starts_with_the_host() {
+    let p = with_song("full_mix");
+    let mut core = activate(&p, 44_100);
+    let mut out = host(&p, &mut core, 55_000, 512, &[]);
+    out.extend(host_with(
+        &p,
+        &mut core,
+        9_000,
+        512,
+        &[],
+        &HostTransport::default(),
+    ));
+    out.extend(host(&p, &mut core, 6_000, 512, &[]));
+    assert!(peak(&out[..2 * 55_000]) > 0.1, "playing");
+    // the host stops at 55000: from the release on (the delay's tail) quiet until it plays
+    // again at 64000
     let stopped = &out[2 * 60_000..2 * 64_000];
     assert!(peak(stopped) < 0.01, "stopped: peak {}", peak(stopped));
-    assert!(peak(&out[2 * 64_000..2 * 68_000]) > 0.1, "playing again");
-    // never played
+    assert!(peak(&out[2 * 64_000..2 * 70_000]) > 0.1, "playing again");
+    // note mode: never played, the host playing
     let p = with_song("full_mix");
-    common::set(&p, "g1", 0);
+    p.set_mode(Mode::Note);
     let mut core = activate(&p, 44_100);
     assert_eq!(peak(&host(&p, &mut core, 20_000, 512, &[])), 0.0);
+    // pattern mode with the host stopped: no sound
+    let p = with_song("full_mix");
+    let mut core = activate(&p, 44_100);
+    let t = HostTransport::default();
+    assert_eq!(peak(&host_with(&p, &mut core, 20_000, 512, &[], &t)), 0.0);
 }
 
 /// Without changes the plugin plays what orb-player plays for the same song in pattern mode,

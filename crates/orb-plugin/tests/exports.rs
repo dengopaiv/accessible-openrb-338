@@ -1,6 +1,7 @@
 //! task-197 AC #1 and #2: the plugin library exports a CLAP and a VST3 entry with the plugin's
 //! identity, and a host that loads it through the CLAP API, restores a state with a song and
-//! the mode at Play, activates it at 44.1 kHz and processes, gets the pattern playback: the
+//! pattern mode, activates it at 44.1 kHz and processes with the host playing, gets the pattern
+//! playback: the
 //! same samples as the process side run directly.
 //!
 //! The test builds the library (`cargo build -p orb-plugin --lib`, the cdylib the bundles hold;
@@ -18,7 +19,10 @@ use std::sync::OnceLock;
 
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
-use clap_sys::events::{clap_event_header, clap_input_events, clap_output_events};
+use clap_sys::events::{
+    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_TRANSPORT, CLAP_TRANSPORT_IS_PLAYING, clap_event_header,
+    clap_event_transport, clap_input_events, clap_output_events,
+};
 use clap_sys::ext::latency::{CLAP_EXT_LATENCY, clap_plugin_latency};
 use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::factory::plugin_factory::{CLAP_PLUGIN_FACTORY_ID, clap_plugin_factory};
@@ -172,7 +176,7 @@ fn the_clap_entry_has_the_identity_and_plays_a_restored_song() {
         let pl = &*plugin;
         assert!((pl.init.unwrap())(plugin));
 
-        // the state of an instance with a song and the mode at Play
+        // the state of an instance with a song in pattern mode
         let song = with_song("full_mix");
         let state = (pl.get_extension.unwrap())(plugin, CLAP_EXT_STATE.as_ptr())
             as *const clap_plugin_state;
@@ -202,6 +206,30 @@ fn the_clap_entry_has_the_identity_and_plays_a_restored_song() {
             ctx: null_mut(),
             try_push: Some(drop_event),
         };
+        // the host plays, without a tempo or a position: pattern mode plays the song
+        // free-running at its tempo (common::PLAYING)
+        let transport = clap_event_transport {
+            header: clap_event_header {
+                size: std::mem::size_of::<clap_event_transport>() as u32,
+                time: 0,
+                space_id: CLAP_CORE_EVENT_SPACE_ID,
+                type_: CLAP_EVENT_TRANSPORT,
+                flags: 0,
+            },
+            flags: CLAP_TRANSPORT_IS_PLAYING,
+            song_pos_beats: 0,
+            song_pos_seconds: 0,
+            tempo: 0.0,
+            tempo_inc: 0.0,
+            loop_start_beats: 0,
+            loop_end_beats: 0,
+            loop_start_seconds: 0,
+            loop_end_seconds: 0,
+            bar_start: 0,
+            bar_number: 0,
+            tsig_num: 4,
+            tsig_denom: 4,
+        };
         let mut pos = 0;
         while pos < FRAMES {
             let n = BUF.min(FRAMES - pos);
@@ -216,7 +244,7 @@ fn the_clap_entry_has_the_identity_and_plays_a_restored_song() {
             let p = clap_process {
                 steady_time: pos as i64,
                 frames_count: n as u32,
-                transport: null(),
+                transport: &transport,
                 audio_inputs: null(),
                 audio_outputs: &mut out,
                 audio_inputs_count: 0,

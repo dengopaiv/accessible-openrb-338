@@ -14,9 +14,6 @@ use orb_player::Command;
 /// What a parameter sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
-    /// orb's Play/Stop, the mode switch (pattern mode while playing, note mode while stopped;
-    /// the modes' behavior is task-198's and task-200's). Song msg 35 id 1.
-    Mode,
     /// The shuffle amount, song msg 35 id 20.
     Shuffle,
     /// The mixer's master level: msg 145 `{0, v}`.
@@ -55,11 +52,9 @@ pub struct Spec {
     pub default: u8,
 }
 
-/// The number of parameters.
-pub const COUNT: usize = 120;
-
-/// The index of the mode parameter in [`SPECS`].
-pub const MODE: usize = 0;
+/// The number of parameters. The mode (`g1`, orb's Play/Stop) was one until task-217: it is the
+/// plugin state's [`crate::instance::Mode`] now, and the panel's Play/Stop is the preview.
+pub const COUNT: usize = 119;
 
 const fn value(target: Target, min: u8, max: u8, default: u8) -> Spec {
     Spec {
@@ -158,12 +153,10 @@ const fn effect(d: Device, c: u8) -> Spec {
 }
 
 const fn build() -> [Spec; COUNT] {
-    // the mode at index 0, default Stop: the original starts stopped (docs/plugin.md section 4)
-    let mut s = [switch(Target::Mode, 0); COUNT];
+    // index 0 the shuffle, the song constructor's value (the sequencer's ctor state); the fill
+    // is overwritten by every other entry below
+    let mut s = [value(Target::Shuffle, 0, 127, 64); COUNT];
     let mut i = 1;
-    // the song constructor's shuffle (the sequencer's ctor state)
-    s[i] = value(Target::Shuffle, 0, 127, 64);
-    i += 1;
     // the mixer: the constructor's values (`sub_10019CC0`, `sub_10019D50`)
     s[i] = value(Target::Master, 0, 127, 100);
     s[i + 1] = value(Target::CompId, 0, 5, 0);
@@ -227,13 +220,13 @@ const fn build() -> [Spec; COUNT] {
 /// Every parameter, in the host's display order.
 pub const SPECS: [Spec; COUNT] = build();
 
-/// The parameter's stable id: `g1` the mode and `g20` the shuffle (their song msg 35 ids),
-/// `d<device>c<controller>` the others, with the device's id (`orb_engine::song::Device`) and
-/// for the mixer the byte's offset in its msg-41 block (0 master, 1 compressor, 2 PCF,
-/// `5 + 6c + k` channel c's field k), which is the controller number where the byte has one.
+/// The parameter's stable id: `g20` the shuffle (its song msg 35 id; `g1`, the mode's until
+/// task-217, is not used), `d<device>c<controller>` the others, with the device's id
+/// (`orb_engine::song::Device`) and for the mixer the byte's offset in its msg-41 block (0 master,
+/// 1 compressor, 2 PCF, `5 + 6c + k` channel c's field k), which is the controller number where the
+/// byte has one.
 pub fn id(t: Target) -> String {
     match t {
-        Target::Mode => "g1".into(),
         Target::Shuffle => "g20".into(),
         Target::Master => "d0c0".into(),
         Target::CompId => "d0c1".into(),
@@ -246,7 +239,7 @@ pub fn id(t: Target) -> String {
 /// The host's group of a parameter.
 pub fn group(t: Target) -> &'static str {
     match t {
-        Target::Mode | Target::Shuffle => "Transport",
+        Target::Shuffle => "Transport",
         Target::Master | Target::CompId | Target::PcfId | Target::Channel(..) => "Mixer",
         Target::Ctrl(d, _) => device_name(d),
     }
@@ -367,7 +360,6 @@ pub fn name(t: Target) -> String {
         }
     };
     match t {
-        Target::Mode => "Play".into(),
         Target::Shuffle => "Shuffle".into(),
         Target::Master => "Master Level".into(),
         Target::CompId => "Compressor Insert".into(),
@@ -385,7 +377,6 @@ pub fn name(t: Target) -> String {
 pub fn display(s: &Spec, v: i32) -> String {
     let two = |off: &str, on: &str| if v != 0 { on.into() } else { off.into() };
     match s.target {
-        Target::Mode => two("Stop", "Play"),
         Target::CompId => match v {
             0 => "Off".into(),
             1 => "Master".into(),
@@ -424,7 +415,6 @@ pub fn engine_byte(e: &Engine, t: Target) -> Option<u8> {
     let d = &e.frame.devices;
     let m = &d.mixer.live;
     Some(match t {
-        Target::Mode => e.playing() as u8,
         Target::Shuffle => e.frame.seq.globals.shuffle,
         Target::Master => m.master,
         Target::CompId => m.comp_id,
@@ -485,12 +475,10 @@ pub fn of_command(c: &Command) -> Option<(usize, i32)> {
     Some((i, value_of(&SPECS[i], b)))
 }
 
-/// The panel's message for a parameter value, as a player command (`None` for the mode, which
-/// the process side holds as a level, `crate::core`).
+/// The panel's message for a parameter value, as a player command.
 pub fn command(s: &Spec, v: i32) -> Option<Command> {
     let value = v.clamp(s.min as i32, s.max as i32) as u8;
     Some(match s.target {
-        Target::Mode => return None,
         Target::Shuffle => Command::Shuffle(value),
         Target::Master => Command::MixerGlobal { id: 0, value },
         Target::CompId => Command::MixerGlobal { id: 1, value },

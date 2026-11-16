@@ -3,13 +3,17 @@
 //!
 //! ```text
 //! cargo run --release -p orb-plugin --example editor_preview -- [SONG.rbs] [--size WxH]
-//!     [--ppp S] [--host-playing] [--midi] [--screenshot OUT.png]
+//!     [--ppp S] [--host-playing] [--midi] [--mode pattern|note] [--preview] [--click X,Y]...
+//!     [--screenshot OUT.png]
 //! ```
 //!
 //! A stand-in host runs the plugin's process side in step with the frames (no sound): the
-//! song loaded as File > Open loads it (the mode at Play, pattern mode), `--host-playing`
+//! song loaded as File > Open loads it (pattern mode), `--host-playing`
 //! plays the host's transport from bar 1 (the Sync LED), `--midi` sends a host message on
-//! channel 10 (which nothing maps) in every buffer (the MIDI LED stays lit). The parameters the
+//! channel 10 (which nothing maps) in every buffer (the MIDI LED stays lit). `--mode` sets the
+//! plugin's mode after the load, `--preview` enters the preview (the panel's Play, task-217),
+//! and each `--click X,Y` clicks the window at that point (in points; one click every 6 frames
+//! from frame 10, e.g. to open a menu for a screenshot). The parameters the
 //! panel sets are applied at once, as a host applies them. `--screenshot` saves the window after a
 //! few frames and quits. The window is the editor's (`--size`, default 624x532 points: the menu bar
 //! and the panel at 1:1; a plugin window keeps height = `orb_ui::embed::window_height(width)`).
@@ -23,7 +27,7 @@ use nice_plug::prelude::*;
 use orb_player::midi::Message;
 use orb_plugin::core::{Core, HostEvent, HostTransport};
 use orb_plugin::editor::editor_app;
-use orb_plugin::instance::{self, OrbParams};
+use orb_plugin::instance::{self, Mode, OrbParams};
 use orb_ui::app::App;
 use orb_ui::settings::Settings;
 
@@ -58,6 +62,9 @@ struct Args {
     ppp: Option<f32>,
     host_playing: bool,
     midi: bool,
+    mode: Option<Mode>,
+    preview: bool,
+    clicks: Vec<egui::Pos2>,
     shot: Option<PathBuf>,
 }
 
@@ -68,6 +75,9 @@ fn args() -> Args {
         ppp: None,
         host_playing: false,
         midi: false,
+        mode: None,
+        preview: false,
+        clicks: Vec::new(),
         shot: None,
     };
     let mut it = std::env::args().skip(1);
@@ -81,6 +91,20 @@ fn args() -> Args {
             "--ppp" => a.ppp = Some(it.next().and_then(|v| v.parse().ok()).expect("--ppp S")),
             "--host-playing" => a.host_playing = true,
             "--midi" => a.midi = true,
+            "--mode" => {
+                a.mode = Some(match it.next().as_deref() {
+                    Some("pattern") => Mode::Pattern,
+                    Some("note") => Mode::Note,
+                    _ => panic!("--mode pattern|note"),
+                })
+            }
+            "--preview" => a.preview = true,
+            "--click" => {
+                let v = it.next().expect("--click X,Y");
+                let (x, y) = v.split_once(',').expect("--click X,Y");
+                a.clicks
+                    .push(egui::pos2(x.parse().unwrap(), y.parse().unwrap()));
+            }
             "--screenshot" => a.shot = Some(it.next().expect("--screenshot OUT.png").into()),
             s if !s.starts_with('-') => a.song = Some(s.into()),
             s => panic!("unknown option {s}"),
@@ -97,6 +121,7 @@ struct Preview {
     frames: u64,
     host_playing: bool,
     midi: bool,
+    clicks: Vec<egui::Pos2>,
     shot: Option<PathBuf>,
     shown: u32,
 }
@@ -135,6 +160,30 @@ impl Preview {
 }
 
 impl eframe::App for Preview {
+    /// The `--click`s: a press at frame `10 + 6k`, the release two frames later.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let f = self.shown as usize;
+        if f < 10 {
+            return;
+        }
+        let (k, r) = ((f - 10) / 6, (f - 10) % 6);
+        let Some(&pos) = self.clicks.get(k) else {
+            return;
+        };
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        match r {
+            0 => raw.events.push(egui::Event::PointerMoved(pos)),
+            1 => raw.events.push(button(true)),
+            3 => raw.events.push(button(false)),
+            _ => {}
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ui.ctx());
         let now = ui.input(|i| i.time);
@@ -167,6 +216,12 @@ fn main() -> eframe::Result {
             .load_song(Some(bytes))
             .expect("loading the song");
     }
+    if let Some(m) = a.mode {
+        params.set_mode(m);
+    }
+    if a.preview {
+        params.set_preview(true);
+    }
     let viewport = egui::ViewportBuilder::default()
         .with_title("OpenRB-338 plugin editor (preview)")
         .with_inner_size(a.size);
@@ -190,6 +245,7 @@ fn main() -> eframe::Result {
                 frames: 0,
                 host_playing: a.host_playing,
                 midi: a.midi,
+                clicks: a.clicks,
                 shot: a.shot,
                 shown: 0,
             }))

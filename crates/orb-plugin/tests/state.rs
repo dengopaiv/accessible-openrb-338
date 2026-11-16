@@ -29,7 +29,7 @@ fn restore(p: &OrbParams, saved: &(Vec<(String, i32)>, BTreeMap<String, String>)
 }
 
 /// An instance with a song, the test mod, pattern edits, changed controls, Vintage on and the
-/// mode at Play.
+/// pattern mode.
 fn edited() -> OrbParams {
     let p = with_song("full_mix");
     p.set_mod(Some(test_mod())).unwrap();

@@ -13,7 +13,7 @@
 //! `Command::Load`.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use base64::Engine as _;
@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::core::BLOCK;
-use crate::params::{self, COUNT, MODE, SPECS, Spec, Target};
+use crate::params::{self, COUNT, SPECS, Spec};
 
 /// The devices of the four pattern sections.
 pub const ROWS: [Device; 4] = [
@@ -65,6 +65,21 @@ pub enum Kit {
     },
 }
 
+/// What host notes on the section channels do and when the patterns play, outside the
+/// preview (task-217, `docs/plugin.md` section 4): a setting of the plugin's state, not a host
+/// parameter, so automation cannot change it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    /// The patterns play while the host plays, the step following the host position; with the
+    /// host stopped there is no sound, and notes 0..31 on channels 1..4 select patterns.
+    Pattern,
+    /// The song is stopped; notes on channels 1..4 play the devices (task-200). The default: a
+    /// plugin just inserted makes no sound of its own, as the mode parameter's Stop before.
+    #[default]
+    Note,
+}
+
 /// What the state saves besides the parameters.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Doc {
@@ -83,6 +98,12 @@ pub struct Doc {
     /// The Standard Mapping's channel, 0..=15 (MIDI channel 1..16; never 0..=3, the sections'
     /// channels 1..4: [`check_remote_channel`]); [`DEFAULT_REMOTE_CHANNEL`].
     pub remote_channel: u8,
+    /// Pattern or note mode.
+    pub mode: Mode,
+    /// The preview set (task-217): the controls as the panel set them during the preview, by
+    /// parameter id; `None` until the first preview, which starts from the parameters' values.
+    /// An id it lacks takes the parameter's value.
+    pub preview: Option<BTreeMap<String, i32>>,
 }
 
 impl Default for Doc {
@@ -95,8 +116,31 @@ impl Default for Doc {
             editor_size: None,
             remote_enabled: false,
             remote_channel: DEFAULT_REMOTE_CHANNEL,
+            mode: Mode::default(),
+            preview: None,
         }
     }
+}
+
+/// The preview set `set` as values in [`SPECS`] order: a parameter it lacks takes its value in
+/// `values`, a value out of range is clamped.
+pub fn preview_values(set: &BTreeMap<String, i32>, values: &[i32; COUNT]) -> [i32; COUNT] {
+    let mut out = *values;
+    for (o, s) in out.iter_mut().zip(&SPECS) {
+        if let Some(&v) = set.get(&params::id(s.target)) {
+            *o = v.clamp(s.min as i32, s.max as i32);
+        }
+    }
+    out
+}
+
+/// `values` as a preview set, by parameter id.
+pub fn preview_set(values: &[i32; COUNT]) -> BTreeMap<String, i32> {
+    SPECS
+        .iter()
+        .zip(values)
+        .map(|(s, &v)| (params::id(s.target), v))
+        .collect()
 }
 
 /// The Standard Mapping's default channel (0-based): MIDI channel 16.
@@ -130,6 +174,12 @@ pub fn check_remote_channel(c: u8) -> Result<(), String> {
 pub struct Shared {
     remote_enabled: AtomicBool,
     remote_channel: AtomicU8,
+    /// [`Mode::Pattern`].
+    pattern_mode: AtomicBool,
+    /// The preview runs (the panel's Play).
+    preview: AtomicBool,
+    /// The preview set's values in [`SPECS`] order, written before `preview` is set.
+    preview_values: [AtomicI32; COUNT],
 }
 
 impl Default for Shared {
@@ -137,11 +187,44 @@ impl Default for Shared {
         Shared {
             remote_enabled: AtomicBool::new(false),
             remote_channel: AtomicU8::new(DEFAULT_REMOTE_CHANNEL),
+            pattern_mode: AtomicBool::new(Mode::default() == Mode::Pattern),
+            preview: AtomicBool::new(false),
+            preview_values: std::array::from_fn(|i| AtomicI32::new(SPECS[i].default as i32)),
         }
     }
 }
 
 impl Shared {
+    /// Pattern mode (else note mode).
+    pub fn pattern_mode(&self) -> bool {
+        self.pattern_mode.load(Ordering::Relaxed)
+    }
+
+    fn set_mode(&self, m: Mode) {
+        self.pattern_mode
+            .store(m == Mode::Pattern, Ordering::Relaxed);
+    }
+
+    /// Whether the preview runs.
+    pub fn previewing(&self) -> bool {
+        self.preview.load(Ordering::Acquire)
+    }
+
+    fn set_previewing(&self, on: bool) {
+        self.preview.store(on, Ordering::Release);
+    }
+
+    /// The preview set's value of parameter `i` ([`SPECS`] order).
+    pub fn preview_value(&self, i: usize) -> i32 {
+        self.preview_values[i].load(Ordering::Relaxed)
+    }
+
+    fn set_preview_values(&self, v: &[i32; COUNT]) {
+        for (a, &x) in self.preview_values.iter().zip(v) {
+            a.store(x, Ordering::Relaxed);
+        }
+    }
+
     /// Whether the Standard Mapping is on.
     pub fn remote_enabled(&self) -> bool {
         self.remote_enabled.load(Ordering::Relaxed)
@@ -183,6 +266,9 @@ struct Saved {
     /// Absent: channel 16 (0-based 15).
     #[serde(default = "default_remote_channel")]
     remote_channel: u8,
+    mode: Mode,
+    /// Null: no preview yet.
+    preview: Option<BTreeMap<String, i32>>,
 }
 
 impl Doc {
@@ -208,11 +294,14 @@ impl Doc {
             editor_size: self.editor_size,
             remote_enabled: self.remote_enabled,
             remote_channel: self.remote_channel,
+            mode: self.mode,
+            preview: self.preview.clone(),
         };
         serde_json::to_string(&s).expect("the document serializes")
     }
 
-    /// The document of a state's JSON.
+    /// The document of a state's JSON. States of earlier builds are not supported (the user,
+    /// 2026-11-16: no compatibility until the plugin's first release).
     pub fn from_json(json: &str) -> Result<Doc, String> {
         let s: Saved = serde_json::from_str(json).map_err(|e| e.to_string())?;
         if s.version != STATE_VERSION {
@@ -256,6 +345,8 @@ impl Doc {
             editor_size: s.editor_size,
             remote_enabled: s.remote_enabled,
             remote_channel: s.remote_channel,
+            mode: s.mode,
+            preview: s.preview,
         })
     }
 }
@@ -398,9 +489,6 @@ pub fn build(
 
 /// Sets parameter `s` to `v` in `e` through the panel's message, unless `e` holds it.
 fn set_value(e: &mut Engine, s: &Spec, v: i32) {
-    if s.target == Target::Mode {
-        return;
-    }
     if params::engine_byte(e, s.target).is_some_and(|b| params::value_of(s, b) == v) {
         return;
     }
@@ -501,6 +589,8 @@ impl Main {
             editor_size: self.doc.editor_size,
             remote_enabled: self.doc.remote_enabled,
             remote_channel: self.doc.remote_channel,
+            mode: self.doc.mode,
+            preview: None,
         };
         let samples = self.samples();
         let e = match &self.player {
@@ -665,6 +755,74 @@ impl OrbParams {
         Ok(())
     }
 
+    /// Pattern or note mode (default note mode), kept in the state.
+    pub fn mode(&self) -> Mode {
+        self.main().doc.mode
+    }
+
+    /// Sets the mode (the Options menu; File > Open sets pattern mode); the process side
+    /// takes it at its next engine block.
+    pub fn set_mode(&self, mode: Mode) {
+        let mut m = self.main();
+        m.doc.mode = mode;
+        self.shared.set_mode(mode);
+    }
+
+    /// Whether the preview runs (the panel's Play, task-217). Not saved: a restore ends it.
+    pub fn previewing(&self) -> bool {
+        self.shared.previewing()
+    }
+
+    /// The panel's Play (`true`) and Stop (`false`): enters or leaves the preview. The first
+    /// entry makes the preview set from the parameters' values; later entries restore it. The
+    /// process side takes the change at its next engine block: entering, it plays the preview
+    /// set free-running; leaving, it returns to the parameters' values.
+    pub fn set_preview(&self, on: bool) {
+        if on {
+            let values = self.values();
+            let mut m = self.main();
+            let set = m.doc.preview.get_or_insert_with(|| preview_set(&values));
+            self.shared
+                .set_preview_values(&preview_values(set, &values));
+        }
+        self.shared.set_previewing(on);
+    }
+
+    /// A control the panel changed during the preview: parameter `i` ([`SPECS`] order) of the
+    /// preview set becomes `v` (clamped to its range). The host sees nothing of it. Refused
+    /// when the preview does not run.
+    pub fn set_preview_value(&self, i: usize, v: i32) -> Result<(), String> {
+        if !self.previewing() {
+            return Err("the preview does not run".into());
+        }
+        let s = SPECS.get(i).ok_or("no such parameter")?;
+        let v = v.clamp(s.min as i32, s.max as i32);
+        let values = self.values();
+        let mut m = self.main();
+        let set = m.doc.preview.get_or_insert_with(|| preview_set(&values));
+        set.insert(params::id(s.target), v);
+        self.shared.preview_values[i].store(v, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// The preview set's values ([`SPECS`] order; a parameter it lacks takes its value), or
+    /// `None` before the first preview.
+    pub fn preview_values(&self) -> Option<[i32; COUNT]> {
+        let values = self.values();
+        let m = self.main();
+        m.doc.preview.as_ref().map(|s| preview_values(s, &values))
+    }
+
+    /// The values the panel and the engine play: the preview set's while the preview runs,
+    /// else the parameters'.
+    pub fn panel_values(&self) -> [i32; COUNT] {
+        if self.previewing() {
+            std::array::from_fn(|i| self.shared.preview_value(i))
+        } else {
+            self.values()
+        }
+    }
+
     /// The player's snapshot after the last engine block (`None` before the first activation):
     /// the engine's state, the Sync LED ([`orb_player::Snapshot::host_sync`]) and the MIDI
     /// activity ([`orb_player::Snapshot::midi_in`]).
@@ -746,17 +904,17 @@ impl OrbParams {
         let (e, doc) = m.build_song(song)?;
         let values = values_of(&e);
         m.send(Command::Load(e))?;
+        let mut doc = doc;
+        // the old song's preview set is not this song's: the next preview starts from the new
+        // song's values, and a running preview plays them now
+        if self.previewing() {
+            doc.preview = Some(preview_set(&values));
+            self.shared.set_preview_values(&values);
+        }
         m.doc = doc;
         drop(m);
         self.bump();
-        Ok(self
-            .ids
-            .iter()
-            .zip(values)
-            .enumerate()
-            .filter(|&(i, _)| i != MODE)
-            .map(|(_, (id, v))| (id.clone(), v))
-            .collect())
+        Ok(self.ids.iter().cloned().zip(values).collect())
     }
 
     /// The Mods menu: the instance's drum machines take the mod `rbm` (recrypted; `None` or the
@@ -913,6 +1071,13 @@ unsafe impl Params for OrbParams {
         }
         self.shared.set_remote_enabled(m.doc.remote_enabled);
         self.shared.set_remote_channel(m.doc.remote_channel);
+        self.shared.set_mode(m.doc.mode);
+        // the preview is not saved: a restore ends it, the restored state plays as saved
+        self.shared.set_previewing(false);
+        if let Some(set) = &m.doc.preview {
+            self.shared
+                .set_preview_values(&preview_values(set, &values));
+        }
         m.reload(&values);
         drop(m);
         self.bump();

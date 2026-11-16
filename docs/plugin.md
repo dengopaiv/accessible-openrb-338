@@ -4,7 +4,9 @@ OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are tas
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
 the core described here; task-198 the host sync, the pattern selection by notes and the Standard
 Mapping (section 8); task-200 note mode (section 9); task-201 the editor (section 10); packaging
-and the validators are task-204.
+and the validators are task-204. task-217 (the user's design of 2026-11-16, task-216) replaced
+the mode parameter `g1` with the pattern/note mode setting and made the panel's Play/Stop the
+pattern preview (section 4.2).
 
 ## 1. What runs
 
@@ -20,7 +22,7 @@ GPL-3.0-only.
 |---|---|---|
 | `src/lib.rs` | both | the nice-plug `Plugin`, `ClapPlugin` and `Vst3Plugin`, the exports |
 | `src/instance.rs` | main | the parameters, the document the state saves, the editor's calls, the engine build |
-| `src/core.rs` | audio | the 64-frame block scheduler, the parameter changes, the mode |
+| `src/core.rs` | audio | the 64-frame block scheduler, the parameter changes, the mode and the preview |
 | `src/resample.rs` | audio | the resampler for host rates other than 44.1 kHz |
 | `src/params.rs` | both | the parameter table (a constant) |
 | `src/editor.rs` | main | the editor: orb-ui's panel in the host's window (section 10) |
@@ -49,18 +51,22 @@ Permanent after the first release (task-185):
 
 ## 3. Parameters
 
-One stepped integer parameter per control the plugin's panel shows (120): every controller of
+One stepped integer parameter per control the plugin's panel shows (119): every controller of
 the 303s (0..8 each: on/off, pattern, tune, cutoff, resonance, env mod, decay, accent,
 waveform), the 808 (0..28, the voice switches 11, 14, 17, 19, 21 included), the 909 (0..29),
 the delay (0..4), the distortion (0..2), the PCF (0..6) and the compressor (0..2); the mixer's
 master, compressor and PCF inserts, and per channel on, level, pan, delay send and distortion;
-the shuffle; and the mode, orb's Play/Stop. Hidden in the plugin and not parameters: the
+and the shuffle. Hidden in the plugin and not parameters: the
 pattern/song switch, the loop switch and range, Rewind, Record, the tempo buttons (task-185).
+Not parameters either since task-217: orb's Play/Stop (the preview, section 4.2) and the
+pattern/note mode (a setting of the state, section 5), so automation cannot change them; the
+mode parameter `g1` of task-197 is gone, and states saved with it are not migrated (the user,
+2026-11-16: no compatibility with plugin states before the first release).
 The pattern edits (steps, a pattern's length and shuffle flag) are pattern data, kept in the
 state (section 5), not parameters.
 
-- **Ids.** `g1` the mode and `g20` the shuffle (their song msg 35 ids, `docs/song_load.md`
-  section 3); `d<device>c<n>` the others, with the device id (0 mixer, 1 and 2 the 303s, 3 the
+- **Ids.** `g20` the shuffle (its song msg 35 id, `docs/song_load.md` section 3; `g1` is
+  unused since task-217); `d<device>c<n>` the others, with the device id (0 mixer, 1 and 2 the 303s, 3 the
   808, 4 the 909, 5 delay, 6 distortion, 7 PCF, 8 compressor) and the controller number
   (`docs/song_load.md` section 5; the 909's in RBS order). For the mixer `n` is the byte's
   offset in its msg-41 block (section 4.1: 0 master, 1 compressor id, 2 PCF id, `5 + 6c + k`
@@ -75,8 +81,8 @@ state (section 5), not parameters.
   (`the_defaults_are_the_new_songs_values`).
 - **Into the engine.** A changed value is sent as the panel's message
   (`docs/song_load.md` section 4.10): `{ctrl, v}` to the device (`Command::DeviceParam`), mixer
-  msg 145 `{id, v}` or 147 `{c, k, v}`, song msg 35 `{20, v}` for the shuffle. The mode is a
-  level (section 4).
+  msg 145 `{id, v}` or 147 `{c, k, v}`, song msg 35 `{20, v}` for the shuffle. During the
+  preview a change is only kept, and sent when the preview ends (section 4.2).
 - **A song's out-of-range bytes.** A song can hold a byte outside the control's range (a 303
   waveform of 127, task-156). Its parameter shows what the engine plays (a switch is on for any
   byte but 0, the PCF's mode is low-pass only at 1, a number is clamped), and a value is sent
@@ -98,19 +104,23 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   The output is therefore a function of the events' frames alone: buffer sizes 1, 63, 64, 512
   and 4096 give the same samples (`tests/timing.rs`). A call of no frames takes no changes;
   they are seen at the next call.
-- **The mode** (`g1`) is a level: before each block the engine is played (song msg 35 `{1,1}`)
-  when the mode is Play and the song does not play or a loaded song waits for Play, and stopped
-  (`{1,0}`, which locates to the bar start) when it is Stop and the song plays. Its default is
-  Stop (0): the original starts stopped (a new or opened song does not play until Play), and a
-  plugin just inserted should make no sound of its own; task-185 does not fix the default. Play
-  is pattern mode: the patterns play whether the host plays or not, following its position
-  while it plays (section 8); Stop is note mode (task-200).
+- **The mode** (task-217; a setting of the state, not a parameter, section 5) is read before
+  each block. In **pattern mode** the song plays (song msg 35 `{1,1}`) only while the host
+  plays, its step following the host's position (section 8), and is stopped (`{1,0}`, which
+  locates to the bar start) when the host stops: no sound with the host stopped. In **note
+  mode** the song is stopped and host notes play the devices whatever the host's transport
+  does (section 9). The default is note mode: a plugin just inserted makes no sound of its own,
+  as the old mode parameter's Stop default (the original starts stopped). File > Open sets
+  pattern mode (task-185). The preview (section 4.2) overrides both while it runs. A song
+  loaded over the playing one waits (pending) until the next block, which switches to it
+  (Play) and then plays or stops it as the mode says.
 - **Activation.** Every activation makes a new player and builds the engine from the state and
   the parameters (section 5), so an offline bounce does not depend on what played before it and
   reads no clock. The UI side's commands are applied at the start of the next block, as the
   standalone player's are at the start of its call.
 - **The same engine as the app.** Without changes the plugin's output equals orb-player's for the
-  same song in pattern mode, 64 frames later (`the_plugin_plays_as_the_player_one_block_later`).
+  same song in pattern mode, 64 frames later, with a host that plays and reports no tempo or
+  position (`the_plugin_plays_as_the_player_one_block_later`).
 
 ### 4.1 Another host rate
 
@@ -132,9 +142,44 @@ after the events before that host frame, as at 44.1 kHz. The reported latency is
 The resampled output is not bit-exact with the engine's (task-185: resample and report the
 latency).
 
+### 4.2 The preview (task-217)
+
+The panel's Play enters the **pattern preview** and its Stop leaves it (`OrbParams::set_preview`,
+section 6). The preview is the standalone app's pattern mode inside the plugin, a stable state
+for editing patterns:
+
+- It plays the patterns free-running, whatever the host's transport does (stopped, playing,
+  jumping) and in either mode: its step does not follow the host's position. On entry the
+  song plays from where it is (a stopped song from its bar start; a song that followed the
+  host plays on from its position). The tempo is the host's, also while the host is stopped
+  (hosts report it then), and the song's only when the host reports none (the user's Reaper
+  check, 2026-11-16; the first build played the song's tempo); the tempo display shows it. No
+  host sync: the Sync LED and the Bar display are dark.
+- Host input is ignored: notes on every channel, the Standard Mapping, parameter changes and
+  automation change neither the sound nor the panel. The parameters' values still follow the
+  host in the plugin's model (the process side keeps the latest), and the MIDI LED still blinks
+  on every message.
+- **The preview set.** The controls the panel changes during the preview (knobs, switches,
+  pattern selections) go into a set of their own, by parameter id, kept in the state
+  (`preview`, section 5), and not to the host: no begin/set/end gesture. The first entry starts
+  the set from the parameters' values; later entries restore it; a value is clamped to its
+  parameter's range. The main thread writes the set into atomics (`Shared`), and the process
+  side applies the set on entry and its changes before each block (no lock, no allocation).
+- Leaving the preview applies every parameter's latest value where the engine does not
+  already hold it, so the panel and the engine are the host's again (a pattern the set had
+  selected is replaced at the next bar line, or at once by the clean start when the host
+  plays in pattern mode); then the mode rules again.
+- Pattern step edits (pattern data, section 5) are the same in and out of the preview.
+- File > Open and File > New during the preview load the song, set its values as parameters
+  (through the host, as always) and make them the preview set, which the preview plays at
+  once; outside the preview a load forgets the set (the next entry starts from the new song's
+  values).
+- The preview is not saved: a state restore ends it. It survives a re-activation (the first
+  block enters it again).
+
 ## 5. State
 
-nice-plug saves the parameters (the controls and the mode) by id. The rest is one persisted
+nice-plug saves the parameters (the controls) by id. The rest is one persisted
 field, `orb`, a JSON object (version 1):
 
 | Key | What |
@@ -147,10 +192,13 @@ field, `orb`, a JSON object (version 1):
 | `editor_size` | the editor window's size in logical points (section 10); absent: 624 x 532 |
 | `remote_enabled` | whether the Standard Mapping (Remote MIDI) is on; false by default and when absent (section 8) |
 | `remote_channel` | the Standard Mapping's MIDI channel, 0-based (15: channel 16, the default and when absent); a section's channel (0..3, MIDI 1..4) restores as 15 with `last_error` set, the rest of the state kept (section 8) |
+| `mode` | `"pattern"` or `"note"` (section 4; a new instance: note) |
+| `preview` | the preview set (section 4.2): an object of parameter id to value, or null before the first preview; an id it lacks takes the parameter's value |
 
-The plugin is not released: no state from before task-207 (section channels 2..5, the mapping
-always on, channel 1) is migrated or recognized as such; such a state's `remote_channel` is read
-as it is.
+The plugin is not released: no state of an earlier build is migrated, recognized or tested
+(the user, 2026-11-16: no compatibility work with old plugin states until the plugin is
+released on GitHub Releases; the format changes freely). A state from before task-217 lacks
+`mode` and does not parse (the restore gives a new song and `last_error`).
 
 A restore (nice-plug sets the parameters, then calls `deserialize_fields`) replaces the
 document and, when the instance runs, builds the engine and sends it; otherwise the next
@@ -168,8 +216,9 @@ built-in samples): each has its own player and process globals.
 For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):
 
 - `load_song(bytes)` (File > Open) and `new_song()` (File > New): the song, with its own patterns
-  and controls and the instance's mod, is built and sent (it plays at once when the mode is
-  Play). It returns the song's control values by parameter id; the caller sets them through the
+  and controls and the instance's mod, is built and sent (it plays at once in the preview, or
+  in pattern mode while the host plays). During the preview its values become the preview set;
+  outside it the set is forgotten (section 4.2). It returns the song's control values by parameter id; the caller sets them through the
   host (`ParamSetter`), so that the host, its automation and the state follow. Until then the
   parameters keep their old values, and nothing is sent for them: a parameter is sent only when
   it changes.
@@ -189,6 +238,13 @@ For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):
   the next bar line). For a click on the pattern the parameter already holds, when a host note
   has selected another since: setting the parameter to its own value is no change the host or
   the process side sees. Otherwise the editor sets the parameter.
+- `mode()`, `set_mode(m)` (task-217): pattern or note mode, kept in the state (`mode`); the
+  process side reads it before each block (and at each note).
+- `previewing()`, `set_preview(on)`: the panel's Play and Stop (section 4.2); not saved.
+- `set_preview_value(i, v)`: a control the panel changed during the preview, into the preview
+  set (refused outside the preview); `preview_values()` the set's values (`None` before the
+  first preview); `panel_values()` the values the panel and the engine play (the set's during
+  the preview, else the parameters').
 
 ## 7. Building and testing
 
@@ -207,11 +263,13 @@ sizes and the 48 kHz path (`timing.rs`), the parameter list and defaults (`param
 and first snare swapped), no allocation in `process` (`no_alloc.rs`, a counting allocator, and
 the process side's sources checked for lock types), and the exports (`exports.rs`): it builds
 the library, loads it with the dynamic loader, checks the CLAP descriptor and the VST3 factory's
-class info, and runs a minimal CLAP host that restores a state with a song and the mode at
-Play, activates at 44.1 kHz, processes, and gets the same samples as the process side run
-directly. Loading in a real host (Reaper) has not been tried by the tests. `sync.rs` (task-198)
-runs a simulated host transport (section 8), `note_mode.rs` (task-200) note mode (section 9),
-`editor.rs` (task-201) the editor headless (section 10).
+class info, and runs a minimal CLAP host that restores a state with a song in pattern mode,
+activates at 44.1 kHz, processes with a CLAP transport that plays (no tempo, no position), and
+gets the same samples as the process side run directly. Loading in a real host (Reaper) has not
+been tried by the tests. `sync.rs` (task-198) runs a simulated host transport (section 8),
+`note_mode.rs` (task-200) note mode (section 9), `editor.rs` (task-201) the editor headless
+(section 10), `preview.rs` (task-217) the preview and its set through the process path
+(section 4.2).
 
 ## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
 
@@ -260,18 +318,22 @@ the last record that starts at or before `h`, extrapolated at its tempo while th
 - **Tempo**: the host's, rounded to BPM*1000 (song msg 35 `{4, v}`, the TopHat path's store),
   even while the host is stopped (hosts report it then); the song's own tempo when the host
   reports none (the newest song's tempo when it was first seen: a loaded song brings its own).
-  The snapshot's tempo is what orb plays at.
-- **Position** (pattern mode, the mode at Play, and the host playing): the host's tick is
+  The snapshot's tempo is what orb plays at. The preview plays at the same tempo, without
+  following the position (section 4.2).
+- **Position** (pattern mode, no preview, and the host playing): the host's tick is
   `beats * 192` (bar 1 beat 1 is tick 0, step 1; quarter notes, whatever the host's time
-  signature; other than 4/4 is task-206's decision). The first block that follows (the host starts, or the mode turns to Play while it
-  plays) stops the song (song msg 35 `{1,0}`), locates it to `trunc(tick)` and plays it: the
+  signature; other than 4/4 is task-206's decision). The first block that follows (the host
+  starts, pattern mode is chosen or the preview ends while it plays, or a song loaded over the
+  playing one is switched to) stops the song (song msg 35 `{1,0}`), locates it to `trunc(tick)` and plays it: the
   devices start clean at the host's position (slot 4, then slot 3). A later block whose tick is
   a tick or more away from the last one plus the clock's advance (`tempo * TEMPO_STEP`) is a seek
   or a loop jump: a locate, as the TopHat reposition. Then, in every block, the position is set
   to the host's fractional tick, and the clock adds the block's advance, so after the block it
   equals the host's position at the block's end. The TopHat path's loop-point hold-off (the
   countdown) is not taken: the host's loop is not the song's, and pattern mode has none.
-- **Host stopped**: the song runs on from where it is (the clock alone).
+- **Host stopped** (task-217; before it, the song ran on): the song is stopped (song msg 35
+  `{1,0}`), so pattern mode makes no sound. A host that plays but reports no position plays
+  the song free-running from where it is (the clock alone).
 - An offline bounce reads nothing but the calls' frames and transports: two renders of the same
   timeline are identical, and with a host whose positions do not depend on where its buffers
   start, so are different buffer sizes (`sync.rs`).
@@ -279,13 +341,15 @@ the last record that starts at or before `h`, extrapolated at its tempo while th
 **Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 1..4 (303 #1 = 1, 303 #2 = 2,
 808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303 #1) in pattern
 mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel message (it
-becomes the pending pattern), then slot 2 on that device, which takes it at once
-(`relocate`: `0x100255E0`, `0x10028030`, `0x1002B670`) where the panel's would wait for the bar
-line; the next step is the new pattern's step at the same position. It latches until the next
-note on that channel or a panel change (a parameter change: sent when the value changes, and
-taken at the next bar line, as the original's panel); the last write wins. A note-off and a
-note above 31 do nothing; in note mode (Stop) every note on these channels plays the device
-(section 9). Notes never change
+becomes the pending pattern), then, while the song plays, slot 2 on that device, which takes it
+at once (`relocate`: `0x100255E0`, `0x10028030`, `0x1002B670`) where the panel's would wait for
+the bar line; the next step is the new pattern's step at the same position. With the host
+stopped (the song stopped, task-217) only the selection changes: the panel shows it, nothing
+sounds, and the host's start plays it (the clean start's locate relocates every device). It
+latches until the next note on that channel or a panel change (a parameter change: sent when
+the value changes, and taken at the next bar line, as the original's panel); the last write
+wins. A note-off and a note above 31 do nothing; in note mode every note on these channels
+plays the device (section 9). The preview ignores every note (section 4.2). Notes never change
 parameters: the parameter keeps the panel's pattern, which a state and every activation (a
 bounce) start from.
 
@@ -300,32 +364,33 @@ with `last_error` set, and the rest of the state (song, patterns, controls) is k
 
 **The main way to map a controller** is the host's MIDI learn of the plugin's parameters, not
 the Standard Mapping: in Reaper the FX window's Param button > Learn (move the control, then
-pick the parameter). The mode parameter (Play/Stop, `g1`) is a two-valued parameter, so it
-learns as a play/stop button; the host's transport is the other way to start and stop.
+pick the parameter). Play/Stop and the mode are no parameters (task-217): in pattern mode the
+host's transport starts and stops orb, and stopping from MIDI is the host's stop.
 
 The Standard Mapping's control actions (the devices' and the
 mixer's knobs and switches, the pattern notes 12..63, the shuffle) are applied to the engine at
 the message's frame, like a host note: they do not change the parameters, and the last write
-wins. Its transport actions (Play, Stop, Record, the locates) are dropped: the mode is a host
-parameter and the transport the host's. Its view actions (bank, focus, instrument, keyboard
+wins. Its transport actions (Play, Stop, Record, the locates) are dropped: the transport is the
+host's. The preview ignores the mapping altogether. Its view actions (bank, focus, instrument, keyboard
 mode) are dropped too until the editor (task-201) shows them. Its toggle state follows the
 snapshot after every block.
 
 **LEDs.** `Snapshot::host_sync` is set while a block followed the host's position (pattern mode,
-orb and the host playing): the Sync LED. `Snapshot::midi_in` counts every MIDI message the host
-sent (also those nothing maps): the MIDI LED.
+no preview, the host playing): the Sync LED. `Snapshot::midi_in` counts every MIDI message the
+host sent (also those nothing maps, and in the preview, which ignores them): the MIDI LED.
 
 ## 9. Note mode (task-200)
 
-With the mode at Stop the song is stopped, and a note-on or note-off on MIDI channel 1..4 (303
-#1, 303 #2, 808, 909) plays that device by the note mapping of `docs/midi.md` section 5, at the
-block holding the event (section 4), whether the host plays or not. The original plays no
+In note mode (outside the preview) the song is stopped, and a note-on or note-off on MIDI
+channel 1..4 (303 #1, 303 #2, 808, 909) plays that device by the note mapping of
+`docs/midi.md` section 5, at the block holding the event (section 4), whether the host plays or
+not (the no-sound-while-stopped rule is pattern mode's only; the user, 2026-11-16). The original plays no
 device from a note (`docs/midi.md` section 4), so this is new engine behavior; it does not run
 while the song plays, so pattern playback is unchanged (the corpus renders as before).
 
 - **The path.** `src/core.rs` sends `Command::Note {device, note, velocity}` (velocity 0, or a
-  note-off, is the note-off). If the mode has just turned to Stop and the song still plays,
-  the Stop is sent first (`hold_mode`), so that its silence (slot 4 → slot 6) does not cut the
+  note-off, is the note-off). If the mode has just turned to note mode and the song still
+  plays, the Stop is sent first (`ensure_stopped`), so that its silence (slot 4 → slot 6) does not cut the
   note. orb-player applies it as `Engine::live_note`, which calls the channel device's
   `live_note_on` / `live_note_off` (`crates/orb-engine/src/frame/mod.rs`) and does nothing
   while the song plays. Notes change no parameter: the 808's voice switches, the Tune and the
@@ -466,23 +531,33 @@ are pixel-identical):
   only in song mode; task-213 decides. The transport's background is the art part
   `bg_transport_plugin` (the standalone's without those, a well for Play and Stop).
 - The tempo display shows the tempo orb plays at (the snapshot's: the host's, or the song's when
-  the host reports none), read-only.
+  the host reports none), read-only; in the preview too.
 - The host position: a Bar display (3 digits) where the song position was
   (`embed::host_position`): while orb follows the host (the snapshot's `host_sync`: pattern
   mode, orb and the host playing) the engine's position is the host's (section 8.2), shown as
   bar `tick / 768 + 1` (bars of four quarter notes, whatever the host's time signature,
-  task-206). In note mode, and with the host stopped (orb free-runs and has no host position),
-  it is dark, as the standalone's bar display in pattern mode. No Beat display: the first
+  task-206). In note mode, with the host stopped, and in the preview (orb free-runs and has no
+  host position) it is dark, as the standalone's bar display in pattern mode (the standalone
+  shows no position of its own in pattern mode, so the preview shows none). No Beat display: the first
   version had one beside the Bar (1 digit, `tick % 768 / 192 + 1`); the user removed it after
   the Reaper check (2026-11-16).
-- Play and Stop set the mode parameter (`g1`); the Play light is the engine's.
+- Play and Stop enter and leave the preview (task-217, section 4.2). The Play light shows only
+  whether the preview runs (`Embed::previewing`, set over the engine's play state after each
+  sync in `App::show`): the host's start and stop do not change Play and Stop, and pattern
+  mode following a playing host does not light Play (the user's Reaper check, 2026-11-16; the
+  first build lit it from the engine).
+- Options has, below the standalone's two checkboxes, the mode as two radio items (task-217;
+  orb-ui `embed::MODE_ITEMS`, `Embed::mode` / `set_mode`, `Cmd::SetPluginMode`): "Pattern
+  Mode" and "Note Mode" (the user dropped the first build's descriptions in parentheses). The
+  menu was chosen over a panel control: the panel has no free switch (the hidden Pattern/Song
+  switch's art says Pattern/Song).
 - The Sync LED is lit while the snapshot's `host_sync` is; the MIDI LED for 0.1 s after the
-  snapshot's `midi_in` count changes (art part `led_transport_on`). The editor redraws at least
+  snapshot's `midi_in` count changes (art part `led_transport_on`), in the preview too. The editor redraws at least
   every 50 ms while open so that the LEDs follow.
 - File has New, Open and Info (no Save, Save As, Export); nothing asks to save (the song lives
   in the host's project). File > Open loads the file into the plugin (`OrbParams::load_song`),
-  sets the song's control values as host parameters and the mode to Play (pattern mode,
-  task-185); File > New keeps the mode. The file browser is orb-ui's own, egui-drawn (task-046),
+  sets the song's control values as host parameters and the mode to pattern mode (task-185);
+  File > New keeps the mode. The file browser is orb-ui's own, egui-drawn (task-046),
   so no native dialog is opened from the plugin window; its folders and the Mods folder are the
   standalone's settings file (`OpenRB-338/ui.toml`), shared.
 - Mods: a mod chosen (the Mods menu, a song's mod, Choose file) is read and given to the plugin
@@ -587,7 +662,9 @@ being torn down by the non-unwinding panic, not a defect of its own; not reprodu
 
 **The panel's commands** (`PluginPort`, orb-ui's `link::Port`): a control's message becomes its
 host parameter (`params::of_command`; `ParamSetter` begin, set, end), so the host records and
-saves it and the process side sends it to the engine (section 3); a pattern button on the
+saves it and the process side sends it to the engine (section 3); during the preview it goes
+to the preview set instead (`set_preview_value`, no gesture, section 4.2); Play and Stop are
+`set_preview(true | false)`; a pattern button on the
 pattern its parameter already holds sends the message itself (`select_pattern`, section 6); a
 pattern edit goes to `OrbParams::edit`, the Vintage flag to `set_vintage`, the mod's startup
 sound to `OrbParams::preview`; the song mode, record, loop, locate and tempo messages are
@@ -604,14 +681,19 @@ a load or a restore the host has not run yet, shows the song. The plugin's garba
 emptied on the main thread at every command and every editor frame (`OrbParams::collect_garbage`).
 
 **Screenshots without a host.** `cargo run --release -p orb-plugin --example editor_preview --
-[SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--screenshot OUT.png]` shows the
-editor in a window of its own with a stand-in host that runs the process side (no sound) and
-applies parameter changes at once.
+[SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--mode pattern|note] [--preview]
+[--click X,Y]... [--screenshot OUT.png]` shows the editor in a window of its own with a
+stand-in host that runs the process side (no sound) and applies parameter changes at once;
+`--preview` enters the preview, `--click` clicks a point of the window (one every 6 frames from
+frame 10: `--click 104,11` opens Options at 1:1).
 
 **Tests** (`tests/editor.rs`, headless egui with a stand-in `GuiContext`): the editor shows the
 plugin's song; a knob drag and a pattern button set their parameters through the host; Play
-and Stop set the mode; the hidden controls take no clicks; no key acts; the LEDs and the
-Bar display follow the snapshot; File > Open loads the song in pattern mode and New
+and Stop enter and leave the preview, and in it a knob drag and a pattern button go to the
+preview set with no host gesture; the Play light is the preview's, not the host transport's;
+the Options menu's command sets the mode; the hidden
+controls take no clicks; no key acts; the LEDs and the Bar display follow the snapshot (dark
+Sync and Bar in the preview, the MIDI LED still lit by input); File > Open loads the song in pattern mode and New
 asks nothing; a mod from the Mods menu goes into the state; the File menu opens from the bar;
 the corner asks for sizes of the rule, through the host's callbacks after the frame (a host
 that sizes the window inside its request finds the window's state free); a window

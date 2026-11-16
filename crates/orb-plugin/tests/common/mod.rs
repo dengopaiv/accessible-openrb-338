@@ -6,8 +6,16 @@
 
 use std::path::{Path, PathBuf};
 
-use orb_plugin::core::Core;
-use orb_plugin::instance::{self, OrbParams, set_param};
+use orb_plugin::core::{Core, HostTransport};
+use orb_plugin::instance::{self, Mode, OrbParams, set_param};
+
+/// The transport of [`host`]: playing, without a tempo or a position (a host that reports
+/// neither), so that pattern mode plays the song free-running at its own tempo.
+pub const PLAYING: HostTransport = HostTransport {
+    playing: true,
+    tempo: None,
+    pos_beats: None,
+};
 
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -26,14 +34,14 @@ pub fn set(p: &OrbParams, id: &str, v: i32) {
     assert_eq!(param.value(), v, "{id} takes {v}");
 }
 
-/// An instance with the song `name` loaded (its controls set as the editor would) and the
-/// mode at Play.
+/// An instance with the song `name` loaded (its controls set as the editor would) in pattern
+/// mode, as File > Open leaves it.
 pub fn with_song(name: &str) -> OrbParams {
     let p = OrbParams::new();
     for (id, v) in p.load_song(song_bytes(name)).unwrap() {
         set(&p, &id, v);
     }
-    set(&p, "g1", 1);
+    p.set_mode(Mode::Pattern);
     p
 }
 
@@ -51,13 +59,26 @@ pub struct Change {
 }
 
 /// Runs `frames` host frames in buffers of `buf` frames, each split at the changes, which are
-/// set before the call that starts at their frame. Returns the frames interleaved.
+/// set before the call that starts at their frame; the host plays ([`PLAYING`]). Returns the
+/// frames interleaved.
 pub fn host(
     p: &OrbParams,
     core: &mut Core,
     frames: usize,
     buf: usize,
     changes: &[Change],
+) -> Vec<f32> {
+    host_with(p, core, frames, buf, changes, &PLAYING)
+}
+
+/// [`host`] with the transport `t` in every call.
+pub fn host_with(
+    p: &OrbParams,
+    core: &mut Core,
+    frames: usize,
+    buf: usize,
+    changes: &[Change],
+    t: &HostTransport,
 ) -> Vec<f32> {
     let (mut l, mut r) = (vec![0f32; frames], vec![0f32; frames]);
     let mut pos = 0;
@@ -73,7 +94,7 @@ pub fn host(
             .min()
             .unwrap_or(usize::MAX);
         let end = block_end.min(next_change).min(frames);
-        core.process(&mut l[pos..end], &mut r[pos..end], &p.values());
+        core.process_with(&mut l[pos..end], &mut r[pos..end], &p.values(), t, &[]);
         pos = end;
     }
     l.into_iter().zip(r).flat_map(|(a, b)| [a, b]).collect()

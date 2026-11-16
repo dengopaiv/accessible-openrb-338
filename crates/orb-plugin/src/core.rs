@@ -22,9 +22,19 @@
 //! Each call gets every parameter's value. One that differs from the value seen in the call
 //! before is a change at the call's first frame: it is sent as the panel's message
 //! ([`params::command`]) unless the engine already holds that value (a song's out-of-range
-//! byte that the value stands for is kept). The mode ([`params::MODE`]) is a level: before each
-//! block the engine is played or stopped to match it, which also starts a loaded song that
-//! waits for Play.
+//! byte that the value stands for is kept).
+//!
+//! # The mode and the preview (task-217)
+//!
+//! The mode ([`crate::instance::Mode`]) and the preview are the main thread's settings
+//! ([`Shared`]), read before each block. Outside the preview, pattern mode plays the song only
+//! while the host plays and stops it when the host stops; note mode keeps it stopped. The
+//! preview (the panel's Play) plays the song free-running (its step does not follow the host's
+//! position) at the host's tempo (the song's when the host reports none), with the preview
+//! set's values: entering it applies them, a change of the set is applied at the next block,
+//! and leaving it applies the parameters' latest values. While it runs, host notes, the
+//! Standard Mapping and parameter changes are ignored (the changes are kept for its end; the
+//! MIDI LED still counts the messages).
 //!
 //! # Host sync (task-198)
 //!
@@ -35,26 +45,26 @@
 //!
 //! - the tempo (song msg 35 `{4, v}`) is the host's, rounded to BPM*1000, or the song's when the
 //!   host reports none;
-//! - in pattern mode (the mode at Play) while the host plays, the position follows the host's, 192
-//!   ticks per quarter note: when the host starts (or the mode turns to Play while it plays) the
+//! - in pattern mode while the host plays, the position follows the host's, 192 ticks per quarter
+//!   note: when the host starts (or pattern mode or the preview's end comes while it plays) the
 //!   song is stopped, located to the host's tick and played again; when the position jumps (a seek,
 //!   a loop) by a tick or more from where the last block's position and the tempo put it, the song
 //!   is located there; otherwise only the position is set (`Command::Position`), as the original's
 //!   TopHat sync does in every audio call (`sub_1001C2F4`, `docs/plugin.md` section 8);
-//! - while the host is stopped the song runs on from where it is.
+//! - while the host is stopped the song is stopped (no sound in pattern mode).
 //!
 //! # MIDI
 //!
 //! A note-on 0..31 on channel 1..4 (303 #1, 303 #2, 808, 909) in pattern mode selects that
-//! section's pattern at once: the pattern controller (as the panel's message), then slot 2 on
-//! that device (`Command::Relocate`), which takes a pending pattern at once where the panel's
-//! waits for the bar line. A note-off does nothing. In note mode (the mode at Stop, task-200)
-//! a note-on or note-off on those channels plays the device (`Command::Note`, `docs/plugin.md`
-//! section 9). Every other message goes, when the Standard
-//! Mapping is on (off by default), to it on the remote channel (default 16,
-//! [`crate::instance::Shared`]); of its actions the controls are
-//! applied, the transport ones (Play, Stop, Record, Locate) are not: the mode is the host's
-//! parameter and the transport the host's.
+//! section's pattern: the pattern controller (as the panel's message), then, while the song
+//! plays, slot 2 on that device (`Command::Relocate`), which takes a pending pattern at once
+//! where the panel's waits for the bar line; with the host stopped only the selection changes.
+//! A note-off does nothing. In note mode (task-200) a note-on or note-off on those channels
+//! plays the device (`Command::Note`, `docs/plugin.md` section 9), whatever the host's
+//! transport does. Every other message goes, when the Standard Mapping is on (off by default),
+//! to it on the remote channel (default 16, [`crate::instance::Shared`]); of its actions the
+//! controls are applied, the transport ones (Play, Stop, Record, Locate) are not: the
+//! transport is the host's. The preview ignores every message.
 //!
 //! Nothing here allocates, frees or locks: the queues and the snapshot are orb-player's
 //! lock-free ones, the parameter table is a constant, and the buffers are made at activation.
@@ -67,7 +77,7 @@ use orb_player::midi::{Action, Message, StandardMapping, Timed};
 use orb_player::{Audio, Command};
 
 use crate::instance::{ROWS, Shared};
-use crate::params::{self, COUNT, MODE, SPECS};
+use crate::params::{self, COUNT, SPECS};
 use crate::resample::{Blocks, ENGINE_RATE, Resampler};
 
 /// The frames of one engine block, and of the reported latency at 44.1 kHz.
@@ -109,8 +119,14 @@ struct Record {
 /// The engine and its block source.
 struct Engine {
     audio: Audio,
-    /// The mode parameter as last seen: the engine plays while it is set.
-    playing: bool,
+    /// Pattern mode (else note mode), as of the last block.
+    pattern_mode: bool,
+    /// The preview ran in the last block.
+    preview: bool,
+    /// The parameters' values as last seen (the host's).
+    host: [i32; COUNT],
+    /// The preview set's values as last applied.
+    shown: [i32; COUNT],
     /// The host events that could not be applied (the garbage queue was full); counted, not
     /// retried.
     dropped: u64,
@@ -141,17 +157,78 @@ impl Engine {
         }
     }
 
-    /// The engine's song plays or stops as the mode says. A song loaded over a playing one
-    /// waits (pending) until Play, which switches to it.
-    fn hold_mode(&mut self) {
+    /// The song plays: Play when it is stopped, or when a song loaded over the playing one
+    /// waits (pending) for Play, which switches to it.
+    fn ensure_playing(&mut self) {
         let a = &self.audio;
-        let c = if self.playing {
-            (!a.current().playing() || a.has_pending()).then_some(Command::Play)
-        } else {
-            a.current().playing().then_some(Command::Stop)
-        };
-        if let Some(c) = c {
+        if !a.current().playing() || a.has_pending() {
+            self.send(Command::Play);
+        }
+    }
+
+    /// The song is stopped (song msg 35 `{1,0}`, which locates to the bar start). A song
+    /// loaded over the playing one is switched to first, so that the newest song is the one
+    /// stopped.
+    fn ensure_stopped(&mut self) {
+        if self.audio.has_pending() {
+            self.send(Command::Play);
+        }
+        if self.audio.current().playing() {
+            self.send(Command::Stop);
+        }
+    }
+
+    /// Whether the preview runs or is about to (the main thread has turned it on).
+    fn previewing(&self) -> bool {
+        self.preview || self.shared.previewing()
+    }
+
+    /// Parameter `i` at `v`: its message unless the engine already plays it.
+    fn apply_one(&mut self, i: usize, v: i32) {
+        let s = &SPECS[i];
+        let holds = params::engine_byte(self.audio.newest(), s.target)
+            .is_some_and(|b| params::value_of(s, b) == v);
+        if holds {
+            return;
+        }
+        if let Some(c) = params::command(s, v) {
             self.send(c);
+        }
+    }
+
+    /// Every parameter at `values` (entering or leaving the preview).
+    fn apply_all(&mut self, values: &[i32; COUNT]) {
+        for (i, &v) in values.iter().enumerate() {
+            self.apply_one(i, v);
+        }
+    }
+
+    /// Before a block: the mode, and the preview's entry, exit and changes (task-217).
+    fn modes(&mut self) {
+        self.pattern_mode = self.shared.pattern_mode();
+        let preview = self.shared.previewing();
+        if preview != self.preview {
+            self.preview = preview;
+            self.following = false;
+            if preview {
+                for (i, v) in self.shown.iter_mut().enumerate() {
+                    *v = self.shared.preview_value(i);
+                }
+                let v = self.shown;
+                self.apply_all(&v);
+            } else {
+                // back to the host's values, the latest ones
+                let v = self.host;
+                self.apply_all(&v);
+            }
+        } else if preview {
+            for i in 0..COUNT {
+                let v = self.shared.preview_value(i);
+                if v != self.shown[i] {
+                    self.shown[i] = v;
+                    self.apply_one(i, v);
+                }
+            }
         }
     }
 
@@ -175,7 +252,8 @@ impl Engine {
         oldest
     }
 
-    /// Before block `blocks` renders: the tempo, and the position while the host plays.
+    /// Before block `blocks` renders: the tempo, whether the song plays, and the position while
+    /// it follows the host.
     fn sync(&mut self) {
         let id = Some(self.audio.loads());
         if id != self.song {
@@ -185,6 +263,8 @@ impl Engine {
         // the block's host timeline frame
         let h = (self.blocks * BLOCK as u64) as f64 * self.rate as f64 / ENGINE_RATE as f64;
         let rec = self.record_at(h);
+        // the host's tempo also in the preview and while the host is stopped (hosts report it
+        // then; the user, 2026-11-16); the song's only when the host reports none
         let host_tempo = rec.t.tempo.filter(|t| t.is_finite() && *t > 0.0);
         let tempo = match host_tempo {
             Some(t) => (t * 1000.0).round().clamp(1.0, u32::MAX as f64) as u32,
@@ -193,11 +273,19 @@ impl Engine {
         if self.audio.newest().frame.seq.globals.tempo != tempo {
             self.send(Command::Tempo(tempo));
         }
+        let host_plays = self.pattern_mode && rec.t.playing;
         let pos = match rec.t.pos_beats {
-            Some(p) if self.playing && rec.t.playing && p.is_finite() => p,
+            Some(p) if !self.preview && host_plays && p.is_finite() => p,
             _ => {
                 self.following = false;
                 self.audio.set_host_sync(false);
+                if self.preview || host_plays {
+                    // the preview, or a host that plays without a position: free-running
+                    self.ensure_playing();
+                } else {
+                    // note mode, or pattern mode with the host stopped: no pattern sounds
+                    self.ensure_stopped();
+                }
                 return;
             }
         };
@@ -205,6 +293,13 @@ impl Engine {
         let beats = pos + (h - rec.start as f64) * bpm / 60.0 / self.rate as f64;
         let tick = (beats * TICKS_PER_BEAT).clamp(0.0, MAX_TICK);
         let at = tick as u32;
+        if self.audio.has_pending() || !self.audio.current().playing() {
+            // a song loaded over the playing one: switch to it, then start it cleanly
+            if self.audio.has_pending() {
+                self.send(Command::Play);
+            }
+            self.following = false;
+        }
         if !self.following {
             // the host starts: a clean start at its position
             self.send(Command::Stop);
@@ -224,7 +319,11 @@ impl Engine {
 
     /// One host MIDI message.
     fn message(&mut self, m: &Message) {
+        // the MIDI LED counts it even in the preview, which ignores it
         self.audio.midi_received(1);
+        if self.previewing() {
+            return;
+        }
         let (c, note, velocity) = match *m {
             Message::NoteOn {
                 channel: c @ 0..=3,
@@ -241,23 +340,29 @@ impl Engine {
         if c != u8::MAX {
             // a section's channel
             let device: Device = ROWS[c as usize];
-            if !self.playing {
-                // note mode (task-200): a Stop the mode still owes the engine comes first, so
-                // that it does not silence the note
-                self.hold_mode();
+            // the mode as the main thread has it now, not as of the last block
+            self.pattern_mode = self.shared.pattern_mode();
+            if !self.pattern_mode {
+                // note mode (task-200), whatever the host's transport does: a Stop the mode
+                // still owes the engine comes first, so that it does not silence the note
+                self.ensure_stopped();
                 self.send(Command::Note {
                     device,
                     note,
                     velocity,
                 });
             } else if velocity > 0 && note < 32 {
-                // pattern mode: the note selects a pattern
+                // pattern mode: the note selects a pattern, at once while the song plays; with
+                // the song stopped (the host stopped) only the selection changes, and the
+                // next start takes it (its locate relocates every device)
                 self.send(Command::DeviceParam {
                     device,
                     ctrl: 1,
                     value: note,
                 });
-                self.send(Command::Relocate(device));
+                if self.audio.current().playing() {
+                    self.send(Command::Relocate(device));
+                }
             }
             return;
         }
@@ -283,10 +388,11 @@ impl Engine {
 }
 
 impl Blocks for Engine {
-    /// One engine call: the UI side's queued commands, the mode, the host sync, then the block.
+    /// One engine call: the UI side's queued commands, the mode and the preview, the host
+    /// sync, then the block.
     fn next_block(&mut self) -> &[i16] {
         self.audio.drain();
-        self.hold_mode();
+        self.modes();
         self.sync();
         self.audio.render_call();
         self.blocks += 1;
@@ -309,8 +415,6 @@ enum Out {
 pub struct Core {
     engine: Engine,
     out: Out,
-    /// The parameter values of the last call.
-    last: [i32; COUNT],
     rate: u32,
     /// The host frames produced.
     frames: u64,
@@ -336,7 +440,11 @@ impl Core {
         Core {
             engine: Engine {
                 audio,
-                playing: values[MODE] != 0,
+                pattern_mode: shared.pattern_mode(),
+                // a preview that runs is entered at the first block
+                preview: false,
+                host: *values,
+                shown: *values,
                 dropped: 0,
                 rate,
                 blocks: 0,
@@ -352,7 +460,6 @@ impl Core {
                 shared,
             },
             out,
-            last: *values,
             rate,
             frames: 0,
         }
@@ -431,27 +538,24 @@ impl Core {
         self.frames += n as u64;
     }
 
-    /// Applies the parameter values that changed since the last call.
+    /// Applies the parameter values that changed since the last call; during the preview they
+    /// are only kept, for its end.
     fn apply(&mut self, values: &[i32; COUNT]) {
-        for (i, (&v, last)) in values.iter().zip(self.last.iter_mut()).enumerate() {
-            if v == *last {
+        let preview = self.engine.previewing();
+        for (i, &v) in values.iter().enumerate() {
+            if v == self.engine.host[i] {
                 continue;
             }
-            *last = v;
-            let s = &SPECS[i];
-            if i == MODE {
-                self.engine.playing = v != 0;
-                continue;
-            }
-            let holds = params::engine_byte(self.engine.audio.newest(), s.target)
-                .is_some_and(|b| params::value_of(s, b) == v);
-            if holds {
-                continue;
-            }
-            if let Some(c) = params::command(s, v) {
-                self.engine.send(c);
+            self.engine.host[i] = v;
+            if !preview {
+                self.engine.apply_one(i, v);
             }
         }
+    }
+
+    /// Whether the last block played the preview.
+    pub fn previewing(&self) -> bool {
+        self.engine.preview
     }
 
     fn produce(&mut self, l: &mut [f32], r: &mut [f32]) {

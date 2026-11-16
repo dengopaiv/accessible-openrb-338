@@ -14,7 +14,7 @@ use orb_engine::song::Device;
 use orb_player::Command;
 use orb_player::midi::Message;
 use orb_plugin::core::{Core, HostEvent, HostTransport, TICKS_PER_BEAT};
-use orb_plugin::instance::OrbParams;
+use orb_plugin::instance::{Mode, OrbParams};
 
 /// A stretch of the host's timeline from host frame `at`: playing or not, its tempo, and its
 /// position in beats at `at`.
@@ -215,20 +215,28 @@ fn the_step_follows_the_host_position_and_tempo() {
     });
     assert!(followed > 200, "{followed} calls followed");
     assert!(steps_checked > 50, "{steps_checked} steps checked");
-    // stopped hosts: orb keeps playing, the position runs on
+    // a stopped host (task-217): orb is stopped too, the position stands still
     let before: Vec<_> = free_run.iter().filter(|(e, _)| *e < 20_000).collect();
     let after: Vec<_> = free_run.iter().filter(|(e, _)| *e > 131_000).collect();
     for run in [before, after] {
         let (first, last) = (run[0].1, run[run.len() - 1].1);
-        assert!(last > first + 50.0, "free-run from {first} to {last}");
+        assert_eq!(first, last, "stopped from {first} to {last}");
     }
-    assert!(
-        peak(&out[2 * 5_000..2 * 19_000]) > 0.05,
-        "plays while stopped"
+    assert!(!core.audio().last_snapshot().playing);
+    assert_eq!(
+        peak(&out[..2 * 19_000]),
+        0.0,
+        "silent before the host plays"
     );
     assert!(
-        peak(&out[2 * 135_000..]) > 0.05,
-        "plays on after the host stops"
+        peak(&out[2 * 40_000..2 * 60_000]) > 0.05,
+        "plays with the host"
+    );
+    // after the release (the delay's tail) silent once the host stops
+    assert!(
+        peak(&out[2 * 140_000..]) < 0.01,
+        "quiet after the host stops: {}",
+        peak(&out[2 * 140_000..])
     );
 }
 
@@ -360,12 +368,12 @@ fn playing(core: &Core) -> [Option<u8>; 4] {
 
 #[test]
 fn notes_select_patterns_at_once_and_latch() {
-    for host_plays in [false, true] {
+    {
         let p = with_song("full_mix");
         let mut core = activate(&p, 44_100);
         let tl = Timeline(vec![Seg {
             at: 0,
-            playing: host_plays,
+            playing: true,
             tempo: Some(120.0),
             beats: 0.0,
         }]);
@@ -442,10 +450,59 @@ fn notes_select_patterns_at_once_and_latch() {
     }
 }
 
+/// The pattern each section has selected (the pattern controller's byte, what the panel shows).
+fn selected(core: &Core) -> [u8; 4] {
+    let s = core.audio().last_snapshot();
+    // before the first block the snapshot is empty
+    [1, 2, 3, 4].map(|d| s.live[d].as_slice().get(1).copied().unwrap_or(u8::MAX))
+}
+
+/// Pattern mode with the host stopped (task-217): no sound, and a pattern-select note only
+/// changes the section's selected pattern, which plays when the host starts.
+#[test]
+fn with_the_host_stopped_notes_only_select() {
+    let p = with_song("full_mix");
+    let mut core = activate(&p, 44_100);
+    let tl = Timeline(vec![
+        Seg {
+            at: 0,
+            playing: false,
+            tempo: Some(120.0),
+            beats: 0.0,
+        },
+        Seg {
+            at: 40_000,
+            playing: true,
+            tempo: Some(120.0),
+            beats: 0.0,
+        },
+    ]);
+    let midi = [note_on(10_000, 0, 5), note_on(20_000, 3, 17)];
+    let mut at = BTreeMap::new();
+    let out = run(&p, &mut core, &tl, 50_000, 64, &midi, &[], |core, end| {
+        at.insert(end, (selected(core), core.audio().last_snapshot().playing));
+    });
+    assert_eq!(
+        peak(&out[..2 * 40_000]),
+        0.0,
+        "no sound while the host is stopped"
+    );
+    let after = |f: usize| at[&(f / 64 * 64 + 128)];
+    assert_ne!(at[&9_984].0[0], 5);
+    assert_eq!(after(10_000).0[0], 5, "the selection changes");
+    assert_eq!(after(20_000).0[3], 17);
+    assert!(!after(30_000).1, "stopped");
+    // the host starts: the selected patterns play from its position
+    assert!(after(41_000).1);
+    assert_eq!(playing(&core)[0], Some(5));
+    assert_eq!(playing(&core)[3], Some(17));
+    assert!(peak(&out[2 * 41_000..]) > 0.05, "plays with the host");
+}
+
 #[test]
 fn notes_on_the_section_channels_do_nothing_in_note_mode() {
     let p = with_song("full_mix");
-    set(&p, "g1", 0);
+    p.set_mode(Mode::Note);
     let mut core = activate(&p, 44_100);
     let tl = Timeline(vec![Seg {
         at: 0,
@@ -567,7 +624,7 @@ fn the_standard_mapping_works_on_its_channel() {
     let p = with_song("full_mix");
     let tl = Timeline(vec![Seg {
         at: 0,
-        playing: false,
+        playing: true,
         tempo: Some(120.0),
         beats: 0.0,
     }]);
@@ -655,7 +712,10 @@ fn the_standard_mapping_works_on_its_channel() {
         &[],
         |_, _| {},
     );
-    assert!(core.audio().current().playing(), "the mode is the host's");
+    assert!(
+        core.audio().current().playing(),
+        "the transport is the host's"
+    );
     // the channel is in the state; a saved device channel is refused on restore, the rest of
     // the state is kept
     p.edit(Command::StepField {
@@ -747,20 +807,16 @@ fn the_snapshot_has_the_sync_led_and_midi_activity() {
     ]);
     let snap = |p: &OrbParams| p.snapshot().unwrap();
     run(&p, &mut core, &tl, 4096, 512, &[], &[], |_, _| {});
-    assert!(!snap(&p).host_sync, "the host is stopped: orb free-runs");
+    assert!(!snap(&p).host_sync, "the host is stopped: so is orb");
     assert_eq!(snap(&p).midi_in, 0);
     let midi = [note_on(4200, 0, 3), cc(4300, 0, 7, 9), note_on(4400, 9, 60)];
     run(&p, &mut core, &tl, 8192, 512, &midi, &[], |_, _| {});
     assert!(snap(&p).host_sync, "pattern mode, orb and the host play");
     assert_eq!(snap(&p).midi_in, 3, "every message counts");
-    // the mode at Stop (note mode): no sync while the host plays
-    let changes = [Change {
-        at: 8192,
-        id: "g1",
-        value: 0,
-    }];
+    // note mode: no sync while the host plays
+    p.set_mode(Mode::Note);
     let mut core2 = activate(&p, 44_100);
-    run(&p, &mut core2, &tl, 12_288, 512, &[], &changes, |_, _| {});
+    run(&p, &mut core2, &tl, 12_288, 512, &[], &[], |_, _| {});
     assert!(!snap(&p).host_sync, "note mode");
     assert!(!core2.following());
 }

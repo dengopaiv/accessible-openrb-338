@@ -6,8 +6,9 @@
 //!   unscaled menu bar ([`OrbHandle`]'s `adjust_size`), and each open spawns a new egui window with
 //!   a new [`orb_ui::app::App`].
 //! - [`PluginPort`] is the panel's player ([`orb_ui::link::Port`]): a control's message sets its
-//!   host parameter (so the host records and saves it), a pattern edit goes to [`OrbParams::edit`],
-//!   Play and Stop set the mode, the rest of the transport is dropped.
+//!   host parameter (so the host records and saves it; during the preview it goes to the preview
+//!   set instead), a pattern edit goes to [`OrbParams::edit`], Play and Stop enter and leave the
+//!   preview (task-217), the rest of the transport is dropped.
 //! - [`EditorEmbed`] is the plugin's side of the panel ([`orb_ui::embed::Embed`]): the song, File >
 //!   Open and New, the mod.
 
@@ -34,13 +35,13 @@ use orb_engine::samples::SampleSet;
 use orb_engine::song::Song;
 use orb_player::{Command, Snapshot, Tracks};
 use orb_ui::app::App;
-use orb_ui::embed::{Embed, MENU_H, SongView, window_height};
+use orb_ui::embed::{Embed, MENU_H, PluginMode, SongView, window_height};
 use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::link::{Link, Port};
 use orb_ui::settings::Settings;
 
-use crate::instance::{self, Kit, OrbParams, ROWS};
-use crate::params::{self, MODE, SPECS, Target};
+use crate::instance::{self, Kit, Mode, OrbParams, ROWS};
+use crate::params::{self, SPECS, Target};
 
 /// The editor's size before the state has one, in logical points: the panel at its native
 /// size and the menu bar above it.
@@ -846,13 +847,13 @@ impl Port for PluginPort {
         let p = &self.params;
         // a failure (a full queue) drops the change: the panel then follows the engine
         let _ = match c {
-            // orb's Play/Stop is the mode (task-185)
+            // orb's Play/Stop enter and leave the preview (task-217)
             Command::Play => {
-                set_param(p, &self.gui, MODE, 1);
+                p.set_preview(true);
                 Ok(())
             }
             Command::Stop => {
-                set_param(p, &self.gui, MODE, 0);
+                p.set_preview(false);
                 Ok(())
             }
             Command::PatternField { .. }
@@ -863,6 +864,8 @@ impl Port for PluginPort {
             Command::Vintage(on) => p.set_vintage(on),
             Command::Preview(_) | Command::PreviewStop => p.preview(c),
             c => match params::of_command(&c) {
+                // in the preview a control goes to the preview set, not to the host
+                Some((i, v)) if p.previewing() => p.set_preview_value(i, v),
                 Some((i, v)) => {
                     // a pattern button on the pattern the parameter holds: a host note has
                     // selected another since; the panel's message selects it again
@@ -982,7 +985,8 @@ impl Embed for EditorEmbed {
     }
 
     fn view(&mut self) -> SongView {
-        let mut values = self.params.values();
+        // the preview set's values while the preview runs
+        let mut values = self.params.panel_values();
         for (id, v) in self.pending.take().unwrap_or_default() {
             if let Some(i) = self.params.ids().iter().position(|x| *x == id) {
                 values[i] = v;
@@ -1010,7 +1014,7 @@ impl Embed for EditorEmbed {
         }
         // File > Open always switches to pattern mode (task-185)
         if open {
-            set_param(&self.params, &self.gui, MODE, 1);
+            self.params.set_mode(Mode::Pattern);
         }
         self.pending = Some(changes);
         Ok(())
@@ -1034,6 +1038,24 @@ impl Embed for EditorEmbed {
 
     fn request_size(&mut self, size: egui::Vec2) -> Option<bool> {
         self.route.as_ref()?.request(size.x, size.y)
+    }
+
+    fn mode(&self) -> Option<PluginMode> {
+        Some(match self.params.mode() {
+            Mode::Pattern => PluginMode::Pattern,
+            Mode::Note => PluginMode::Note,
+        })
+    }
+
+    fn previewing(&self) -> Option<bool> {
+        Some(self.params.previewing())
+    }
+
+    fn set_mode(&mut self, mode: PluginMode) {
+        self.params.set_mode(match mode {
+            PluginMode::Pattern => Mode::Pattern,
+            PluginMode::Note => Mode::Note,
+        });
     }
 }
 

@@ -911,6 +911,11 @@ impl App {
         if let Some(link) = &mut self.link {
             let before = link.recorded_revision();
             link.sync(&mut self.panel);
+            // a plugin's Play light is its preview, not the engine's play state: the host's
+            // transport does not light it (task-217)
+            if let Some(on) = self.plugin.as_ref().and_then(|p| p.embed.previewing()) {
+                self.panel.transport.playing = on;
+            }
             // a merge of the recording changed the song's tracks: an edit
             self.doc.modified |= link.recorded_revision() != before;
             // The repaint rule (task-153, docs/ui_spec.md section 16): at the meter rate while

@@ -28,7 +28,7 @@ use orb_engine::song::Device;
 use orb_player::Command;
 use orb_player::midi::Message;
 use orb_plugin::core::{Core, HostEvent, HostTransport};
-use orb_plugin::instance::OrbParams;
+use orb_plugin::instance::{Mode, OrbParams};
 
 struct Counting;
 
@@ -187,10 +187,22 @@ fn session(rate: u32) {
         events += run(&p, &mut core, &mut h, 3000, buf);
     }
     // the mode off and on
-    set(&p, "g1", 0);
+    p.set_mode(Mode::Note);
     events += run(&p, &mut core, &mut h, 5000, 256);
-    set(&p, "g1", 1);
+    p.set_mode(Mode::Pattern);
     events += run(&p, &mut core, &mut h, 5000, 256);
+    // the preview (task-217): entered, changed, host changes ignored, left, entered again
+    p.set_preview(true);
+    events += run(&p, &mut core, &mut h, 5000, 256);
+    p.set_preview_value(5, 40).unwrap();
+    p.set_preview_value(20, 3).unwrap();
+    set(&p, "d1c3", 77);
+    events += run(&p, &mut core, &mut h, 5000, 333);
+    p.set_preview(false);
+    events += run(&p, &mut core, &mut h, 5000, 256);
+    p.set_preview(true);
+    events += run(&p, &mut core, &mut h, 5000, 64);
+    p.set_preview(false);
     // the editor's calls: pattern edits, Vintage, a mod, a song over the playing one
     p.edit(Command::StepField {
         device: Device::Tb303_1,

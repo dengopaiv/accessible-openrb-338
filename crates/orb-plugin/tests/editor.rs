@@ -19,10 +19,11 @@ use orb_plugin::core::{Core, HostEvent, HostTransport};
 use orb_plugin::editor::{
     self, DEFAULT_SIZE, HostRoute, OrbEditor, adjust_logical, editor_app, editor_app_routed,
 };
-use orb_plugin::instance::{self, Kit, OrbParams};
+use orb_plugin::instance::{self, Kit, Mode, OrbParams};
 use orb_ui::app::App;
-use orb_ui::embed::{CORNER, MENU_H, PLUGIN_HIDDEN, window_height};
+use orb_ui::embed::{CORNER, MENU_H, PLUGIN_HIDDEN, PluginMode, window_height};
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
+use orb_ui::menu::Cmd;
 use orb_ui::settings::Settings;
 
 use common::{song_bytes, test_mod};
@@ -185,10 +186,10 @@ impl Harness {
     }
 }
 
-/// An instance with the diag song `name` loaded and its controls set.
+/// An instance with the diag song `name` loaded and its controls set, in note mode.
 fn with(name: &str) -> OrbParams {
     let p = common::with_song(name);
-    common::set(&p, "g1", 0);
+    p.set_mode(Mode::Note);
     p
 }
 
@@ -207,11 +208,13 @@ fn the_editor_shows_the_plugins_song() {
 }
 
 #[test]
-fn play_and_stop_are_the_mode() {
+fn play_and_stop_enter_and_leave_the_preview() {
     let mut h = Harness::new(with("303_accent0"));
-    assert_eq!(h.value("g1"), 0);
+    let values = h.params.values();
+    let gestures = *h.host.gestures.lock().unwrap();
+    assert!(!h.params.previewing());
     h.click(Harness::center("transport.play"));
-    assert_eq!(h.value("g1"), 1, "Play is pattern mode");
+    assert!(h.params.previewing(), "Play enters the preview");
     h.settle();
     h.frame(vec![]);
     assert!(
@@ -219,7 +222,101 @@ fn play_and_stop_are_the_mode() {
         "the Play light follows the engine"
     );
     h.click(Harness::center("transport.stop"));
-    assert_eq!(h.value("g1"), 0, "Stop is note mode");
+    assert!(!h.params.previewing(), "Stop leaves it");
+    assert_eq!(h.params.mode(), Mode::Note, "the mode is not touched");
+    assert_eq!(h.params.values(), values, "no parameter changed");
+    assert_eq!(*h.host.gestures.lock().unwrap(), gestures, "no gesture");
+    h.settle();
+    h.frame(vec![]);
+    assert!(!h.app.panel.transport.playing, "note mode: stopped");
+}
+
+/// task-217 AC #2: in the preview the panel's knobs and pattern buttons go to the preview set,
+/// not to the host; Stop shows the host's values again, Play the set's.
+#[test]
+fn preview_edits_go_to_the_preview_set_without_host_gestures() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.click(Harness::center("transport.play"));
+    h.settle();
+    h.frame(vec![]);
+    let values = h.params.values();
+    let gestures = *h.host.gestures.lock().unwrap();
+    let before = h.value("d1c3");
+    let c = Harness::center("tb303_1.cutoff");
+    h.move_to(c);
+    h.button(true);
+    for k in 1..=10 {
+        h.move_to(c - Vec2::new(0.0, 4.0 * k as f32));
+    }
+    h.button(false);
+    h.click(Harness::center("pattern1.pattern3"));
+    assert_eq!(*h.host.gestures.lock().unwrap(), gestures, "no gesture");
+    assert_eq!(h.params.values(), values, "no host parameter changed");
+    let set = h.params.preview_values().unwrap();
+    let i = |id: &str| h.params.ids().iter().position(|x| x == id).unwrap();
+    let cutoff = set[i("d1c3")];
+    assert!(cutoff > before, "cutoff {before} -> {cutoff} in the set");
+    assert_eq!(set[i("d1c1")], 2, "A3 in the set");
+    h.settle();
+    h.frame(vec![]);
+    let knob = |h: &Harness| h.app.panel.knob("tb303_1.cutoff");
+    assert_eq!(knob(&h), orb_ui::behavior::knob_from_engine(cutoff));
+    // Stop: the panel follows the engine back to the host's value
+    h.click(Harness::center("transport.stop"));
+    h.settle();
+    h.frame(vec![]);
+    assert_eq!(knob(&h), orb_ui::behavior::knob_from_engine(before));
+    // Play: the set again
+    h.click(Harness::center("transport.play"));
+    h.settle();
+    h.frame(vec![]);
+    assert_eq!(knob(&h), orb_ui::behavior::knob_from_engine(cutoff));
+}
+
+/// The user's Reaper check (2026-11-16): the host's start and stop do not change Play and
+/// Stop; the Play light shows only the preview.
+#[test]
+fn the_play_light_is_the_preview_not_the_hosts_transport() {
+    let p = with("303_accent0");
+    p.set_mode(Mode::Pattern);
+    let mut h = Harness::new(p);
+    h.playing = true;
+    h.settle();
+    h.frame(vec![]);
+    assert!(
+        h.core.audio().last_snapshot().playing,
+        "orb follows the host"
+    );
+    assert!(!h.app.panel.transport.playing, "Play is not lit");
+    h.click(Harness::center("transport.play"));
+    h.settle();
+    h.frame(vec![]);
+    assert!(h.app.panel.transport.playing, "the preview lights Play");
+    // the host stops: the preview and its light stay
+    h.playing = false;
+    h.settle();
+    h.frame(vec![]);
+    assert!(h.app.panel.transport.playing);
+    h.click(Harness::center("transport.stop"));
+    assert!(!h.params.previewing());
+    h.playing = true;
+    h.settle();
+    h.frame(vec![]);
+    assert!(
+        !h.app.panel.transport.playing,
+        "the host plays: Play stays dark"
+    );
+}
+
+#[test]
+fn the_options_menu_sets_the_mode() {
+    let mut h = Harness::new(with("303_accent0"));
+    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Note));
+    h.app.command(Cmd::SetPluginMode(PluginMode::Pattern));
+    assert_eq!(h.params.mode(), Mode::Pattern);
+    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Pattern));
+    h.app.command(Cmd::SetPluginMode(PluginMode::Note));
+    assert_eq!(h.params.mode(), Mode::Note);
 }
 
 #[test]
@@ -316,7 +413,7 @@ fn the_editor_takes_no_keys() {
 #[test]
 fn the_leds_follow_the_snapshot_flags() {
     let p = with("303_accent0");
-    common::set(&p, "g1", 1);
+    p.set_mode(Mode::Pattern);
     let mut h = Harness::new(p);
     h.process(&[]);
     h.frame(vec![]);
@@ -350,8 +447,30 @@ fn the_leds_follow_the_snapshot_flags() {
         Some(false),
         "MIDI out again"
     );
+    // the preview (task-217): Sync and Bar dark while the host plays; the MIDI LED still
+    // blinks on input, which the preview ignores
+    h.click(Harness::center("transport.play"));
+    h.process(&[]);
+    h.frame(vec![]);
+    assert_eq!(h.app.plugin_leds().map(|l| l.0), Some(false), "Sync dark");
+    assert_eq!(h.app.plugin_position(), None, "Bar dark");
+    h.process(&[HostEvent {
+        frame: 0,
+        message: Message::NoteOn {
+            channel: 0,
+            note: 5,
+            velocity: 100,
+        },
+    }]);
+    h.frame(vec![]);
+    assert_eq!(h.app.plugin_leds().map(|l| l.1), Some(true), "MIDI lit");
+    h.click(Harness::center("transport.stop"));
+    h.process(&[]);
+    h.process(&[]);
+    h.frame(vec![]);
+    assert_eq!(h.app.plugin_leds().map(|l| l.0), Some(true), "Sync again");
     // note mode: no sync
-    common::set(&h.params, "g1", 0);
+    h.params.set_mode(Mode::Note);
     h.process(&[]);
     h.frame(vec![]);
     assert_eq!(
@@ -377,7 +496,11 @@ fn file_open_loads_the_song_into_the_plugin_in_pattern_mode() {
         Some(&bytes[..]),
         "the state keeps the file"
     );
-    assert_eq!(h.value("g1"), 1, "File > Open switches to pattern mode");
+    assert_eq!(
+        h.params.mode(),
+        Mode::Pattern,
+        "File > Open switches to pattern mode"
+    );
     // the controls are the song's
     let want = common::with_song("303_accent127");
     assert_eq!(h.value("d1c7"), want.param("d1c7").unwrap().value());
@@ -425,7 +548,7 @@ fn the_menu_bar_is_above_the_panel() {
 #[test]
 fn the_bar_shows_the_host_position_while_orb_follows_it() {
     let p = with("303_accent0");
-    common::set(&p, "g1", 1);
+    p.set_mode(Mode::Pattern);
     let mut h = Harness::new(p);
     h.frame(vec![]);
     assert_eq!(h.app.plugin_position(), None, "host stopped: dark");
@@ -437,7 +560,7 @@ fn the_bar_shows_the_host_position_while_orb_follows_it() {
     h.frame(vec![]);
     assert_eq!(h.app.plugin_position(), Some(3));
     // note mode: dark
-    common::set(&h.params, "g1", 0);
+    h.params.set_mode(Mode::Note);
     h.process(&[]);
     h.frame(vec![]);
     assert_eq!(h.app.plugin_position(), None);

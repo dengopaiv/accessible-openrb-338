@@ -13,6 +13,9 @@
 //!   width (a window of another shape, which the plugin's size hooks do not let the host make, is
 //!   filled black around the panel);
 //! - the Sync and MIDI LEDs light from the snapshot's flags (`host_sync`, `midi_in`);
+//! - Options has the plugin's pattern/note mode ([`PluginMode`], [`MODE_ITEMS`], task-217); Play
+//!   and Stop are the plugin's preview, and the Play light shows only whether it runs
+//!   ([`Embed::previewing`]), not the engine's play state;
 //! - an invisible corner at the bottom right (the right wood's foot) resizes the window: the cursor
 //!   changes over it and a faint grip shows while hovered or dragged, and a drag asks the host for
 //!   a size of that rule.
@@ -77,7 +80,38 @@ pub trait Embed: Send {
         let _ = size;
         None
     }
+    /// The plugin's pattern/note mode (task-217), which the Options menu shows and sets; `None`
+    /// when the plugin has no such setting.
+    fn mode(&self) -> Option<PluginMode> {
+        None
+    }
+    /// The Options menu chose `mode`.
+    fn set_mode(&mut self, mode: PluginMode) {
+        let _ = mode;
+    }
+    /// Whether the plugin's preview runs (task-217): the Play light shows this, not whether
+    /// the engine plays, so the host's transport does not change Play and Stop. `None`: the
+    /// light follows the engine.
+    fn previewing(&self) -> Option<bool> {
+        None
+    }
 }
+
+/// The plugin's mode outside its preview (task-217): what host notes do and when the patterns
+/// play.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PluginMode {
+    /// The patterns play while the host plays; notes select patterns.
+    Pattern,
+    /// Notes play the instruments.
+    Note,
+}
+
+/// The Options menu's items for [`PluginMode`], in order.
+pub const MODE_ITEMS: [(PluginMode, &str); 2] = [
+    (PluginMode::Pattern, "Pattern Mode"),
+    (PluginMode::Note, "Note Mode"),
+];
 
 /// The transport controls the plugin's panel does not have (task-185's list, and Fast forward
 /// and the bar display, which act only in song mode; task-213 decides on those two).

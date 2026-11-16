@@ -1,14 +1,14 @@
-//! task-200: note mode. With the mode at Stop, host notes on channels 1..4 play the devices
-//! (`docs/plugin.md` section 9), whether the host plays or not; in pattern mode they keep
+//! task-200: note mode. In note mode (task-217: a setting), host notes on channels 1..4 play the
+//! devices (`docs/plugin.md` section 9), whether the host plays or not; in pattern mode they keep
 //! selecting patterns; notes never change a parameter.
 
 mod common;
 
-use common::{activate, peak, set, with_song};
+use common::{activate, peak, with_song};
 use orb_engine::tr808::sound as s808;
 use orb_player::midi::Message;
 use orb_plugin::core::{Core, HostEvent, HostTransport};
-use orb_plugin::instance::OrbParams;
+use orb_plugin::instance::{Mode, OrbParams};
 
 fn on(frame: u32, channel: u8, note: u8, velocity: u8) -> HostEvent {
     HostEvent {
@@ -39,7 +39,7 @@ fn call(p: &OrbParams, core: &mut Core, n: usize, t: &HostTransport, ev: &[HostE
     l.into_iter().zip(r).flat_map(|(a, b)| [a, b]).collect()
 }
 
-/// A new instance (the mode at Stop: note mode).
+/// A new instance (note mode, the default).
 fn instance() -> (OrbParams, Core) {
     let p = OrbParams::new();
     let core = activate(&p, 44_100);
@@ -102,8 +102,8 @@ fn notes_below_32_play_in_note_mode_and_select_in_pattern_mode() {
     let t = HostTransport::default();
     call(&p, &mut core, 4096, &t, &[]);
     let before = core.audio().last_snapshot().live[1].as_slice()[1];
-    // Stop: note 5 on 303 #1's channel is a note (MIDI 5, 31 semitones below the C), not A6
-    set(&p, "g1", 0);
+    // note mode: note 5 on 303 #1's channel is a note (MIDI 5, 31 semitones below the C), not A6
+    p.set_mode(Mode::Note);
     call(&p, &mut core, 4096, &t, &[on(10, 0, 5, 100)]);
     assert_eq!(core.audio().last_snapshot().live[1].as_slice()[1], before);
     assert_eq!(
@@ -111,22 +111,37 @@ fn notes_below_32_play_in_note_mode_and_select_in_pattern_mode() {
         Some(before)
     );
     assert!(!core.audio().last_snapshot().playing);
-    // Play: it selects pattern 6
-    set(&p, "g1", 1);
+    // pattern mode: it selects pattern 6 (the host is stopped: only the selection changes)
+    p.set_mode(Mode::Pattern);
     call(&p, &mut core, 4096, &t, &[on(10, 0, 5, 100)]);
     assert_eq!(core.audio().last_snapshot().live[1].as_slice()[1], 5);
+    assert!(!core.audio().last_snapshot().playing);
 }
 
 #[test]
-fn a_note_right_after_the_mode_turns_to_stop_is_not_silenced() {
-    // the mode turns to Stop at the call's first frame and a drum note follows in the same
+fn note_mode_plays_notes_whatever_the_host_transport_does() {
+    // the user, 2026-11-16: the no-sound-while-stopped rule is pattern mode's only
+    for t in [HostTransport::default(), common::PLAYING] {
+        let p = with_song("full_mix");
+        p.set_mode(Mode::Note);
+        let mut core = activate(&p, 44_100);
+        assert_eq!(peak(&call(&p, &mut core, 8192, &t, &[])), 0.0, "{t:?}");
+        let out = call(&p, &mut core, 8192, &t, &[on(0, 2, 36, 100)]);
+        assert!(peak(&out) > 0.01, "{t:?}: the 808's bass drum");
+        assert!(!core.audio().last_snapshot().playing);
+    }
+}
+
+#[test]
+fn a_note_right_after_the_mode_turns_to_note_is_not_silenced() {
+    // the mode turns to note mode while the patterns play and a drum note follows in the same
     // block: the engine is stopped before the note, so the stop's silence does not cut it
     let p = with_song("full_mix");
     let mut core = activate(&p, 44_100);
-    let t = HostTransport::default();
+    let t = common::PLAYING;
     call(&p, &mut core, 4096, &t, &[]);
     assert!(core.audio().last_snapshot().playing);
-    set(&p, "g1", 0);
+    p.set_mode(Mode::Note);
     call(&p, &mut core, 70, &t, &[on(3, 2, 56, 100)]);
     call(&p, &mut core, 64, &t, &[]);
     let s = core.audio().last_snapshot();
