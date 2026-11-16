@@ -2,8 +2,9 @@
 
 OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are task-185's final
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
-the core described here; host sync and pattern selection by notes are task-198, note mode
-task-200, the editor task-201, packaging and the validators task-204.
+the core described here; task-198 the host sync, the pattern selection by notes and the Standard
+Mapping (section 8); note mode is task-200, the editor task-201, packaging and the validators
+task-204.
 
 ## 1. What runs
 
@@ -40,7 +41,7 @@ Permanent after the first release (task-185):
 | CLAP id | `io.github.pingw33n.openrb-338`; features instrument, synthesizer (task-185's Instrument\|Synth) and stereo (the port layout) |
 | VST3 class id | `EFAB08AF-B39D-4399-8A80-3DC1F84ED3D6` (made once with `uuidgen`, 2026-11-16; `VST3_CLASS_ID` in `src/lib.rs`); category Instrument\|Synth |
 | URL | https://github.com/pingw33n/OpenRB-338 |
-| Ports | stereo out, no audio in, one note input (`MidiConfig::Basic`; the notes are read and ignored until task-198/200) |
+| Ports | stereo out, no audio in, one MIDI input (`MidiConfig::MidiCCs`: notes and control changes, section 8) |
 
 `tests/exports.rs` loads the built library and checks them through the CLAP and VST3 C APIs.
 
@@ -99,9 +100,9 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   when the mode is Play and the song does not play or a loaded song waits for Play, and stopped
   (`{1,0}`, which locates to the bar start) when it is Stop and the song plays. Its default is
   Stop (0): the original starts stopped (a new or opened song does not play until Play), and a
-  plugin just inserted should make no sound of its own; task-185 does not fix the default. In this task
-  Play plays the patterns, free-running from the bar start; host sync is task-198, note mode
-  task-200.
+  plugin just inserted should make no sound of its own; task-185 does not fix the default. Play
+  is pattern mode: the patterns play whether the host plays or not, following its position
+  while it plays (section 8); Stop is note mode (task-200).
 - **Activation.** Every activation makes a new player and builds the engine from the state and
   the parameters (section 5), so an offline bounce does not depend on what played before it and
   reads no clock. The UI side's commands are applied at the start of the next block, as the
@@ -142,6 +143,7 @@ field, `orb`, a JSON object (version 1):
 | `vintage` | the Vintage sound model |
 | `mod` | null for the built-in kit (never embedded); else `{name, sha256, data}`: the mod's INFO name, the SHA-256 of its bytes and the recrypted `.rbm`, base64 (the mods are 2.6 to 9.4 MB, so about 3.5 to 12.5 MB of text) |
 | `editor_size` | the editor's size, for task-201 |
+| `remote_channel` | the Standard Mapping's MIDI channel, 0-based (0: channel 1, the default; absent in older states); a section's channel (1..4) restores as 0 with `last_error` set, the rest of the state kept (section 8) |
 
 A restore (nice-plug sets the parameters, then calls `deserialize_fields`) replaces the
 document and, when the instance runs, builds the engine and sends it; otherwise the next
@@ -169,6 +171,16 @@ For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):
 - `edit(command)`: a pattern edit (`PatternField`, `PatternHeader`, `Pattern`, `StepField`,
   `Step`), sent and kept in the document; any other command is refused.
 - `set_vintage(on)`, `editor_size()`, `set_editor_size(size)`.
+- `snapshot()`: orb-player's `Snapshot` after the last engine block: the engine's state (the
+  patterns playing, the tempo orb plays at for the read-only tempo display), `host_sync` (the
+  Sync LED) and `midi_in` (a count of the host's MIDI messages: the MIDI LED lights when it
+  changes).
+- `remote_channel()`, `set_remote_channel(c)`: the Standard Mapping's channel (section 8); a
+  section's channel is refused.
+- `select_pattern(row, pattern)`: a pattern button's click as the panel's message (it plays from
+  the next bar line). For a click on the pattern the parameter already holds, when a host note
+  has selected another since: setting the parameter to its own value is no change the host or
+  the process side sees. Otherwise the editor sets the parameter.
 
 ## 7. Building and testing
 
@@ -188,4 +200,95 @@ the process side's sources checked for lock types), and the exports (`exports.rs
 the library, loads it with the dynamic loader, checks the CLAP descriptor and the VST3 factory's
 class info, and runs a minimal CLAP host that restores a state with a song and the mode at
 Play, activates at 44.1 kHz, processes, and gets the same samples as the process side run
-directly. Loading in a real host (Reaper) has not been tried by the tests.
+directly. Loading in a real host (Reaper) has not been tried by the tests. `sync.rs` (task-198)
+runs a simulated host transport (section 8).
+
+## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
+
+### 8.1 How the original follows an external position [C]
+
+The DLL has a host-sync path of its own, for TopHat (ReWire's precursor; out of orb's scope
+otherwise): the export `TopHatDriveAudioProc` (0x1001B800) calls `sub_1001C0F4` (0x1001B891)
+with the host's block in each audio call.
+
+- The host's tempo (`+0x950`) becomes the song's tempo (globals `+4`, 0x1001C118) and
+  `transport+0x144`.
+- A change of the host's play state (`+0x954`, 0x1001C17E) plays or halts the song through
+  `sub_1001F7C0` (play `sub_1001F7E4`, or `sub_100218A0`: the stop without the bar locate).
+- With the reposition flag `+0x958` set, `sub_1001C3C4(+0x94C)`, the host's tick: unless the
+  countdown `transport+0x158` runs, a change of bar first merges every track's recording
+  (`sub_1001FD10` → `sub_1001F520`), then the song is located there (`sub_1001F980` → the
+  locate `sub_1001F984`, 0x1001C454).
+- Otherwise `sub_1001C2F4(tick)`: with the host stopped (`transport+0x164` = 0) the countdown is
+  cleared; with the host playing, loop on (`sub_100215D0`, globals byte 3) and the tick within
+  192 ticks (`cmp eax, 0C0h`) of the loop start (`sub_1001F8C0`, globals `+0xC`) or the loop end
+  (`sub_1001F8E0`, `+0x10`) it is set to 10. Then, while the countdown is 0, the position is set
+  to the host's tick, `fild; fstp qword [song+8]` at 0x1001C38F (the store of `sub_1001F8B0`):
+  no chase, no relocate, the last tick kept; else the countdown goes down by one.
+- The MIDI Song Position Pointer also locates: `EngineHandleMIDI` (0x1001B277) turns it into
+  `(msb << 7 | lsb) * 48` ticks and `sub_1001C5C4` locates the current song there when MIDI sync
+  is on (`transport+0x160`, 0x1001C5EA).
+
+So the original has no "jump to step": the position is set (`sub_1001F8B0`) each call, the
+sequencer's clock (`sub_1001EF20`) then advances it and steps the devices from the absolute tick
+(pattern mode: `(t mod 48*len) / 48`, `docs/initial_investigation.md` section 5), and a jump is a
+locate.
+
+### 8.2 What the plugin does
+
+The engine gains two operations for it (`crates/orb-engine`; no existing path changes, the
+corpus renders as before): `Sequencer::set_pos` (`sub_1001F8B0`'s store, but of a fractional
+tick) and `Sequencer::relocate_device` (slot 2 on one device at the current tick, not a path of
+the original's); orb-player sends them as `Command::Position` and `Command::Relocate`.
+
+Each `process` call records the host's transport at its first frame (playing, tempo, position in
+quarter notes). Engine block `m` belongs to host timeline frame `h = 64m * rate / 44100` (section
+4: the host compensates the latency); before it renders, the tempo and position at `h` come from
+the last record that starts at or before `h`, extrapolated at its tempo while the host plays
+(`src/core.rs`, `Engine::sync`):
+
+- **Tempo**: the host's, rounded to BPM*1000 (song msg 35 `{4, v}`, the TopHat path's store),
+  even while the host is stopped (hosts report it then); the song's own tempo when the host
+  reports none (the newest song's tempo when it was first seen: a loaded song brings its own).
+  The snapshot's tempo is what orb plays at.
+- **Position** (pattern mode, the mode at Play, and the host playing): the host's tick is
+  `beats * 192` (bar 1 beat 1 is tick 0, step 1; quarter notes, whatever the host's time
+  signature; other than 4/4 is task-206's decision). The first block that follows (the host starts, or the mode turns to Play while it
+  plays) stops the song (song msg 35 `{1,0}`), locates it to `trunc(tick)` and plays it: the
+  devices start clean at the host's position (slot 4, then slot 3). A later block whose tick is
+  a tick or more away from the last one plus the clock's advance (`tempo * TEMPO_STEP`) is a seek
+  or a loop jump: a locate, as the TopHat reposition. Then, in every block, the position is set
+  to the host's fractional tick, and the clock adds the block's advance, so after the block it
+  equals the host's position at the block's end. The TopHat path's loop-point hold-off (the
+  countdown) is not taken: the host's loop is not the song's, and pattern mode has none.
+- **Host stopped**: the song runs on from where it is (the clock alone).
+- An offline bounce reads nothing but the calls' frames and transports: two renders of the same
+  timeline are identical, and with a host whose positions do not depend on where its buffers
+  start, so are different buffer sizes (`sync.rs`).
+
+**Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 2..5 (303 #1, 303 #2, 808, 909)
+in pattern mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel
+message (it becomes the pending pattern), then slot 2 on that device, which takes it at once
+(`relocate`: `0x100255E0`, `0x10028030`, `0x1002B670`) where the panel's would wait for the bar
+line; the next step is the new pattern's step at the same position. It latches until the next
+note on that channel or a panel change (a parameter change: sent when the value changes, and
+taken at the next bar line, as the original's panel); the last write wins. A note-off and a
+note above 31 do nothing; in note mode (Stop) these notes are task-200's. Notes never change
+parameters: the parameter keeps the panel's pattern, which a state and every activation (a
+bounce) start from.
+
+**The Standard Mapping** (`docs/standard_midi_mapping.md`, orb-player's `midi::StandardMapping`)
+listens on the remote channel, MIDI channel 1 by default (`remote_channel` in the state). A
+section's channel (2..5) is refused by `set_remote_channel`; in a restored state it becomes
+channel 1 with `last_error` set, and the rest of the state (song, patterns, controls) is kept.
+Its control actions (the devices' and the
+mixer's knobs and switches, the pattern notes 12..63, the shuffle) are applied to the engine at
+the message's frame, like a host note: they do not change the parameters, and the last write
+wins. Its transport actions (Play, Stop, Record, the locates) are dropped: the mode is a host
+parameter and the transport the host's. Its view actions (bank, focus, instrument, keyboard
+mode) are dropped too until the editor (task-201) shows them. Its toggle state follows the
+snapshot after every block.
+
+**LEDs.** `Snapshot::host_sync` is set while a block followed the host's position (pattern mode,
+orb and the host playing): the Sync LED. `Snapshot::midi_in` counts every MIDI message the host
+sent (also those nothing maps): the MIDI LED.

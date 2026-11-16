@@ -1331,6 +1331,17 @@ impl Engine {
         f.seq.locate(tick as i32, &mut f.devices);
     }
 
+    /// The position alone (`sub_1001F8B0`; [`crate::seq::Sequencer::set_pos`]).
+    pub fn set_position(&mut self, pos: f64) {
+        self.frame.seq.set_pos(pos);
+    }
+
+    /// Slot 2 on one device at the current tick ([`crate::seq::Sequencer::relocate_device`]).
+    pub fn relocate_device(&mut self, d: crate::song::Device) {
+        let f = &mut self.frame;
+        f.seq.relocate_device(d, &mut f.devices);
+    }
+
     /// Song msg 35 `{1,1}` (`sub_1001BF50`).
     pub fn play(&mut self) {
         let f = &mut self.frame;

@@ -151,6 +151,14 @@ pub enum Command {
     Stop,
     /// Song msg 35 `{8,tick}`: locate.
     Locate(u32),
+    /// The position alone, in ticks (`sub_1001F8B0`, as the TopHat host sync sets it each
+    /// audio call; [`Engine::set_position`]): no chase, no relocate, the last tick kept. The
+    /// plugin's host sync (`orb-plugin`, task-198).
+    Position(f64),
+    /// Slot 2 (relocate) on one device at the current tick ([`Engine::relocate_device`]): its
+    /// pending pattern and on/off switch take effect at once. The plugin's pattern selection by
+    /// notes (task-198); not a message of the original's.
+    Relocate(Device),
     /// Song msg 35 `{0,m}`: song mode (`true`) or pattern mode.
     SongMode(bool),
     /// Song msg 35 `{2,v}`: record on or off ([`Engine::set_record`]; off merges the recording).
@@ -378,6 +386,12 @@ pub struct Snapshot {
     /// The device callbacks whose resampler failed and that output silence instead
     /// ([`output::Output`]); counted up to the last engine call.
     pub output_errors: u64,
+    /// The song follows a host's position (the plugin's Sync LED: pattern mode, orb and the
+    /// host playing), as the callback's owner last set it ([`Audio::set_host_sync`]).
+    pub host_sync: bool,
+    /// The MIDI messages received so far ([`Audio::midi_received`]): the MIDI LED lights when
+    /// it changes.
+    pub midi_in: u64,
 }
 
 /// The current song's track events (task-057), as the callback last copied them: after a song
@@ -436,6 +450,14 @@ pub struct Audio {
     preview_pos: usize,
     /// It plays (engine `+0x428` not null).
     preview_on: bool,
+    /// The songs [`Command::Load`] brought (current or pending): [`Audio::loads`].
+    loads: u64,
+    /// [`Snapshot::host_sync`].
+    host_sync: bool,
+    /// [`Snapshot::midi_in`].
+    midi_in: u64,
+    /// A copy of the snapshot last published, for the callback's owner.
+    last: Snapshot,
 }
 
 impl Player {
@@ -480,6 +502,10 @@ impl Player {
             preview: None,
             preview_pos: 0,
             preview_on: false,
+            loads: 0,
+            host_sync: false,
+            midi_in: 0,
+            last: Snapshot::default(),
         };
         audio.publish();
         let player = Player {
@@ -712,6 +738,8 @@ impl Audio {
             }
             Command::Stop => self.target().stop(),
             Command::Locate(t) => self.target().locate(t),
+            Command::Position(p) => self.target().set_position(p),
+            Command::Relocate(d) => self.target().relocate_device(d),
             Command::SongMode(on) => self.target().set_song_mode(on as u8),
             Command::Record(on) => self.target().set_record(on as u8),
             Command::LoopOn(on) => self.target().set_loop_on(on as u8),
@@ -787,7 +815,10 @@ impl Audio {
                     self.target().step(device, pattern, step, &bytes[..s.step]);
                 }
             }
-            Command::Load(new) => self.activate(new),
+            Command::Load(new) => {
+                self.loads += 1;
+                self.activate(new);
+            }
             Command::Mod(mut m) => {
                 let ModSwap { samples, retired } = &mut *m;
                 self.target().set_samples(samples, retired);
@@ -885,6 +916,9 @@ impl Audio {
         s.saved_mixer = d.mixer.saved(sm);
         s.faulted_calls = e.fault().map_or(0, |f| f.calls);
         s.output_errors = self.output_errors;
+        s.host_sync = self.host_sync;
+        s.midi_in = self.midi_in;
+        self.last = *s;
         self.snapshot.publish();
         // the tracks, when they changed: copied into lists that have the room
         let now = (self.generation, f.seq.revision);
@@ -930,6 +964,32 @@ impl Audio {
     /// not (for tests and diagnostics).
     pub fn preview_position(&self) -> Option<usize> {
         self.preview_on.then_some(self.preview_pos)
+    }
+
+    /// The songs loaded so far ([`Command::Load`] applied, whether the song became current or
+    /// pending): a change means [`Audio::newest`] is another song.
+    pub fn loads(&self) -> u64 {
+        self.loads
+    }
+
+    /// The output of the last engine call, as [`Audio::render_call`] returned it.
+    pub fn output(&self) -> &[i16] {
+        &self.buf
+    }
+
+    /// The snapshot the last engine call published (the callback's own copy).
+    pub fn last_snapshot(&self) -> &Snapshot {
+        &self.last
+    }
+
+    /// Sets [`Snapshot::host_sync`] for the next snapshots.
+    pub fn set_host_sync(&mut self, on: bool) {
+        self.host_sync = on;
+    }
+
+    /// Counts `n` MIDI messages received into [`Snapshot::midi_in`].
+    pub fn midi_received(&mut self, n: u64) {
+        self.midi_in = self.midi_in.wrapping_add(n);
     }
 
     /// A device callback output silence because the resampler failed.

@@ -384,7 +384,12 @@ recording (§5.3); its quantisation stays 1 (`sub_10021560` sets only `+0x108`'s
   relocates every device to 0 and saves `trunc(pos)`.
 - Ids 3, 4, 12, 16, 20 store loop on, tempo, loop start, loop end and shuffle (`sub_10021110`,
   `sub_1001FCD0`, `sub_10021130`, `sub_10021150`, `sub_10021170`); with `transport+0x15C == 46`
-  (a ctor argument, [G] the ReWire mode) the transport keeps them instead. Id 2 is record
+  (a ctor argument, [G] the ReWire mode) the transport keeps them instead. [C] (task-198) A host
+  can also own the transport: the TopHat sync (`TopHatDriveAudioProc` → `sub_1001C0F4`) stores
+  the host's tempo, plays or halts on the host's play state, locates on a host reposition and
+  otherwise sets `pos = (double)hostTick` each audio call (`sub_1001C2F4`, 0x1001C38F, the store
+  of `sub_1001F8B0`; no relocate), holding off near the loop points; MIDI Song Position locates
+  to `16ths * 48` (`sub_1001C5C4`). `docs/plugin.md` section 8.1. Id 2 is record
   (`sub_10021194`, msg 35 case at 0x100125A7 → `sub_10021190`; [C] task-057, §5.3).
 - **Msg 36** (0x100126B2) applies the 23 bytes in this order: song mode, play or stop, record, loop
   on, tempo, locate, loop start, loop end, shuffle, then stores bytes 21 and 22. The global struct's
@@ -489,8 +494,12 @@ applied pointer `+0x228` is not adjusted; when its own node is freed it dangles
   the song end): every track at `T = trunc(pos)` (0x10021206), then in song mode every track is
   chased to `T` (0x10021294, as the locate's chase) and applied; then byte 2 = `v` (0x10021327).
   In pattern mode there is no chase.
-- Msgs 30 and 31 (§5.2), and `sub_1001FD10` from `sub_1001C3C4` (the MIDI song position, out of
-  scope).
+- Msgs 30 and 31 (§5.2), and `sub_1001FD10` from `sub_1001C3C4`, out of scope: [C] (task-198)
+  `sub_1001C3C4` is not the MIDI song position (that is `sub_1001C5C4`, which locates with no
+  merge, 0x1001C5EA, then stores the tick in `transport+0x18` through `sub_10007DF0`,
+  0x1001C5F5: `mov eax, [esp+4]; mov [ecx+18h], eax`) but
+  the TopHat host sync's reposition (`TopHatDriveAudioProc` → `sub_1001C0F4`, 0x1001C1DA), which
+  merges when the host's bar changed and then locates (`docs/plugin.md` section 8.1).
 - With record on, a locate while stopped to a later tick applies the events forward (respecting
   the hold mask) instead of chasing (§5.2, `sub_1001F984`).
 

@@ -13,6 +13,7 @@
 //! `Command::Load`.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use base64::Engine as _;
@@ -77,6 +78,45 @@ pub struct Doc {
     pub kit: Kit,
     /// The editor's size, kept for the editor (task-201).
     pub editor_size: Option<(u32, u32)>,
+    /// The Standard Mapping's channel, 0..=15 (MIDI channel 1..16; never 1..=4, the sections'
+    /// channels 2..5: [`check_remote_channel`]).
+    pub remote_channel: u8,
+}
+
+/// The MIDI channels (0-based) of the four pattern sections, 303 #1, 303 #2, 808 and 909: MIDI
+/// channels 2..5.
+pub const SECTION_CHANNELS: std::ops::RangeInclusive<u8> = 1..=4;
+
+/// Refuses a remote channel (0-based) that is a section's channel or not a MIDI channel.
+pub fn check_remote_channel(c: u8) -> Result<(), String> {
+    if SECTION_CHANNELS.contains(&c) {
+        return Err(format!(
+            "MIDI channel {} is a pattern section's channel (2..5); the remote channel must be \
+             another",
+            c + 1
+        ));
+    }
+    if c > 15 {
+        return Err(format!("MIDI channel {} does not exist", c as u32 + 1));
+    }
+    Ok(())
+}
+
+/// The settings the main thread shares with the process side (atomics only).
+#[derive(Debug, Default)]
+pub struct Shared {
+    remote_channel: AtomicU8,
+}
+
+impl Shared {
+    /// The Standard Mapping's channel, 0..=15.
+    pub fn remote_channel(&self) -> u8 {
+        self.remote_channel.load(Ordering::Relaxed)
+    }
+
+    fn set_remote_channel(&self, c: u8) {
+        self.remote_channel.store(c, Ordering::Relaxed);
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -95,6 +135,9 @@ struct Saved {
     #[serde(rename = "mod")]
     kit: Option<SavedMod>,
     editor_size: Option<(u32, u32)>,
+    /// Absent in the states before task-198: channel 1.
+    #[serde(default)]
+    remote_channel: u8,
 }
 
 impl Doc {
@@ -118,6 +161,7 @@ impl Doc {
                 }),
             },
             editor_size: self.editor_size,
+            remote_channel: self.remote_channel,
         };
         serde_json::to_string(&s).expect("the document serializes")
     }
@@ -156,12 +200,15 @@ impl Doc {
                 }
             }
         };
+        // a section's channel as the remote channel is checked by the restore, which keeps the
+        // rest of the document (`OrbParams::deserialize_fields`)
         Ok(Doc {
             song: s.song.as_deref().map(bytes).transpose()?,
             patterns,
             vintage: s.vintage,
             kit,
             editor_size: s.editor_size,
+            remote_channel: s.remote_channel,
         })
     }
 }
@@ -401,6 +448,7 @@ impl Main {
             vintage: None,
             kit: self.doc.kit.clone(),
             editor_size: self.doc.editor_size,
+            remote_channel: self.doc.remote_channel,
         };
         let samples = self.samples();
         let e = match &self.player {
@@ -419,6 +467,7 @@ pub struct OrbParams {
     params: Vec<IntParam>,
     ids: Vec<String>,
     main: Mutex<Main>,
+    shared: Arc<Shared>,
 }
 
 impl Default for OrbParams {
@@ -455,7 +504,52 @@ impl OrbParams {
                 samples: None,
                 last_error: None,
             }),
+            shared: Arc::new(Shared::default()),
         }
+    }
+
+    /// The settings shared with the process side.
+    pub fn shared(&self) -> &Arc<Shared> {
+        &self.shared
+    }
+
+    /// The Standard Mapping's channel (0-based; default 0, MIDI channel 1).
+    pub fn remote_channel(&self) -> u8 {
+        self.main().doc.remote_channel
+    }
+
+    /// Sets the Standard Mapping's channel (0-based), kept in the state. A pattern section's
+    /// channel (1..=4, MIDI channels 2..5) is refused: its notes select patterns.
+    pub fn set_remote_channel(&self, c: u8) -> Result<(), String> {
+        check_remote_channel(c)?;
+        let mut m = self.main();
+        m.doc.remote_channel = c;
+        self.shared.set_remote_channel(c);
+        Ok(())
+    }
+
+    /// The player's snapshot after the last engine block (`None` before the first activation):
+    /// the engine's state, the Sync LED ([`orb_player::Snapshot::host_sync`]) and the MIDI
+    /// activity ([`orb_player::Snapshot::midi_in`]).
+    pub fn snapshot(&self) -> Option<orb_player::Snapshot> {
+        self.main().player.as_mut().map(|p| *p.snapshot())
+    }
+
+    /// The panel's pattern button of section `row` (0..=3): the pattern controller's message
+    /// to the engine, which plays it from the next bar line, as the original's panel does. For
+    /// the editor when the pattern parameter already holds `pattern` (a host note selected
+    /// another since), so that the host sees no change; otherwise the editor sets the
+    /// parameter.
+    pub fn select_pattern(&self, row: usize, pattern: u8) -> Result<(), String> {
+        let device = *ROWS.get(row).ok_or("no such pattern section")?;
+        if pattern > 31 {
+            return Err("no such pattern".into());
+        }
+        self.main().send(Command::DeviceParam {
+            device,
+            ctrl: 1,
+            value: pattern,
+        })
     }
 
     /// Every parameter's current value, in [`SPECS`] order (atomics only).
@@ -658,13 +752,22 @@ unsafe impl Params for OrbParams {
         let values = self.values();
         let mut m = self.main();
         match serialized.get(STATE_KEY).map(|j| Doc::from_json(j)) {
-            Some(Ok(doc)) => m.doc = doc,
+            Some(Ok(mut doc)) => {
+                // a remote channel that is a section's falls back to the default; the song,
+                // the patterns and the controls are kept
+                if let Err(e) = check_remote_channel(doc.remote_channel) {
+                    m.last_error = Some(format!("the saved state: {e}; channel 1 is used"));
+                    doc.remote_channel = 0;
+                }
+                m.doc = doc;
+            }
             Some(Err(e)) => {
                 m.last_error = Some(format!("the saved state: {e}"));
                 m.doc = Doc::default();
             }
             None => m.doc = Doc::default(),
         }
+        self.shared.set_remote_channel(m.doc.remote_channel);
         m.reload(&values);
     }
 }
@@ -672,7 +775,7 @@ unsafe impl Params for OrbParams {
 /// The process side for a host rate, after [`OrbParams::activate`].
 pub fn core(params: &OrbParams, rate: u32) -> crate::core::Core {
     let audio = params.activate();
-    crate::core::Core::new(audio, rate, &params.values())
+    crate::core::Core::new(audio, rate, &params.values(), params.shared.clone())
 }
 
 /// Sets a parameter's value as the host would (for tests: nice-plug sets it so before a call).

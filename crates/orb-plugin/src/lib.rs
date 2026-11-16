@@ -8,8 +8,8 @@
 //! - [`resample`]: the resampler for host rates other than 44.1 kHz.
 //! - [`params`]: the parameter table.
 //!
-//! Not yet: host sync and pattern selection by notes (task-198), note mode (task-200), the
-//! editor (task-201), packaging (task-204).
+//! Host sync, pattern selection by notes and the Standard Mapping are task-198's ([`core`]).
+//! Not yet: note mode (task-200), the editor (task-201), packaging (task-204).
 
 pub mod core;
 pub mod instance;
@@ -19,9 +19,12 @@ pub mod resample;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use nice_plug::midi::{Channel, Key};
 use nice_plug::prelude::*;
 
-use crate::core::Core;
+use orb_player::midi::Message;
+
+use crate::core::{Core, HostEvent, HostTransport};
 use crate::instance::OrbParams;
 
 /// The plugin's name, permanent after the first release (task-185).
@@ -38,11 +41,16 @@ pub const VST3_CLASS_ID: [u8; 16] = [
 /// The project's page.
 pub const URL: &str = "https://github.com/pingw33n/OpenRB-338";
 
+/// The host MIDI messages one `process` call takes; more are dropped.
+pub const MAX_EVENTS: usize = 4096;
+
 /// One plugin instance: its parameters and main-thread state, and the process side once
 /// activated.
 pub struct OrbPlugin {
     params: Arc<OrbParams>,
     core: Option<Core>,
+    /// The host's MIDI messages of one call ([`MAX_EVENTS`] reserved).
+    events: Vec<HostEvent>,
 }
 
 impl Default for OrbPlugin {
@@ -50,8 +58,72 @@ impl Default for OrbPlugin {
         OrbPlugin {
             params: Arc::new(OrbParams::new()),
             core: None,
+            events: Vec::with_capacity(MAX_EVENTS),
         }
     }
+}
+
+/// A 7-bit MIDI value of nice-plug's normalized one.
+fn seven_bits(v: f32) -> u8 {
+    (v * 127.0).round().clamp(0.0, 127.0) as u8
+}
+
+/// The MIDI message of a nice-plug note event; `None` for the events that are not MIDI (the
+/// CLAP voice and polyphonic expression events, a note of a wildcard channel or key).
+pub fn midi_message(e: &NoteEvent<()>) -> Option<Message> {
+    Some(match *e {
+        NoteEvent::NoteOn {
+            channel: Channel::Number(channel),
+            key: Key::Number(note),
+            velocity,
+            ..
+        } => Message::NoteOn {
+            channel,
+            note,
+            velocity: seven_bits(velocity),
+        },
+        NoteEvent::NoteOff {
+            channel: Channel::Number(channel),
+            key: Key::Number(note),
+            velocity,
+            ..
+        } => Message::NoteOff {
+            channel,
+            note,
+            velocity: seven_bits(velocity),
+        },
+        NoteEvent::PolyPressure {
+            channel: Channel::Number(channel),
+            key: Key::Number(note),
+            pressure,
+            ..
+        } => Message::PolyPressure {
+            channel,
+            note,
+            pressure: seven_bits(pressure),
+        },
+        NoteEvent::MidiCC {
+            channel, cc, value, ..
+        } => Message::ControlChange {
+            channel,
+            controller: cc,
+            value: seven_bits(value),
+        },
+        NoteEvent::MidiProgramChange {
+            channel, program, ..
+        } => Message::ProgramChange { channel, program },
+        NoteEvent::MidiChannelPressure {
+            channel, pressure, ..
+        } => Message::ChannelPressure {
+            channel,
+            pressure: seven_bits(pressure),
+        },
+        NoteEvent::MidiPitchBend { channel, value, .. } => Message::PitchBend {
+            channel,
+            value: (value * 16383.0).round().clamp(0.0, 16383.0) as u16,
+        },
+        _ => return None,
+    })
 }
 
 impl OrbPlugin {
@@ -74,7 +146,8 @@ impl Plugin for OrbPlugin {
         ..AudioIOLayout::const_default()
     }];
 
-    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    // notes select patterns (channels 2..5); the Standard Mapping also takes control changes
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type Editor = ();
@@ -109,12 +182,29 @@ impl Plugin for OrbPlugin {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // host notes select patterns and play the devices in later tasks (198, 200)
-        while context.next_event().is_some() {}
+        // the host's MIDI, into the buffer made at construction (no allocation: a message past
+        // its capacity is dropped)
+        self.events.clear();
+        while let Some(e) = context.next_event() {
+            if let Some(m) = midi_message(&e)
+                && self.events.len() < self.events.capacity()
+            {
+                self.events.push(HostEvent {
+                    frame: e.timing(),
+                    message: m,
+                });
+            }
+        }
+        let t = context.transport();
+        let transport = HostTransport {
+            playing: t.playing,
+            tempo: t.tempo,
+            pos_beats: t.pos_beats(),
+        };
         let values = self.params.values();
         let out = buffer.as_slice();
         match (&mut self.core, out) {
-            (Some(core), [l, r, ..]) => core.process(l, r, &values),
+            (Some(core), [l, r, ..]) => core.process_with(l, r, &values, &transport, &self.events),
             (_, out) => {
                 for ch in out.iter_mut() {
                     ch.fill(0.0);
