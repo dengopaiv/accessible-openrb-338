@@ -157,3 +157,31 @@ fn a_bad_state_gives_a_new_song() {
     let mut core = activate(&p, 44_100);
     host(&p, &mut core, 1000, 100, &[]);
 }
+
+#[test]
+fn the_logo_animation_plays_once_for_a_new_instance() {
+    let p = OrbParams::new();
+    assert!(p.take_intro(), "the first editor open of a new instance");
+    assert!(!p.take_intro(), "a reopened editor does not replay it");
+}
+
+#[test]
+fn a_restored_instance_never_plays_the_logo_animation() {
+    let saved = save(&edited());
+    // restored before the first editor open
+    let p = OrbParams::new();
+    restore(&p, &saved);
+    assert!(!p.take_intro());
+    // restored after the animation played: still not again
+    let q = OrbParams::new();
+    assert!(q.take_intro());
+    restore(&q, &saved);
+    assert!(!q.take_intro());
+    // the flags are not in the state
+    assert!(
+        !saved
+            .1
+            .values()
+            .any(|j| j.contains("intro") || j.contains("restored"))
+    );
+}

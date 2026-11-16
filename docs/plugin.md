@@ -211,6 +211,25 @@ does not load, gives a new song or the built-in kit, and `Main::last_error` says
 SHA-256 is checked on restore. Instances share nothing but constant data (the tables and the
 built-in samples): each has its own player and process globals.
 
+### 5.1 The logo animation (task-219)
+
+The panel's logo animation (the standalone app's startup animation) plays at most once per
+instance: at the first editor open, and only if no state was ever loaded into the instance.
+`OrbParams` holds two runtime flags, saved nowhere: `restored`, set by every state load
+(`deserialize_fields`: CLAP `state.load`, VST3 `setState`; so a reopened project, a duplicated
+or pasted FX or track, undo/redo and a loaded preset all count), and `intro_played`, set when
+an editor asks `OrbParams::take_intro` (the editor's build). A restored instance never plays
+it, and neither does a later editor open of an instance that played it. The editor calls
+`App::enable_logo_anim` only when `take_intro` is true; the standalone app is unchanged.
+
+Caveat: a host that loads a default state on insertion makes the new instance count as
+restored, so it never animates. Reaper does this when the user has saved a default preset for
+the plugin.
+
+Residual ordering risk: a host that opens the editor before its `state.load` on a project
+reopen would play the animation once for an instance that is then restored; the flags cannot
+know a load that has not happened yet.
+
 ## 6. The main thread's calls
 
 For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):

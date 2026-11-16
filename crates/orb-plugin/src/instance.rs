@@ -613,6 +613,10 @@ pub struct OrbParams {
     /// Counts the changes of the song (a load, File > New, a state restore): the editor shows
     /// the song anew when it changes ([`OrbParams::revision`]).
     revision: AtomicU64,
+    /// A state was loaded into this instance (runtime only, never saved; task-219).
+    restored: AtomicBool,
+    /// An editor has started the logo animation (runtime only, never saved; task-219).
+    intro_played: AtomicBool,
 }
 
 impl Default for OrbParams {
@@ -651,7 +655,16 @@ impl OrbParams {
             }),
             shared: Arc::new(Shared::default()),
             revision: AtomicU64::new(0),
+            restored: AtomicBool::new(false),
+            intro_played: AtomicBool::new(false),
         }
+    }
+
+    /// Whether the editor that opens now plays the logo animation (task-219, docs/plugin.md
+    /// section 5.1): once per instance, at its first editor open, and only if no state was
+    /// ever loaded into it. Calling it counts as the editor starting the animation.
+    pub fn take_intro(&self) -> bool {
+        !self.intro_played.swap(true, Ordering::AcqRel) && !self.restored.load(Ordering::Acquire)
     }
 
     /// The song's revision: it changes at each load, File > New and state restore.
@@ -1051,6 +1064,7 @@ unsafe impl Params for OrbParams {
     /// A state restore: nice-plug has set the parameters already; the document is replaced and,
     /// when the instance runs, its engine rebuilt and sent.
     fn deserialize_fields(&self, serialized: &BTreeMap<String, String>) {
+        self.restored.store(true, Ordering::Release);
         let values = self.values();
         let mut m = self.main();
         match serialized.get(STATE_KEY).map(|j| Doc::from_json(j)) {

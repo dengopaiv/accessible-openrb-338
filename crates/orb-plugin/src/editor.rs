@@ -371,7 +371,10 @@ impl NiceEguiApp for EditorApp {
                 Settings::load(),
                 self.route.clone(),
             );
-            app.enable_logo_anim();
+            // the logo animation only for a new instance (task-219)
+            if self.params.take_intro() {
+                app.enable_logo_anim();
+            }
             app
         })
         .ok();

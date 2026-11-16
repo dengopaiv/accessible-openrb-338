@@ -1,10 +1,11 @@
 ---
 id: TASK-219
 title: 'Plugin: play the logo animation only for a new instance'
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T15:30:00Z'
+updated_date: '2026-11-16T16:08:00Z'
 labels:
   - ui
   - player
@@ -44,9 +45,31 @@ Work only after task-217 is merged: it touches instance.rs and the state.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new instance (no state ever loaded) plays the logo animation at its first editor open only; closing and reopening the editor does not replay it (test)
-- [ ] #2 An instance that had a state loaded (project reopen, duplicate, preset, undo) never plays it (test through the state load path)
-- [ ] #3 The flags are runtime only, not saved in the state; the standalone app still animates at startup and its screenshots are unchanged
-- [ ] #4 docs/plugin.md describes the rule and the default-preset caveat
-- [ ] #5 cargo test, clippy -D warnings and nightly fmt pass
+- [x] #1 A new instance (no state ever loaded) plays the logo animation at its first editor open only; closing and reopening the editor does not replay it (test)
+- [x] #2 An instance that had a state loaded (project reopen, duplicate, preset, undo) never plays it (test through the state load path)
+- [x] #3 The flags are runtime only, not saved in the state; the standalone app still animates at startup and its screenshots are unchanged
+- [x] #4 docs/plugin.md describes the rule and the default-preset caveat
+- [x] #5 cargo test, clippy -D warnings and nightly fmt pass
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. OrbParams gets runtime flags restored (set in deserialize_fields) and intro_played; take_intro() = first call && !restored. 2. editor.rs build calls enable_logo_anim only if take_intro(); standalone untouched. 3. Tests in tests/state.rs; docs/plugin.md 5.1 with the default-preset caveat.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-a035782db196a465b
+
+Evidence: take_intro()/restored/intro_played in instance.rs; tests the_logo_animation_plays_once_for_a_new_instance and a_restored_instance_never_plays_the_logo_animation (tests/state.rs, state load via deserialize path, flags absent from saved JSON). Standalone: orb-ui untouched (main.rs/app.rs unchanged), so screenshots unchanged. cargo test: 792 passed, 0 failed; clippy -D warnings and nightly fmt --check clean.
+
+Review round 1: fixed the doc reference in instance.rs (section 5.1), added the ordering risk to docs/plugin.md 5.1, rebased on main; cargo test now 813 passed, 0 failed, 5 ignored (earlier 792 was before the rebase); clippy and nightly fmt clean. Design: editor.rs calls App::enable_logo_anim only when OrbParams::take_intro() is true instead of adding an Embed method, because the Embed trait is only about song/mod/state, and the App already owns the animation switch (enable_logo_anim), so nothing in orb-ui changes and the standalone stays byte-identical. Residual risk: a host that opens the editor before its state.load on project reopen plays the animation once for an instance that is then restored.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The plugin editor plays the logo animation only at the first editor open of an instance that never had a state loaded. OrbParams has runtime flags restored (set by deserialize_fields) and intro_played; editor.rs calls App::enable_logo_anim only when take_intro() is true (no Embed method: orb-ui is untouched, so the standalone and its screenshots are unchanged). docs/plugin.md 5.1 documents the rule, the default-preset caveat and the editor-before-state.load ordering risk. Two new tests in crates/orb-plugin/tests/state.rs. cargo test 813 pass, 5 ignored, clippy and nightly fmt clean.
+<!-- SECTION:FINAL_SUMMARY:END -->
