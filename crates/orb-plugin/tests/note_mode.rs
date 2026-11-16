@@ -112,7 +112,7 @@ fn notes_below_32_play_in_note_mode_and_select_in_pattern_mode() {
     );
     assert!(!core.audio().last_snapshot().playing);
     // pattern mode: it selects pattern 6 (the host is stopped: only the selection changes)
-    p.set_mode(Mode::Pattern);
+    p.set_mode(Mode::Latch);
     call(&p, &mut core, 4096, &t, &[on(10, 0, 5, 100)]);
     assert_eq!(core.audio().last_snapshot().live[1].as_slice()[1], 5);
     assert!(!core.audio().last_snapshot().playing);

@@ -162,9 +162,9 @@ exe).
 orb's own mapping of MIDI notes for the VST3/CLAP plugin (`docs/plugin.md`), decided in task-185
 (2026-11-15/16; channels changed on 2026-11-16, task-207). It is not the original's: the
 original plays no device from notes (section 4), and its Standard Mapping
-(`docs/standard_midi_mapping.md`) stays as it is, on a channel of its own. Three features use
-this mapping: pattern mode's pattern selection (task-198), note mode's live play (task-200) and
-the pattern drag-out (task-203). The engine facts below carry the DLL's addresses; [C] means read
+(`docs/standard_midi_mapping.md`) stays as it is, on a channel of its own. Four features use
+this mapping: Latch Pattern Mode's pattern selection (task-198), Gate Pattern Mode's gates
+(task-218), note mode's live play (task-200) and the pattern drag-out (task-203). The engine facts below carry the DLL's addresses; [C] means read
 in the disassembly of a read-only headless copy of `ReBirth.dll.i64` (2026-11-16), and the engine
 code named matches the corpus byte for byte.
 
@@ -183,7 +183,7 @@ Standard Mapping is off by default in the plugin; turned on, it listens on one c
 earlier 2..5 layout; `docs/plugin.md` 5 and 8.2). A keyboard on its default channel 1 plays
 303 #1 without setup.
 
-### 5.2 Pattern mode: pattern selection
+### 5.2 Latch Pattern Mode: pattern selection
 
 Notes 0..31 on a device's channel select that device's pattern n + 1, i.e. banks A-D x patterns
 1..8 (note 0 = A1, 7 = A8, 8 = B1, 31 = D8). Latched: the pattern changes at once and stays until
@@ -191,10 +191,36 @@ the next note on that channel (or a panel change; the last write wins). A note-o
 note-on and notes 32..127 do nothing. `docs/plugin.md` 8.2 has how it reaches the engine.
 
 Pattern mode is a setting of the plugin's state since task-217 (no longer the host parameter
-`g1`): orb plays the patterns only while the host plays. With the host stopped there is no
-sound, and a pattern-select note only changes the section's selected pattern (the panel shows
-it; the host's start plays it). Stopping from MIDI is the host's transport stop; there is no
-stop note.
+`g1`), named Latch Pattern Mode since task-218: orb plays the patterns only while the host
+plays. With the host stopped there is no sound, and a pattern-select note only changes the
+section's selected pattern (the panel shows it; the host's start plays it). Stopping from MIDI
+is the host's transport stop; there is no stop note.
+
+### 5.2.1 Gate Pattern Mode: a pattern while its note is held (task-218)
+
+The same notes 0..31 on the same channels, as gates (the user's design of 2026-11-16,
+`docs/plugin.md` section 11):
+
+- A section sounds only while a note 0..31 on its channel is held, and then plays pattern
+  n + 1. The note-on starts it at once (at the plugin's 64-frame block after the event), the
+  note-off stops it at once, with no bar-line wait (a linear fade over that one block, 1.45 ms,
+  task-222); a gap between notes is silence.
+- With the host playing the pattern plays from the step at the host's position, in step with
+  the song, and follows the host's loops and seeks. The step at the position plays at once,
+  except for a note within 5 ms (at most a quarter step) before the next step boundary, which
+  takes that step, on time: a clip note on the grid lands on its own step.
+- With the host stopped a held note plays its pattern from step 1, free-running at the host's
+  tempo (the song's when the host reports none): live triggering from a keyboard. A second
+  section's note joins the running one in step; step 1 again only when nothing plays.
+- Several notes held on one channel: the last note-on wins; releasing it falls back to the most
+  recent note still held, or stops the section. The four channels gate independently.
+- A velocity-0 note-on is a note-off; notes 32..127 do nothing.
+- Notes change no parameter: the section's On/off switch stays the user's mute (a section
+  sounds only when it is on and its gate is open), and the pattern parameter only changes
+  what the panel shows. The panel shows the held note's pattern and keeps the last one after
+  the note-off.
+- The Standard Mapping's pattern notes (on the remote channel) only select, in both pattern
+  modes: they open no gate.
 
 **The preview** (the panel's Play, task-217, `docs/plugin.md` 4.2) ignores every host MIDI
 message on every channel (pattern selects, note-mode notes, the Standard Mapping) while it runs;

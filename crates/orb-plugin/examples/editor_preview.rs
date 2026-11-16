@@ -3,12 +3,12 @@
 //!
 //! ```text
 //! cargo run --release -p orb-plugin --example editor_preview -- [SONG.rbs] [--size WxH]
-//!     [--ppp S] [--host-playing] [--midi] [--mode pattern|note] [--preview] [--click X,Y]...
+//!     [--ppp S] [--host-playing] [--midi] [--mode latch|gate|note] [--preview] [--click X,Y]...
 //!     [--screenshot OUT.png]
 //! ```
 //!
 //! A stand-in host runs the plugin's process side in step with the frames (no sound): the
-//! song loaded as File > Open loads it (pattern mode), `--host-playing`
+//! song loaded as File > Open loads it (Latch Pattern Mode), `--host-playing`
 //! plays the host's transport from bar 1 (the Sync LED), `--midi` sends a host message on
 //! channel 10 (which nothing maps) in every buffer (the MIDI LED stays lit). `--mode` sets the
 //! plugin's mode after the load, `--preview` enters the preview (the panel's Play, task-217),
@@ -93,9 +93,10 @@ fn args() -> Args {
             "--midi" => a.midi = true,
             "--mode" => {
                 a.mode = Some(match it.next().as_deref() {
-                    Some("pattern") => Mode::Pattern,
+                    Some("latch") => Mode::Latch,
+                    Some("gate") => Mode::Gate,
                     Some("note") => Mode::Note,
-                    _ => panic!("--mode pattern|note"),
+                    _ => panic!("--mode latch|gate|note"),
                 })
             }
             "--preview" => a.preview = true,

@@ -96,7 +96,7 @@ use std::sync::Arc;
 
 use orb_engine::frame::edit::PatternShape;
 use orb_engine::frame::export::REALTIME_FRAMES;
-use orb_engine::frame::{Devices, Engine, LoadRefused, MixerParams, Sounding};
+use orb_engine::frame::{Devices, Engine, Gate, LoadRefused, MixerParams, Sounding};
 use orb_engine::process::ProcessState;
 use orb_engine::samples::{Retired, STARTUP_ID, Sample, SampleSet};
 use orb_engine::seq::Pool;
@@ -167,6 +167,9 @@ pub enum Command {
         note: u8,
         velocity: u8,
     },
+    /// The pattern gate of a 303, the 808 or the 909 at the current tick: the plugin's Gate
+    /// Pattern Mode (task-218; [`Engine::set_gate`]). Not a message of the original's.
+    Gate { device: Device, gate: Gate },
     /// Song msg 35 `{0,m}`: song mode (`true`) or pattern mode.
     SongMode(bool),
     /// Song msg 35 `{2,v}`: record on or off ([`Engine::set_record`]; off merges the recording).
@@ -383,6 +386,10 @@ pub struct Snapshot {
     /// (303 #1, 303 #2, 808, 909; the 303s' are empty): the plugin's note-mode lights
     /// (task-202; [`orb_engine::frame::ChannelDevice::sounding`]).
     pub sounding: [Sounding; 4],
+    /// Each channel device's pattern gate is closed (303 #1, 303 #2, 808, 909; the plugin's
+    /// Gate Pattern Mode, task-218): the section is silent and does not step, and the panel
+    /// shows no step light for it.
+    pub gate_closed: [bool; 4],
     /// Every device's live block, by device id (index 0, the mixer, is empty: see `mixer`).
     /// The playing step of the 303s, the 808 and the 909 is their byte 9, 29 and 30.
     pub live: [LiveBlock; 9],
@@ -757,6 +764,7 @@ impl Audio {
                 note,
                 velocity,
             } => self.target().live_note(device, note, velocity),
+            Command::Gate { device, gate } => self.target().set_gate(device, gate),
             Command::SongMode(on) => self.target().set_song_mode(on as u8),
             Command::Record(on) => self.target().set_record(on as u8),
             Command::LoopOn(on) => self.target().set_loop_on(on as u8),
@@ -914,6 +922,9 @@ impl Audio {
         }
         for (v, d) in s.sounding.iter_mut().zip(&f.devices.channels) {
             *v = d.sounding();
+        }
+        for (v, d) in s.gate_closed.iter_mut().zip(&f.devices.channels) {
+            *v = d.gate().closed();
         }
         let d = &f.devices;
         s.live[0] = LiveBlock::default();

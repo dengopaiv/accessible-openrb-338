@@ -82,8 +82,9 @@ fn the_counter_counts() {
 /// The simulated host (task-198): its frames and calls so far. It plays from frame 20000 on,
 /// jumps back four beats every 30000 frames, stops between frames 60000 and 70000, changes its
 /// tempo every 25000 frames, and sends in every call a note 0..31 on one of channels 1..5 (a
-/// pattern in pattern mode, a note in note mode), a note 30..89 on a section's channel (a 303
-/// note or a drum hit in note mode, task-200), a note-off, and a master-level control change.
+/// pattern in Latch Pattern Mode, a gate in Gate Pattern Mode, a note in note mode), a note 30..89
+/// on a section's channel (a 303 note or a drum hit in note mode, task-200), a note-off, and a
+/// master-level control change.
 #[derive(Default)]
 struct Host {
     frames: u64,
@@ -186,10 +187,15 @@ fn session(rate: u32) {
         set(&p, "d7c6", (k % 2) as i32);
         events += run(&p, &mut core, &mut h, 3000, buf);
     }
-    // the mode off and on
+    // Gate Pattern Mode (task-218) from frame 60000: the gates open, switch and close with the
+    // host stopped (until frame 70000), then playing and jumping
+    assert_eq!(h.frames, 60_000);
+    p.set_mode(Mode::Gate);
+    events += run(&p, &mut core, &mut h, 40_000, 256);
+    // the other modes
     p.set_mode(Mode::Note);
     events += run(&p, &mut core, &mut h, 5000, 256);
-    p.set_mode(Mode::Pattern);
+    p.set_mode(Mode::Latch);
     events += run(&p, &mut core, &mut h, 5000, 256);
     // the preview (task-217): entered, changed, host changes ignored, left, entered again
     p.set_preview(true);

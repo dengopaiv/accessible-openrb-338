@@ -21,7 +21,7 @@ mod note_tests;
 #[cfg(test)]
 mod tests;
 
-use crate::frame::{Block, BlockContext, ChannelDevice, SongDevice};
+use crate::frame::{Block, BlockContext, ChannelDevice, Gate, GateClock, SongDevice, gate_arm};
 use crate::seq::TrackMut;
 use crate::tables::Tables;
 
@@ -274,6 +274,8 @@ pub struct Tb303 {
     /// accent); the first `held_len` are valid. Cleared by slots 3 and 6.
     pub held: [(u8, bool); HELD],
     pub held_len: u8,
+    /// Not in the original (task-218): the plugin's pattern gate ([`ChannelDevice::set_gate`]).
+    pub pattern_gate: Gate,
 }
 
 impl Default for Tb303 {
@@ -329,6 +331,7 @@ impl Tb303 {
             vintage: false,
             held: [(0, false); HELD],
             held_len: 0,
+            pattern_gate: Gate::default(),
         }
     }
 
@@ -633,6 +636,10 @@ impl SongDevice for Tb303 {
 
     /// Slot 1, 0x100253A0.
     fn step(&mut self, tick: i32, shuffled: i32, _tempo: i32) {
+        if self.pattern_gate.closed() {
+            // not in the original (task-218): a closed gate does not step
+            return;
+        }
         let pat = self.cur_pattern;
         let (shuffle, len) = {
             let p = self.pattern(pat);
@@ -677,8 +684,8 @@ impl SongDevice for Tb303 {
         let q = tick / 48;
         let s16 = if q < 0 { -((-q) & 15) } else { q & 15 };
         if s16 == 0 {
-            // the bar line: the pending pattern and the enable flag
-            let p = self.live[PATTERN];
+            // the bar line: the pending pattern (an open gate's, task-218) and the enable flag
+            let p = self.pattern_gate.latch(self.live[PATTERN]);
             if p != self.cur_pattern {
                 self.pat_start = 768 * (tick / 768);
                 self.cur_pattern = p;
@@ -701,8 +708,10 @@ impl SongDevice for Tb303 {
     /// pattern and the enable flag.
     fn relocate(&mut self, _tick: i32, now: i32) {
         self.pat_start = Self::bar_of(now);
-        if self.live[PATTERN] != self.cur_pattern {
-            self.cur_pattern = self.live[PATTERN];
+        // an open gate's pattern instead of the controller's (task-218)
+        let p = self.pattern_gate.latch(self.live[PATTERN]);
+        if p != self.cur_pattern {
+            self.cur_pattern = p;
         }
         self.enabled = self.live[ENABLED];
     }
@@ -829,6 +838,45 @@ impl ChannelDevice for Tb303 {
 
     fn live_note_off(&mut self, note: u8) {
         self.key_off(note);
+    }
+
+    fn gate(&self) -> Gate {
+        self.pattern_gate
+    }
+
+    fn set_gate(&mut self, g: Gate, c: &GateClock) {
+        let old = std::mem::replace(&mut self.pattern_gate, g);
+        if !g.starts(&old) {
+            // a close: the fade-out and slot 6 are `Frame::block`'s
+            return;
+        }
+        // slot 2 with the gate's pattern; the pending note-off first, as a pattern wrap in
+        // slot 1 does
+        self.relocate(c.now, c.now);
+        if self.gate_off >= 0 {
+            self.note_off();
+            self.gate_off = -1;
+        }
+        let base = if self.song_mode { self.pat_start } else { 0 };
+        match gate_arm(self.pattern(self.cur_pattern), base, c) {
+            Ok(()) => {
+                self.wrapped = true;
+                if c.playing {
+                    self.step(c.now, c.shuffled, c.tempo);
+                    // a step entered late: its note ends by the step's end at the latest, so
+                    // the next step triggers on time
+                    if self.gate_off >= 0 {
+                        self.gate_off = self.gate_off.min(self.last_pos / 48 * 48 + 47);
+                    }
+                }
+            }
+            Err(v) => {
+                // the next step triggers, on time
+                self.live[LAST_STEP] = ((v / 48) & 0xFF) as u8;
+                self.last_pos = v;
+                self.wrapped = false;
+            }
+        }
     }
 
     /// Slot 14, 0x10023F10.

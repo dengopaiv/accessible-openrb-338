@@ -1015,9 +1015,10 @@ impl Embed for EditorEmbed {
                 set_param(&self.params, &self.gui, i, *v);
             }
         }
-        // File > Open always switches to pattern mode (task-185)
-        if open {
-            self.params.set_mode(Mode::Pattern);
+        // File > Open switches to pattern mode (task-185): Note Mode becomes Latch Pattern Mode,
+        // a pattern mode stays (task-218)
+        if open && !self.params.mode().patterns() {
+            self.params.set_mode(Mode::Latch);
         }
         self.pending = Some(changes);
         Ok(())
@@ -1045,7 +1046,8 @@ impl Embed for EditorEmbed {
 
     fn mode(&self) -> Option<PluginMode> {
         Some(match self.params.mode() {
-            Mode::Pattern => PluginMode::Pattern,
+            Mode::Latch => PluginMode::Latch,
+            Mode::Gate => PluginMode::Gate,
             Mode::Note => PluginMode::Note,
         })
     }
@@ -1056,7 +1058,8 @@ impl Embed for EditorEmbed {
 
     fn set_mode(&mut self, mode: PluginMode) {
         self.params.set_mode(match mode {
-            PluginMode::Pattern => Mode::Pattern,
+            PluginMode::Latch => Mode::Latch,
+            PluginMode::Gate => Mode::Gate,
             PluginMode::Note => Mode::Note,
         });
     }

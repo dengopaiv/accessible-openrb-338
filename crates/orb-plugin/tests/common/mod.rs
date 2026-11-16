@@ -41,7 +41,7 @@ pub fn with_song(name: &str) -> OrbParams {
     for (id, v) in p.load_song(song_bytes(name)).unwrap() {
         set(&p, &id, v);
     }
-    p.set_mode(Mode::Pattern);
+    p.set_mode(Mode::Latch);
     p
 }
 

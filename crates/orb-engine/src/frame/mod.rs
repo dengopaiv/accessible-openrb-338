@@ -291,6 +291,101 @@ pub trait ChannelDevice: SongDevice {
     fn sounding(&self) -> Sounding {
         Sounding::default()
     }
+    /// Not in the original (task-218): the device's [`Gate`]. Off for the placeholders.
+    fn gate(&self) -> Gate {
+        Gate::default()
+    }
+    /// Not in the original (task-218, [`Engine::set_gate`]): the device's gate becomes `g` at
+    /// the song's position `c`. Off: the original's path. On and closed: the device steps no
+    /// more; [`Frame::block`] fades its bus out over the next block, then runs slot 6 and
+    /// zeroes the bus. On and open (opening, or another pattern): the gate's pattern plays
+    /// from the position (the pattern, `patStart` and the enable latch as slot 2 sets them; a
+    /// 303's sounding note ends), and the bar line and slot 2 latch it instead of controller 1.
+    /// The step at the position triggers at once (slot 1 runs while the song plays; a 303's
+    /// note then ends by the step's end), unless the next step is within the snap window
+    /// ([`gate_arm`]), which then triggers on time. The placeholders ignore it.
+    fn set_gate(&mut self, _g: Gate, _c: &GateClock) {}
+}
+
+/// Not in the original (task-218): the song's position when a gate changes
+/// ([`Engine::set_gate`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GateClock {
+    /// The tick, its shuffled tick, and the tempo, as the step loop passes them to slot 1.
+    pub now: i32,
+    pub shuffled: i32,
+    pub tempo: i32,
+    /// The song plays.
+    pub playing: bool,
+    /// How far the position is past `now` (the fractional tick) plus the snap window, in
+    /// ticks: a step that starts within this many ticks of `now` is the one that plays.
+    pub lead: f64,
+}
+
+/// The snap window of a gate opening (task-218, the user's choice of 2026-11-16): a note-on
+/// within this time before a step boundary takes that step instead of the one it falls in.
+pub const GATE_SNAP_MS: f64 = 5.0;
+/// The window's cap in ticks, a quarter of a step: at very fast tempos 5 ms would be most of a
+/// step (at 999 BPM a step lasts 15 ms).
+pub const GATE_SNAP_MAX_TICKS: f64 = 12.0;
+
+/// Not in the original (task-218): whether a gate opening in pattern `p` (its header: the
+/// shuffle flag, the length) of a step device whose pattern starts at tick `base`, at `c`,
+/// plays the step at the position (`Ok`; also for a pattern of no length) or waits for the
+/// next step, which starts within `c.lead` ticks (`Err(v)`, `v` the pattern position as slot
+/// 1 computes it).
+pub(crate) fn gate_arm(p: &[u8], base: i32, c: &GateClock) -> Result<(), i32> {
+    let t = if p[0] != 0 { c.shuffled } else { c.now };
+    let period = 48 * p[1] as u32;
+    if period == 0 {
+        return Ok(());
+    }
+    let v = (t.wrapping_sub(base) as u32 % period) as i32;
+    if ((48 - v % 48) as f64) <= c.lead {
+        Err(v)
+    } else {
+        Ok(())
+    }
+}
+
+/// The plugin's Gate Pattern Mode on one pattern section (not in the original; task-218,
+/// `docs/plugin.md` section 11): the section sounds only while the gate is open, and then plays
+/// the gate's pattern, from the moment it opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Gate {
+    /// The gate is in use; off (the default) is the original's behavior.
+    pub on: bool,
+    /// The gate is open (only read when `on`).
+    pub open: bool,
+    /// The pattern it plays while open, 0..31.
+    pub pattern: u8,
+}
+
+impl Gate {
+    /// On and closed: the device is silent and does not step.
+    pub fn closed(&self) -> bool {
+        self.on && !self.open
+    }
+
+    /// The pattern the bar line and slot 2 latch: the gate's while it is on and open, else the
+    /// pattern controller's `ctrl`.
+    pub fn latch(&self, ctrl: u8) -> u8 {
+        if self.on && self.open {
+            self.pattern
+        } else {
+            ctrl
+        }
+    }
+
+    /// The change from `old` to `self` opens the gate or switches it to another pattern.
+    pub fn starts(&self, old: &Gate) -> bool {
+        self.on && self.open && (!old.on || !old.open || old.pattern != self.pattern)
+    }
+
+    /// The change from `old` to `self` closes an open (or unused) gate.
+    pub fn stops(&self, old: &Gate) -> bool {
+        self.closed() && !old.closed()
+    }
 }
 
 /// What a drum machine sounds (not in the original; task-200): bit `n` of `mask` is set while
@@ -824,6 +919,16 @@ pub struct Frame {
     /// object (`song+0x30C`, a heap address). Set by [`Engine::render`]; the delay leaves it on
     /// the stack ([`SendEffect::stack_word`]).
     pub out_end: Option<i32>,
+    /// Not in the original (task-218, the user's decision of task-222): channel c's pattern
+    /// gate has just closed; its next block fades the bus out linearly
+    /// ([`gate_fade_gain`]), then slot 6 runs on the device.
+    pub gate_fade: [bool; 4],
+}
+
+/// The gain of sample `i` (0..64) of a closed gate's fade-out block: `(63 - i) / 64`, from
+/// 63/64 to 0 (task-222: one 64-frame block, 1.45 ms, linear).
+pub fn gate_fade_gain(i: usize) -> f64 {
+    (BLOCK - 1 - i) as f64 / BLOCK as f64
 }
 
 /// `unk_100F012C`: the right channel's float output of a render call (0x10013A3A), at the
@@ -868,6 +973,7 @@ impl Frame {
             blocks: 0,
             stack_word: None,
             out_end: None,
+            gate_fade: [false; 4],
         }
     }
 
@@ -966,6 +1072,20 @@ impl Frame {
         let bus = &mut self.bus;
         for (c, ch) in self.state.channels.iter_mut().enumerate() {
             self.devices.channels[c].process(bus, &ctx);
+            if self.devices.channels[c].gate().closed() {
+                // not in the original (task-218): a gate that has just closed fades the section
+                // out over this block (task-222), then its voices are silenced (slot 6); a
+                // closed gate's section is silent
+                if self.gate_fade[c] {
+                    self.gate_fade[c] = false;
+                    for (i, x) in bus.iter_mut().enumerate() {
+                        *x = st(*x as f64 * gate_fade_gain(i));
+                    }
+                    self.devices.channels[c].silence();
+                } else {
+                    bus.fill(0.0);
+                }
+            }
             // the word the audio slot leaves at its esp0 - 0x1C (the 303s leave the slot as it
             // was); the distortion (0x10010A50: no local there, calls only below its esp) leaves
             // it for the PCF after it
@@ -1390,6 +1510,42 @@ impl Engine {
         } else {
             dev.live_note_on(note, velocity);
         }
+    }
+
+    /// Not in the original (task-218): the gate of channel device `d` (a 303, the 808 or the
+    /// 909; nothing for the others) becomes `g` at the song's position
+    /// ([`ChannelDevice::set_gate`]). An opening or a switch plays the step at the position at
+    /// once (the device runs slot 1 with the current tick, as the step loop calls it, so it
+    /// sounds from the next block rather than from the next tick change: a tick is 1.8 blocks
+    /// at 120 BPM), unless the next step boundary is within [`GATE_SNAP_MS`] (at most
+    /// [`GATE_SNAP_MAX_TICKS`]) of the position. A close starts the one-block fade-out
+    /// ([`Frame::gate_fade`]); anything else cancels a fade that has not run.
+    pub fn set_gate(&mut self, d: song::Device, g: Gate) {
+        use song::Device as D;
+        let c = match d {
+            D::Tb303_1 => 0,
+            D::Tb303_2 => 1,
+            D::Tr808 => 2,
+            D::Tr909 => 3,
+            _ => return,
+        };
+        let seq = &self.frame.seq;
+        let now = seq.tick_pos();
+        let tempo = seq.globals.tempo;
+        // ticks per frame: the clock's advance of a 64-frame block over 64
+        let per_frame = tempo as f64 * crate::seq::TEMPO_STEP / BLOCK as f64;
+        let frames = GATE_SNAP_MS / 1000.0 * crate::compare::RATE as f64;
+        let window = (frames * per_frame).min(GATE_SNAP_MAX_TICKS);
+        let clock = GateClock {
+            now,
+            shuffled: crate::seq::shuffled(now, seq.globals.shuffle),
+            tempo: tempo as i32,
+            playing: seq.globals.play != 0,
+            lead: (seq.pos - now as f64) + window,
+        };
+        let dev = &mut self.frame.devices.channels[c];
+        self.frame.gate_fade[c] = g.stops(&dev.gate());
+        dev.set_gate(g, &clock);
     }
 
     /// Song msg 35 `{1,1}` (`sub_1001BF50`).

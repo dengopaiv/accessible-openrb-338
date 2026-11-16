@@ -6,7 +6,8 @@ the core described here; task-198 the host sync, the pattern selection by notes 
 Mapping (section 8); task-200 note mode (section 9); task-201 the editor (section 10); packaging
 and the validators are task-204. task-217 (the user's design of 2026-11-16, task-216) replaced
 the mode parameter `g1` with the pattern/note mode setting and made the panel's Play/Stop the
-pattern preview (section 4.2).
+pattern preview (section 4.2). task-218 renamed pattern mode Latch Pattern Mode and added Gate
+Pattern Mode (section 11).
 
 ## 1. What runs
 
@@ -104,16 +105,20 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   The output is therefore a function of the events' frames alone: buffer sizes 1, 63, 64, 512
   and 4096 give the same samples (`tests/timing.rs`). A call of no frames takes no changes;
   they are seen at the next call.
-- **The mode** (task-217; a setting of the state, not a parameter, section 5) is read before
-  each block. In **pattern mode** the song plays (song msg 35 `{1,1}`) only while the host
-  plays, its step following the host's position (section 8), and is stopped (`{1,0}`, which
-  locates to the bar start) when the host stops: no sound with the host stopped. In **note
-  mode** the song is stopped and host notes play the devices whatever the host's transport
-  does (section 9). The default is note mode: a plugin just inserted makes no sound of its own,
-  as the old mode parameter's Stop default (the original starts stopped). File > Open sets
-  pattern mode (task-185). The preview (section 4.2) overrides both while it runs. A song
-  loaded over the playing one waits (pending) until the next block, which switches to it
-  (Play) and then plays or stops it as the mode says.
+- **The mode** (task-217, task-218; a setting of the state, not a parameter, section 5) is
+  read before each block and at each section note. In **Latch Pattern Mode** (task-217's
+  pattern mode, renamed) the song plays (song msg 35 `{1,1}`) only while the host plays, its
+  step following the host's position (section 8), and is stopped (`{1,0}`, which locates to the
+  bar start) when the host stops: no sound with the host stopped. **Gate Pattern Mode**
+  follows the host the same way, but a section sounds only while a note on its channel is
+  held, and a held note also plays with the host stopped (section 11). In **note mode** the
+  song is stopped and host notes play the devices whatever the host's transport does (section
+  9). The default is note mode: a plugin just inserted makes no sound of its own, as the old
+  mode parameter's Stop default (the original starts stopped). File > Open turns note mode
+  into Latch Pattern Mode (task-185) and keeps a pattern mode (task-218). The preview (section
+  4.2) overrides all three while it runs. A song loaded over the playing one waits (pending)
+  until the next block, which switches to it (Play) and then plays or stops it as the mode
+  says.
 - **Activation.** Every activation makes a new player and builds the engine from the state and
   the parameters (section 5), so an offline bounce does not depend on what played before it and
   reads no clock. The UI side's commands are applied at the start of the next block, as the
@@ -192,7 +197,7 @@ field, `orb`, a JSON object (version 1):
 | `editor_size` | the editor window's size in logical points (section 10); absent: 624 x 532 |
 | `remote_enabled` | whether the Standard Mapping (Remote MIDI) is on; false by default and when absent (section 8) |
 | `remote_channel` | the Standard Mapping's MIDI channel, 0-based (15: channel 16, the default and when absent); a section's channel (0..3, MIDI 1..4) restores as 15 with `last_error` set, the rest of the state kept (section 8) |
-| `mode` | `"pattern"` or `"note"` (section 4; a new instance: note) |
+| `mode` | `"latch"`, `"gate"` or `"note"` (section 4; a new instance: note; task-217's `"pattern"` is no longer read) |
 | `preview` | the preview set (section 4.2): an object of parameter id to value, or null before the first preview; an id it lacks takes the parameter's value |
 
 The plugin is not released: no state of an earlier build is migrated, recognized or tested
@@ -292,6 +297,9 @@ been tried by the tests. `sync.rs` (task-198) runs a simulated host transport (s
 
 ## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
 
+In this section "pattern mode" is the plugin's pattern modes (Latch and Gate, task-218): both
+follow the host the same way; the section notes differ (Latch: below; Gate: section 11).
+
 ### 8.1 How the original follows an external position [C]
 
 The DLL has a host-sync path of its own, for TopHat (ReWire's precursor; out of orb's scope
@@ -351,15 +359,16 @@ the last record that starts at or before `h`, extrapolated at its tempo while th
   equals the host's position at the block's end. The TopHat path's loop-point hold-off (the
   countdown) is not taken: the host's loop is not the song's, and pattern mode has none.
 - **Host stopped** (task-217; before it, the song ran on): the song is stopped (song msg 35
-  `{1,0}`), so pattern mode makes no sound. A host that plays but reports no position plays
+  `{1,0}`), so pattern mode makes no sound, except in Gate Pattern Mode while a gate note is
+  held (section 11: free-running from step 1). A host that plays but reports no position plays
   the song free-running from where it is (the clock alone).
 - An offline bounce reads nothing but the calls' frames and transports: two renders of the same
   timeline are identical, and with a host whose positions do not depend on where its buffers
   start, so are different buffer sizes (`sync.rs`).
 
 **Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 1..4 (303 #1 = 1, 303 #2 = 2,
-808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303 #1) in pattern
-mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel message (it
+808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303 #1) in Latch
+Pattern Mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel message (it
 becomes the pending pattern), then, while the song plays, slot 2 on that device, which takes it
 at once (`relocate`: `0x100255E0`, `0x10028030`, `0x1002B670`) where the panel's would wait for
 the bar line; the next step is the new pattern's step at the same position. With the host
@@ -367,8 +376,8 @@ stopped (the song stopped, task-217) only the selection changes: the panel shows
 sounds, and the host's start plays it (the clean start's locate relocates every device). It
 latches until the next note on that channel or a panel change (a parameter change: sent when
 the value changes, and taken at the next bar line, as the original's panel); the last write
-wins. A note-off and a note above 31 do nothing; in note mode every note on these channels
-plays the device (section 9). The preview ignores every note (section 4.2). Notes never change
+wins. A note-off and a note above 31 do nothing; in Gate Pattern Mode the notes 0..31 gate the
+sections (section 11); in note mode every note on these channels plays the device (section 9). The preview ignores every note (section 4.2). Notes never change
 parameters: the parameter keeps the panel's pattern, which a state and every activation (a
 bounce) start from.
 
@@ -565,9 +574,10 @@ are pixel-identical):
   sync in `App::show`): the host's start and stop do not change Play and Stop, and pattern
   mode following a playing host does not light Play (the user's Reaper check, 2026-11-16; the
   first build lit it from the engine).
-- Options has, below the standalone's two checkboxes, the mode as two radio items (task-217;
-  orb-ui `embed::MODE_ITEMS`, `Embed::mode` / `set_mode`, `Cmd::SetPluginMode`): "Pattern
-  Mode" and "Note Mode" (the user dropped the first build's descriptions in parentheses). The
+- Options has, below the standalone's two checkboxes, the mode as three radio items (task-217,
+  task-218; orb-ui `embed::MODE_ITEMS`, `Embed::mode` / `set_mode`, `Cmd::SetPluginMode`):
+  "Latch Pattern Mode", "Gate Pattern Mode" and "Note Mode" (task-217's two were "Pattern
+  Mode" and "Note Mode"; the user dropped the first build's descriptions in parentheses). The
   menu was chosen over a panel control: the panel has no free switch (the hidden Pattern/Song
   switch's art says Pattern/Song).
 - The Sync LED is lit while the snapshot's `host_sync` is; the MIDI LED for 0.1 s after the
@@ -575,8 +585,8 @@ are pixel-identical):
   every 50 ms while open so that the LEDs follow.
 - File has New, Open and Info (no Save, Save As, Export); nothing asks to save (the song lives
   in the host's project). File > Open loads the file into the plugin (`OrbParams::load_song`),
-  sets the song's control values as host parameters and the mode to pattern mode (task-185);
-  File > New keeps the mode. The file browser is orb-ui's own, egui-drawn (task-046),
+  sets the song's control values as host parameters and note mode to Latch Pattern Mode
+  (task-185; a pattern mode stays, task-218); File > New keeps the mode. The file browser is orb-ui's own, egui-drawn (task-046),
   so no native dialog is opened from the plugin window; its folders and the Mods folder are the
   standalone's settings file (`OpenRB-338/ui.toml`), shared.
 - Mods: a mod chosen (the Mods menu, a song's mod, Choose file) is read and given to the plugin
@@ -700,7 +710,7 @@ a load or a restore the host has not run yet, shows the song. The plugin's garba
 emptied on the main thread at every command and every editor frame (`OrbParams::collect_garbage`).
 
 **Screenshots without a host.** `cargo run --release -p orb-plugin --example editor_preview --
-[SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--mode pattern|note] [--preview]
+[SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--mode latch|gate|note] [--preview]
 [--click X,Y]... [--screenshot OUT.png]` shows the editor in a window of its own with a
 stand-in host that runs the process side (no sound) and applies parameter changes at once;
 `--preview` enters the preview, `--click` clicks a point of the window (one every 6 frames from
@@ -712,7 +722,7 @@ and Stop enter and leave the preview, and in it a knob drag and a pattern button
 preview set with no host gesture; the Play light is the preview's, not the host transport's;
 the Options menu's command sets the mode; the hidden
 controls take no clicks; no key acts; the LEDs and the Bar display follow the snapshot (dark
-Sync and Bar in the preview, the MIDI LED still lit by input); File > Open loads the song in pattern mode and New
+Sync and Bar in the preview, the MIDI LED still lit by input); File > Open loads the song in Latch Pattern Mode (Gate stays) and New
 asks nothing; a mod from the Mods menu goes into the state; the File menu opens from the bar;
 the corner asks for sizes of the rule, through the host's callbacks after the frame (a host
 that sizes the window inside its request finds the window's state free); a window
@@ -721,3 +731,101 @@ size. `tests/fonts.rs`: the plugin's normal build has egui's fonts. `tests/clap_
 copies of the library each open CLAP editors (above), and the corner's request posted to the
 main queue reaches the host once, after the event. The real-host checks (Reaper, VST3 and
 CLAP) are the user's (task-201's notes).
+
+## 11. Gate Pattern Mode (task-218)
+
+The user's design of 2026-11-16, after Phoscyon's Host Note mode and ABL3's MIDI Trigger mode:
+a section plays its pattern only while a note 0..31 on its channel is held, so a DAW clip's
+note lengths are the arrangement and a gap is silence. Latch Pattern Mode (section 8.2) is
+unchanged; the preview overrides Gate as it overrides the other modes (section 4.2).
+
+**What it does** (`src/core.rs`; tests `tests/gate_mode.rs`):
+
+- **A gate per section.** Each section (303 #1, 303 #2, 808, 909 on MIDI channels 1..4) has a
+  gate, closed until a note 0..31 on its channel is held; the sections gate independently. A
+  closed section is silent and does not step; the song itself plays as in Latch (following
+  the host while it plays).
+- **The note-on opens it at once**, at the 64-frame block after the event's frame (section 4,
+  the same resolution as every host event), on pattern n+1 (A1..D8), from the step at the
+  song's position: with the host playing the host-position step, mid-pattern in step with the
+  song, following loops and seeks as Latch does. The step at the position sounds at once,
+  wherever in the step the note comes (a 303 note of a step entered late ends by the step's
+  end, so the next step comes on time), **except near a step boundary** (the user's choice of
+  2026-11-16): a note-on within 5 ms before the next step, at most 12 ticks (a quarter step),
+  takes that step, which then plays on time. A clip note on the grid arrives while the
+  engine's position is up to one block (1.45 ms) before its step, because the event is applied
+  between blocks; without the snap it would play the previous step's last instant (and a 303
+  note of it that swallows the next step's start). 5 ms covers that block with room for host
+  timing jitter and stays below the ~10 ms at which an early note is heard as a separate
+  event; the 12-tick cap keeps the snap near the boundary at fast tempos (5 ms is 16 ticks at
+  999 BPM, where a step lasts 15 ms). The window is in time, not ticks, so it means the same
+  at any tempo below 750 BPM.
+- **The note-off closes it at once**: the section fades out linearly over the next 64-frame
+  block (1.45 ms; gain `(63 - i) / 64` on sample `i` of the section's channel bus, before the
+  inserts) and is silent from the block after (the device's voices get slot 6 at the fade's
+  end, and its bus is zeroed; a delay or insert tail of what it played before continues). The
+  fade is the user's decision of task-222 (2026-11-16): the first build's hard cut stepped to
+  silence by up to 0.036 (303), 0.047 (808), 0.037 (909) of full scale at the default levels,
+  an audible click; with the fade the step is below 0.002 (measured 0.0016, 0.0007, 0.0008).
+  The bound depends on the level: the ramp's last non-zero sample has gain 1/64, so the step
+  is about the section's peak / 64, below 0.002 only for a peak below about 0.128 (the 303's
+  default peak, 0.125, passes with little margin); a full-scale section gives about 0.016.
+  With the host stopped the song is stopped only after the fade (a Stop's slot 6 would cut
+  it). The fade is the Gate stop's only: entering Gate fades the sections out too, nothing else
+  changes.
+- **The last note pressed wins.** Of several notes held on one channel the last note-on
+  selects the pattern (a switch takes effect at once, at the position's step, as an opening
+  does); releasing it falls back to the newest note still held, releasing another changes
+  nothing, releasing the last one closes the gate. A velocity-0 note-on is a note-off; notes
+  above 31 do nothing. The held notes are a set: a note pressed twice is released by its first
+  note-off.
+- **With the host stopped** a held note plays too: the first gate that opens locates the song
+  to 0 and plays it (step 1), free-running at the host's tempo (the song's when the host reports
+  none); the song stops when no gate is open, and the next note starts at step 1 again. A gate
+  that opens while another section plays joins it in step, at the running position (the
+  user's choice of 2026-11-16: the sections stay in step; the song is located to 0 only when
+  nothing plays). A host that stops while notes are held leaves the song playing on from where
+  it is.
+- **The On/off switch is the user's mute** (the supervisor's clarification of task-185's rule
+  that notes never change parameters): the gate never changes it, nor any parameter, and sends
+  no host gesture. A section sounds only when its switch is on and its gate is open. Opening a
+  gate takes the switch's state at once (slot 2 reads it); a switch changed while the gate is
+  open acts at the next bar line, as in the original. The panel's On button does not follow
+  the gate; a closed section shows no step light (orb-player `Snapshot::gate_closed`, orb-ui
+  `link.rs`).
+- **The panel's pattern** (the user's option A): a held note shows its pattern on the panel
+  through the pattern controller's message, as a Latch note does, without changing the
+  pattern parameter, and after the note-off the panel keeps showing it. What plays is always
+  the held note's pattern: a panel click or automation of the pattern parameter sets the
+  parameter and what the panel shows, but plays only through a gate note.
+- **The Standard Mapping** (on, on its own channel): its pattern notes only select (the
+  pattern controller), in both pattern modes; in Gate they open no gate and do not change the
+  held note's pattern. Its other actions are as in Latch.
+- **Mode changes.** Entering Gate (or leaving the preview in Gate) closes the four gates;
+  leaving it (or entering the preview) opens every section again; either forgets the held
+  notes (the preview ignores note-offs, so a note held through it sounds again only when
+  pressed again). A song loaded or restored while gating gets the gates as they are.
+
+**How** (not in the original; songs, Latch and Note mode keep the original's code path, and the
+full corpus renders as before, 175 of 175 equal):
+
+- orb-engine `frame::Gate {on, open, pattern}` on each step device (`ChannelDevice::gate`,
+  `set_gate`; the 303's, 808's and 909's `pattern_gate`), off by default. On and closed: slot 1
+  (`step`) returns at once and `Frame::block`, right after slot 14, fades the channel's bus
+  over the first block (`Frame::gate_fade`, `gate_fade_gain`, f64 products stored as f32) and
+  runs slot 6, then zeroes it.
+  On and open: the bar-line latch in slot 1 (`0x100254D3` 303, `0x10027772` 808, `0x1002ABB0`
+  909: `cur_pattern = controller 1` at `(tick/48)&15 == 0`) and slot 2 (`0x100255E0`,
+  `0x10028030`, `0x1002B670`) take the gate's pattern instead of controller 1. Opening or
+  switching runs slot 2 at the current tick, ends a 303's pending note (its pending gate-off,
+  as a pattern wrap in slot 1 does), and decides the step (`frame::gate_arm` with
+  `GateClock::lead`, the fractional tick plus the window `GATE_SNAP_MS`, `GATE_SNAP_MAX_TICKS`):
+  at once, `wrapped` is set and, while the song plays, slot 1 runs at once with `(t,
+  shuffled(t), tempo)`, so the step sounds from the next block, not from the next tick change
+  (a tick is 1.8 blocks at 120 BPM); a 303's gate-off is then capped at the step's last tick.
+  Snapped, the current step is recorded as the last one, so that the next triggers on time.
+- orb-player `Command::Gate {device, gate}`. The plugin keeps each channel's held notes in a
+  fixed array (no allocation in `process`) and, before every block and every section note,
+  sends any engine gate that differs from what the held notes say: this covers a newly loaded
+  song (its gates are off) and a `Gate` command the full garbage queue refused
+  (`Audio::apply_now`).

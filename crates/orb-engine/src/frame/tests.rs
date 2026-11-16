@@ -1300,3 +1300,131 @@ fn the_saved_blocks_are_the_live_ones_in_pattern_mode_and_the_copies_in_song_mod
     // a placeholder has no block
     assert!(d.channels[2].saved_block(true).is_empty());
 }
+
+#[test]
+fn the_gate_helpers() {
+    let off = Gate::default();
+    let closed = Gate {
+        on: true,
+        open: false,
+        pattern: 3,
+    };
+    let open = |pattern| Gate {
+        on: true,
+        open: true,
+        pattern,
+    };
+    assert!(!off.closed() && closed.closed() && !open(3).closed());
+    // the latch takes the controller's pattern unless the gate is open
+    assert_eq!((off.latch(7), closed.latch(7), open(9).latch(7)), (7, 7, 9));
+    assert!(open(1).starts(&off) && open(1).starts(&closed) && open(2).starts(&open(1)));
+    assert!(!open(1).starts(&open(1)) && !closed.starts(&off));
+    assert!(closed.stops(&off) && closed.stops(&open(1)) && !closed.stops(&closed));
+    assert!(!off.stops(&open(1)));
+    // the step at the position triggers at once unless the next one starts within `lead`
+    // ticks; a shuffled pattern uses the shuffled tick; a pattern of no length triggers
+    let at = |now, shuffled, lead| GateClock {
+        now,
+        shuffled,
+        tempo: 120_000,
+        playing: true,
+        lead,
+    };
+    let p = [0u8, 16];
+    assert_eq!(gate_arm(&p, 0, &at(96 + 40, 0, 2.5)), Ok(()));
+    assert_eq!(gate_arm(&p, 0, &at(96 + 46, 0, 2.5)), Err(142));
+    assert_eq!(gate_arm(&p, 0, &at(96 + 45, 0, 2.5)), Ok(()));
+    assert_eq!(gate_arm(&p, 0, &at(96, 0, 2.5)), Ok(()));
+    assert_eq!(gate_arm(&p, 0, &at(768 + 47, 0, 1.0)), Err(47));
+    assert_eq!(gate_arm(&[1, 16], 0, &at(47, 30, 2.5)), Ok(()));
+    assert_eq!(gate_arm(&[0, 0], 0, &at(47, 47, 2.5)), Ok(()));
+}
+
+#[test]
+fn the_snap_window_is_5_ms_and_at_most_a_quarter_step() {
+    use crate::song::Device as D;
+    // 5 ms is 1.92 ticks at 120 BPM (a block advances 0.56) and 16 ticks at 999 BPM (a block
+    // 4.64), capped at 12. A gate opening `before` ticks before step 2 (tick 96) plays step 1
+    // at once (sound in the next block) or waits for step 2 (the next block is silent).
+    for (tempo, before, waits) in [
+        (120_000, 1.5, true),
+        (120_000, 2.5, false),
+        (999_000, 11.5, true),
+        (999_000, 13.5, false),
+    ] {
+        let mut e = Engine::new(tables(), Devices::implemented(None));
+        let mut pat = [0u8; 98];
+        pat[1] = 16;
+        e.pattern(D::Tb303_1, 0, &pat);
+        e.set_tempo(tempo);
+        let closed = Gate {
+            on: true,
+            open: false,
+            pattern: 0,
+        };
+        e.set_gate(D::Tb303_1, closed);
+        e.play();
+        // the mixer's gains settle, the section closed
+        let mut buf = vec![0i16; 2 * 4096];
+        e.render(&mut buf, 4096);
+        let at = 96.0 - before;
+        e.locate(at as u32);
+        e.frame.seq.pos = at;
+        e.set_gate(
+            D::Tb303_1,
+            Gate {
+                open: true,
+                ..closed
+            },
+        );
+        let mut block = vec![0i16; 2 * 64];
+        e.render(&mut block, 64);
+        assert_eq!(
+            block.iter().all(|&s| s == 0),
+            waits,
+            "{tempo} {before}: waits {waits}"
+        );
+    }
+}
+
+#[test]
+fn a_closed_gate_silences_its_section_and_does_not_step() {
+    use crate::song::Device as D;
+    let mut e = Engine::new(tables(), Devices::implemented(None));
+    // 303 #1: every step a note, no rest; the mixer's gains settle while it plays
+    let mut pat = [0u8; 98];
+    pat[1] = 16;
+    e.pattern(D::Tb303_1, 0, &pat);
+    e.play();
+    let mut buf = vec![0i16; 2 * 4096];
+    e.render(&mut buf, 4096);
+    assert!(buf.iter().any(|&s| s != 0), "it plays");
+    let closed = Gate {
+        on: true,
+        open: false,
+        pattern: 0,
+    };
+    e.set_gate(D::Tb303_1, closed);
+    let step = e.frame.devices.channels[0].live()[9];
+    e.render(&mut buf, 4096);
+    // the one-block fade, then silence
+    assert!(buf[2 * 64..].iter().all(|&s| s == 0), "the bus is zeroed");
+    assert_eq!(e.frame.devices.channels[0].live()[9], step, "no step");
+    // open on pattern 0 at once: the step at the position, then it steps on
+    e.set_gate(
+        D::Tb303_1,
+        Gate {
+            open: true,
+            ..closed
+        },
+    );
+    e.render(&mut buf, 4096);
+    assert!(buf.iter().any(|&s| s != 0), "it plays again");
+    assert_eq!(
+        e.frame.devices.channels[0].live()[9] as i32,
+        e.frame.seq.tick_pos() / 48 % 16
+    );
+    // off: the original's path
+    e.set_gate(D::Tb303_1, Gate::default());
+    assert_eq!(e.frame.devices.channels[0].gate(), Gate::default());
+}

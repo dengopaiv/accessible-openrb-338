@@ -24,7 +24,9 @@ mod tests;
 use std::sync::Arc;
 
 use crate::drums::{Dual, Filter, Pitched, Simple};
-use crate::frame::{Block, BlockContext, ChannelDevice, SongDevice, Sounding};
+use crate::frame::{
+    Block, BlockContext, ChannelDevice, Gate, GateClock, SongDevice, Sounding, gate_arm,
+};
 use crate::process::ProcessState;
 use crate::samples::{Retired, Sample, SampleSet};
 use crate::seq::TrackMut;
@@ -263,6 +265,8 @@ pub struct Tr909 {
     /// sound.
     hit_ac: bool,
     ac_bits: u32,
+    /// Not in the original (task-218): the plugin's pattern gate ([`ChannelDevice::set_gate`]).
+    pub pattern_gate: Gate,
 }
 
 const SIMPLE_RS: usize = 0;
@@ -305,6 +309,7 @@ impl Tr909 {
             decay: crate::tables::tr909_decay(),
             hit_ac: false,
             ac_bits: 0,
+            pattern_gate: Gate::default(),
         }
     }
 
@@ -527,6 +532,10 @@ impl SongDevice for Tr909 {
 
     /// Slot 1, 0x1002AAC0.
     fn step(&mut self, tick: i32, shuffled: i32, tempo: i32) {
+        if self.pattern_gate.closed() {
+            // not in the original (task-218): a closed gate does not step
+            return;
+        }
         let pat = self.cur_pattern;
         let (shuffle, len) = {
             let p = self.pattern(pat);
@@ -566,8 +575,9 @@ impl SongDevice for Tr909 {
             let q = tick / 48;
             let s16 = if q < 0 { -((-q) & 15) } else { q & 15 };
             if s16 == 0 {
-                // the bar line: the pending pattern and the enable flag
-                let p = self.live[PATTERN];
+                // the bar line: the pending pattern (an open gate's, task-218) and the enable
+                // flag
+                let p = self.pattern_gate.latch(self.live[PATTERN]);
                 if p != self.cur_pattern {
                     self.cur_pattern = p;
                     self.pat_start = 768 * (tick / 768);
@@ -612,8 +622,10 @@ impl SongDevice for Tr909 {
     /// pending pattern and the enable flag.
     fn relocate(&mut self, _tick: i32, now: i32) {
         self.pat_start = Self::bar_of(now);
-        if self.live[PATTERN] != self.cur_pattern {
-            self.cur_pattern = self.live[PATTERN];
+        // an open gate's pattern instead of the controller's (task-218)
+        let p = self.pattern_gate.latch(self.live[PATTERN]);
+        if p != self.cur_pattern {
+            self.cur_pattern = p;
         }
         self.enabled = self.live[ENABLED];
     }
@@ -741,6 +753,36 @@ impl ChannelDevice for Tr909 {
 
     fn sounding(&self) -> Sounding {
         Tr909::sounding(self)
+    }
+
+    fn gate(&self) -> Gate {
+        self.pattern_gate
+    }
+
+    fn set_gate(&mut self, g: Gate, c: &GateClock) {
+        let old = std::mem::replace(&mut self.pattern_gate, g);
+        if g.starts(&old) {
+            // slot 2 with the gate's pattern (a close: the fade-out and slot 6 are
+            // `Frame::block`'s)
+            self.relocate(c.now, c.now);
+            let base = if self.song_mode { self.pat_start } else { 0 };
+            match gate_arm(self.pattern(self.cur_pattern), base, c) {
+                // the step triggers, its flam state anew
+                Ok(()) => {
+                    self.wrapped = true;
+                    if c.playing {
+                        self.step(c.now, c.shuffled, c.tempo);
+                    }
+                }
+                Err(v) => {
+                    // the next step triggers, on time; no flam of the step skipped
+                    self.live[LAST_STEP] = ((v / 48) & 0xFF) as u8;
+                    self.last_pos = v;
+                    self.wrapped = false;
+                    self.flam_pending = false;
+                }
+            }
+        }
     }
 
     /// Slot 14 ends with an unconditional `call sub_1001E9A0` at 0x1002B8AF from `esp0 - 0x18`

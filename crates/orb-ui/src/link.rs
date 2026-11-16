@@ -1096,9 +1096,10 @@ impl Link {
         for k in 1..=n.min(4) {
             panel.gr_leds[4 - k] = if k <= 2 { 2 } else { 3 };
         }
+        // a section whose pattern gate is closed (the plugin's Gate Pattern Mode) lights no step
         let step = |d: Device, i: usize| {
             live(d, i)
-                .filter(|&b| s.playing && b < 16)
+                .filter(|&b| s.playing && b < 16 && !s.gate_closed[d as usize - 1])
                 .map(|b| b as usize)
         };
         panel.playing_step303 = [step(Device::Tb303_1, 9), step(Device::Tb303_2, 9)];

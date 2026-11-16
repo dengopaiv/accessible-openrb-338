@@ -66,18 +66,46 @@ pub enum Kit {
 }
 
 /// What host notes on the section channels do and when the patterns play, outside the
-/// preview (task-217, `docs/plugin.md` section 4): a setting of the plugin's state, not a host
-/// parameter, so automation cannot change it.
+/// preview (task-217, task-218, `docs/plugin.md` section 4): a setting of the plugin's state,
+/// not a host parameter, so automation cannot change it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    /// The patterns play while the host plays, the step following the host position; with the
-    /// host stopped there is no sound, and notes 0..31 on channels 1..4 select patterns.
-    Pattern,
+    /// Latch Pattern Mode (task-217's pattern mode): the patterns play while the host plays,
+    /// the step following the host position; with the host stopped there is no sound, and
+    /// notes 0..31 on channels 1..4 select patterns until the next note.
+    Latch,
+    /// Gate Pattern Mode (task-218): a section plays only while a note 0..31 on its channel is
+    /// held, the held note's pattern, from the note-on to the note-off; with the host playing
+    /// the step follows the host position, with the host stopped it starts at step 1.
+    Gate,
     /// The song is stopped; notes on channels 1..4 play the devices (task-200). The default: a
     /// plugin just inserted makes no sound of its own, as the mode parameter's Stop before.
     #[default]
     Note,
+}
+
+impl Mode {
+    /// Latch or Gate Pattern Mode: the patterns play while the host plays.
+    pub fn patterns(self) -> bool {
+        self != Mode::Note
+    }
+
+    fn to_u8(self) -> u8 {
+        match self {
+            Mode::Latch => 0,
+            Mode::Gate => 1,
+            Mode::Note => 2,
+        }
+    }
+
+    fn from_u8(v: u8) -> Mode {
+        match v {
+            0 => Mode::Latch,
+            1 => Mode::Gate,
+            _ => Mode::Note,
+        }
+    }
 }
 
 /// What the state saves besides the parameters.
@@ -98,7 +126,7 @@ pub struct Doc {
     /// The Standard Mapping's channel, 0..=15 (MIDI channel 1..16; never 0..=3, the sections'
     /// channels 1..4: [`check_remote_channel`]); [`DEFAULT_REMOTE_CHANNEL`].
     pub remote_channel: u8,
-    /// Pattern or note mode.
+    /// Latch Pattern, Gate Pattern or Note Mode.
     pub mode: Mode,
     /// The preview set (task-217): the controls as the panel set them during the preview, by
     /// parameter id; `None` until the first preview, which starts from the parameters' values.
@@ -174,8 +202,8 @@ pub fn check_remote_channel(c: u8) -> Result<(), String> {
 pub struct Shared {
     remote_enabled: AtomicBool,
     remote_channel: AtomicU8,
-    /// [`Mode::Pattern`].
-    pattern_mode: AtomicBool,
+    /// The [`Mode`] ([`Mode::to_u8`]).
+    mode: AtomicU8,
     /// The preview runs (the panel's Play).
     preview: AtomicBool,
     /// The preview set's values in [`SPECS`] order, written before `preview` is set.
@@ -187,7 +215,7 @@ impl Default for Shared {
         Shared {
             remote_enabled: AtomicBool::new(false),
             remote_channel: AtomicU8::new(DEFAULT_REMOTE_CHANNEL),
-            pattern_mode: AtomicBool::new(Mode::default() == Mode::Pattern),
+            mode: AtomicU8::new(Mode::default().to_u8()),
             preview: AtomicBool::new(false),
             preview_values: std::array::from_fn(|i| AtomicI32::new(SPECS[i].default as i32)),
         }
@@ -195,14 +223,13 @@ impl Default for Shared {
 }
 
 impl Shared {
-    /// Pattern mode (else note mode).
-    pub fn pattern_mode(&self) -> bool {
-        self.pattern_mode.load(Ordering::Relaxed)
+    /// The mode.
+    pub fn mode(&self) -> Mode {
+        Mode::from_u8(self.mode.load(Ordering::Relaxed))
     }
 
     fn set_mode(&self, m: Mode) {
-        self.pattern_mode
-            .store(m == Mode::Pattern, Ordering::Relaxed);
+        self.mode.store(m.to_u8(), Ordering::Relaxed);
     }
 
     /// Whether the preview runs.
@@ -768,13 +795,13 @@ impl OrbParams {
         Ok(())
     }
 
-    /// Pattern or note mode (default note mode), kept in the state.
+    /// The mode (default Note Mode), kept in the state.
     pub fn mode(&self) -> Mode {
         self.main().doc.mode
     }
 
-    /// Sets the mode (the Options menu; File > Open sets pattern mode); the process side
-    /// takes it at its next engine block.
+    /// Sets the mode (the Options menu; File > Open sets Latch Pattern Mode in Note Mode and
+    /// keeps a pattern mode); the process side takes it at its next engine block.
     pub fn set_mode(&self, mode: Mode) {
         let mut m = self.main();
         m.doc.mode = mode;

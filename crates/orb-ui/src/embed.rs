@@ -13,8 +13,8 @@
 //!   width (a window of another shape, which the plugin's size hooks do not let the host make, is
 //!   filled black around the panel);
 //! - the Sync and MIDI LEDs light from the snapshot's flags (`host_sync`, `midi_in`);
-//! - Options has the plugin's pattern/note mode ([`PluginMode`], [`MODE_ITEMS`], task-217); Play
-//!   and Stop are the plugin's preview, and the Play light shows only whether it runs
+//! - Options has the plugin's mode ([`PluginMode`], [`MODE_ITEMS`], task-217, task-218); Play and
+//!   Stop are the plugin's preview, and the Play light shows only whether it runs
 //!   ([`Embed::previewing`]), not the engine's play state;
 //! - an invisible corner at the bottom right (the right wood's foot) resizes the window: the cursor
 //!   changes over it and a faint grip shows while hovered or dragged, and a drag asks the host for
@@ -60,7 +60,8 @@ pub trait Embed: Send {
     /// The plugin's song now.
     fn view(&mut self) -> SongView;
     /// File > Open (`Some`, the file's bytes) or File > New (`None`): the plugin's song, with the
-    /// plugin's mod; it plays in pattern mode (task-185: File > Open always switches to it).
+    /// plugin's mod; it plays in a pattern mode (task-185: File > Open switches Note Mode to
+    /// Latch Pattern Mode; task-218: a pattern mode stays).
     fn load_song(&mut self, file: Option<Vec<u8>>) -> Result<(), String>;
     /// The Mods menu or a song's mod: a recrypted mod's file, `None` for the built-in kit. The
     /// plugin keeps the mod's bytes in its state; [`SongView::kit`] names this file while the
@@ -97,19 +98,22 @@ pub trait Embed: Send {
     }
 }
 
-/// The plugin's mode outside its preview (task-217): what host notes do and when the patterns
-/// play.
+/// The plugin's mode outside its preview (task-217, task-218): what host notes do and when the
+/// patterns play.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginMode {
-    /// The patterns play while the host plays; notes select patterns.
-    Pattern,
+    /// The patterns play while the host plays; notes select patterns until the next note.
+    Latch,
+    /// A section plays its pattern only while its note is held.
+    Gate,
     /// Notes play the instruments.
     Note,
 }
 
 /// The Options menu's items for [`PluginMode`], in order.
-pub const MODE_ITEMS: [(PluginMode, &str); 2] = [
-    (PluginMode::Pattern, "Pattern Mode"),
+pub const MODE_ITEMS: [(PluginMode, &str); 3] = [
+    (PluginMode::Latch, "Latch Pattern Mode"),
+    (PluginMode::Gate, "Gate Pattern Mode"),
     (PluginMode::Note, "Note Mode"),
 ];
 

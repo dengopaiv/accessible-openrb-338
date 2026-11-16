@@ -47,7 +47,7 @@ const STOPPED: HostTransport = HostTransport {
 
 #[test]
 fn the_preview_plays_free_running_at_the_hosts_tempo() {
-    for mode in [Mode::Pattern, Mode::Note] {
+    for mode in [Mode::Latch, Mode::Gate, Mode::Note] {
         for t in [
             STOPPED,
             HostTransport {
@@ -95,11 +95,7 @@ fn the_preview_plays_free_running_at_the_hosts_tempo() {
             call(&p, &mut core, 512, &t, &[]);
             assert!(!core.previewing());
             let s = core.audio().last_snapshot();
-            assert_eq!(
-                s.playing,
-                mode == Mode::Pattern && t.playing,
-                "{mode:?} {t:?}"
-            );
+            assert_eq!(s.playing, mode.patterns() && t.playing, "{mode:?} {t:?}");
         }
     }
 }
@@ -243,7 +239,7 @@ fn the_preview_set_is_kept_apart_from_the_host_values() {
     }
     q.deserialize_fields(&fields);
     assert_eq!(q.preview_values(), p.preview_values());
-    assert_eq!(q.mode(), Mode::Pattern);
+    assert_eq!(q.mode(), Mode::Latch);
     assert!(!q.previewing());
     assert_eq!(q.main().doc, p.main().doc);
     let mut qc = activate(&q, 44_100);

@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-14T07:36:00Z'
-updated_date: '2026-11-16T14:27:00Z'
+updated_date: '2026-11-16T16:22:00Z'
 labels:
   - decision
   - ui
@@ -158,4 +158,6 @@ Decided by the user, 2026-11-15/16. Where this differs from the description's re
 **Change of 2026-11-16 (the user, task-216; built by task-217):** orb's Play/Stop is no longer the mode parameter: `g1` is removed from the host parameters (119 now; states saved with it are not migrated: no compatibility work before the first release). Play/Stop enter and leave a pattern preview: the standalone's pattern mode inside the plugin, free-running at the song's tempo, ignoring all host input (notes, Standard Mapping, parameter changes), with its control edits kept in a preview set in the plugin state and never sent to the host. A pattern/note mode setting in the plugin state (Options menu, saved with the project; default note mode; File > Open sets pattern mode) replaces it: pattern mode plays only while the host plays (no free-run while the host is stopped; pattern-select notes then only change the panel's selection); note mode plays the devices from notes whatever the host's transport does. docs/plugin.md 4, 4.2, 5, 8.2; docs/midi.md 5.2.
 
 **Correction of 2026-11-16 (the user's Reaper check of task-217):** the preview plays at the host's reported tempo (also while the host is stopped; the song's only when the host reports none), still free-running, and the panel's Play light shows only whether the preview runs: the host's start and stop do not change Play and Stop.
+
+Change (task-218, the user's decision of 2026-11-16): pattern mode is now Latch Pattern Mode (unchanged behavior), and a third mode, Gate Pattern Mode, joins it in the Options menu (Latch Pattern Mode, Gate Pattern Mode, Note Mode; state strings latch/gate/note). In Gate a section plays only while a note 0..31 on its channel is held: the note-on starts it at once and the note-off stops it at once (no bar-line wait), from the host-position step while the host plays and from step 1, free-running at the host's tempo, while it is stopped; the last note pressed wins; the four channels gate independently; the Standard Mapping's pattern notes only select; the gate never changes the On/off switch or a parameter, the panel shows the held note's pattern and keeps the last one. File > Open turns note mode into Latch and keeps a pattern mode. docs/plugin.md section 11, docs/midi.md 5.2.1.
 <!-- SECTION:FINAL_SUMMARY:END -->

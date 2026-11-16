@@ -278,7 +278,7 @@ fn preview_edits_go_to_the_preview_set_without_host_gestures() {
 #[test]
 fn the_play_light_is_the_preview_not_the_hosts_transport() {
     let p = with("303_accent0");
-    p.set_mode(Mode::Pattern);
+    p.set_mode(Mode::Latch);
     let mut h = Harness::new(p);
     h.playing = true;
     h.settle();
@@ -312,9 +312,12 @@ fn the_play_light_is_the_preview_not_the_hosts_transport() {
 fn the_options_menu_sets_the_mode() {
     let mut h = Harness::new(with("303_accent0"));
     assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Note));
-    h.app.command(Cmd::SetPluginMode(PluginMode::Pattern));
-    assert_eq!(h.params.mode(), Mode::Pattern);
-    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Pattern));
+    h.app.command(Cmd::SetPluginMode(PluginMode::Latch));
+    assert_eq!(h.params.mode(), Mode::Latch);
+    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Latch));
+    h.app.command(Cmd::SetPluginMode(PluginMode::Gate));
+    assert_eq!(h.params.mode(), Mode::Gate);
+    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Gate));
     h.app.command(Cmd::SetPluginMode(PluginMode::Note));
     assert_eq!(h.params.mode(), Mode::Note);
 }
@@ -413,7 +416,7 @@ fn the_editor_takes_no_keys() {
 #[test]
 fn the_leds_follow_the_snapshot_flags() {
     let p = with("303_accent0");
-    p.set_mode(Mode::Pattern);
+    p.set_mode(Mode::Latch);
     let mut h = Harness::new(p);
     h.process(&[]);
     h.frame(vec![]);
@@ -498,9 +501,14 @@ fn file_open_loads_the_song_into_the_plugin_in_pattern_mode() {
     );
     assert_eq!(
         h.params.mode(),
-        Mode::Pattern,
+        Mode::Latch,
         "File > Open switches to pattern mode"
     );
+    // a pattern mode stays (task-218)
+    h.params.set_mode(Mode::Gate);
+    h.app.open_song(&path);
+    h.frame(vec![]);
+    assert_eq!(h.params.mode(), Mode::Gate, "File > Open keeps Gate");
     // the controls are the song's
     let want = common::with_song("303_accent127");
     assert_eq!(h.value("d1c7"), want.param("d1c7").unwrap().value());
@@ -548,7 +556,7 @@ fn the_menu_bar_is_above_the_panel() {
 #[test]
 fn the_bar_shows_the_host_position_while_orb_follows_it() {
     let p = with("303_accent0");
-    p.set_mode(Mode::Pattern);
+    p.set_mode(Mode::Latch);
     let mut h = Harness::new(p);
     h.frame(vec![]);
     assert_eq!(h.app.plugin_position(), None, "host stopped: dark");

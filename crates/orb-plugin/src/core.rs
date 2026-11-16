@@ -27,8 +27,9 @@
 //! # The mode and the preview (task-217)
 //!
 //! The mode ([`crate::instance::Mode`]) and the preview are the main thread's settings
-//! ([`Shared`]), read before each block. Outside the preview, pattern mode plays the song only
-//! while the host plays and stops it when the host stops; note mode keeps it stopped. The
+//! ([`Shared`]), read before each block. Outside the preview, the pattern modes (Latch and
+//! Gate) play the song only while the host plays and stop it when the host stops (Gate also
+//! while a gate note is held); note mode keeps it stopped. The
 //! preview (the panel's Play) plays the song free-running (its step does not follow the host's
 //! position) at the host's tempo (the song's when the host reports none), with the preview
 //! set's values: entering it applies them, a change of the set is applied at the next block,
@@ -55,11 +56,15 @@
 //!
 //! # MIDI
 //!
-//! A note-on 0..31 on channel 1..4 (303 #1, 303 #2, 808, 909) in pattern mode selects that
-//! section's pattern: the pattern controller (as the panel's message), then, while the song
+//! A note-on 0..31 on channel 1..4 (303 #1, 303 #2, 808, 909) in Latch Pattern Mode selects
+//! that section's pattern: the pattern controller (as the panel's message), then, while the song
 //! plays, slot 2 on that device (`Command::Relocate`), which takes a pending pattern at once
 //! where the panel's waits for the bar line; with the host stopped only the selection changes.
-//! A note-off does nothing. In note mode (task-200) a note-on or note-off on those channels
+//! A note-off does nothing. In Gate Pattern Mode (task-218, `docs/plugin.md` section 11) the
+//! notes 0..31 held on a channel open that section's pattern gate (`Command::Gate`) on the last
+//! one's pattern, and the section is silent while none is held; with the host stopped the first
+//! open gate plays the song from step 1, free-running. In note mode (task-200) a note-on or
+//! note-off on those channels
 //! plays the device (`Command::Note`, `docs/plugin.md` section 9), whatever the host's
 //! transport does. Every other message goes, when the Standard Mapping is on (off by default),
 //! to it on the remote channel (default 16, [`crate::instance::Shared`]); of its actions the
@@ -71,12 +76,13 @@
 
 use std::sync::Arc;
 
+use orb_engine::frame::Gate;
 use orb_engine::seq::TEMPO_STEP;
 use orb_engine::song::Device;
 use orb_player::midi::{Action, Message, StandardMapping, Timed};
 use orb_player::{Audio, Command};
 
-use crate::instance::{ROWS, Shared};
+use crate::instance::{Mode, ROWS, Shared};
 use crate::params::{self, COUNT, SPECS};
 use crate::resample::{Blocks, ENGINE_RATE, Resampler};
 
@@ -116,11 +122,46 @@ struct Record {
     t: HostTransport,
 }
 
+/// The notes 0..31 held on one section's channel in Gate Pattern Mode, oldest first.
+#[derive(Clone, Copy, Debug, Default)]
+struct Held {
+    notes: [u8; 32],
+    len: usize,
+}
+
+impl Held {
+    /// The note that selects the pattern: the last one pressed of those still held.
+    fn top(&self) -> Option<u8> {
+        self.len.checked_sub(1).map(|i| self.notes[i])
+    }
+
+    /// Removes `note`; whether it was held.
+    fn remove(&mut self, note: u8) -> bool {
+        let Some(i) = self.notes[..self.len].iter().position(|&n| n == note) else {
+            return false;
+        };
+        self.notes.copy_within(i + 1..self.len, i);
+        self.len -= 1;
+        true
+    }
+
+    /// `note` (0..31) is pressed: it becomes the last one.
+    fn press(&mut self, note: u8) {
+        self.remove(note);
+        self.notes[self.len] = note;
+        self.len += 1;
+    }
+}
+
 /// The engine and its block source.
 struct Engine {
     audio: Audio,
-    /// Pattern mode (else note mode), as of the last block.
-    pattern_mode: bool,
+    /// The mode, as of the last block or message.
+    mode: Mode,
+    /// The pattern gates are in use (Gate Pattern Mode outside the preview).
+    gating: bool,
+    /// The notes held on each section's channel while gating.
+    held: [Held; 4],
     /// The preview ran in the last block.
     preview: bool,
     /// The parameters' values as last seen (the host's).
@@ -203,9 +244,89 @@ impl Engine {
         }
     }
 
+    /// The gate of section `c` as its held notes say (gating), else off.
+    fn gate_of(&self, c: usize) -> Gate {
+        if !self.gating {
+            return Gate::default();
+        }
+        let top = self.held[c].top();
+        Gate {
+            on: true,
+            open: top.is_some(),
+            pattern: top.unwrap_or(0),
+        }
+    }
+
+    /// Sends section `c`'s gate; an open one first shows its pattern on the panel (the pattern
+    /// controller's message, as a Latch Pattern Mode note; the parameter does not change).
+    fn send_gate(&mut self, c: usize) {
+        let device = ROWS[c];
+        let gate = self.gate_of(c);
+        if gate.open {
+            self.send(Command::DeviceParam {
+                device,
+                ctrl: 1,
+                value: gate.pattern,
+            });
+        }
+        self.send(Command::Gate { device, gate });
+    }
+
+    /// The pattern gates follow the mode and the preview: Gate Pattern Mode outside the preview
+    /// closes the four gates (no note is held yet), anything else turns them off (the original's
+    /// path); either change forgets the held notes. Any engine gate that is not as it should
+    /// be is sent again: a newly loaded song's (its gates are off), or one whose command the
+    /// full garbage queue refused.
+    fn gates(&mut self) {
+        let want = self.mode == Mode::Gate && !self.previewing();
+        if want != self.gating {
+            self.held = Default::default();
+            self.gating = want;
+        }
+        for c in 0..ROWS.len() {
+            let g = if want {
+                self.gate_of(c)
+            } else {
+                Gate::default()
+            };
+            if self.audio.newest().frame.devices.channels[c].gate() != g {
+                self.send_gate(c);
+            }
+        }
+    }
+
+    /// Whether a section's gate is open.
+    fn any_open(&self) -> bool {
+        self.gating && self.held.iter().any(|h| h.len > 0)
+    }
+
+    /// A gate note on section `c`'s channel: a note-on (`on`) opens the gate on its pattern or
+    /// switches it there; a note-off of the last note pressed falls back to the newest note
+    /// still held, or closes the gate. With the song stopped (the host stopped), the first open
+    /// gate starts it at step 1.
+    fn gate_note(&mut self, c: usize, note: u8, on: bool) {
+        let top = self.held[c].top();
+        if on {
+            self.held[c].press(note);
+        } else if !self.held[c].remove(note) {
+            return;
+        }
+        if self.held[c].top() == top {
+            return;
+        }
+        self.send_gate(c);
+        if self.held[c].len > 0 && !self.audio.has_pending() && !self.audio.current().playing() {
+            // the host is stopped and nothing plays: a held note plays its pattern from step 1,
+            // free-running at the host's tempo (`sync`); a gate that opens while another
+            // section plays joins it in step (the user, 2026-11-16)
+            self.send(Command::Locate(0));
+            self.send(Command::Play);
+        }
+    }
+
     /// Before a block: the mode, and the preview's entry, exit and changes (task-217).
     fn modes(&mut self) {
-        self.pattern_mode = self.shared.pattern_mode();
+        self.mode = self.shared.mode();
         let preview = self.shared.previewing();
         if preview != self.preview {
             self.preview = preview;
@@ -230,6 +351,7 @@ impl Engine {
                 }
             }
         }
+        self.gates();
     }
 
     fn record(&mut self, start: u64, t: HostTransport) {
@@ -273,17 +395,20 @@ impl Engine {
         if self.audio.newest().frame.seq.globals.tempo != tempo {
             self.send(Command::Tempo(tempo));
         }
-        let host_plays = self.pattern_mode && rec.t.playing;
+        let host_plays = self.mode.patterns() && rec.t.playing;
         let pos = match rec.t.pos_beats {
             Some(p) if !self.preview && host_plays && p.is_finite() => p,
             _ => {
                 self.following = false;
                 self.audio.set_host_sync(false);
-                if self.preview || host_plays {
-                    // the preview, or a host that plays without a position: free-running
+                let fading = self.audio.newest().frame.gate_fade.contains(&true);
+                if self.preview || host_plays || self.any_open() || fading {
+                    // the preview, a host that plays without a position, or a held gate note
+                    // with the host stopped (or the fade-out of the last one's close, which a
+                    // Stop's slot 6 would cut): free-running
                     self.ensure_playing();
                 } else {
-                    // note mode, or pattern mode with the host stopped: no pattern sounds
+                    // note mode, or a pattern mode with the host stopped: no pattern sounds
                     self.ensure_stopped();
                 }
                 return;
@@ -341,28 +466,34 @@ impl Engine {
             // a section's channel
             let device: Device = ROWS[c as usize];
             // the mode as the main thread has it now, not as of the last block
-            self.pattern_mode = self.shared.pattern_mode();
-            if !self.pattern_mode {
-                // note mode (task-200), whatever the host's transport does: a Stop the mode
-                // still owes the engine comes first, so that it does not silence the note
-                self.ensure_stopped();
-                self.send(Command::Note {
-                    device,
-                    note,
-                    velocity,
-                });
-            } else if velocity > 0 && note < 32 {
-                // pattern mode: the note selects a pattern, at once while the song plays; with
-                // the song stopped (the host stopped) only the selection changes, and the
-                // next start takes it (its locate relocates every device)
-                self.send(Command::DeviceParam {
-                    device,
-                    ctrl: 1,
-                    value: note,
-                });
-                if self.audio.current().playing() {
-                    self.send(Command::Relocate(device));
+            self.mode = self.shared.mode();
+            self.gates();
+            match self.mode {
+                Mode::Note => {
+                    // note mode (task-200), whatever the host's transport does: a Stop the mode
+                    // still owes the engine comes first, so that it does not silence the note
+                    self.ensure_stopped();
+                    self.send(Command::Note {
+                        device,
+                        note,
+                        velocity,
+                    });
                 }
+                Mode::Latch if velocity > 0 && note < 32 => {
+                    // the note selects a pattern, at once while the song plays; with the song
+                    // stopped (the host stopped) only the selection changes, and the next
+                    // start takes it (its locate relocates every device)
+                    self.send(Command::DeviceParam {
+                        device,
+                        ctrl: 1,
+                        value: note,
+                    });
+                    if self.audio.current().playing() {
+                        self.send(Command::Relocate(device));
+                    }
+                }
+                Mode::Gate if note < 32 => self.gate_note(c as usize, note, velocity > 0),
+                _ => {}
             }
             return;
         }
@@ -440,7 +571,10 @@ impl Core {
         Core {
             engine: Engine {
                 audio,
-                pattern_mode: shared.pattern_mode(),
+                mode: shared.mode(),
+                // the first block turns the gates on in Gate Pattern Mode
+                gating: false,
+                held: Default::default(),
                 // a preview that runs is entered at the first block
                 preview: false,
                 host: *values,
