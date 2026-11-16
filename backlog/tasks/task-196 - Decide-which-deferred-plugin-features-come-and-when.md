@@ -1,10 +1,11 @@
 ---
 id: TASK-196
 title: 'Decide: which deferred plugin features come, and when'
-status: To Do
+status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-16T07:46:00Z'
+updated_date: '2026-11-16T16:02:00Z'
 labels:
   - decision
   - ui
@@ -40,6 +41,21 @@ Recommendation: 3 and 8 first (small, follow directly from the note mapping); 6 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each of the ten items has an outcome (do now in m-7, later, or never) with the date in the final summary
-- [ ] #2 Each item to do has its implementation task created with labels, milestone and dependencies
+- [x] #1 Each of the ten items has an outcome (do now in m-7, later, or never) with the date in the final summary
+- [x] #2 Each item to do has its implementation task created with labels, milestone and dependencies
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by the user on 2026-11-16: none of the ten deferred items goes into the first plugin release. All ten are deferred until after that release, which ships what is already planned in m-7:
+- Gate Pattern Mode (task-218);
+- the logo animation only for a new instance (task-219);
+- note-mode visual feedback (task-202);
+- pattern drag-out as MIDI (task-203);
+- the lost-parameter bug (task-214);
+- Help > Plugin Usage (task-221);
+- the first release run (task-215).
+
+No implementation tasks were created. Revisit this list after the release, with the earlier recommendation as the starting point: 3 and 8 first, then 6 and 7, then 1, 2 and 4 on demand, then 5, 9 and 10 as polish. The remote MIDI channel (task-208, task-209) is deferred the same way.
+<!-- SECTION:FINAL_SUMMARY:END -->
