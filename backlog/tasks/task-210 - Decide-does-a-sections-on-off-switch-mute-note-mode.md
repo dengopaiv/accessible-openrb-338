@@ -1,10 +1,11 @@
 ---
 id: TASK-210
 title: 'Decide: does a section''s on/off switch mute note mode?'
-status: To Do
+status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-16T10:58:00Z'
+updated_date: '2026-11-16T11:29:00Z'
 labels:
   - decision
   - player
@@ -36,6 +37,12 @@ task-200 implements A provisionally (docs/plugin.md section 9).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user's choice is recorded in the final summary with the date
-- [ ] #2 If it differs from the provisional option A, a follow-up task in m-7 changes the note-mode code (Tb303/Tr808/Tr909 key_on) and docs/plugin.md section 9
+- [x] #1 The user's choice is recorded in the final summary with the date
+- [x] #2 If it differs from the provisional option A, a follow-up task in m-7 changes the note-mode code (Tb303/Tr808/Tr909 key_on) and docs/plugin.md section 9
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by the user, 2026-11-16: option A. In note mode, notes play whatever the section's On/off switch says; the switch governs only the pattern sequencer, and the mixer channel's On/off mutes a device in both modes. This is what task-200 implemented (docs/plugin.md section 9); no follow-up task (AC #2 does not apply).
+<!-- SECTION:FINAL_SUMMARY:END -->
