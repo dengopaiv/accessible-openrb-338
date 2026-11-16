@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-16T12:13:00Z'
-updated_date: '2026-11-16T12:14:00Z'
+updated_date: '2026-11-16T12:23:00Z'
 labels:
   - tools
   - tests
@@ -32,9 +32,15 @@ Follow-up of task-204 (task-134, the first release run, is Done and the user's, 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The ci.yml job 'plugin validators' passes on ubuntu-22.04 and macos-latest
+- [x] #1 The ci.yml job 'plugin validators' passes on ubuntu-22.04 and macos-latest
 - [ ] #2 The job fails on a validator error
 - [ ] #3 The five other targets build the plugin and every package archive holds plugins/, including the cargo-xwin and Docker paths of scripts/build.sh
 - [ ] #4 The plugins-<target> artifact reaches the dmg jobs and scripts/package-dmg.sh accepts it
 - [ ] #5 The DMG window shows the app with its Applications link and the two plugin bundles with their links (VST3, CLAP)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC #1 verified by the supervisor: CI run 43865111270 on 5b6b10f (push of task-204, 2026-11-16 12:16 UTC) passed; jobs 'plugin validators (ubuntu-22.04)' and 'plugin validators (macos-latest)' both success, as were fmt and clippy/test on Linux, Windows and macOS. Also: scripts/validate-plugin.sh passed locally on the task-201 branch's rebuilt bundles (c92bd6f): clap-validator and pluginval 'validators: all passed'.
+<!-- SECTION:NOTES:END -->
