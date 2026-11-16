@@ -53,3 +53,14 @@ libloading = "0.8.9"
 eframe = "0.37.0"
 # tests/editor.rs: a song and a mod file for File > Open and the Mods menu.
 tempfile = "3.27.0"
+
+# tests/clap_gui.rs: the host's window (NSWindow, NSView) the editor is parented to (task-224;
+# MIT; the versions baseview uses).
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std", "NSGraphics", "NSResponder", "NSView", "NSWindow",
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std", "NSArray", "NSGeometry",
+] }

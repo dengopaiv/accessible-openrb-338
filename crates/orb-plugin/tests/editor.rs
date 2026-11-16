@@ -746,3 +746,79 @@ fn the_corner_asks_the_host_after_the_frame_through_its_callbacks() {
     assert_eq!(sizes.borrow().len(), 1);
     frame(&|h| h.button(false));
 }
+
+/// Where a test host finds the editor's proxy.
+type ProxySlot = Rc<RefCell<Option<Box<dyn HostCallbacks>>>>;
+
+/// A host that refuses every request and counts them; with `nested`, its request asks the
+/// proxy again, as a host answering with `set_size` makes baseview do.
+struct Refusing {
+    asked: Rc<std::cell::Cell<u32>>,
+    nested: Option<ProxySlot>,
+}
+
+impl HostCallbacks for Refusing {
+    fn request_resize(&mut self, size: Size, scale: f64) -> Result<(), Box<dyn std::error::Error>> {
+        self.asked.set(self.asked.get() + 1);
+        if let Some(p) = &self.nested {
+            let mut p = p.borrow_mut();
+            let p = p.as_mut().expect("the proxy");
+            assert!(
+                p.request_resize(size, scale).is_ok(),
+                "a request inside a request is not refused"
+            );
+        }
+        Err("refused".into())
+    }
+
+    fn destroyed(&mut self) {}
+}
+
+/// baseview's own requests (task-224): not asked of the host, and so never refused, before the
+/// window is parented and during the host's `set_size`; asked after, the refusal passed on.
+#[test]
+fn the_host_is_not_asked_for_sizes_before_the_parent_or_its_own() {
+    let asked = Rc::new(std::cell::Cell::new(0));
+    let host = Refusing {
+        asked: asked.clone(),
+        nested: None,
+    };
+    let (route, mut proxy) =
+        HostRoute::register_with(Box::new(host), Arc::new(Mutex::new(1.0)), post_nothing);
+    let size = Size::Logical(nice_plug::editor::dpi::LogicalSize::new(700.0, 594.0));
+    assert!(
+        proxy.request_resize(size, 2.0).is_ok(),
+        "no parent: no host window"
+    );
+    assert_eq!(asked.get(), 0);
+    route.set_parented();
+    let r = route.host_sizing(|| proxy.request_resize(size, 2.0));
+    assert!(r.is_ok(), "the host's own size");
+    assert_eq!(asked.get(), 0);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        route.host_sizing(|| panic!("set_size panics"))
+    }));
+    assert!(r.is_err());
+    assert!(
+        proxy.request_resize(size, 2.0).is_err(),
+        "parented: asked, refused (also after a set_size that panicked)"
+    );
+    assert_eq!(asked.get(), 1);
+
+    // baseview's request made while the host answers the corner's
+    let asked = Rc::new(std::cell::Cell::new(0));
+    let slot: ProxySlot = Rc::new(RefCell::new(None));
+    let (route, proxy) = HostRoute::register_with(
+        Box::new(Refusing {
+            asked: asked.clone(),
+            nested: Some(slot.clone()),
+        }),
+        Arc::new(Mutex::new(1.0)),
+        post_nothing,
+    );
+    route.set_parented();
+    *slot.borrow_mut() = Some(proxy);
+    assert_eq!(route.request(700.0, 594.0), Some(true));
+    assert_eq!(route.flush(), Some(false), "the corner's request, refused");
+    assert_eq!(asked.get(), 1, "asked once; the nested request was not");
+}

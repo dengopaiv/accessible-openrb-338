@@ -25,20 +25,37 @@ mod mac {
     use std::ffi::{CString, c_char, c_void};
     use std::path::PathBuf;
     use std::ptr::{null, null_mut};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     use clap_sys::audio_buffer::clap_audio_buffer;
     use clap_sys::entry::clap_plugin_entry;
     use clap_sys::events::{clap_event_header, clap_input_events, clap_output_events};
-    use clap_sys::ext::gui::{CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA, clap_host_gui, clap_plugin_gui};
+    use clap_sys::ext::gui::{
+        CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA, clap_host_gui, clap_plugin_gui, clap_window,
+        clap_window_handle,
+    };
     use clap_sys::factory::plugin_factory::{CLAP_PLUGIN_FACTORY_ID, clap_plugin_factory};
     use clap_sys::host::clap_host;
     use clap_sys::plugin::clap_plugin;
     use clap_sys::process::{CLAP_PROCESS_ERROR, clap_process};
     use clap_sys::version::CLAP_VERSION;
 
+    /// The host refuses `gui.request_resize` (task-224: as Reaper may before the editor is
+    /// parented).
+    static REFUSE: AtomicBool = AtomicBool::new(false);
+    /// The `gui.request_resize` calls.
+    static REQUESTS: AtomicU32 = AtomicU32::new(0);
+
     unsafe extern "C" fn resize_hints_changed(_: *const clap_host) {}
     unsafe extern "C" fn request_resize(_: *const clap_host, _: u32, _: u32) -> bool {
-        true
+        // a resize loop would recurse here until the stack overflows; stop it with a message
+        let n = REQUESTS.fetch_add(1, Ordering::Relaxed) + 1;
+        // the 101st call aborts
+        if n > 100 {
+            eprintln!("clap_gui: gui.request_resize called {n} times, a resize loop");
+            std::process::abort();
+        }
+        !REFUSE.load(Ordering::Relaxed)
     }
     unsafe extern "C" fn request_show(_: *const clap_host) -> bool {
         true
@@ -149,6 +166,7 @@ mod mac {
         let second = open_editor(&copy);
         drop((first, second));
         the_corner_request_is_posted_to_the_main_queue();
+        the_host_sizes_the_editor(&path);
         println!("clap_gui: ok");
     }
 
@@ -202,6 +220,122 @@ mod mac {
         }
         assert_eq!(count.get(), 1, "the host was asked once, after the event");
         drop(proxy);
+    }
+
+    /// The host sizes the editor before and after `gui.set_parent`, refusing the plugin's
+    /// `gui.request_resize` (task-224, the Reaper crash switching the FX window from the
+    /// parameter list to the plugin UI). On macOS `gui.create` gives baseview no parent, so it
+    /// makes a window of its own and observes its resizes until `set_parent`; the host's
+    /// `set_size` there was echoed back to the host as a request, refused, reverted, and so on
+    /// until the stack overflowed. Then in a host window: sizes, a scale, the view's backing
+    /// properties notification (with no change: a test cannot change the display's scale), the
+    /// host's window resized, hidden, shown, and the editor closed and opened again.
+    fn the_host_sizes_the_editor(path: &std::path::Path) {
+        use objc2::rc::Retained;
+        use objc2::{MainThreadMarker, MainThreadOnly};
+        use objc2_app_kit::{NSBackingStoreType, NSWindow, NSWindowStyleMask};
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+        let mtm = MainThreadMarker::new().expect("the main thread");
+        let lib = unsafe { libloading::Library::new(path) }.expect("the plugin library loads");
+        let entry: libloading::Symbol<*const clap_plugin_entry> =
+            unsafe { lib.get(b"clap_entry\0") }.unwrap();
+        let entry = unsafe { &**entry };
+        let cpath = CString::new(path.to_string_lossy().as_bytes()).unwrap();
+        // the host's window and the view it gives the editor
+        let window = unsafe {
+            NSWindow::initWithContentRect_styleMask_backing_defer(
+                NSWindow::alloc(mtm),
+                NSRect::new(NSPoint::new(100.0, 100.0), NSSize::new(624.0, 532.0)),
+                NSWindowStyleMask::Titled | NSWindowStyleMask::Resizable,
+                NSBackingStoreType::Buffered,
+                false,
+            )
+        };
+        unsafe { window.setReleasedWhenClosed(false) };
+        let content = window.contentView().expect("the window's view");
+        let parent = clap_window {
+            api: CLAP_WINDOW_API_COCOA.as_ptr(),
+            specific: clap_window_handle {
+                cocoa: Retained::as_ptr(&content) as *mut c_void,
+            },
+        };
+        REFUSE.store(true, Ordering::Relaxed);
+        unsafe {
+            assert!((entry.init.unwrap())(cpath.as_ptr()));
+            let factory = (entry.get_factory.unwrap())(CLAP_PLUGIN_FACTORY_ID.as_ptr())
+                as *const clap_plugin_factory;
+            let f = &*factory;
+            let d = &*(f.get_plugin_descriptor.unwrap())(factory, 0);
+            let host = clap_host {
+                clap_version: CLAP_VERSION,
+                host_data: null_mut(),
+                name: c"orb-plugin gui test".as_ptr(),
+                vendor: c"OpenRB-338".as_ptr(),
+                url: c"".as_ptr(),
+                version: c"0".as_ptr(),
+                get_extension: Some(host_extension),
+                request_restart: Some(host_request),
+                request_process: Some(host_request),
+                request_callback: Some(host_request),
+            };
+            let plugin = (f.create_plugin.unwrap())(factory, &host, d.id);
+            let pl = &*plugin;
+            assert!((pl.init.unwrap())(plugin));
+            let g = &*((pl.get_extension.unwrap())(plugin, CLAP_EXT_GUI.as_ptr())
+                as *const clap_plugin_gui);
+            let api = CLAP_WINDOW_API_COCOA.as_ptr();
+            // the host's size, adjusted, set; `false` from set_size is a failure too
+            let size = |w: u32, h: u32| {
+                let (mut aw, mut ah) = (w, h);
+                assert!((g.adjust_size.unwrap())(plugin, &mut aw, &mut ah));
+                assert!(
+                    (g.set_size.unwrap())(plugin, aw, ah),
+                    "gui.set_size({aw}, {ah})"
+                );
+                let (mut gw, mut gh) = (0u32, 0u32);
+                assert!((g.get_size.unwrap())(plugin, &mut gw, &mut gh));
+                assert_eq!((gw, gh), (aw, ah), "the editor's size after set_size");
+            };
+            for round in 0..2 {
+                REQUESTS.store(0, Ordering::Relaxed);
+                assert!((g.create.unwrap())(plugin, api, false), "round {round}");
+                // the FX window's size before the editor is parented (the parameter list's)
+                size(900, 700);
+                size(500, 300);
+                assert!((g.set_scale.unwrap())(plugin, 2.0));
+                size(700, 600);
+                assert!((g.set_parent.unwrap())(plugin, &parent));
+                assert!((g.show.unwrap())(plugin));
+                window.orderFront(None);
+                size(800, 650);
+                // the editor's view (the host view's only subview) gets a backing change
+                let views = content.subviews();
+                assert_eq!(views.len(), 1, "the editor's view in the host's");
+                let view = views.objectAtIndex(0);
+                let () = objc2::msg_send![&*view, viewDidChangeBackingProperties];
+                // The host's window resized (float/dock), then the host's size for the editor.
+                // The window's resize alone reaches no baseview code (the editor's view is not
+                // the window's delegate and does not autoresize), so it asks nothing by itself;
+                // it checks only that the parented editor survives it and the set_size after.
+                window.setContentSize(NSSize::new(1000.0, 800.0));
+                size(1000, 800);
+                assert!((g.hide.unwrap())(plugin));
+                assert!((g.show.unwrap())(plugin));
+                (g.destroy.unwrap())(plugin);
+                window.orderOut(None);
+                assert_eq!(
+                    REQUESTS.load(Ordering::Relaxed),
+                    0,
+                    "the host is not asked for the sizes it set, round {round}"
+                );
+            }
+            (pl.destroy.unwrap())(plugin);
+            (entry.deinit.unwrap())();
+        }
+        REFUSE.store(false, Ordering::Relaxed);
+        window.close();
+        drop(lib);
     }
 
     /// Loads the library at `path`, makes two instances in turn and opens and closes their

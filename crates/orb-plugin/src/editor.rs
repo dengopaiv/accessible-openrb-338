@@ -86,6 +86,8 @@ pub fn adjust_logical(new: (f64, f64), current: (f64, f64)) -> (f64, f64) {
 /// resizing.
 pub struct OrbHandle {
     inner: EguiEditorHandle,
+    /// The window's way to the host, told of `set_parent` and `set_size` ([`HostProxy`]).
+    route: Option<HostRoute>,
 }
 
 impl EditorHandle for OrbHandle {
@@ -101,7 +103,15 @@ impl EditorHandle for OrbHandle {
         parent: ParentWindowHandle,
         window: &Self::Window,
     ) -> Result<(), Self::Error> {
-        guard_err("set_parent", || self.inner.set_parent(parent, window))
+        guard_err("set_parent", || {
+            let r = self.inner.set_parent(parent, window);
+            if r.is_ok()
+                && let Some(route) = &self.route
+            {
+                route.set_parented();
+            }
+            r
+        })
     }
 
     fn show(&self, window: &Self::Window) -> Result<(), Self::Error> {
@@ -117,7 +127,10 @@ impl EditorHandle for OrbHandle {
         new_size: NativeSize<u32>,
         window: &Self::Window,
     ) -> Result<(), Self::Error> {
-        guard_err("set_size", || self.inner.set_size(new_size, window))
+        guard_err("set_size", || match &self.route {
+            Some(route) => route.host_sizing(|| self.inner.set_size(new_size, window)),
+            None => self.inner.set_size(new_size, window),
+        })
     }
 
     fn host_main_thread_callback(&self, window: &Self::Window) {
@@ -292,6 +305,10 @@ impl OrbEditor {
         let (route, host) = match host {
             Some(h) => {
                 let (route, proxy) = HostRoute::register(h.callbacks, self.scale.clone());
+                // VST3 gives the parent here; CLAP gives none until `gui.set_parent`
+                if parent.is_some() {
+                    route.set_parented();
+                }
                 let h = HostMethods {
                     callbacks: proxy,
                     main_thread_caller: h.main_thread_caller,
@@ -301,6 +318,7 @@ impl OrbEditor {
             None => (None, None),
         };
         let notifier = RepaintNotifier::new();
+        let handle_route = route.clone();
         let app = EditorApp {
             params: self.params.clone(),
             scale: self.scale.clone(),
@@ -319,7 +337,10 @@ impl OrbEditor {
             host,
         )?;
         Ok(SpawnedEditor {
-            handle: OrbHandle { inner: s.handle },
+            handle: OrbHandle {
+                inner: s.handle,
+                route: handle_route,
+            },
             window: s.window,
         })
     }
@@ -609,6 +630,10 @@ struct RouteState {
     posted: std::cell::Cell<bool>,
     /// Posts the flush of a route to this thread ([`post`]; tests post nothing and flush).
     post: fn(u64) -> bool,
+    /// The window is in the host's view (VST3 `attached`, CLAP `gui.set_parent`).
+    parented: std::cell::Cell<bool>,
+    /// The host's `set_size` is running.
+    sizing: std::cell::Cell<bool>,
 }
 
 /// The host callbacks as egui-baseview gets them: the shared [`Callbacks`]; dropped with the
@@ -619,11 +644,38 @@ pub struct HostProxy {
     inner: Callbacks,
 }
 
+/// baseview's own requests (task-224): baseview 0.4.2 on macOS asks the host for every size
+/// change it observes (`platform/macos/view.rs` 362-405, `view_did_change_backing_properties`
+/// with `notify_host`) and, when the host refuses, sets the previous size back. Before CLAP's
+/// `gui.set_parent` the view is the content of a window of baseview's own (nice-plug spawns
+/// CLAP editors with no parent, and baseview ignores `wait_for_parent` on macOS), whose resize
+/// notification calls that again: a host's `set_size` there was asked back, refused (Reaper),
+/// set back, asked, ... until the stack overflowed. So the proxy answers `Ok` without asking
+/// the host while the window has no parent (there is no host window to resize), while the
+/// host's `set_size` runs (the host chose the size; baseview's Windows backend skips that case
+/// too, `resize_host_originated`), and while another request is in progress (the host may
+/// answer a request with `set_size` at once). Then baseview never sets a size back where that
+/// re-enters it; in the host's view, setting it back resizes only baseview's view, which asks
+/// nothing. The corner's requests ([`HostRoute::flush`]) go to the host directly.
 impl HostCallbacks for HostProxy {
     fn request_resize(&mut self, new_size: Size, scale_factor: f64) -> Result<(), Box<dyn Error>> {
+        let quiet = ROUTES
+            .try_with(|r| {
+                let r = r.try_borrow().ok()?;
+                let s = r.get(&self.id)?;
+                Some(!s.parented.get() || s.sizing.get())
+            })
+            .ok()
+            .flatten()
+            // no route on this thread (X11's window thread): ask
+            .unwrap_or(false);
+        if quiet {
+            return Ok(());
+        }
         match self.inner.try_borrow_mut() {
             Ok(mut c) => c.request_resize(new_size, scale_factor),
-            Err(_) => Err("the host's callbacks are in use".into()),
+            // a request in progress
+            Err(_) => Ok(()),
         }
     }
 
@@ -666,6 +718,8 @@ impl HostRoute {
             pending: Default::default(),
             posted: Default::default(),
             post,
+            parented: Default::default(),
+            sizing: Default::default(),
         });
         ROUTES.with(|r| r.borrow_mut().insert(id, state));
         (HostRoute { id, scale }, Box::new(HostProxy { id, inner }))
@@ -692,6 +746,31 @@ impl HostRoute {
     /// Returns whether the host accepted it.
     pub fn flush(&self) -> Option<bool> {
         flush_route(self.id)
+    }
+
+    /// The window is in the host's view: baseview's requests go to the host ([`HostProxy`]).
+    pub fn set_parented(&self) {
+        if let Some(s) = ROUTES.with(|r| r.borrow().get(&self.id).cloned()) {
+            s.parented.set(true);
+        }
+    }
+
+    /// Runs `f`, the host's `set_size`: baseview's requests in it are not asked of the host
+    /// ([`HostProxy`]).
+    pub fn host_sizing<T>(&self, f: impl FnOnce() -> T) -> T {
+        /// Clears the flag, also when `f` panics.
+        struct Sizing(Option<Rc<RouteState>>, bool);
+        impl Drop for Sizing {
+            fn drop(&mut self) {
+                if let Some(s) = &self.0 {
+                    s.sizing.set(self.1);
+                }
+            }
+        }
+        let s = ROUTES.with(|r| r.borrow().get(&self.id).cloned());
+        let was = s.as_ref().is_some_and(|s| s.sizing.replace(true));
+        let _reset = Sizing(s, was);
+        f()
     }
 }
 

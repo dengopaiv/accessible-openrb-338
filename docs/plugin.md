@@ -551,6 +551,47 @@ editor's close (Reaper unloads none while the project is open), and pinning the 
 post (`dlopen` of itself, released by a block outside the image) was not worth the code. The size of each resize (egui's `resized`) goes into
 the state (`editor_size`, logical points); the editor opens at it. No zoom presets (task-185).
 
+**baseview's own requests (task-224).** Reaper crashed (stack overflow on the main thread,
+the user's check of 2026-11-16, CLAP) when its FX window switched from the parameter list to
+the plugin UI. nice-plug 0.4.2 spawns a CLAP editor in `gui.create` with no parent
+(`wrapper/clap/wrapper.rs`, `spawn(None, true, ...)`; VST3 `attached` gives the parent), and
+baseview 0.4.2 on macOS ignores `wait_for_parent`: with no parent it makes a window of its own
+(`platform/macos/window.rs`, `create_window_standalone`), its view the window's content and
+delegate, until `gui.set_parent` closes that window and moves the view into the host's. A
+resize of that window calls the view's `window_did_resize` (`platform/macos/view.rs` 362-369),
+which asks the host for the new size (`view_did_change_backing_properties` with `notify_host`,
+371-405); when the host refuses, baseview sets the previous size back (`resize(previous)`, and
+for its own window `setContentSize`, 243-273), which posts the window's resize notification
+again, with the sizes swapped. So a host that sets a size between `gui.create` and
+`gui.set_parent` (`gui.set_size`) and refuses `gui.request_resize` there gets the two sizes
+asked and set back in turn until the stack ends: the crash report's cycle `window_did_resize`,
+`view_did_change_backing_properties`, `BaseviewView::resize`, `-[NSWindow
+_setFrameCommon:display:fromServer:]`, `NSWindowDidResizeNotification`. `tests/clap_gui.rs`
+reproduces it (a host that refuses, `gui.set_size` before `gui.set_parent`: the requests
+repeat until the test aborts at the 101st). baseview's Windows backend skips the request for
+a size the host set (`platform/win/window.rs`, `resize_host_originated`); the macOS backend
+has no such check. The fix is in the editor's proxy of the host's callbacks (`HostProxy`), not in
+baseview: baseview's own requests are answered `Ok` without asking the host while the window
+has no parent (no host window to resize; `HostRoute::set_parented` at `set_parent`, or at
+spawn with VST3's parent), while the host's `set_size` runs (`HostRoute::host_sizing`), and
+while another request is in progress (a host may answer one with `set_size` at once). baseview
+then never sets a size back where that re-enters it; in the host's view, setting it back only
+resizes baseview's view (`setFrameSize`), which posts nothing. The corner's request
+(`HostRoute::flush`) still goes to the host and may be refused. The in-progress case accepts
+a baseview request nested in any host callback that holds the callbacks, not only in a
+`set_size`: were a host to resize the editor's view inside a request by other means than
+`set_size`, baseview would keep that size and the host would not be told, so the two sizes
+could differ until the next `set_size` (not seen in the hosts tried). VST3 cannot loop: its view is in
+the host's from the start (nice-plug's `attached` spawns with the parent; no window of
+baseview's own, no `windowDidResize`), so baseview's setting back is only `setFrameSize` on
+its view, which posts nothing. (nice-plug's VST3 request can still fail: `wrapper/vst3/view.rs`
+508-519 returns `Err` when the task cannot be posted or the plugin is gone.) The test also
+covers the other transitions: `gui.set_scale`, sizes before and after `set_parent`, the
+backing-properties notification with no change (a test cannot change the display's scale),
+the host's window resized (which reaches no baseview code by itself: the view is not that
+window's delegate and does not autoresize), hide and show, and the editor closed and opened
+again; the host is never asked for a size it set.
+
 **The panel's differences** (`embed.rs`; the standalone app draws as before, its screenshots
 are pixel-identical):
 - Hidden (`PLUGIN_HIDDEN`, and no parameters, section 3): the Pattern/Song switch, Rewind,
