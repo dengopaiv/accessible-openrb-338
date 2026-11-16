@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-16T15:20:00Z'
-updated_date: '2026-11-16T15:22:00Z'
+updated_date: '2026-11-16T15:25:00Z'
 labels:
   - player
   - ui
@@ -71,10 +71,17 @@ ordinal: 225000
 - [ ] #7 The user checks Gate mode in Reaper before merge (screenshots of the menu included)
 - [ ] #8 cargo test, clippy -D warnings and nightly fmt pass
 - [ ] #9 Gate never changes the section's On/off switch (no parameter change or host gesture); a section sounds only when its On/off is on and its gate is open; the panel's On button does not follow the gate (tests)
+- [ ] #10 Gate: a held note shows its pattern on the panel without changing the pattern parameter; after note-off the panel keeps the last gated pattern (test)
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Clarification (supervisor, 2026-11-16, per task-185's rule that notes never change parameters): the gate never changes the section's On/off switch (the host parameter, the panel's On button, the remote's On/Off note). A section sounds in Gate mode only when its On/off switch is on AND its gate is open; the On/off switch stays the user's mute, independent of the clip. The panel's On button does not follow the gate; the gate state shows only through the playing pattern's step lights. No gate gesture or parameter change reaches the host.
+
+The panel display in Gate mode (the user, 2026-11-16, option A):
+- A held gate note shows its pattern on the panel without changing the host's pattern parameter (as in Latch mode).
+- After the note-off, the panel keeps showing the last gated pattern; it does not revert to the parameter's pattern.
+- In Gate mode what plays is always the held note's pattern. A panel click or automation of the pattern parameter sets the parameter and the shown pattern as now, but sounds only through a gate note.
+- The preview (task-217) stays the way to edit without MIDI interfering.
 <!-- SECTION:NOTES:END -->
