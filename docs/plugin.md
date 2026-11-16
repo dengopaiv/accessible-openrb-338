@@ -3,11 +3,11 @@
 OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are task-185's final
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
 the core described here; task-198 the host sync, the pattern selection by notes and the Standard
-Mapping (section 8); task-200 note mode (section 9); task-201 the editor (section 10); packaging
-and the validators are task-204. task-217 (the user's design of 2026-11-16, task-216) replaced
-the mode parameter `g1` with the pattern/note mode setting and made the panel's Play/Stop the
-pattern preview (section 4.2). task-218 renamed pattern mode Latch Pattern Mode and added Gate
-Pattern Mode (section 11).
+Mapping (section 8); task-200 note mode (section 9); task-201 the editor (section 10); task-203
+the pattern drag-out (section 12); packaging and the validators are task-204. task-217 (the
+user's design of 2026-11-16, task-216) replaced the mode parameter `g1` with the pattern/note
+mode setting and made the panel's Play/Stop the pattern preview (section 4.2). task-218 renamed
+pattern mode Latch Pattern Mode and added Gate Pattern Mode (section 11).
 
 ## 1. What runs
 
@@ -906,3 +906,129 @@ full corpus renders as before, 175 of 175 equal):
   sends any engine gate that differs from what the held notes say: this covers a newly loaded
   song (its gates are off) and a `Gate` command the full garbage queue refused
   (`Audio::apply_now`).
+
+## 12. The pattern drag-out (task-203)
+
+A press on one of a section's eight pattern buttons that moves 6 points or more (`embed::DRAG_OUT`,
+egui's own click tolerance) starts the operating system's drag of a MIDI file of that pattern
+(the button's pattern in the bank shown). The user drops it on a track of the host, which
+makes a MIDI item of it, as a MIDI file dragged from the file manager. The details:
+
+- The press has already selected the pattern at mouse down, as a click does (the original's
+  pattern buttons act at mouse down), so a drag-out also selects the pattern it drags (the
+  user kept this, task-223, 2026-11-16). A click without movement selects the pattern and drags
+  nothing. The bank buttons do not drag.
+- Only the plugin's panel drags (`Embed::drag_pattern`, `App::drag_out` in orb-ui's `embed.rs`).
+  The standalone app is unchanged.
+- There is no "Save MIDI file", no song or all-patterns export and no import (task-185).
+
+**The clip** (`src/clip.rs`) is a Standard MIDI File:
+- Type 0, one track, 192 ticks a quarter note, so a MIDI tick is an engine tick.
+- The track is named after the section and the pattern (`303 #1 A1`, `808 C2`), with a 4/4
+  time signature and no tempo, so the host's tempo plays it.
+- The end of the track is the pattern's length: 48 ticks a step, the length byte cut to 1..16.
+- The notes are on the section's channel (1..4: 303 #1, 303 #2, 808, 909) in the note mapping
+  of `docs/midi.md` section 5. The 303's notes follow its gate, the drums' are 24 ticks long,
+  the velocities are the export velocities, and shuffle is baked in (all in `docs/midi.md` 5.6).
+- The data is the plugin's, at the moment of the drag:
+  - its pattern arrays: the state's, or the song's own before the first build;
+  - the values the panel plays (the preview set during the preview): the Shuffle knob and the
+    808's five shared-slot switches.
+
+**The clip is meant for note mode.** Played on a track into an instance in note mode (Options >
+Note Mode), it plays the pattern as the pattern plays: for the 303, bit for bit the step path,
+except for three things the clip cannot carry (`docs/midi.md` 5.6): a tie's own accent, a
+rest's effect on the release tail, and a played step after a rest that slid. A slide out of
+the last step into the next loop is lost too, as the clip is one loop. In the pattern modes,
+notes 0..31 on a section's channel are patterns: Latch Pattern Mode selects them (section 8.2)
+and Gate Pattern Mode plays them while held (section 11). A 303 clip's notes 24..31 would select
+or gate patterns D1..D8, and its other notes and every drum note (36 and up) would do nothing.
+
+**The file.** The clip is written to `OpenRB-338/clips/<pid>-<ms>-<n>/` in the temporary folder,
+under the name the host gives its item: `303-1 A1.mid`, `303-2 B4.mid`, `808 C2.mid`, `909 D8.mid`.
+Each drag-out has a folder of its own, so the name can repeat. The folders are swept
+(`clip::sweep`): one older than 10 minutes (`clip::KEEP`) is removed at the next drag-out and at
+every editor close, from any process's editors. Hosts read a dropped MIDI file at the drop, a
+few seconds at most. On Windows, a folder whose file a host still holds open stays until a
+later sweep. A host that kept a reference to the dropped file instead of importing its notes
+would lose the clip at the sweep; Reaper is to be checked (task-203's review).
+
+**The native drag** (`src/drag.rs`). egui and baseview cannot start one:
+- The panel's frame only records the request. The editor's embed writes the clip and leaves its
+  path in `drag::Pending`; after the frame, `EditorApp::ui` calls `drag::start` with
+  baseview's window handle (raw-window-handle 0.6).
+- Each platform begins the drag once the current event is over, as the resize corner's request
+  (section 10): baseview's window state is borrowed for the whole frame, and a drag runs the
+  event loop.
+- Every callback runs under `editor::guard`, so no Rust panic reaches the host.
+
+Per platform:
+- **macOS** (`drag/macos.rs`), a block on the main queue (`dispatch_async_f`):
+  - `-[NSView beginDraggingSessionWithItems:event:source:]` on baseview's view, with one
+    `NSDraggingItem` whose pasteboard writer is the file's `NSURL`, and the file's icon
+    (`NSWorkspace iconForFile:`) at the pointer.
+  - The event is a left-mouse-down made at the pointer (`+[NSEvent mouseEventWithType:...]`), as
+    JUCE does for external drags: the event that the frame saw is gone by then. Nothing starts
+    when the button is up already (`+[NSEvent pressedMouseButtons]`).
+  - The source answers copy (`NSDragOperationCopy`) for any destination. Its class is registered
+    at run time under a name unique to the loaded image (`OrbClipDragSource_<address>_<n>`,
+    `ClassBuilder`), for the reason of the vendored raw-window-metal (section 10): the `.vst3`
+    and the `.clap` may be loaded in one process.
+  - The session takes the button's release from the view. When it ends
+    (`draggingSession:endedAtPoint:operation:`), the source sends the view a made-up `mouseUp:`
+    at the pointer, so that egui sees the release.
+  - The residual risk of a posted block of an unloaded image is the resize corner's.
+- **Windows** (`drag/windows.rs`), a thread timer of 0 ms (`SetTimer` without a window):
+  - OLE's `DoDragDrop` (after `OleInitialize`, balanced) with a data object and a drop source,
+    COM objects made by hand: vtables of `extern "system"` functions and reference counts.
+  - The data object offers the file as `CF_HDROP` in global memory (`DROPFILES` with the wide
+    path), and its `EnumFormatEtc` is the shell's `SHCreateStdEnumFmtEtc`. `SetData`, the advise
+    sink and `GetDataHere` are not supported.
+  - The drop source drops at the release of the left button (the right one when the buttons are
+    swapped) and cancels on Escape.
+  - Nothing starts when the window is gone or the button is up already. The editor's close
+    kills the pending timers.
+  - `DoDragDrop` takes the button's release: after it the window is posted a `WM_LBUTTONUP` at
+    the pointer.
+- **Linux, X11** (`drag/x11.rs`): the source side of XDND version 5, offering `text/uri-list`
+  (the `file://` URI, percent-encoded) and `TARGETS`, on an X connection (x11rb's
+  `RustConnection`) and a thread of its own:
+  - baseview's window runs its own event loop, which would swallow the target's replies, so the
+    drag has an invisible input-only window as its source window and the `XdndSelection` owner.
+    A property change gives it a server time.
+  - The pointer is not grabbed. The press keeps it with baseview's window (an implicit grab),
+    which therefore also gets the release.
+  - The drag polls the pointer every 10 ms (`QueryPointer`). The target is the first window
+    with `XdndAware` from the root down through the children under the pointer.
+  - `XdndPosition` waits for the previous `XdndStatus`. The drop is made when the first button
+    is up and the target has accepted; otherwise the target is left.
+  - The drag waits up to 5 s for `XdndFinished`. Escape does not cancel, and a drag ends after
+    two minutes in any case.
+
+**What was verified** (2026-11-16):
+- The clip and the panel's gesture: by the tests below, on macOS.
+- macOS: the bundles build and validate. The drag into a host is the user's check in Reaper
+  (task-203 AC #2 and #4).
+- Windows: `cargo xwin clippy --target x86_64-pc-windows-msvc -p orb-plugin --all-targets -D
+  warnings` passes. The data object's test (Windows only; CI runs it) passed on the Windows 11
+  test machine, with the clip tests (`cargo xwin test --no-run`, the exe run there: 12
+  passed). No drag into a Windows host was tried: `DoDragDrop`, the drop source in a real drag
+  and the posted `WM_LBUTTONUP` are unverified.
+- Linux: the X11 module passes `cargo clippy --target x86_64-unknown-linux-gnu -D warnings` in a
+  scratch crate of its own (the workspace's Linux check needs a C cross toolchain). It was not
+  run against an X server or a host.
+
+**Tests:**
+- `src/clip/tests.rs`: the written file read back for a 303 pattern (pitch with Up and Down, the
+  gate, a slide, a tie, accent, a rest, a rest after a slide, a slide out of the last step), an
+  808 pattern (both positions of the five switches, AC, the AC row alone) and a 909 pattern
+  (the four levels, the flam values 3, 4, 5..255, AC bytes 1 and 2).
+- Also there: shuffle; the step and gate times against `seq::shuffled` for every shuffle value;
+  the 303 clip played back in note mode against the step path, bit for bit; the three limits;
+  names, lengths and the temporary files' sweep.
+- `tests/editor.rs`: a press-and-move gives the pattern's clip once per press, and the press
+  selects the pattern; a click without movement selects it and drags nothing; a bank button
+  drags nothing.
+- `drag/windows.rs` (Windows): the data object read as a drop target reads it, and the drop
+  source's answers.
+- `drag/x11.rs`: the URI list.

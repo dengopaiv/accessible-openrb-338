@@ -1138,6 +1138,10 @@ impl App {
                         if self.first_press(ui, c, &r) {
                             self.panel.press(&c.id, now);
                         }
+                        // a plugin's pattern drag-out (task-203); nothing in the standalone app
+                        if kind == "grid" {
+                            self.drag_out(ui, c, &r);
+                        }
                     }
                     // A click anywhere on a two-position switch flips the position it shows.
                     "hswitch" | "vswitch" if self.first_press(ui, c, &r) => {

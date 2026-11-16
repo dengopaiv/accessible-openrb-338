@@ -9,11 +9,15 @@
 //! - [`params`]: the parameter table.
 //!
 //! - [`editor`]: the editor, orb-ui's panel in the host's window (task-201).
+//! - [`clip`] and [`drag`]: the pattern drag-out, a pattern as a MIDI clip dragged to the host
+//!   (task-203).
 //!
 //! Host sync, pattern selection by notes and the Standard Mapping are task-198's ([`core`]),
 //! note mode task-200's. Not yet: packaging (task-204).
 
+pub mod clip;
 pub mod core;
+pub mod drag;
 pub mod editor;
 pub mod instance;
 pub mod params;

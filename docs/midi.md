@@ -375,6 +375,47 @@ is lost in the clip: a value 3 (low + flam) is exported as value 1 (40 or 104), 
 alone at x1.5) as value 2 (80 or 127), the band whose gain (x2.0) is nearest, at the step's start.
 The AC row writes no note. The 808's shared slots (LT/LC, MT/MC, HT/HC, RS/CL, CP/MA) write the
 note of the voice the slot's switch selects when the clip is made (the LT/LC slot: 43 when it
-says tom, 64 when conga; RS/CL: 37 or 75; CP/MA: 39 or 70), as the pattern plays it. The 303's note is `36 + note + 12*up - 12*down` (Tune is
-applied at playback, as in the pattern), a rest step writes no note, and a sliding step's note
-overlaps the next one (the same pitch: a tie).
+says tom, 64 when conga; RS/CL: 37 or 75; CP/MA: 39 or 70), as the pattern plays it. The 303's
+note is `36 + note + 12*up - 12*down` (Tune is applied at playback, as in the pattern).
+
+**The 303's notes follow its gate** (task-203; `crates/orb-plugin/src/clip.rs`, from the step
+function 0x100253A0, the note-on 0x10023CD4 and the note-off 0x10023C74, all [C] through
+`crates/orb-engine/src/tb303.rs`):
+- A played step opens the gate at its start. The gate closes 24 ticks (half a step) later
+  (`gate_off = v + 24`, 0x100254D3), unless the step slides: the note-off is skipped while the
+  slide flag is set.
+- A step after a sliding one is legato: no new attack, and the pitch glides. Its note starts
+  at the step and overlaps the sounding note, which ends 12 ticks later.
+- The same pitch is a tie, written as one long note to the tie's end (as the task asks: hosts
+  correct or re-trigger overlapping notes of one pitch). The note takes the first step's
+  velocity.
+- A rest step after a slide is legato too, at the rest step's pitch and accent: a rest keeps
+  the gate as it is and still sets the pitch and the accent. A rest after a closed gate writes
+  no note.
+- A slide out of the pattern's last step: in the original the slide flag carries over the
+  loop, so step 0 of the next loop is legato (no new attack, the pitch glides from the last
+  step's). The clip is one loop, so the last step's note ends with the clip, and a host looping
+  the item plays step 0 with a new attack.
+
+With these rules the clip played back in note mode is bit for bit the pattern for a pattern
+without the cases below (the tests play both through two `Tb303`s, both sound models,
+straight and shuffled). Three things the clip cannot carry, each pinned by a test
+(`the_clip_cannot_carry_a_rest_or_a_ties_own_accent`), make the sound differ from that step on:
+- A tie loses the second step's own accent (its note-on sets the accent anew).
+- A played step after a rest that slid, with the gate closed: the original opens the gate
+  without a new attack (no envelope restart, the note-on's `if !slide` test) and glides from
+  the rest's pitch, which never sounded. Note mode attacks a note when nothing is held, so the
+  clip's note attacks.
+- A rest after a closed gate still runs the note-on: it sets the release tail's pitch at once
+  and cuts short a glide that the step before began (`pitch = target` without the slide flag).
+  For example, the falling slide from 51 to 29 had glided only to 54234 of its target 41984
+  six blocks later. Note mode's tail glides on, and the oscillator's phase differs from then
+  on.
+
+**Shuffle is baked in** (decided in task-203). With the pattern's Shuffle on, the clip's times
+are the engine's: the shuffled tick `96*(t/96) + max(0, t%96 - shuffle/6)` (0x1001F3D0,
+`seq::shuffled`) moves the second 16th of each 8th `s = shuffle/6` ticks late (0..21 ticks at
+shuffle 0..127, the panel's Shuffle knob when the clip is made), and every 303 gate closes `s`
+ticks late. Note mode plays notes when they come and has no shuffle of its own, so a straight
+clip would lose the groove. A host's own swing can still be applied to a pattern saved without
+Shuffle.

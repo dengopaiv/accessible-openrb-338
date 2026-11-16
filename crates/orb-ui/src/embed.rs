@@ -96,7 +96,20 @@ pub trait Embed: Send {
     fn previewing(&self) -> Option<bool> {
         None
     }
+    /// A press on pattern button `pattern` (0..31) of section `row` (0..3) moved
+    /// [`DRAG_OUT`] points: the plugin drags the pattern out to the host as a MIDI clip
+    /// (task-203). Returns whether a drag starts; `false` (the default) when the plugin has
+    /// none. Called once per press; the press has selected the pattern already.
+    fn drag_pattern(&mut self, row: usize, pattern: u8) -> bool {
+        let _ = (row, pattern);
+        false
+    }
 }
+
+/// How far (points) a press on a pattern button must move to drag the pattern out
+/// ([`Embed::drag_pattern`]); a shorter movement is a click, which selects the pattern only.
+/// egui's own click tolerance (`input_options.max_click_dist`) is 6 points too.
+pub const DRAG_OUT: f32 = 6.0;
 
 /// The plugin's mode outside its preview (task-217, task-218): what host notes do and when the
 /// patterns play.
@@ -463,6 +476,50 @@ impl App {
         }
         ui.ctx().request_repaint_after(POLL);
         self.resize_corner(ui);
+    }
+
+    /// The pattern drag-out (task-203): a press on a pattern button (`c`, a "grid" control
+    /// `patternR.patternN`; `r` its response) that moves [`DRAG_OUT`] points or more from where
+    /// it went down asks the plugin to drag the button's pattern out, once per press. The press
+    /// has selected the pattern at mouse down, as a click does. Nothing in the standalone app,
+    /// on a bank button or with the file browser, a prompt or the error box open.
+    pub(crate) fn drag_out(&mut self, ui: &Ui, c: &crate::layout::Ctl, r: &egui::Response) {
+        if self.plugin.is_none() || self.browsing() || self.prompt.is_some() {
+            return;
+        }
+        let Some((sec, name)) = c.id.split_once('.') else {
+            return;
+        };
+        let (Some(row), Some(button)) = (
+            sec.strip_prefix("pattern")
+                .and_then(|n| n.parse::<usize>().ok()),
+            name.strip_prefix("pattern")
+                .and_then(|n| n.parse::<u8>().ok()),
+        ) else {
+            return;
+        };
+        if !(1..=4).contains(&row) || !(1..=8).contains(&button) || self.error_open() {
+            return;
+        }
+        let id = Id::unique(("orb plugin drag out", &c.id));
+        if !r.is_pointer_button_down_on() {
+            ui.data_mut(|d| d.remove::<bool>(id));
+            return;
+        }
+        let moved = ui.input(|i| {
+            let p = &i.pointer;
+            p.press_origin()
+                .zip(p.latest_pos())
+                .is_some_and(|(a, b)| a.distance(b) >= DRAG_OUT)
+        });
+        if !moved || ui.data(|d| d.get_temp::<bool>(id)).is_some() {
+            return;
+        }
+        ui.data_mut(|d| d.insert_temp(id, true));
+        let pattern = self.panel.rows[row - 1].bank * 8 + (button - 1);
+        if let Some(p) = &mut self.plugin {
+            p.embed.drag_pattern(row - 1, pattern);
+        }
     }
 
     /// The bar the Bar display showed in the last frame; `None` when dark or in the standalone

@@ -15,13 +15,16 @@ use nice_plug::editor::dpi::Size;
 use nice_plug::prelude::*;
 use orb_cli::mods::Kit as UiKit;
 use orb_player::midi::Message;
+use orb_plugin::clip;
 use orb_plugin::core::{Core, HostEvent, HostTransport};
+use orb_plugin::drag::Pending;
 use orb_plugin::editor::{
     self, DEFAULT_SIZE, HostRoute, OrbEditor, adjust_logical, editor_app, editor_app_routed,
+    editor_app_with,
 };
 use orb_plugin::instance::{self, Kit, Mode, OrbParams};
 use orb_ui::app::App;
-use orb_ui::embed::{CORNER, MENU_H, PLUGIN_HIDDEN, PluginMode, window_height};
+use orb_ui::embed::{CORNER, DRAG_OUT, MENU_H, PLUGIN_HIDDEN, PluginMode, window_height};
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
 use orb_ui::menu::Cmd;
 use orb_ui::settings::Settings;
@@ -821,4 +824,89 @@ fn the_host_is_not_asked_for_sizes_before_the_parent_or_its_own() {
     assert_eq!(route.request(700.0, 594.0), Some(true));
     assert_eq!(route.flush(), Some(false), "the corner's request, refused");
     assert_eq!(asked.get(), 1, "asked once; the nested request was not");
+}
+
+/// A harness whose editor has the pattern drag-out, and where it leaves its clip.
+fn with_drag(params: OrbParams) -> (Harness, Pending) {
+    let mut h = Harness::new(params);
+    let pending = Pending::default();
+    h.app = editor_app_with(
+        h.params.clone(),
+        GuiContext::new(h.host.clone()),
+        settings(),
+        None,
+        Some(pending.clone()),
+    );
+    h.frame(vec![]);
+    (h, pending)
+}
+
+/// task-203: a press on a pattern button that moves drags the pattern out once, as the clip of
+/// the plugin's pattern; the press selects the pattern as a click does.
+#[test]
+fn a_pattern_button_dragged_out_gives_its_clip() {
+    let (mut h, pending) = with_drag(with("303_accent0"));
+    assert_eq!(h.value("d1c1"), 0);
+    let at = Harness::center("pattern1.pattern3");
+    h.move_to(at);
+    h.button(true);
+    assert_eq!(h.value("d1c1"), 2, "the press selects A3");
+    // less than DRAG_OUT: still a click
+    h.move_to(at + Vec2::new(DRAG_OUT - 1.0, 0.0));
+    assert!(pending.take().is_none());
+    h.move_to(at + Vec2::new(DRAG_OUT, 0.0));
+    let path = pending.take().expect("the drag-out's clip");
+    assert_eq!(path.file_name().unwrap(), "303-1 A3.mid");
+    assert!(path.starts_with(clip::clips_dir()));
+    // the clip of the plugin's pattern A3 with the values it plays
+    let values = h.params.panel_values();
+    let patterns = h.params.view(&values).1;
+    let want = clip::clip(
+        0,
+        2,
+        &patterns[0][2 * clip::LEN_303..3 * clip::LEN_303],
+        &editor::clip_controls(&values),
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), want);
+    // once per press
+    h.move_to(at + Vec2::new(60.0, 40.0));
+    assert!(pending.take().is_none());
+    h.button(false);
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    // the next press drags again: the 909's bank B, button 1
+    h.click(Harness::center("pattern4.bankB"));
+    let at = Harness::center("pattern4.pattern1");
+    h.move_to(at);
+    h.button(true);
+    h.move_to(at + Vec2::new(0.0, -20.0));
+    h.button(false);
+    let path = pending.take().expect("the second drag-out's clip");
+    assert_eq!(path.file_name().unwrap(), "909 B1.mid");
+    let f = std::fs::read(&path).unwrap();
+    assert_eq!(&f[..4], b"MThd");
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+/// task-203 AC #3: a click without movement selects the pattern and drags nothing; nor does a
+/// bank button, nor an editor without the drag-out.
+#[test]
+fn a_click_on_a_pattern_button_still_selects_it() {
+    let (mut h, pending) = with_drag(with("303_accent0"));
+    h.click(Harness::center("pattern1.pattern3"));
+    assert_eq!(h.value("d1c1"), 2, "A3");
+    assert!(pending.take().is_none(), "a click drags nothing");
+    let at = Harness::center("pattern1.bankC");
+    h.move_to(at);
+    h.button(true);
+    h.move_to(at + Vec2::new(30.0, 0.0));
+    h.button(false);
+    assert!(pending.take().is_none(), "a bank button drags nothing");
+    // the editor of `editor_app` has no drag-out: a drag is a click
+    let mut h = Harness::new(with("303_accent0"));
+    let at = Harness::center("pattern1.pattern5");
+    h.move_to(at);
+    h.button(true);
+    h.move_to(at + Vec2::new(30.0, 0.0));
+    h.button(false);
+    assert_eq!(h.value("d1c1"), 4, "A5");
 }

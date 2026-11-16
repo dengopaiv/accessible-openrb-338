@@ -40,6 +40,8 @@ use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::link::{Link, Port};
 use orb_ui::settings::Settings;
 
+use crate::clip;
+use crate::drag::{self, Pending};
 use crate::instance::{self, Kit, Mode, OrbParams, ROWS};
 use crate::params::{self, SPECS, Target};
 
@@ -205,7 +207,7 @@ impl EditorHandle for OrbHandle {
 /// Runs `f`, an editor entry point the host calls through nice-plug's `extern "C"` functions:
 /// a panic there cannot unwind and aborts the host (the user's Reaper check, task-201). A
 /// panic becomes an error, logged; the host gets no editor, or the call does nothing.
-fn guard<T>(what: &str, f: impl FnOnce() -> T) -> Result<T, String> {
+pub(crate) fn guard<T>(what: &str, f: impl FnOnce() -> T) -> Result<T, String> {
     std::panic::catch_unwind(AssertUnwindSafe(f)).map_err(|p| {
         let msg = p
             .downcast_ref::<&str>()
@@ -323,6 +325,7 @@ impl OrbEditor {
             params: self.params.clone(),
             scale: self.scale.clone(),
             route,
+            drag: Pending::default(),
             notifier: notifier.clone(),
             clock: None,
             app: None,
@@ -351,6 +354,8 @@ struct EditorApp {
     params: Arc<OrbParams>,
     scale: Arc<Mutex<f64>>,
     route: Option<HostRoute>,
+    /// The clip of a pattern drag-out, from the panel's frame to the native drag after it.
+    drag: Pending,
     /// egui-baseview's realtime-safe repaint flag, polled by its window timer (1/64 s).
     notifier: RepaintNotifier,
     /// egui's repaint requests, turned into `notifier` at their time ([`RepaintClock`]).
@@ -386,11 +391,12 @@ impl NiceEguiApp for EditorApp {
                 has_fonts(),
                 "egui has no fonts: its `default_fonts` feature is off (every text would be boxes)"
             );
-            let mut app = editor_app_routed(
+            let mut app = editor_app_with(
                 self.params.clone(),
                 gui_context,
                 Settings::load(),
                 self.route.clone(),
+                Some(self.drag.clone()),
             );
             // the logo animation only for a new instance (task-219)
             if self.params.take_intro() {
@@ -408,6 +414,13 @@ impl NiceEguiApp for EditorApp {
         {
             // the panel is gone until the editor is opened again
             self.app = None;
+        }
+        // a pattern drag-out asked for in the frame: the native drag, after the frame
+        if let Some(path) = self.drag.take() {
+            let window = frame.baseview_window();
+            if !guard("drag", || drag::start(window, path)).unwrap_or(false) {
+                nice_plug::nice_warn!("the pattern drag could not be started");
+            }
         }
         // The editor takes no keys (task-201): every key also goes back to the host, except
         // while a text field (the file browser's) has the focus.
@@ -436,6 +449,11 @@ impl NiceEguiApp for EditorApp {
         // dropping the panel; a panic in its drop is logged
         let app = self.app.take();
         let _ = guard("editor_closed", move || drop(app));
+        // drags not begun are dropped; old clips are removed
+        let _ = guard("editor_closed", || {
+            drag::editor_closed();
+            clip::sweep(&clip::clips_dir(), clip::KEEP);
+        });
     }
 }
 
@@ -461,6 +479,18 @@ pub fn editor_app_routed(
     settings: Settings,
     route: Option<HostRoute>,
 ) -> App {
+    editor_app_with(params, gui, settings, route, None)
+}
+
+/// [`editor_app_routed`] with the pattern drag-out: a press-and-move on a pattern button writes
+/// the pattern's clip and leaves its file in `drag` for the native drag (`None`: no drag-out).
+pub fn editor_app_with(
+    params: Arc<OrbParams>,
+    gui: GuiContext,
+    settings: Settings,
+    route: Option<HostRoute>,
+    drag: Option<Pending>,
+) -> App {
     let port = PluginPort::new(params.clone(), gui.clone());
     let link = Link::with_port(
         Box::new(port),
@@ -469,6 +499,7 @@ pub fn editor_app_routed(
     );
     let mut embed = EditorEmbed::new(params, gui);
     embed.route = route;
+    embed.drag = drag;
     App::embedded(Box::new(embed), link, settings)
 }
 
@@ -815,7 +846,7 @@ fn post(id: u64) -> bool {
 
 /// Whether this is the process's main thread (macOS), where the main queue runs.
 #[cfg(target_os = "macos")]
-fn is_main_thread() -> bool {
+pub(crate) fn is_main_thread() -> bool {
     unsafe extern "C" {
         fn pthread_main_np() -> i32;
     }
@@ -1025,6 +1056,8 @@ pub struct EditorEmbed {
     pending: Option<Vec<(String, i32)>>,
     /// The way to the host's resize request.
     route: Option<HostRoute>,
+    /// Where a pattern drag-out leaves its clip for the native drag (`None`: no drag-out).
+    drag: Option<Pending>,
 }
 
 impl EditorEmbed {
@@ -1034,9 +1067,57 @@ impl EditorEmbed {
             gui,
             pending: None,
             route: None,
+            drag: None,
         }
     }
 
+    /// The clip of pattern `pattern` of section `row` as the plugin plays it (its pattern
+    /// arrays and the values the panel shows: the shuffle, the 808's switches), written to a
+    /// temporary file ([`clip::write_temp`]).
+    fn clip_file(&self, row: usize, pattern: u8) -> Result<PathBuf, String> {
+        if row > 3 || pattern > 31 {
+            return Err("no such pattern".into());
+        }
+        let values = self.params.panel_values();
+        let mut bytes = self.params.main().doc.patterns[row].clone();
+        if bytes.is_empty() {
+            // before the first build the song's own patterns
+            bytes = self.params.view(&values).1[row].clone();
+        }
+        let len = if row < 2 {
+            clip::LEN_303
+        } else {
+            clip::LEN_DRUM
+        };
+        let at = pattern as usize * len;
+        let one = bytes
+            .get(at..at + len)
+            .ok_or("the pattern array is short")?;
+        let data = clip::clip(row, pattern, one, &clip_controls(&values));
+        clip::write_temp(&clip::clips_dir(), &clip::file_name(row, pattern), &data)
+            .map_err(|e| format!("the clip could not be written: {e}"))
+    }
+}
+
+/// The clip's controls of the parameter values `values` ([`SPECS`] order).
+pub fn clip_controls(values: &[i32; params::COUNT]) -> clip::Controls {
+    let value = |t: Target| {
+        SPECS
+            .iter()
+            .position(|s| s.target == t)
+            .map_or(0, |i| values[i])
+    };
+    let mut c = clip::Controls {
+        shuffle: value(Target::Shuffle).clamp(0, 127) as u8,
+        ..clip::Controls::default()
+    };
+    for (s, ctrl) in c.switches_808.iter_mut().zip([11, 14, 17, 19, 21]) {
+        *s = value(Target::Ctrl(orb_engine::song::Device::Tr808, ctrl)) != 0;
+    }
+    c
+}
+
+impl EditorEmbed {
     /// A file holding the instance's mod: the one the editor chose, else a copy of the state's
     /// bytes in the temporary folder (the 808's mod window and Mods > Info read the file).
     fn kit_file(&self) -> Option<(String, PathBuf)> {
@@ -1141,6 +1222,23 @@ impl Embed for EditorEmbed {
             PluginMode::Gate => Mode::Gate,
             PluginMode::Note => Mode::Note,
         });
+    }
+
+    /// The pattern drag-out (task-203): the clip's file, for the native drag after the frame.
+    fn drag_pattern(&mut self, row: usize, pattern: u8) -> bool {
+        let Some(pending) = &self.drag else {
+            return false;
+        };
+        match self.clip_file(row, pattern) {
+            Ok(path) => {
+                pending.put(path);
+                true
+            }
+            Err(e) => {
+                nice_plug::nice_warn!("the pattern drag: {e}");
+                false
+            }
+        }
     }
 }
 
