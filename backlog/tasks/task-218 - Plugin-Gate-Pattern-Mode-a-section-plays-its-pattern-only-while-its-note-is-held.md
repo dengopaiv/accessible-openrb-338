@@ -7,6 +7,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-16T15:20:00Z'
+updated_date: '2026-11-16T15:22:00Z'
 labels:
   - player
   - ui
@@ -69,4 +70,11 @@ ordinal: 225000
 - [ ] #6 docs/plugin.md and docs/midi.md describe Gate mode; task-185's final summary has a change note
 - [ ] #7 The user checks Gate mode in Reaper before merge (screenshots of the menu included)
 - [ ] #8 cargo test, clippy -D warnings and nightly fmt pass
+- [ ] #9 Gate never changes the section's On/off switch (no parameter change or host gesture); a section sounds only when its On/off is on and its gate is open; the panel's On button does not follow the gate (tests)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Clarification (supervisor, 2026-11-16, per task-185's rule that notes never change parameters): the gate never changes the section's On/off switch (the host parameter, the panel's On button, the remote's On/Off note). A section sounds in Gate mode only when its On/off switch is on AND its gate is open; the On/off switch stays the user's mute, independent of the clip. The panel's On button does not follow the gate; the gate state shows only through the playing pattern's step lights. No gate gesture or parameter change reaches the host.
+<!-- SECTION:NOTES:END -->
