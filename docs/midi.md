@@ -77,7 +77,10 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
   (`StandardMapping::mode`, default Select Patterns); no menu item, setting, port, LED or Quick
   Mapping (task-188). No Remote MIDI Control on/off: the original's is off by default [G]
   (section 2), orb's layer acts whenever a source feeds it (a deliberate difference; the plugin
-  and task-188 decide when to feed it).
+  and task-188 decide when to feed it). The layer's default channel is 1; the plugin
+  (`docs/plugin.md` section 8) feeds it only when its own Standard Mapping setting is on (off by
+  default) and sets the channel to 16 by default, since channels 1..4 are the plugin's device
+  channels (303 #1, 303 #2, 808, 909).
 - **Not mapped yet.** The Program Synth notes (step programming;
   `docs/standard_midi_mapping.md` section 7): task-189.
 - **Differences from the original**: `docs/standard_midi_mapping.md` section 10.

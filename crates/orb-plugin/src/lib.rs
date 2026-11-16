@@ -146,7 +146,7 @@ impl Plugin for OrbPlugin {
         ..AudioIOLayout::const_default()
     }];
 
-    // notes select patterns (channels 2..5); the Standard Mapping also takes control changes
+    // notes select patterns (channels 1..4); the Standard Mapping also takes control changes
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 

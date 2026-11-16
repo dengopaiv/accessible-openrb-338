@@ -205,7 +205,9 @@ of the stored layout that was not traced), on Remote MIDI Control being on (defa
 0x41C293), on Standard (40) rather than Quick (41) mapping (default Standard, 0x41C29D; the
 dialog's radio, `sub_41E959` 0x41EABE / 0x41EACA), and on the keyboard mode (section 6).
 `docs/midi.md` has the settings. orb's layer listens to one channel (`StandardMapping::channel`,
-default 0 = channel 1), is on when its source feeds it, and has the mode.
+default 0 = channel 1), is on when its source feeds it, and has the mode. The plugin
+(`docs/plugin.md` section 8) feeds it only when its Remote MIDI setting is on (off by default)
+and sets the channel to 16 by default (channels 1..4 are its device channels).
 
 ## 9. Differences from the manual
 

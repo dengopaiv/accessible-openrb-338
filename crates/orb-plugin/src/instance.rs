@@ -13,7 +13,7 @@
 //! `Command::Load`.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use base64::Engine as _;
@@ -66,7 +66,7 @@ pub enum Kit {
 }
 
 /// What the state saves besides the parameters.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Doc {
     /// The song file as loaded (`None`: a new song).
     pub song: Option<Vec<u8>>,
@@ -78,20 +78,43 @@ pub struct Doc {
     pub kit: Kit,
     /// The editor's size, kept for the editor (task-201).
     pub editor_size: Option<(u32, u32)>,
-    /// The Standard Mapping's channel, 0..=15 (MIDI channel 1..16; never 1..=4, the sections'
-    /// channels 2..5: [`check_remote_channel`]).
+    /// Whether the Standard Mapping (Remote MIDI) is on; off by default, as the original's.
+    pub remote_enabled: bool,
+    /// The Standard Mapping's channel, 0..=15 (MIDI channel 1..16; never 0..=3, the sections'
+    /// channels 1..4: [`check_remote_channel`]); [`DEFAULT_REMOTE_CHANNEL`].
     pub remote_channel: u8,
 }
 
+impl Default for Doc {
+    fn default() -> Doc {
+        Doc {
+            song: None,
+            patterns: Default::default(),
+            vintage: None,
+            kit: Kit::default(),
+            editor_size: None,
+            remote_enabled: false,
+            remote_channel: DEFAULT_REMOTE_CHANNEL,
+        }
+    }
+}
+
+/// The Standard Mapping's default channel (0-based): MIDI channel 16.
+pub const DEFAULT_REMOTE_CHANNEL: u8 = 15;
+
+fn default_remote_channel() -> u8 {
+    DEFAULT_REMOTE_CHANNEL
+}
+
 /// The MIDI channels (0-based) of the four pattern sections, 303 #1, 303 #2, 808 and 909: MIDI
-/// channels 2..5.
-pub const SECTION_CHANNELS: std::ops::RangeInclusive<u8> = 1..=4;
+/// channels 1..4.
+pub const SECTION_CHANNELS: std::ops::RangeInclusive<u8> = 0..=3;
 
 /// Refuses a remote channel (0-based) that is a section's channel or not a MIDI channel.
 pub fn check_remote_channel(c: u8) -> Result<(), String> {
     if SECTION_CHANNELS.contains(&c) {
         return Err(format!(
-            "MIDI channel {} is a pattern section's channel (2..5); the remote channel must be \
+            "MIDI channel {} is a pattern section's channel (1..4); the remote channel must be \
              another",
             c + 1
         ));
@@ -103,12 +126,31 @@ pub fn check_remote_channel(c: u8) -> Result<(), String> {
 }
 
 /// The settings the main thread shares with the process side (atomics only).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Shared {
+    remote_enabled: AtomicBool,
     remote_channel: AtomicU8,
 }
 
+impl Default for Shared {
+    fn default() -> Shared {
+        Shared {
+            remote_enabled: AtomicBool::new(false),
+            remote_channel: AtomicU8::new(DEFAULT_REMOTE_CHANNEL),
+        }
+    }
+}
+
 impl Shared {
+    /// Whether the Standard Mapping is on.
+    pub fn remote_enabled(&self) -> bool {
+        self.remote_enabled.load(Ordering::Relaxed)
+    }
+
+    fn set_remote_enabled(&self, on: bool) {
+        self.remote_enabled.store(on, Ordering::Relaxed);
+    }
+
     /// The Standard Mapping's channel, 0..=15.
     pub fn remote_channel(&self) -> u8 {
         self.remote_channel.load(Ordering::Relaxed)
@@ -135,8 +177,11 @@ struct Saved {
     #[serde(rename = "mod")]
     kit: Option<SavedMod>,
     editor_size: Option<(u32, u32)>,
-    /// Absent in the states before task-198: channel 1.
+    /// Absent: off.
     #[serde(default)]
+    remote_enabled: bool,
+    /// Absent: channel 16 (0-based 15).
+    #[serde(default = "default_remote_channel")]
     remote_channel: u8,
 }
 
@@ -161,6 +206,7 @@ impl Doc {
                 }),
             },
             editor_size: self.editor_size,
+            remote_enabled: self.remote_enabled,
             remote_channel: self.remote_channel,
         };
         serde_json::to_string(&s).expect("the document serializes")
@@ -208,6 +254,7 @@ impl Doc {
             vintage: s.vintage,
             kit,
             editor_size: s.editor_size,
+            remote_enabled: s.remote_enabled,
             remote_channel: s.remote_channel,
         })
     }
@@ -448,6 +495,7 @@ impl Main {
             vintage: None,
             kit: self.doc.kit.clone(),
             editor_size: self.doc.editor_size,
+            remote_enabled: self.doc.remote_enabled,
             remote_channel: self.doc.remote_channel,
         };
         let samples = self.samples();
@@ -513,13 +561,26 @@ impl OrbParams {
         &self.shared
     }
 
-    /// The Standard Mapping's channel (0-based; default 0, MIDI channel 1).
+    /// Whether the Standard Mapping (Remote MIDI) is on (default off).
+    pub fn remote_enabled(&self) -> bool {
+        self.main().doc.remote_enabled
+    }
+
+    /// Turns the Standard Mapping on or off, kept in the state; on, it listens on the remote
+    /// channel (default MIDI channel 16).
+    pub fn set_remote_enabled(&self, on: bool) {
+        let mut m = self.main();
+        m.doc.remote_enabled = on;
+        self.shared.set_remote_enabled(on);
+    }
+
+    /// The Standard Mapping's channel (0-based; default 15, MIDI channel 16).
     pub fn remote_channel(&self) -> u8 {
         self.main().doc.remote_channel
     }
 
     /// Sets the Standard Mapping's channel (0-based), kept in the state. A pattern section's
-    /// channel (1..=4, MIDI channels 2..5) is refused: its notes select patterns.
+    /// channel (0..=3, MIDI channels 1..4) is refused: its notes select patterns.
     pub fn set_remote_channel(&self, c: u8) -> Result<(), String> {
         check_remote_channel(c)?;
         let mut m = self.main();
@@ -756,8 +817,8 @@ unsafe impl Params for OrbParams {
                 // a remote channel that is a section's falls back to the default; the song,
                 // the patterns and the controls are kept
                 if let Err(e) = check_remote_channel(doc.remote_channel) {
-                    m.last_error = Some(format!("the saved state: {e}; channel 1 is used"));
-                    doc.remote_channel = 0;
+                    m.last_error = Some(format!("the saved state: {e}; channel 16 is used"));
+                    doc.remote_channel = DEFAULT_REMOTE_CHANNEL;
                 }
                 m.doc = doc;
             }
@@ -767,6 +828,7 @@ unsafe impl Params for OrbParams {
             }
             None => m.doc = Doc::default(),
         }
+        self.shared.set_remote_enabled(m.doc.remote_enabled);
         self.shared.set_remote_channel(m.doc.remote_channel);
         m.reload(&values);
     }

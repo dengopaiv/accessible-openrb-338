@@ -1,6 +1,7 @@
 //! task-198: host sync and pattern mode. A simulated host transport (start, seek, loop jump,
-//! tempo change, stop), pattern selection by notes on channels 2..5, the Standard Mapping on its
-//! channel, deterministic renders, and the snapshot's Sync and MIDI flags.
+//! tempo change, stop), pattern selection by notes on channels 1..4, the Standard Mapping (off by
+//! default, channel 16) on its channel, deterministic renders, and the snapshot's Sync and MIDI
+//! flags.
 
 mod common;
 
@@ -370,12 +371,12 @@ fn notes_select_patterns_at_once_and_latch() {
         }]);
         // 120 BPM: a bar is 88200 frames; the notes fall inside bars
         let midi = [
-            note_on(10_000, 1, 5),
+            note_on(10_000, 0, 5),
             // a note-off and a velocity-0 note-on are ignored; a note above 31 too
             Midi {
                 at: 20_000,
                 message: Message::NoteOff {
-                    channel: 1,
+                    channel: 0,
                     note: 7,
                     velocity: 64,
                 },
@@ -383,16 +384,19 @@ fn notes_select_patterns_at_once_and_latch() {
             Midi {
                 at: 20_001,
                 message: Message::NoteOn {
-                    channel: 1,
+                    channel: 0,
                     note: 8,
                     velocity: 0,
                 },
             },
-            note_on(20_002, 1, 40),
-            note_on(30_000, 2, 31),
-            note_on(30_000, 3, 9),
-            note_on(30_000, 4, 17),
-            note_on(130_000, 1, 2),
+            note_on(20_002, 0, 40),
+            note_on(30_000, 1, 31),
+            note_on(30_000, 2, 9),
+            note_on(30_000, 3, 17),
+            // channels 5..16 (0-based 4..15) do not select patterns
+            note_on(35_000, 4, 20),
+            note_on(35_000, 15, 21),
+            note_on(130_000, 0, 2),
         ];
         // the panel selects 303 #1's pattern 12 at frame 40000: it waits for the bar line
         let changes = [Change {
@@ -429,6 +433,7 @@ fn notes_select_patterns_at_once_and_latch() {
             "note-offs and notes above 31 ignored"
         );
         assert_eq!(after(30_000)[1..], [Some(31), Some(9), Some(17)]);
+        assert_eq!(after(35_000)[..], after(30_000)[..], "channels 5..16");
         // the panel's change waits for the bar line (frame 88200) and then wins
         assert_eq!(after(80_000)[0], Some(5));
         assert_eq!(after(90_000)[0], Some(12), "the panel wins after the note");
@@ -459,7 +464,7 @@ fn notes_on_the_section_channels_do_nothing_in_note_mode() {
         &tl,
         4096,
         512,
-        &[note_on(100, 1, 7)],
+        &[note_on(100, 0, 7)],
         &[],
         |c, _| {
             assert!(!c.following(), "no sync in note mode");
@@ -491,14 +496,14 @@ fn exact_timeline() -> Timeline {
 
 fn exact_midi() -> Vec<Midi> {
     vec![
-        note_on(15_000, 1, 3),
-        note_on(33_333, 3, 6),
-        note_on(70_001, 4, 30),
-        note_on(95_000, 2, 1),
+        note_on(15_000, 0, 3),
+        note_on(33_333, 2, 6),
+        note_on(70_001, 3, 30),
+        note_on(95_000, 1, 1),
         Midi {
             at: 99_999,
             message: Message::ControlChange {
-                channel: 0,
+                channel: 15,
                 controller: 7,
                 value: 40,
             },
@@ -508,6 +513,7 @@ fn exact_midi() -> Vec<Midi> {
 
 fn render(buf: usize) -> Vec<f32> {
     let p = with_song("full_mix");
+    p.set_remote_enabled(true);
     let mut core = activate(&p, 44_100);
     let changes = [Change {
         at: 60_000,
@@ -565,15 +571,31 @@ fn the_standard_mapping_works_on_its_channel() {
         tempo: Some(120.0),
         beats: 0.0,
     }]);
-    // channel 1 (0-based 0), the default: CC 7 is the master level; other channels ignored
+    // off by default, on channel 16 (0-based 15) when turned on
+    assert!(!p.remote_enabled());
+    assert_eq!(p.remote_channel(), 15);
     let mut core = activate(&p, 44_100);
+    let before = master(&core);
+    assert_ne!(before, 33);
     run(
         &p,
         &mut core,
         &tl,
         512,
         512,
-        &[cc(100, 0, 7, 33)],
+        &[cc(100, 15, 7, 33), cc(101, 0, 7, 34)],
+        &[],
+        |_, _| {},
+    );
+    assert_eq!(master(&core), before, "off: nothing is mapped");
+    p.set_remote_enabled(true);
+    run(
+        &p,
+        &mut core,
+        &tl,
+        512,
+        512,
+        &[cc(100, 15, 7, 33)],
         &[],
         |_, _| {},
     );
@@ -584,18 +606,20 @@ fn the_standard_mapping_works_on_its_channel() {
         &tl,
         512,
         512,
-        &[cc(100, 6, 7, 44)],
+        &[cc(100, 6, 7, 44), cc(101, 0, 7, 45)],
         &[],
         |_, _| {},
     );
     assert_eq!(master(&core), 33, "not the remote channel");
-    // the sections' channels are refused as the remote channel
-    for c in 1..=4 {
+    // the sections' channels (MIDI 1..4) are refused as the remote channel
+    for c in 0..=3 {
         let e = p.set_remote_channel(c).unwrap_err();
         assert!(e.contains("section"), "{e}");
     }
     assert!(p.set_remote_channel(16).is_err());
-    assert_eq!(p.remote_channel(), 0);
+    assert_eq!(p.remote_channel(), 15);
+    p.set_remote_channel(4).unwrap();
+    assert_eq!(p.remote_channel(), 4, "MIDI channel 5 is allowed");
     // channel 7 (0-based 6) takes over at once in the running instance
     p.set_remote_channel(6).unwrap();
     run(
@@ -647,24 +671,50 @@ fn the_standard_mapping_works_on_its_channel() {
     let q = OrbParams::new();
     q.deserialize_fields(&saved);
     assert_eq!(q.remote_channel(), 6);
-    let bad: BTreeMap<String, String> = saved
+    assert!(q.remote_enabled());
+    assert!(!OrbParams::new().remote_enabled());
+    // a state without the two keys: off, channel 16
+    let bare: BTreeMap<String, String> = saved
         .iter()
         .map(|(k, v)| {
-            (
-                k.clone(),
-                v.replace("\"remote_channel\":6", "\"remote_channel\":2"),
-            )
+            let v = v
+                .replace(",\"remote_enabled\":true", "")
+                .replace(",\"remote_channel\":6", "");
+            (k.clone(), v)
         })
         .collect();
-    assert_ne!(bad, saved);
-    let r = OrbParams::new();
-    // what the host does: the parameters, then the fields
-    for (id, v) in p.ids().iter().zip(p.values()) {
-        set(&r, id, v);
+    assert!(
+        !bare.values().any(|v| v.contains("remote_")),
+        "keys removed"
+    );
+    let b = OrbParams::new();
+    b.deserialize_fields(&bare);
+    assert!(!b.remote_enabled());
+    assert_eq!(b.remote_channel(), 15);
+    assert!(b.main().last_error.is_none());
+    // a device channel (MIDI 1, 3 and 4 too, the boundaries) resets to channel 16
+    let mut r = None;
+    for bad_channel in [0, 2, 3] {
+        let bad: BTreeMap<String, String> = saved
+            .iter()
+            .map(|(k, v)| {
+                let to = format!("\"remote_channel\":{bad_channel}");
+                (k.clone(), v.replace("\"remote_channel\":6", &to))
+            })
+            .collect();
+        assert_ne!(bad, saved);
+        let x = OrbParams::new();
+        // what the host does: the parameters, then the fields
+        for (id, v) in p.ids().iter().zip(p.values()) {
+            set(&x, id, v);
+        }
+        x.deserialize_fields(&bad);
+        assert_eq!(x.remote_channel(), 15, "reset to channel 16");
+        assert!(x.remote_enabled(), "the on/off is kept");
+        assert!(x.main().last_error.as_deref().unwrap().contains("section"));
+        r = Some(x);
     }
-    r.deserialize_fields(&bad);
-    assert_eq!(r.remote_channel(), 0);
-    assert!(r.main().last_error.as_deref().unwrap().contains("section"));
+    let r = r.unwrap();
     {
         let (want, got) = (&p.main().doc, &r.main().doc);
         assert!(got.song.is_some(), "the song is kept");
@@ -699,7 +749,7 @@ fn the_snapshot_has_the_sync_led_and_midi_activity() {
     run(&p, &mut core, &tl, 4096, 512, &[], &[], |_, _| {});
     assert!(!snap(&p).host_sync, "the host is stopped: orb free-runs");
     assert_eq!(snap(&p).midi_in, 0);
-    let midi = [note_on(4200, 1, 3), cc(4300, 0, 7, 9), note_on(4400, 9, 60)];
+    let midi = [note_on(4200, 0, 3), cc(4300, 0, 7, 9), note_on(4400, 9, 60)];
     run(&p, &mut core, &tl, 8192, 512, &midi, &[], |_, _| {});
     assert!(snap(&p).host_sync, "pattern mode, orb and the host play");
     assert_eq!(snap(&p).midi_in, 3, "every message counts");

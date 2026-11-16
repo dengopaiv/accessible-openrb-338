@@ -45,11 +45,12 @@
 //!
 //! # MIDI
 //!
-//! A note-on 0..31 on channel 2..5 (303 #1, 303 #2, 808, 909) in pattern mode selects that
+//! A note-on 0..31 on channel 1..4 (303 #1, 303 #2, 808, 909) in pattern mode selects that
 //! section's pattern at once: the pattern controller (as the panel's message), then slot 2 on
 //! that device (`Command::Relocate`), which takes a pending pattern at once where the panel's
-//! waits for the bar line. A note-off does nothing. Every other message goes to the Standard
-//! Mapping on the remote channel ([`crate::instance::Shared`]); of its actions the controls are
+//! waits for the bar line. A note-off does nothing. Every other message goes, when the Standard
+//! Mapping is on (off by default), to it on the remote channel (default 16,
+//! [`crate::instance::Shared`]); of its actions the controls are
 //! applied, the transport ones (Play, Stop, Record, Locate) are not: the mode is the host's
 //! parameter and the transport the host's.
 //!
@@ -223,14 +224,14 @@ impl Engine {
     fn message(&mut self, m: &Message) {
         self.audio.midi_received(1);
         if let Message::NoteOn {
-            channel: c @ 1..=4,
+            channel: c @ 0..=3,
             note,
             velocity,
         } = *m
         {
             // a section's channel: a pattern in pattern mode (note mode is task-200)
             if velocity > 0 && note < 32 && self.playing {
-                let device: Device = ROWS[c as usize - 1];
+                let device: Device = ROWS[c as usize];
                 self.send(Command::DeviceParam {
                     device,
                     ctrl: 1,
@@ -238,6 +239,9 @@ impl Engine {
                 });
                 self.send(Command::Relocate(device));
             }
+            return;
+        }
+        if !self.shared.remote_enabled() {
             return;
         }
         self.mapping.channel = self.shared.remote_channel();

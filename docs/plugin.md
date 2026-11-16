@@ -143,7 +143,12 @@ field, `orb`, a JSON object (version 1):
 | `vintage` | the Vintage sound model |
 | `mod` | null for the built-in kit (never embedded); else `{name, sha256, data}`: the mod's INFO name, the SHA-256 of its bytes and the recrypted `.rbm`, base64 (the mods are 2.6 to 9.4 MB, so about 3.5 to 12.5 MB of text) |
 | `editor_size` | the editor's size, for task-201 |
-| `remote_channel` | the Standard Mapping's MIDI channel, 0-based (0: channel 1, the default; absent in older states); a section's channel (1..4) restores as 0 with `last_error` set, the rest of the state kept (section 8) |
+| `remote_enabled` | whether the Standard Mapping (Remote MIDI) is on; false by default and when absent (section 8) |
+| `remote_channel` | the Standard Mapping's MIDI channel, 0-based (15: channel 16, the default and when absent); a section's channel (0..3, MIDI 1..4) restores as 15 with `last_error` set, the rest of the state kept (section 8) |
+
+The plugin is not released: no state from before task-207 (section channels 2..5, the mapping
+always on, channel 1) is migrated or recognized as such; such a state's `remote_channel` is read
+as it is.
 
 A restore (nice-plug sets the parameters, then calls `deserialize_fields`) replaces the
 document and, when the instance runs, builds the engine and sends it; otherwise the next
@@ -175,6 +180,7 @@ For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):
   patterns playing, the tempo orb plays at for the read-only tempo display), `host_sync` (the
   Sync LED) and `midi_in` (a count of the host's MIDI messages: the MIDI LED lights when it
   changes).
+- `remote_enabled()`, `set_remote_enabled(on)`: the Standard Mapping's on/off (default off).
 - `remote_channel()`, `set_remote_channel(c)`: the Standard Mapping's channel (section 8); a
   section's channel is refused.
 - `select_pattern(row, pattern)`: a pattern button's click as the panel's message (it plays from
@@ -266,9 +272,10 @@ the last record that starts at or before `h`, extrapolated at its tempo while th
   timeline are identical, and with a host whose positions do not depend on where its buffers
   start, so are different buffer sizes (`sync.rs`).
 
-**Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 2..5 (303 #1, 303 #2, 808, 909)
-in pattern mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel
-message (it becomes the pending pattern), then slot 2 on that device, which takes it at once
+**Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 1..4 (303 #1 = 1, 303 #2 = 2,
+808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303 #1) in pattern
+mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel message (it
+becomes the pending pattern), then slot 2 on that device, which takes it at once
 (`relocate`: `0x100255E0`, `0x10028030`, `0x1002B670`) where the panel's would wait for the bar
 line; the next step is the new pattern's step at the same position. It latches until the next
 note on that channel or a panel change (a parameter change: sent when the value changes, and
@@ -278,10 +285,20 @@ parameters: the parameter keeps the panel's pattern, which a state and every act
 bounce) start from.
 
 **The Standard Mapping** (`docs/standard_midi_mapping.md`, orb-player's `midi::StandardMapping`)
-listens on the remote channel, MIDI channel 1 by default (`remote_channel` in the state). A
-section's channel (2..5) is refused by `set_remote_channel`; in a restored state it becomes
-channel 1 with `last_error` set, and the rest of the state (song, patterns, controls) is kept.
-Its control actions (the devices' and the
+is **off by default** (the original's Remote MIDI Control defaults to off too [G], 0x41C293,
+`docs/midi.md`; `remote_enabled` in the state, no host parameter). When on, it listens on the remote channel,
+MIDI channel 16 by default (`remote_channel`); any channel but 1..4 is allowed. A section's
+channel (1..4) is refused by `set_remote_channel`; in a restored state it becomes channel 16
+with `last_error` set, and the rest of the state (song, patterns, controls) is kept. Channels
+5..16 never select patterns. While it is off, every message but the section notes is ignored
+(it still counts for the MIDI LED).
+
+**The main way to map a controller** is the host's MIDI learn of the plugin's parameters, not
+the Standard Mapping: in Reaper the FX window's Param button > Learn (move the control, then
+pick the parameter). The mode parameter (Play/Stop, `g1`) is a two-valued parameter, so it
+learns as a play/stop button; the host's transport is the other way to start and stop.
+
+The Standard Mapping's control actions (the devices' and the
 mixer's knobs and switches, the pattern notes 12..63, the shuffle) are applied to the engine at
 the message's frame, like a host note: they do not change the parameters, and the last write
 wins. Its transport actions (Play, Stop, Record, the locates) are dropped: the mode is a host
