@@ -12,12 +12,14 @@
 //! The device keeps the DLL's fields; each field's doc names its offset.
 
 #[cfg(test)]
+mod note_tests;
+#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
 
 use crate::drums::{Dual, Filter, Pitched, Simple};
-use crate::frame::{Block, BlockContext, ChannelDevice, SongDevice};
+use crate::frame::{Block, BlockContext, ChannelDevice, SongDevice, Sounding};
 use crate::process::ProcessState;
 use crate::samples::{Retired, Sample, SampleSet};
 use crate::seq::TrackMut;
@@ -72,6 +74,56 @@ pub const CB: usize = 8;
 pub const CY: usize = 9;
 pub const OH: usize = 10;
 pub const CH: usize = 11;
+
+/// The sounds of [`Sounding`] (not in the original; task-200): bit `column - 1` for the
+/// instrument columns (the shared slots' tom, rim shot and clap), then the shared slots' other
+/// sounds.
+pub mod sound {
+    pub const BD: u32 = 0;
+    pub const SD: u32 = 1;
+    pub const LT: u32 = 2;
+    pub const MT: u32 = 3;
+    pub const HT: u32 = 4;
+    pub const RS: u32 = 5;
+    pub const CP: u32 = 6;
+    pub const CB: u32 = 7;
+    pub const CY: u32 = 8;
+    pub const OH: u32 = 9;
+    pub const CH: u32 = 10;
+    pub const LC: u32 = 11;
+    pub const MC: u32 = 12;
+    pub const HC: u32 = 13;
+    pub const CL: u32 = 14;
+    pub const MA: u32 = 15;
+}
+
+/// Note mode's velocity from which a hit has accent (task-200, `docs/midi.md` section 5.5).
+pub const ACCENT_VELOCITY: u8 = 100;
+
+/// The instrument column a General MIDI drum note plays (`docs/midi.md` section 5.4), with the
+/// shared slot's sound it names: `Some(true)` the tom, rim shot or clap, `Some(false)` the
+/// conga, claves or maracas, `None` for an instrument with one sound.
+pub fn gm_note(note: u8) -> Option<(usize, Option<bool>)> {
+    Some(match note {
+        36 => (BD, None),
+        37 => (RS, Some(true)),
+        38 => (SD, None),
+        39 => (CP, Some(true)),
+        42 => (CH, None),
+        43 => (LT, Some(true)),
+        46 => (OH, None),
+        47 => (MT, Some(true)),
+        49 => (CY, None),
+        50 => (HT, Some(true)),
+        56 => (CB, None),
+        62 => (HT, Some(false)),
+        63 => (MT, Some(false)),
+        64 => (LT, Some(false)),
+        70 => (CP, Some(false)),
+        75 => (RS, Some(false)),
+        _ => return None,
+    })
+}
 
 /// The parameter block of `sub_10018FB0` (ctor, both copies).
 pub const DEFAULT_PARAMS: Params = [
@@ -160,6 +212,12 @@ pub struct Tr808 {
     process: ProcessState,
     /// T808 (`word_1014CBD8`, built by the first 808 ctor, [`crate::tables::tr808_tom_step`]).
     tom_step: [u16; 128],
+    /// Not in the original (task-200): the shared slots LT/LC, MT/MC, HT/HC, RS/CL, CP/MA last
+    /// played their second sound (conga, claves, maracas).
+    alt: [bool; 5],
+    /// Not in the original: the hit being triggered has accent; [`Sounding::ac`] by sound.
+    hit_ac: bool,
+    ac_bits: u32,
 }
 
 const SIMPLE_RS: usize = 0;
@@ -197,6 +255,69 @@ impl Tr808 {
             samples,
             process,
             tom_step: crate::tables::tr808_tom_step(),
+            alt: [false; 5],
+            hit_ac: false,
+            ac_bits: 0,
+        }
+    }
+
+    /// The accent of the step function (0x10027821): `f32(AC * accent level * 0.03125f + 1.0)`.
+    fn set_accent(&mut self, ac: u8) {
+        self.accent = st((ac as f64 * self.live[ACCENT] as f64) * ACC_STEP as f64 + ACC_BASE);
+        self.hit_ac = ac != 0;
+    }
+
+    /// Note mode's hit (task-200): the General MIDI drum note's instrument as a step with it
+    /// alone would play it, with AC (1, as the 808's AC row) at velocity [`ACCENT_VELOCITY`] and
+    /// up. A shared slot plays the sound the note names, whatever its switch says; the switch is
+    /// not changed.
+    pub fn key_on(&mut self, note: u8, velocity: u8) {
+        let Some((i, select)) = gm_note(note) else {
+            return;
+        };
+        self.set_accent((velocity >= ACCENT_VELOCITY) as u8);
+        self.trigger_as(i, select);
+    }
+
+    /// The sounding mask and the AC flags of [`Sounding`].
+    pub fn sounding(&self) -> Sounding {
+        let mut mask = 0u32;
+        let mut on = |bit: u32, audible: bool| {
+            if audible {
+                mask |= 1 << bit;
+            }
+        };
+        on(
+            sound::BD,
+            self.filter[FILTER_BD_A].audible() || self.filter[FILTER_BD_B].audible(),
+        );
+        on(sound::CY, self.filter[FILTER_CY].audible());
+        on(sound::SD, self.dual.audible());
+        let shared = [
+            (sound::LT, sound::LC, self.pitched[0].audible()),
+            (sound::MT, sound::MC, self.pitched[1].audible()),
+            (sound::HT, sound::HC, self.pitched[2].audible()),
+            (sound::RS, sound::CL, self.simple[SIMPLE_RS].audible()),
+            (sound::CP, sound::MA, self.simple[SIMPLE_CP].audible()),
+        ];
+        for (k, (first, second, audible)) in shared.into_iter().enumerate() {
+            on(if self.alt[k] { second } else { first }, audible);
+        }
+        on(sound::CB, self.simple[SIMPLE_CB].audible());
+        on(sound::OH, self.simple[SIMPLE_OH].audible());
+        on(sound::CH, self.simple[SIMPLE_CH].audible());
+        Sounding {
+            mask,
+            ac: self.ac_bits,
+        }
+    }
+
+    /// Records the hit of `bit` for [`Tr808::sounding`].
+    fn hit(&mut self, bit: u32) {
+        if self.hit_ac {
+            self.ac_bits |= 1 << bit;
+        } else {
+            self.ac_bits &= !(1 << bit);
         }
     }
 
@@ -222,18 +343,25 @@ impl Tr808 {
 
     /// Instrument `i` (`sub_10027894`, cases 1..11).
     fn trigger(&mut self, i: usize) {
+        self.trigger_as(i, None);
+    }
+
+    /// Instrument `i`; a shared slot plays its first sound (tom, rim shot, clap) when `select`
+    /// is `Some(true)`, its second when `Some(false)`, and what its switch says when `None` (the
+    /// step function's case).
+    fn trigger_as(&mut self, i: usize, select: Option<bool>) {
         let lv = self.live;
         match i {
             BD => self.bass_or_cymbal(true),
             CY => self.bass_or_cymbal(false),
             SD => self.snare(),
-            LT | MT | HT => self.tom(i),
+            LT | MT | HT => self.tom(i, select),
             RS | CP | CB => {
                 let (voice, level, sample) = match i {
                     RS => (
                         SIMPLE_RS,
                         lv[RS_LEVEL],
-                        if lv[RS_SELECT] != 0 {
+                        if select.unwrap_or(lv[RS_SELECT] != 0) {
                             slot::RS
                         } else {
                             slot::CL
@@ -242,7 +370,7 @@ impl Tr808 {
                     CP => (
                         SIMPLE_CP,
                         lv[CP_LEVEL],
-                        if lv[CP_SELECT] != 0 {
+                        if select.unwrap_or(lv[CP_SELECT] != 0) {
                             slot::CP
                         } else {
                             slot::MA
@@ -253,12 +381,26 @@ impl Tr808 {
                 let g = st(self.level(level, LEVEL_SCALE));
                 let s = self.sample(sample);
                 self.simple[voice].trigger(s, g, NO_DECAY, 0);
+                let bit = match sample {
+                    slot::RS => sound::RS,
+                    slot::CL => sound::CL,
+                    slot::CP => sound::CP,
+                    slot::MA => sound::MA,
+                    _ => sound::CB,
+                };
+                match i {
+                    RS => self.alt[3] = sample == slot::CL,
+                    CP => self.alt[4] = sample == slot::MA,
+                    _ => {}
+                }
+                self.hit(bit);
             }
             OH => {
                 // 0x10027DDB: level >> 1, hold 4*decay, m 0.998
                 let g = st(self.level(lv[OH_LEVEL] >> 1, LEVEL_SCALE));
                 let s = self.sample(slot::OH);
                 self.simple[SIMPLE_OH].trigger(s, g, OH_DECAY_M, 4 * lv[OH_DECAY] as u32);
+                self.hit(sound::OH);
             }
             CH => {
                 // 0x10027E90: (2*level)/3, then every SIMPLE voice's hold is cleared (the choke)
@@ -268,6 +410,7 @@ impl Tr808 {
                 for v in &mut self.simple {
                     v.set_hold(0);
                 }
+                self.hit(sound::CH);
             }
             _ => {}
         }
@@ -301,6 +444,7 @@ impl Tr808 {
         let g = if bd { st((ONE - c as f64) * x) } else { st(x) };
         let s = self.sample(sample);
         self.filter[voice].trigger(s, g, m, 0, c);
+        self.hit(if bd { sound::BD } else { sound::CY });
     }
 
     /// `sub_1002A1E4`: the snare on the DUAL voice; the noise sample follows SEQ808 at the
@@ -316,13 +460,15 @@ impl Tr808 {
         let b = TR808_SD_NOISE_SAMPLE[TR808_SD_NOISE_SEQ[c as usize] as usize] as usize + 1;
         let (sa, sb) = (self.sample(a), self.sample(b));
         self.dual.trigger(sa, g1, NO_DECAY, 0, sb, g2);
+        self.hit(sound::SD);
     }
 
-    /// `sub_1002A004`: a tom (selector set) or conga on its PITCHED voice.
-    fn tom(&mut self, i: usize) {
+    /// `sub_1002A004`: a tom (selector set, or `select` true) or conga on its PITCHED voice.
+    fn tom(&mut self, i: usize, select: Option<bool>) {
         let base = LT_LEVEL + 3 * (i - LT);
-        let (level, tune, select) = (self.live[base], self.live[base + 1], self.live[base + 2]);
-        let sample = match (i, select != 0) {
+        let (level, tune) = (self.live[base], self.live[base + 1]);
+        let tom = select.unwrap_or(self.live[base + 2] != 0);
+        let sample = match (i, tom) {
             (LT, true) => slot::LT,
             (LT, false) => slot::LC,
             (MT, true) => slot::MT,
@@ -336,6 +482,9 @@ impl Tr808 {
         let step = self.tom_step[tune as usize & 127] as u32;
         let s = self.sample(sample);
         self.pitched[i - LT].trigger(s, g, NO_DECAY, 0, step);
+        self.alt[i - LT] = !tom;
+        let k = (i - LT) as u32;
+        self.hit(if tom { sound::LT + k } else { sound::LC + k });
     }
 
     /// The live parameters from the pattern-mode copy.
@@ -402,7 +551,7 @@ impl SongDevice for Tr808 {
             std::array::from_fn(|i| p.get(at + i).copied().unwrap_or(0))
         };
         // 0x10027821: f32(AC * accent level * 0.03125f + 1.0)
-        self.accent = st((row[AC] as f64 * self.live[ACCENT] as f64) * ACC_STEP as f64 + ACC_BASE);
+        self.set_accent(row[AC]);
         for (i, &v) in row.iter().enumerate().skip(1) {
             if v != 0 {
                 self.trigger(i);
@@ -530,6 +679,14 @@ impl ChannelDevice for Tr808 {
 
     fn patterns_mut(&mut self) -> Option<&mut [u8]> {
         Some(&mut self.patterns[..])
+    }
+
+    fn live_note_on(&mut self, note: u8, velocity: u8) {
+        self.key_on(note, velocity);
+    }
+
+    fn sounding(&self) -> Sounding {
+        Tr808::sounding(self)
     }
 
     /// Slot 14 ends with an unconditional `call sub_1001E4D0` at 0x10028273 from `esp0 - 0x18`

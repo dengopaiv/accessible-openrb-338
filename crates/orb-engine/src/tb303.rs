@@ -17,6 +17,8 @@
 //! envelope (`+0xCBC`) are the only f32 stores inside the loops.
 
 #[cfg(test)]
+mod note_tests;
+#[cfg(test)]
 mod tests;
 
 use crate::frame::{Block, BlockContext, ChannelDevice, SongDevice};
@@ -51,6 +53,18 @@ const TUNE_TABLE: [i16; 32] = [
     -12, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7,
     8, 9, 10, 11, 12, 12,
 ];
+
+// Note mode (not in the original; task-200, `docs/midi.md` section 5.3).
+/// The MIDI note of ReBirth's C (pattern note 0) at the Tune knob's center.
+pub const MIDI_C: i32 = 36;
+/// The velocity from which a note is accented.
+pub const ACCENT_VELOCITY: u8 = 100;
+/// The range of `tuneTab + semitones` whose pitch-table index (`64*x + 3072`, 0..6080) is in
+/// the 6144-entry table: the original checks no bound, so a note outside it is not played.
+const SEMIS_MIN: i32 = -48;
+const SEMIS_MAX: i32 = 47;
+/// The held notes kept; a note beyond them forgets the oldest.
+const HELD: usize = 16;
 
 // Note-on (0x10023CD4).
 /// `dbl_10153B28`: 1/12700.
@@ -256,6 +270,10 @@ pub struct Tb303 {
     pub song_mode: bool,
     /// The song's byte `+0x16D` (`sub_10013DA0()+0x15`), followed through msg 36.
     pub vintage: bool,
+    /// Not in the original (task-200): note mode's held notes, oldest first, as (MIDI note,
+    /// accent); the first `held_len` are valid. Cleared by slots 3 and 6.
+    pub held: [(u8, bool); HELD],
+    pub held_len: u8,
 }
 
 impl Default for Tb303 {
@@ -309,7 +327,70 @@ impl Tb303 {
             coefs: [0.0; 4],
             song_mode: false,
             vintage: false,
+            held: [(0, false); HELD],
+            held_len: 0,
         }
+    }
+
+    /// The semitones of MIDI note `note` and whether the pitch-table index it gives at the
+    /// current Tune is in the table.
+    fn key_semis(&self, note: u8) -> Option<i32> {
+        let semis = note as i32 - MIDI_C;
+        let tune = TUNE_TABLE[(self.live[TUNE] >> 2) as usize] as i32;
+        (SEMIS_MIN..=SEMIS_MAX)
+            .contains(&(tune + semis))
+            .then_some(semis)
+    }
+
+    /// Note mode's note-on (task-200, `docs/midi.md` section 5.3): the step note-on with the
+    /// note's semitones, accent at velocity [`ACCENT_VELOCITY`] and up, no rest. With another
+    /// note held, the slide flag is set first, as a sliding step before it would have it: no
+    /// new attack, the pitch glides (a tie for the same pitch). A note outside the pitch table
+    /// is ignored.
+    pub fn key_on(&mut self, note: u8, velocity: u8) {
+        let Some(semis) = self.key_semis(note) else {
+            return;
+        };
+        let accent = velocity >= ACCENT_VELOCITY;
+        let legato = self.held_len > 0;
+        if self.held_len as usize == HELD {
+            self.held.copy_within(1.., 0);
+            self.held_len -= 1;
+        }
+        self.held[self.held_len as usize] = (note, accent);
+        self.held_len += 1;
+        self.key_play(semis, accent, legato);
+    }
+
+    fn key_play(&mut self, semis: i32, accent: bool, legato: bool) {
+        self.slide = legato;
+        self.note_on_semis(semis, 0, accent as u8, 0);
+    }
+
+    /// Note mode's note-off: the oldest held instance of `note` is let go. The last note's
+    /// release is the note-off (the gate lasts as long as the notes); the release of the
+    /// sounding (newest) note slides back to the newest one still held (last-note priority),
+    /// skipping one the Tune has since put outside the table.
+    pub fn key_off(&mut self, note: u8) {
+        let n = self.held_len as usize;
+        let Some(i) = self.held[..n].iter().position(|h| h.0 == note) else {
+            return;
+        };
+        self.held.copy_within(i + 1..n, i);
+        self.held_len -= 1;
+        if i + 1 < n {
+            return;
+        }
+        while self.held_len > 0 {
+            let (m, accent) = self.held[self.held_len as usize - 1];
+            if let Some(semis) = self.key_semis(m) {
+                self.key_play(semis, accent, true);
+                return;
+            }
+            self.held_len -= 1;
+        }
+        // the slide flag is clear: every note-on here is a step without slide
+        self.note_off();
     }
 
     fn pattern(&self, p: u8) -> &[u8] {
@@ -335,6 +416,14 @@ impl Tb303 {
     /// the pitch and the slide flag; only a played step opens the gate.
     pub fn note_on(&mut self, step: [u8; 6]) {
         let [note, slide, accent, up, down, rest] = step;
+        // 0x10023E61: (int16)(note + 12*up - 12*down)
+        let semis = (note as i32 + 12 * up as i32 - 12 * down as i32) as i16 as i32;
+        self.note_on_semis(semis, slide, accent, rest);
+    }
+
+    /// The body of [`Tb303::note_on`] with the step's semitones (`note + 12*up - 12*down`,
+    /// already cut to i16) in place of its note bytes.
+    fn note_on_semis(&mut self, semis: i32, slide: u8, accent: u8, rest: u8) {
         let n = if self.vintage { 2 } else { 6 };
         // 0x10023CF2: fild reso; fmul 1/12700; fadd 0.99; fmul 0.999; fstp
         let c = st((self.live[RESONANCE] as f64 * ACC_RESO_SCALE + ACC_RESO_BASE) * ACC_RESO_MUL);
@@ -358,7 +447,6 @@ impl Tb303 {
             }
         }
         // 0x10023E61: ((tune + (int16)(note + 12*up - 12*down)) * 64 + 3072) * 16
-        let semis = (note as i32 + 12 * up as i32 - 12 * down as i32) as i16 as i32;
         let tune = TUNE_TABLE[(self.live[TUNE] >> 2) as usize] as i32;
         self.pitch_target = (((tune << 6) + (semis << 6) + 0xC00) << 4) as u32;
         if !self.slide {
@@ -619,10 +707,11 @@ impl SongDevice for Tb303 {
         self.enabled = self.live[ENABLED];
     }
 
-    /// Slot 3, 0x100255B0.
+    /// Slot 3, 0x100255B0. (Note mode's held notes are forgotten: the pattern plays.)
     fn start(&mut self, now: i32) {
         self.wrapped = true;
         self.pat_start = Self::bar_of(now);
+        self.held_len = 0;
     }
 
     /// Slot 4, 0x100106C0: slot 6.
@@ -658,10 +747,12 @@ impl SongDevice for Tb303 {
         self.silence();
     }
 
-    /// Slot 6, 0x10025630: the slide flag cleared, then note-off.
+    /// Slot 6, 0x10025630: the slide flag cleared, then note-off. (Note mode's held notes are
+    /// forgotten.)
     fn silence(&mut self) {
         self.slide = false;
         self.note_off();
+        self.held_len = 0;
     }
 
     /// Slot 9, 0x10026B60: entering song mode saves the live block into the pattern-mode copy,
@@ -730,6 +821,14 @@ impl ChannelDevice for Tb303 {
 
     fn patterns_mut(&mut self) -> Option<&mut [u8]> {
         Some(&mut self.patterns[..])
+    }
+
+    fn live_note_on(&mut self, note: u8, velocity: u8) {
+        self.key_on(note, velocity);
+    }
+
+    fn live_note_off(&mut self, note: u8) {
+        self.key_off(note);
     }
 
     /// Slot 14, 0x10023F10.

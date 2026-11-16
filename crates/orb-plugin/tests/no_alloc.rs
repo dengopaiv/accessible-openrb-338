@@ -81,8 +81,9 @@ fn the_counter_counts() {
 
 /// The simulated host (task-198): its frames and calls so far. It plays from frame 20000 on,
 /// jumps back four beats every 30000 frames, stops between frames 60000 and 70000, changes its
-/// tempo every 25000 frames, and sends in every call a pattern note on one of the sections'
-/// channels, a note-off, and a master-level control change on the remote channel.
+/// tempo every 25000 frames, and sends in every call a note 0..31 on one of channels 1..5 (a
+/// pattern in pattern mode, a note in note mode), a note 30..89 on a section's channel (a 303
+/// note or a drum hit in note mode, task-200), a note-off, and a master-level control change.
 #[derive(Default)]
 struct Host {
     frames: u64,
@@ -102,22 +103,31 @@ impl Host {
         }
     }
 
-    fn events(&self, k: usize) -> [HostEvent; 3] {
+    fn events(&self, k: usize) -> [HostEvent; 4] {
         let c = self.calls;
         let last = (k - 1) as u32;
         [
             HostEvent {
                 frame: 0,
                 message: Message::NoteOn {
-                    channel: 1 + (c % 4) as u8,
+                    channel: (c % 5) as u8,
                     note: (c % 32) as u8,
                     velocity: 100,
+                },
+            },
+            // in note mode (task-200) a 303 note or a drum hit, overlapping the one before
+            HostEvent {
+                frame: last / 3,
+                message: Message::NoteOn {
+                    channel: (c % 4) as u8,
+                    note: 30 + (c * 7 % 60) as u8,
+                    velocity: 1 + (c % 127) as u8,
                 },
             },
             HostEvent {
                 frame: last / 2,
                 message: Message::NoteOff {
-                    channel: 1 + (c % 4) as u8,
+                    channel: (c % 5) as u8,
                     note: (c % 32) as u8,
                     velocity: 0,
                 },

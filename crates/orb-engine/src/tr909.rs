@@ -17,12 +17,14 @@
 //! 0x1002C6D0). Each field's doc names its offset.
 
 #[cfg(test)]
+mod note_tests;
+#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
 
 use crate::drums::{Dual, Filter, Pitched, Simple};
-use crate::frame::{Block, BlockContext, ChannelDevice, SongDevice};
+use crate::frame::{Block, BlockContext, ChannelDevice, SongDevice, Sounding};
 use crate::process::ProcessState;
 use crate::samples::{Retired, Sample, SampleSet};
 use crate::seq::TrackMut;
@@ -86,6 +88,51 @@ pub const CH: usize = 8;
 pub const OH: usize = 9;
 pub const CC: usize = 10;
 pub const RC: usize = 11;
+
+/// The sounds of [`Sounding`] (not in the original; task-200): bit `column - 1`.
+pub mod sound {
+    pub const BD: u32 = 0;
+    pub const SD: u32 = 1;
+    pub const LT: u32 = 2;
+    pub const MT: u32 = 3;
+    pub const HT: u32 = 4;
+    pub const RS: u32 = 5;
+    pub const CP: u32 = 6;
+    pub const CH: u32 = 7;
+    pub const OH: u32 = 8;
+    pub const CC: u32 = 9;
+    pub const RC: u32 = 10;
+}
+
+/// The instrument column a General MIDI drum note plays (`docs/midi.md` section 5.4).
+pub fn gm_note(note: u8) -> Option<usize> {
+    Some(match note {
+        36 => BD,
+        37 => RS,
+        38 => SD,
+        39 => CP,
+        42 => CH,
+        43 => LT,
+        46 => OH,
+        47 => MT,
+        49 => CC,
+        50 => HT,
+        51 => RC,
+        _ => return None,
+    })
+}
+
+/// Note mode's velocity bands (task-200, `docs/midi.md` section 5.5): the step value (1 low,
+/// 2 high) and the AC byte (0, or 2 as the panel's AC row stores it) a velocity 1..127 plays
+/// as: 1..47 low, 48..95 high, 96..111 low + AC, 112..127 high + AC.
+pub fn velocity_band(velocity: u8) -> (u8, u8) {
+    match velocity {
+        0..=47 => (1, 0),
+        48..=95 => (2, 0),
+        96..=111 => (1, 2),
+        _ => (2, 2),
+    }
+}
 
 /// The parameter block of `sub_100195A0` (ctor, both copies), in the DLL's order.
 pub const DEFAULT_PARAMS: Params = [
@@ -212,6 +259,10 @@ pub struct Tr909 {
     tom_step: [u16; 128],
     /// DT (`flt_1014E64C`, the same ctor, [`crate::tables::tr909_decay`]).
     decay: [f32; 16],
+    /// Not in the original (task-200): the hit being triggered has accent; [`Sounding::ac`] by
+    /// sound.
+    hit_ac: bool,
+    ac_bits: u32,
 }
 
 const SIMPLE_RS: usize = 0;
@@ -252,6 +303,55 @@ impl Tr909 {
             process,
             tom_step: crate::tables::tr909_tom_step(),
             decay: crate::tables::tr909_decay(),
+            hit_ac: false,
+            ac_bits: 0,
+        }
+    }
+
+    /// The accent of the step function (0x1002ACAF): `f32(AC * accent level * 0.03125f + 1.0)`.
+    fn set_accent(&mut self, ac: u8) {
+        self.accent = st((ac as f64 * self.live[ACCENT] as f64) * ACC_STEP as f64 + ACC_BASE);
+        self.hit_ac = ac != 0;
+    }
+
+    /// Note mode's hit (task-200): the General MIDI drum note's instrument as a step with it
+    /// alone would play it, at the step value and AC byte of the velocity's band
+    /// ([`velocity_band`]): the gain `f32(accent * 0.8)` or `f32(accent * 2.0)` of 0x1002B011
+    /// and 0x1002AD02. The flam is not armed.
+    pub fn key_on(&mut self, note: u8, velocity: u8) {
+        let Some(i) = gm_note(note) else {
+            return;
+        };
+        let (value, ac) = velocity_band(velocity);
+        self.set_accent(ac);
+        let k = if value == 1 { GAIN_ON } else { GAIN_ACCENT };
+        self.gain = st(self.accent as f64 * k);
+        self.trigger(i);
+    }
+
+    /// The sounding mask and the AC flags of [`Sounding`].
+    pub fn sounding(&self) -> Sounding {
+        let [lt, mt, ht, cc, rc] = &self.pitched;
+        let bits = [
+            (sound::BD, self.filter.iter().any(Filter::audible)),
+            (sound::SD, self.dual.audible()),
+            (sound::LT, lt.audible()),
+            (sound::MT, mt.audible()),
+            (sound::HT, ht.audible()),
+            (sound::RS, self.simple[SIMPLE_RS].audible()),
+            (sound::CP, self.simple[SIMPLE_CP].audible()),
+            (sound::CH, self.simple[SIMPLE_CH].audible()),
+            (sound::OH, self.simple[SIMPLE_OH].audible()),
+            (sound::CC, cc.audible()),
+            (sound::RC, rc.audible()),
+        ];
+        let mask = bits
+            .into_iter()
+            .filter(|b| b.1)
+            .fold(0, |m, (bit, _)| m | 1 << bit);
+        Sounding {
+            mask,
+            ac: self.ac_bits,
         }
     }
 
@@ -308,7 +408,14 @@ impl Tr909 {
             CP => self.simple(i, slot::CP, lv[CP_LEVEL], FIXED_DECAY),
             CH => self.simple(i, slot::CH, lv[HH_LEVEL], lv[CH_DECAY]),
             OH => self.simple(i, slot::OH, lv[HH_LEVEL], lv[OH_DECAY]),
-            _ => {}
+            _ => return,
+        }
+        // not in the original: the hit's accent for [`Tr909::sounding`] (sound = column - 1)
+        let bit = 1u32 << (i - 1);
+        if self.hit_ac {
+            self.ac_bits |= bit;
+        } else {
+            self.ac_bits &= !bit;
         }
     }
 
@@ -480,7 +587,7 @@ impl SongDevice for Tr909 {
             std::array::from_fn(|i| p.get(at + i).copied().unwrap_or(0))
         };
         // 0x1002ACAF: f32(AC * accent level * 0.03125f + 1.0)
-        self.accent = st((row[AC] as f64 * self.live[ACCENT] as f64) * ACC_STEP as f64 + ACC_BASE);
+        self.set_accent(row[AC]);
         for i in (1..=11).rev() {
             let v = row[i];
             let k = if flam {
@@ -626,6 +733,14 @@ impl ChannelDevice for Tr909 {
 
     fn patterns_mut(&mut self) -> Option<&mut [u8]> {
         Some(&mut self.patterns[..])
+    }
+
+    fn live_note_on(&mut self, note: u8, velocity: u8) {
+        self.key_on(note, velocity);
+    }
+
+    fn sounding(&self) -> Sounding {
+        Tr909::sounding(self)
     }
 
     /// Slot 14 ends with an unconditional `call sub_1001E9A0` at 0x1002B8AF from `esp0 - 0x18`

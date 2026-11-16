@@ -3,8 +3,8 @@
 OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are task-185's final
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
 the core described here; task-198 the host sync, the pattern selection by notes and the Standard
-Mapping (section 8); note mode is task-200, the editor task-201, packaging and the validators
-task-204.
+Mapping (section 8); task-200 note mode (section 9); the editor is task-201, packaging and the
+validators task-204.
 
 ## 1. What runs
 
@@ -179,7 +179,7 @@ For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):
 - `snapshot()`: orb-player's `Snapshot` after the last engine block: the engine's state (the
   patterns playing, the tempo orb plays at for the read-only tempo display), `host_sync` (the
   Sync LED) and `midi_in` (a count of the host's MIDI messages: the MIDI LED lights when it
-  changes).
+  changes), and `sounding` (the 808's and 909's sounding sounds and their AC flags, section 9.3).
 - `remote_enabled()`, `set_remote_enabled(on)`: the Standard Mapping's on/off (default off).
 - `remote_channel()`, `set_remote_channel(c)`: the Standard Mapping's channel (section 8); a
   section's channel is refused.
@@ -207,7 +207,7 @@ the library, loads it with the dynamic loader, checks the CLAP descriptor and th
 class info, and runs a minimal CLAP host that restores a state with a song and the mode at
 Play, activates at 44.1 kHz, processes, and gets the same samples as the process side run
 directly. Loading in a real host (Reaper) has not been tried by the tests. `sync.rs` (task-198)
-runs a simulated host transport (section 8).
+runs a simulated host transport (section 8), `note_mode.rs` (task-200) note mode (section 9).
 
 ## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
 
@@ -280,7 +280,8 @@ becomes the pending pattern), then slot 2 on that device, which takes it at once
 line; the next step is the new pattern's step at the same position. It latches until the next
 note on that channel or a panel change (a parameter change: sent when the value changes, and
 taken at the next bar line, as the original's panel); the last write wins. A note-off and a
-note above 31 do nothing; in note mode (Stop) these notes are task-200's. Notes never change
+note above 31 do nothing; in note mode (Stop) every note on these channels plays the device
+(section 9). Notes never change
 parameters: the parameter keeps the panel's pattern, which a state and every activation (a
 bounce) start from.
 
@@ -309,3 +310,93 @@ snapshot after every block.
 **LEDs.** `Snapshot::host_sync` is set while a block followed the host's position (pattern mode,
 orb and the host playing): the Sync LED. `Snapshot::midi_in` counts every MIDI message the host
 sent (also those nothing maps): the MIDI LED.
+
+## 9. Note mode (task-200)
+
+With the mode at Stop the song is stopped, and a note-on or note-off on MIDI channel 1..4 (303
+#1, 303 #2, 808, 909) plays that device by the note mapping of `docs/midi.md` section 5, at the
+block holding the event (section 4), whether the host plays or not. The original plays no
+device from a note (`docs/midi.md` section 4), so this is new engine behavior; it does not run
+while the song plays, so pattern playback is unchanged (the corpus renders as before).
+
+- **The path.** `src/core.rs` sends `Command::Note {device, note, velocity}` (velocity 0, or a
+  note-off, is the note-off). If the mode has just turned to Stop and the song still plays,
+  the Stop is sent first (`hold_mode`), so that its silence (slot 4 → slot 6) does not cut the
+  note. orb-player applies it as `Engine::live_note`, which calls the channel device's
+  `live_note_on` / `live_note_off` (`crates/orb-engine/src/frame/mod.rs`) and does nothing
+  while the song plays. Notes change no parameter: the 808's voice switches, the Tune and the
+  patterns stay as the panel and the host set them.
+- **The section's On/off switch** (device controller 0) is not read: notes play on a section
+  that is switched off (the switch is the pattern sequencer's; the mixer channel's On/off mutes
+  in both modes). Provisional, task-210 decides.
+
+### 9.1 The 303
+
+`Tb303::key_on` / `key_off` (`crates/orb-engine/src/tb303.rs`) drive the step machinery's
+note-on 0x10023CD4 and note-off 0x10023C74 as a pattern would, so the sound is the 303's:
+
+- A note-on is the step note-on with the note's semitones `m - 36` in place of
+  `note + 12*up - 12*down`, accent at velocity 100 and up, no rest; the Tune is added at the
+  note-on as there (`docs/midi.md` 5.3). A note whose index `tuneTab[tune >> 2] + m - 36` is
+  outside -48..47 is ignored (the table has no bound check in the DLL); at the Tune's center
+  that is every note above 83.
+- **Overlap = slide.** A note-on while another note is held first sets the slide flag `+0xCA1`,
+  as a sliding step before it leaves it: no new attack (the envelope and the 2.0 sound's
+  coefficient restart are skipped), and the pitch glides `(11p + t)/12`. The same pitch is a
+  tie; its accent still changes the envelope decay and the accent amount, as a tied accented
+  step does.
+- **Held notes** (up to 16, a fixed array; a 17th forgets the oldest): the newest sounds
+  (last-note priority). Releasing it slides back to the newest note still held, with that
+  note's accent (legato; a held note the Tune has since put outside the table is dropped);
+  releasing a note that does not sound changes nothing; releasing the last one is the note-off
+  (the gate is the note's length; the release is the note-off's amp constants). A note-off
+  releases the oldest held instance of its note, so two overlapping notes of one pitch (a tie
+  in the pattern drag-out, task-203) sound as one until the second ends.
+- Play (slot 3) and slot 6 (Stop, a song switch, a reset) forget the held notes.
+
+The unit tests (`src/tb303/note_tests.rs`) play patterns through the step function and the same
+notes through note mode, 12 ticks a block, and require the same samples bit for bit in both
+sound models: plain notes with accent, octave up and down and three Tune settings, a slide
+chain (an overlapping note let go after the next one starts), and a tie.
+
+### 9.2 The 808 and the 909
+
+`Tr808::key_on` and `Tr909::key_on` play the General MIDI note's instrument as a step with that
+instrument alone would, through the same trigger code (`sub_10027894`; the 909's switches at
+0x1002AD2D): the BD's two alternating voices (the process-global toggle), the 808's CH clearing
+every SIMPLE voice's hold and the 909's CH setting the OH's multiplier to 0.996, the snare's
+noise sequence counter, one voice per slot (a second hit restarts it). A note-off does
+nothing. The accent is the step's expression with the note's AC byte:
+
+- 808: `accent = f32((AC * knob) * 0.03125f + 1.0)` with AC = 1 at velocity 100 and up, else 0.
+- 909: the band's step value and AC byte (`tr909::velocity_band`: 1..47 value 1, 48..95 value 2,
+  96..111 value 1 + AC 2, 112..127 value 2 + AC 2), then `gain = f32(accent * 0.8)` or
+  `f32(accent * 2.0)`. A note arms no flam.
+
+A note on an 808 shared slot plays the sound it names through an override of the trigger's
+switch read (`trigger_as`); the switch byte is not changed, and the step function passes no
+override. The tests (`src/tr808/note_tests.rs`, `src/tr909/note_tests.rs`) compare every note's
+voices (gain, multiplier, hold, sample) and the accent and gain with a one-instrument step at
+each band's velocities.
+
+### 9.3 The sounding mask (for task-202)
+
+`ChannelDevice::sounding()` gives, after each block, a `Sounding {mask, ac}` for the 808 and
+the 909 (empty for the 303s); orb-player's `Snapshot::sounding` holds the four channel devices'.
+Bit `n` is sound `n` of `tr808::sound` / `tr909::sound`: the instrument column minus 1 (the 808's
+shared slots by their first sound: LT, MT, HT, RS, CP), then for the 808 LC, MC, HC, CL, MA at
+11..15.
+
+- `mask`: the sound's voice is active and its peak for a full-scale sample is at least
+  `AUDIBLE` = 0.001 (-60 dB): `g * 2^15` for a SIMPLE or PITCHED voice, `g1 * (1 + g2) * 2^15`
+  for the snare's DUAL voice, `g * 2^15 / (1 - c)` for a FILTER voice (its one-pole's DC gain).
+  An 808 shared slot's voice lights the sound it last played; the BD is lit while either of its
+  two voices sounds. So a CH choke darkens the OH as its gain falls, and a level of 0 lights
+  nothing. The threshold is close to the voices' own end test (the original's 3e-8 gain test,
+  `docs/initial_investigation.md` section 7.1): `3e-8 * 2^15` = 9.8e-4 = -60.2 dB of full
+  scale, so a decaying SIMPLE or FILTER voice goes dark about when it ends.
+- `ac`: bit `n` set when sound `n`'s last hit had accent (a step with a non-zero AC byte, or a
+  note in an AC band), in pattern mode too. The panel's AC light is "any lit sound whose bit is
+  set": `mask & ac != 0`.
+
+The minimum on-time and the drawing are the editor's (task-202).

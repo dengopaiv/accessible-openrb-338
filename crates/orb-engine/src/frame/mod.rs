@@ -279,7 +279,33 @@ pub trait ChannelDevice: SongDevice {
     /// `+0x18DC`) becomes `samples`. The old table and the samples the voices held go into
     /// `retired`. The 303s and the placeholders have no table and do nothing.
     fn set_samples(&mut self, _samples: &Arc<SampleSet>, _retired: &mut Retired) {}
+    /// Not in the original (task-200, the plugin's note mode, `docs/plugin.md` section 9): a
+    /// MIDI note-on (`velocity` 1..127) plays the device through its own step machinery, by the
+    /// note mapping of `docs/midi.md` section 5. Only for a stopped song ([`Engine::live_note`]).
+    fn live_note_on(&mut self, _note: u8, _velocity: u8) {}
+    /// Not in the original: a MIDI note-off for [`ChannelDevice::live_note_on`].
+    fn live_note_off(&mut self, _note: u8) {}
+    /// Not in the original: which of the device's sounds are sounding after the last block and
+    /// whether their last hit had accent (the plugin's note-mode lights, task-202). Empty for
+    /// the 303s and the placeholders.
+    fn sounding(&self) -> Sounding {
+        Sounding::default()
+    }
 }
+
+/// What a drum machine sounds (not in the original; task-200): bit `n` of `mask` is set while
+/// sound `n` (`crate::tr808::sound`, `crate::tr909::sound`) is sounding, i.e. one of its voices
+/// is active with a peak gain at or above [`AUDIBLE`]; bit `n` of `ac` is set when the sound's
+/// last hit had accent (a step with AC, or an accented note).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Sounding {
+    pub mask: u32,
+    pub ac: u32,
+}
+
+/// The gain from which a drum voice counts as sounding: -60 dB of full scale, for a full-scale
+/// sample ([`crate::drums::Voice::peak`]).
+pub const AUDIBLE: f64 = 0.001;
 
 /// An insert effect: the distortion, the PCF or the compressor.
 pub trait InsertEffect: SongDevice {
@@ -1340,6 +1366,30 @@ impl Engine {
     pub fn relocate_device(&mut self, d: crate::song::Device) {
         let f = &mut self.frame;
         f.seq.relocate_device(d, &mut f.devices);
+    }
+
+    /// Not in the original (task-200): a MIDI note for channel device `d` (a 303, the 808 or
+    /// the 909; nothing for the others), `velocity` 0 a note-off
+    /// ([`ChannelDevice::live_note_on`]). Ignored while the song plays: note mode is the
+    /// stopped song's, and the step machinery owns the devices while it plays.
+    pub fn live_note(&mut self, d: song::Device, note: u8, velocity: u8) {
+        use song::Device as D;
+        if self.playing() {
+            return;
+        }
+        let c = match d {
+            D::Tb303_1 => 0,
+            D::Tb303_2 => 1,
+            D::Tr808 => 2,
+            D::Tr909 => 3,
+            _ => return,
+        };
+        let dev = &mut self.frame.devices.channels[c];
+        if velocity == 0 {
+            dev.live_note_off(note);
+        } else {
+            dev.live_note_on(note, velocity);
+        }
     }
 
     /// Song msg 35 `{1,1}` (`sub_1001BF50`).

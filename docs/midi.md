@@ -192,6 +192,9 @@ note-on and notes 32..127 do nothing. `docs/plugin.md` 8.2 has how it reaches th
 
 ### 5.3 The 303 in note mode (orb stopped)
 
+Implemented by task-200 (`docs/plugin.md` section 9: the held notes, the release, what the
+section's On/off does).
+
 **Pitch = note.** The MIDI note of ReBirth's C at the Tune knob's center is **36** (C2 in the
 convention where middle C, 60, is C4), and ReBirth's tuning is **concert pitch**: A4 = 440 Hz,
 equal temperament, exact to the f32 rounding of the pitch table (about 1e-4 cent). The
@@ -270,6 +273,9 @@ one voice, so its two sounds cannot sound at once. Notes not in the table do not
 does nothing (the drum voices run their own decay).
 
 **909 flam: no note.** Two notes in quick succession play as two hits.
+
+The drums' note mode is implemented by task-200 (`docs/plugin.md` section 9.2; the sounding
+mask for the note-mode lights in 9.3).
 
 ### 5.5 Accent and velocity
 
