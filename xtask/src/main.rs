@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use nice_plug_xtask::Result;
 
-const USAGE: &str = "usage: cargo xtask bundle <package> [cargo build options]";
+const USAGE: &str = "usage: cargo xtask bundle <package> [--no-build] [cargo build options]";
 
 fn main() -> Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -25,10 +25,16 @@ fn main() -> Result<()> {
         Err(usage())?;
     }
     let package = args.next().ok_or_else(usage)?;
-    let rest: Vec<String> = args.collect();
+    let mut rest: Vec<String> = args.collect();
+    // `--no-build`: the library is already built (scripts/build.sh builds it with cargo-xwin or
+    // in Docker with the app); only lay out the bundles.
+    let no_build = rest.iter().any(|a| a == "--no-build");
+    rest.retain(|a| a != "--no-build");
     let target_dir = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("target"));
-    nice_plug_xtask::build(std::slice::from_ref(&package), &rest)?;
+    if !no_build {
+        nice_plug_xtask::build(std::slice::from_ref(&package), &rest)?;
+    }
     nice_plug_xtask::bundle(&target_dir, &package, &rest, false)
 }

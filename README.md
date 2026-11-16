@@ -75,6 +75,13 @@ and Windows.
 
 2. **Install it.**
    - macOS: open the `.dmg` and drag OpenRB-338 to Applications.
+     For the plugin (a VST3/CLAP instrument), drag `OpenRB-338.vst3` onto the `VST3` link and
+     `OpenRB-338.clap` onto the `CLAP` link (asks for an admin password). The other systems'
+     archives hold the bundles in `plugins/`, and their `README.txt` lists the plugin folders.
+     If a host refuses the plugin after a download, remove the quarantine flag: `sudo xattr -dr
+     com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3
+     /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap` (without `sudo` for the copies in
+     `~/Library/Audio/Plug-Ins/`).
    - Windows: run the installer. It can add `orb` to the PATH.
    - Linux: make the AppImage executable (`chmod +x OpenRB-338-*.AppImage`).
      It holds its own icon and menu entry: for a menu item, open it with an AppImage tool such

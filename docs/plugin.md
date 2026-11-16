@@ -196,7 +196,8 @@ for the bundle name, the alias in `.cargo/config.toml`). The xtask finds the wor
 own manifest: nice-plug-xtask's own entry point takes the topmost ancestor directory with a
 `Cargo.toml` as the workspace, which is the wrong one for a checkout inside another (the
 worktrees under `.claude/worktrees/`). Signing, the packages and the validators
-(clap-validator, the VST3 validator, pluginval) are task-204.
+(clap-validator on the CLAP bundle, pluginval on the VST3 bundle) are task-204: docs/building.md,
+"The plugin".
 
 The tests (`cargo test -p orb-plugin`; `tests/` and the resampler's unit tests): the buffer
 sizes and the 48 kHz path (`timing.rs`), the parameter list and defaults (`params.rs`), the state

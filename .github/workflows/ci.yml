@@ -68,3 +68,25 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked --no-fail-fast
+
+  plugin:
+    # The plugin bundles (task-204): bundled as in docs/building.md, then clap-validator on the
+    # .clap and pluginval on the .vst3 (scripts/validate-plugin.sh; pinned releases checked by
+    # SHA-256). Any validator failure fails the job. Linux and macOS; Windows has no validator
+    # script (the bundles are still built by the release run).
+    name: plugin validators (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the ALSA headers (cpal) and xvfb (pluginval)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev xvfb libfreetype6 libx11-6 libxext6 libxrandr2 libxinerama1 libxcursor1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: plugin
+      - run: cargo xtask bundle orb-plugin --release
+      - run: scripts/validate-plugin.sh

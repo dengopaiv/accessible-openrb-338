@@ -140,6 +140,7 @@ The Windows build of OpenRB-338 is a GUI-subsystem exe (task-111), see "The Wind
 |---|---|
 | `scripts/build.sh TARGET` | builds `orb` and `OpenRB-338` (profile `dist`) for the target into `dist/<target>/bin/` |
 | `scripts/package.sh TARGET` | `build.sh`, then packs `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<target>.tar.gz|zip` (`SKIP_BUILD=1` packs the existing `bin/`) |
+| `scripts/validate-plugin.sh [DIR]` | downloads the pinned clap-validator and pluginval and runs them on `OpenRB-338.clap` and `OpenRB-338.vst3` in `DIR` (default `target/bundled`); exit 1 on any failure (below, "The plugin") |
 | `scripts/build-all.sh [TARGET...]` | packages every target practical from this machine, and lists the skipped and failed ones |
 | `scripts/package-dmg.sh` | `scripts/package-dmg.sh TARGET` (a macOS target) builds it, then `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg` (`SKIP_BUILD=1` uses the existing `bin/` folder) |
 | `scripts/package-installer.sh TARGET` | `build.sh` for a Windows target, then `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<x64\|arm64>-setup.exe` with NSIS (`SKIP_BUILD=1` uses the existing `bin/`; `MAKENSIS` names makensis) |
@@ -374,6 +375,8 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     synthetic recrypt tests (`crates/rbm/tests/recrypt_python.rs`, which run `tools/rbm.py`)
     need none of them.
     Linux installs `libasound2-dev` first.
+  - `plugin validators` (task-204) on `ubuntu-22.04` and `macos-latest`: bundles the plugin and
+    runs `scripts/validate-plugin.sh` (clap-validator, pluginval; see "The plugin").
 - `release.yml`, on a tag `v*` and by hand:
   - `prepare` computes one `SOURCE_DATE_EPOCH` and one `ORB_BUILD_BRANCH` (`scripts/release-env.sh`)
     so all packages agree. On a tag the build time is the tag's and a tag that is not
@@ -382,14 +385,15 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     `ubuntu-22.04-arm` (aarch64) for Linux (the oldest LTS image: glibc 2.35); `windows-latest`
     and `windows-11-arm`; `macos-15-intel` (amd64) and `macos-15` (arm64). Each runs
     `scripts/package.sh <target>` and uploads the package (`package-<target>`) and the binaries
-    (`bin-<target>`, one day) as workflow artifacts.
+    (`bin-<target>`, one day) as workflow artifacts, and the plugin bundles
+    (`plugins-<target>`, one day; the package holds them too, task-204).
   - The runner images change: GitHub retires old ones (macos-13 is gone, which is why amd64
     macOS uses `macos-15-intel`). Fix a label here when a run reports one as missing.
   - The Windows arm64 job installs rustup if the image has none.
   - `dmg` (task-110, task-136), one job per macOS target after the package jobs, on the runner
     of its target (`macos-15-intel`, `macos-15`; not one runner for both, so each job needs only
     its own `bin-<target>` and the target's own tools check the image): downloads that
-    `bin-<target>` artifact, runs `SKIP_BUILD=1 scripts/package-dmg.sh <target>` and uploads the
+    `bin-<target>` and `plugins-<target>` artifacts (the bundles go into the image, task-204), runs `SKIP_BUILD=1 scripts/package-dmg.sh <target>` and uploads the
     artifact `dmg-<target>` (`OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg`). It reuses the package
     build and the `prepare` build time, so the app's version string is theirs.
   - `installer` (task-111), one job per Windows architecture on `ubuntu-latest` after the package
@@ -834,6 +838,56 @@ unpacks the x86_64 AppImage's squashfs and runs its `AppRun` (with `ARGV0` set b
 symlink test). This emulated run is local only: everything but the x86_64 runtime was
 exercised, and the x86_64 runtime itself (and so `--screenshot` through it) was not. A real x86_64 Linux host or the CI runner runs it. The first release
 run (task-134) still has to check the runners and a real desktop.
+
+## The plugin (task-204)
+
+The VST3 and CLAP instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundles
+`OpenRB-338.vst3` and `OpenRB-338.clap`.
+
+**Building.** For everyday work: `cargo xtask bundle orb-plugin --release` (the alias in
+`.cargo/config.toml`; add `--target T` for another target) lays them out in `target/bundled/`.
+The release scripts build the library together with the apps: `scripts/build.sh TARGET` adds
+`-p orb-plugin` to its `cargo build` (profile `dist`, so also with `cargo-xwin` and in Docker),
+then runs `cargo xtask bundle orb-plugin --no-build --profile dist --target TARGET` and copies the
+two bundles to `dist/<target>/plugins/`. `--no-build` is the xtask's own flag (it only lays out
+the bundles). On macOS the bundler signs each bundle ad hoc (`codesign -f -s -`), like the app;
+there is no Developer ID signing or notarization.
+
+**Where they go.** `scripts/package.sh` puts `plugins/` (both bundles) into every package archive
+(all six targets, with the plugin folders of the OS in its `README.txt`); `scripts/package-dmg.sh`
+puts them next to the app in the `.dmg`, with the links `VST3` and `CLAP` to
+`/Library/Audio/Plug-Ins/VST3` and `/Library/Audio/Plug-Ins/CLAP` to drag them onto. It checks
+the signature (`codesign --verify --strict`) and that the library has the image's architecture
+only. In `release.yml` the package jobs upload `plugins-<target>` (one day) for the `dmg` jobs.
+`scripts/build-all.sh` needs no change: it calls `package.sh`, so a skipped target skips its
+plugin too. Built and checked on this Mac (aarch64-apple-darwin) only; the other five are the
+same code path, run first by the release workflow.
+
+**Installing** (copy the bundle, restart or rescan the host):
+
+| OS | VST3 | CLAP |
+|---|---|---|
+| macOS | `~/Library/Audio/Plug-Ins/VST3/` (all users: `/Library/Audio/Plug-Ins/VST3/`) | `~/Library/Audio/Plug-Ins/CLAP/` (or `/Library/...`) |
+| Windows | `%COMMONPROGRAMFILES%\VST3\` (current user only: `%LOCALAPPDATA%\Programs\Common\VST3\`) | `%COMMONPROGRAMFILES%\CLAP\` (or `%LOCALAPPDATA%\Programs\Common\CLAP\`) |
+| Linux | `~/.vst3/` (or `/usr/lib/vst3/`) | `~/.clap/` (or `/usr/lib/clap/`) |
+
+A plugin from a downloaded `.dmg` or archive is quarantined on macOS; with the ad hoc signature
+only, a host can refuse it. Remove the flag from the installed bundles:
+`sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap`
+(the bundles dragged into `/Library` with an admin password are owned by root), or without
+`sudo` for the ones in `~/Library/Audio/Plug-Ins/VST3/` and `/CLAP/`. Windows may show SmartScreen for the unsigned DLL the first
+time a host loads it. The dev tasks do not install into the user's plugin folders.
+
+**Validating.** `scripts/validate-plugin.sh` (after the bundling command above) runs, with
+downloaded release assets pinned by version and SHA-256:
+- clap-validator 0.3.2 (the release page of free-audio/clap-validator names it 0.4.1) on the
+  `.clap`;
+- pluginval 1.0.4 at strictness level 5, no GUI tests, on the `.vst3` (it runs VST3 plugins; it
+  is used instead of Steinberg's validator, which has to be built from the SDK with CMake).
+It runs on macOS and Linux x86_64 (xvfb for pluginval there). `ci.yml`'s job `plugin validators`
+runs it on `ubuntu-22.04` and `macos-latest` on every push and pull request that is not
+docs-only, and fails on a validator error. The Windows bundles are not validated (neither tool
+has a script here; run `clap-validator.exe validate` and `pluginval.exe --validate` by hand).
 
 ## What the system shows for an unsigned download
 

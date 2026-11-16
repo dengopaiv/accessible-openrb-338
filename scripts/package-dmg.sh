@@ -42,6 +42,18 @@ rm -rf "$stage"
 mkdir -p "$stage"
 "$root/scripts/macos-app.sh" "$stage" "$out/bin/OpenRB-338" "$out/bin/orb"
 ln -s /Applications "$stage/Applications"
+# The plugin (task-204): the bundles scripts/build.sh made (signed ad hoc by the bundler, and
+# checked here), with a link to each system plugin folder to drag them onto. cp -R keeps the
+# signature.
+for p in OpenRB-338.vst3 OpenRB-338.clap; do
+    [ -e "$out/plugins/$p" ] || { echo "missing $out/plugins/$p" >&2; exit 1; }
+    cp -R "$out/plugins/$p" "$stage/$p"
+    codesign --verify --strict "$stage/$p"
+    lipo -archs "$stage/$p/Contents/MacOS/OpenRB-338" | grep -qx "$arch" \
+        || { echo "$p is not $arch only" >&2; exit 1; }
+done
+ln -s /Library/Audio/Plug-Ins/VST3 "$stage/VST3"
+ln -s /Library/Audio/Plug-Ins/CLAP "$stage/CLAP"
 cp "$root/LICENSE" "$stage/LICENSE"
 cat > "$stage/README.txt" <<EOF
 OpenRB-338 $version
@@ -59,6 +71,18 @@ the developer cannot be verified"). Pick one:
   - macOS 14 and older: right-click the app, choose Open, then Open.
   - Any version, in Terminal:
         xattr -dr com.apple.quarantine /Applications/OpenRB-338.app
+
+The plugin (an instrument for a DAW): drag OpenRB-338.vst3 onto the VST3 link and
+OpenRB-338.clap onto the CLAP link (they are /Library/Audio/Plug-Ins/VST3 and /CLAP, for all
+users, asks for an admin password; ~/Library/Audio/Plug-Ins/ is for you only, and the folders
+may not exist yet: make them in Finder or Terminal first). The bundles are signed ad hoc only;
+if the host refuses them, run (the bundles in /Library are owned by root):
+    sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 \\
+        /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap
+or, for the ones in ~/Library/Audio/Plug-Ins/, without sudo:
+    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 \\
+        ~/Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap
+Then rescan plugins in the host.
 
 The command line tool orb is inside the app. To use it from a terminal:
     sudo ln -s /Applications/OpenRB-338.app/Contents/MacOS/orb /usr/local/bin/orb

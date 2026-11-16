@@ -26,6 +26,13 @@ rm -rf "$dist/$target/stage"
 mkdir -p "$stage"
 cp "$dist/$target/bin/"* "$stage/"
 cp "$root/LICENSE" "$stage/LICENSE"
+# the plugin bundles (task-204; scripts/build.sh made them): the folder holds both
+for p in OpenRB-338.vst3 OpenRB-338.clap; do
+    [ -e "$dist/$target/plugins/$p" ] || { echo "missing $dist/$target/plugins/$p" >&2; exit 1; }
+done
+mkdir -p "$stage/plugins"
+cp -R "$dist/$target/plugins/OpenRB-338.vst3" "$dist/$target/plugins/OpenRB-338.clap" \
+    "$stage/plugins/"
 
 case $target in
     *-linux-*)
@@ -56,7 +63,22 @@ Neither needs any file of the original program: the standard drum kit is built i
 
 The binaries are not signed (docs/building.md says what the system shows for that).
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE).
+
+Plugin (VST3 and CLAP instrument)
+---------------------------------
+plugins/ holds OpenRB-338.vst3 and OpenRB-338.clap. Copy the one your host loads (or both)
+into a plugin folder, then rescan plugins in the host:
 EOF
+case $target in
+    *-linux-*) plugin_dirs='  VST3: ~/.vst3/           CLAP: ~/.clap/        (or /usr/lib/vst3, /usr/lib/clap)' ;;
+    *-windows-*) plugin_dirs='  VST3: %COMMONPROGRAMFILES%\VST3\    CLAP: %COMMONPROGRAMFILES%\CLAP\
+  (or %LOCALAPPDATA%\Programs\Common\VST3\ and \CLAP\ for the current user only)' ;;
+    *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/    CLAP: ~/Library/Audio/Plug-Ins/CLAP/
+  (or the same under /Library for all users). The bundles are signed ad hoc only; if the host
+  refuses them after a download, run in this folder (and again, with sudo, on the copies in
+  /Library if you installed them there): xattr -dr com.apple.quarantine OpenRB-338.vst3 OpenRB-338.clap' ;;
+esac
+printf '%s\n' "$plugin_dirs" >> "$stage/README.txt"
 case $target in
     *-linux-*)
         cat >> "$stage/README.txt" <<'EOF'

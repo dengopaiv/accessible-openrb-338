@@ -40,7 +40,7 @@ esac
 # The dist profile of Cargo.toml: fat LTO, one codegen unit, stripped (task-132). Its binaries
 # are in target/<target>/dist/.
 profile=dist
-cargo_args=(--profile "$profile" --locked --target "$target" -p orb-cli -p orb-ui)
+cargo_args=(--profile "$profile" --locked --target "$target" -p orb-cli -p orb-ui -p orb-plugin)
 target_dir=${CARGO_TARGET_DIR:-$root/target}
 
 build_docker() {
@@ -73,6 +73,12 @@ build_docker() {
     for b in orb OpenRB-338; do
         [ -f "$bin_dir/$b" ] || {
             echo "docker build finished but $bin_dir/$b is missing" >&2
+            exit 1
+        }
+    done
+    for b in OpenRB-338.vst3 OpenRB-338.clap; do
+        [ -e "$dist/$target/plugins/$b" ] || {
+            echo "docker build finished but $dist/$target/plugins/$b is missing" >&2
             exit 1
         }
     done
@@ -134,4 +140,22 @@ mkdir -p "$bin_dir"
 for b in orb OpenRB-338; do
     cp "$target_dir/$target/$profile/$b$exe" "$bin_dir/$b$exe"
 done
+
+# The plugin (task-204): the library was built with the apps above; the xtask only lays out
+# OpenRB-338.vst3 and OpenRB-338.clap (docs/plugin.md section 7; macOS bundles are signed ad hoc by
+# the bundler) and they are copied to dist/<target>/plugins/, which package.sh and
+# package-dmg.sh pack. The xtask is a host tool: `cargo xtask` builds it for the host.
+# target/bundled is shared by all targets and a macOS .clap is a directory where a Windows one
+# is a file, so the bundler fails on the leftovers of another target: start empty
+rm -rf "$target_dir/bundled"
+plugin_dir=$dist/$target/plugins
+rm -rf "$plugin_dir"
+mkdir -p "$plugin_dir"
+(cd "$root" && cargo xtask bundle orb-plugin --no-build --profile "$profile" --target "$target")
+for p in OpenRB-338.vst3 OpenRB-338.clap; do
+    [ -e "$target_dir/bundled/$p" ] || { echo "the bundler made no $p" >&2; exit 1; }
+    # -R: a macOS bundle is a folder (cp -R keeps its signature files)
+    cp -R "$target_dir/bundled/$p" "$plugin_dir/$p"
+done
+echo "bundled the plugin -> $plugin_dir"
 echo "built $target -> $bin_dir"
