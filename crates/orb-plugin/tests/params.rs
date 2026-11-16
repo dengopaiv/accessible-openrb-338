@@ -152,3 +152,15 @@ fn the_values_read_and_parse() {
     assert_eq!(params::display(pat, 0), "A1");
     assert_eq!(params::display(pat, 31), "D8");
 }
+
+/// task-220: the host shows the devices as ORB-303, ORB-808 and ORB-909, never as the
+/// Roland names; the ids (`param_ids.txt`) are unchanged.
+#[test]
+fn the_device_names_are_orb_names() {
+    use orb_engine::song::Device::*;
+    let name = |d, c| params::name(Target::Ctrl(d, c));
+    assert_eq!(name(Tb303_1, 3), "ORB-303 1 Cutoff");
+    assert_eq!(name(Tb303_2, 0), "ORB-303 2 On");
+    assert_eq!(name(Tr808, 0), "ORB-808 On");
+    assert_eq!(name(Tr909, 0), "ORB-909 On");
+}

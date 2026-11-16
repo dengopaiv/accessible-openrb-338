@@ -224,8 +224,7 @@ impl Plugin for OrbPlugin {
 
 impl ClapPlugin for OrbPlugin {
     const CLAP_ID: &'static str = CLAP_ID;
-    const CLAP_DESCRIPTION: Option<&'static str> =
-        Some("ReBirth RB-338 2.01: two TB-303s, a TR-808 and a TR-909");
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("OpenRB-338");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = Some(URL);
     const CLAP_FEATURES: &'static [ClapFeature] = &[
