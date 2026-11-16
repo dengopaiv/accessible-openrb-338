@@ -8,10 +8,13 @@
 //! - [`resample`]: the resampler for host rates other than 44.1 kHz.
 //! - [`params`]: the parameter table.
 //!
-//! Host sync, pattern selection by notes and the Standard Mapping are task-198's ([`core`]).
-//! Not yet: note mode (task-200), the editor (task-201), packaging (task-204).
+//! - [`editor`]: the editor, orb-ui's panel in the host's window (task-201).
+//!
+//! Host sync, pattern selection by notes and the Standard Mapping are task-198's ([`core`]),
+//! note mode task-200's. Not yet: packaging (task-204).
 
 pub mod core;
+pub mod editor;
 pub mod instance;
 pub mod params;
 pub mod resample;
@@ -150,12 +153,16 @@ impl Plugin for OrbPlugin {
     const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
-    type Editor = ();
+    type Editor = editor::OrbEditor;
     type SysExMessage = ();
     type BackgroundTask = ();
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        Some(editor::OrbEditor::new(self.params.clone()))
     }
 
     /// A fresh player and engine from the state and the parameters, for the host's rate: every

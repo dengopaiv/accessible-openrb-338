@@ -13,7 +13,7 @@
 //! `Command::Load`.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use base64::Engine as _;
@@ -45,7 +45,7 @@ pub const STATE_KEY: &str = "orb";
 pub const STATE_VERSION: u32 = 1;
 
 /// The engine's tables, shared by every instance (they are constant).
-fn tables() -> Arc<Tables> {
+pub fn tables() -> Arc<Tables> {
     static T: OnceLock<Arc<Tables>> = OnceLock::new();
     T.get_or_init(|| Arc::new(Tables::new())).clone()
 }
@@ -467,9 +467,13 @@ impl Main {
     /// Sends a command; a full queue is an error.
     fn send(&mut self, c: Command) -> Result<(), String> {
         match &mut self.player {
-            Some(p) => p
-                .send(c)
-                .map_err(|_| "the plugin's command queue is full".to_string()),
+            Some(p) => {
+                // what the process side let go of (an old song, a mod) is dropped here, on the
+                // main thread, so that the garbage queue has room for the command
+                p.collect_garbage();
+                p.send(c)
+                    .map_err(|_| "the plugin's command queue is full".to_string())
+            }
             None => Ok(()),
         }
     }
@@ -516,6 +520,9 @@ pub struct OrbParams {
     ids: Vec<String>,
     main: Mutex<Main>,
     shared: Arc<Shared>,
+    /// Counts the changes of the song (a load, File > New, a state restore): the editor shows
+    /// the song anew when it changes ([`OrbParams::revision`]).
+    revision: AtomicU64,
 }
 
 impl Default for OrbParams {
@@ -553,7 +560,76 @@ impl OrbParams {
                 last_error: None,
             }),
             shared: Arc::new(Shared::default()),
+            revision: AtomicU64::new(0),
         }
+    }
+
+    /// The song's revision: it changes at each load, File > New and state restore.
+    pub fn revision(&self) -> u64 {
+        self.revision.load(Ordering::Acquire)
+    }
+
+    /// What the editor shows of the song (task-201), as the engine would hold it with the
+    /// parameter values `values`: a snapshot of a throwaway engine built from the document
+    /// (one stopped 64-frame call, which is not heard) and the four pattern arrays. The
+    /// editor opened before an activation, or after a load or a restore whose engine the host
+    /// has not run yet, shows the song this way.
+    pub fn view(&self, values: &[i32; COUNT]) -> (orb_player::Snapshot, [Vec<u8>; 4]) {
+        let mut m = self.main();
+        let samples = m.samples();
+        let mut doc = m.doc.clone();
+        drop(m);
+        let (mut player, mut audio) = Player::with_call_frames(tables(), None, BLOCK);
+        let e = match build(&player, &mut doc, &samples, Some(values)) {
+            Ok(e) => e,
+            Err(_) => {
+                doc.song = None;
+                doc.patterns = Default::default();
+                build(&player, &mut doc, &samples, Some(values)).expect("a new song builds")
+            }
+        };
+        assert!(player.send(Command::Load(e)).is_ok(), "an empty queue");
+        audio.drain();
+        audio.render_call();
+        let snapshot = *audio.last_snapshot();
+        drop(audio);
+        player.collect_garbage();
+        (snapshot, doc.patterns)
+    }
+
+    /// The preview player's commands (the mod's startup sound: `Command::Preview`,
+    /// `Command::PreviewStop`); others are refused.
+    pub fn preview(&self, c: Command) -> Result<(), String> {
+        if !matches!(c, Command::Preview(_) | Command::PreviewStop) {
+            return Err("not a preview command".into());
+        }
+        self.main().send(c)
+    }
+
+    /// The last error of a build from the state, once (the editor shows it).
+    pub fn take_error(&self) -> Option<String> {
+        self.main().last_error.take()
+    }
+
+    /// The instance's kit (the built-in kit or the embedded mod).
+    pub fn kit(&self) -> Kit {
+        self.main().doc.kit.clone()
+    }
+
+    /// The song file as loaded (`None`: a new song).
+    pub fn song(&self) -> Option<Vec<u8>> {
+        self.main().doc.song.clone()
+    }
+
+    /// Drops what the process side let go of (the editor calls it every frame).
+    pub fn collect_garbage(&self) {
+        if let Some(p) = &mut self.main().player {
+            p.collect_garbage();
+        }
+    }
+
+    fn bump(&self) {
+        self.revision.fetch_add(1, Ordering::AcqRel);
     }
 
     /// The settings shared with the process side.
@@ -622,6 +698,11 @@ impl OrbParams {
         v
     }
 
+    /// The parameter at index `i` of [`SPECS`].
+    pub fn param_at(&self, i: usize) -> &IntParam {
+        &self.params[i]
+    }
+
     /// The parameter of `id`.
     pub fn param(&self, id: &str) -> Option<&IntParam> {
         self.ids
@@ -666,6 +747,8 @@ impl OrbParams {
         let values = values_of(&e);
         m.send(Command::Load(e))?;
         m.doc = doc;
+        drop(m);
+        self.bump();
         Ok(self
             .ids
             .iter()
@@ -831,6 +914,8 @@ unsafe impl Params for OrbParams {
         self.shared.set_remote_enabled(m.doc.remote_enabled);
         self.shared.set_remote_channel(m.doc.remote_channel);
         m.reload(&values);
+        drop(m);
+        self.bump();
     }
 }
 

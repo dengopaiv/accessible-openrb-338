@@ -17,6 +17,8 @@ pub struct Opened {
     /// The facts of a ReBirth 1.x song, which has no `rbs` song of its own (`source` is a
     /// stand-in): File > Info shows them (task-123).
     pub facts_1x: Option<SongFacts>,
+    /// The file's bytes (the plugin keeps them in its state, task-201).
+    pub file: Vec<u8>,
 }
 
 /// Reads and converts an `.rbs` song, keeping the file's `rbs` song.
@@ -38,6 +40,7 @@ pub fn open_bytes(data: &[u8], label: &str) -> Result<Opened, String> {
             engine,
             source,
             facts_1x,
+            file: data.to_vec(),
         });
     }
     let source =
@@ -48,6 +51,7 @@ pub fn open_bytes(data: &[u8], label: &str) -> Result<Opened, String> {
         engine,
         source,
         facts_1x: None,
+        file: data.to_vec(),
     })
 }
 
@@ -107,7 +111,7 @@ pub fn mod_info(path: &Path) -> Result<rbm::Info, String> {
 
 /// The splash picture of the kit that plays, decoded (`App::mod_view`, Mods > Info); None when
 /// the kit has none or it does not decode.
-pub fn splash_image(kit: &orb_cli::mods::Kit) -> Option<eframe::egui::ColorImage> {
+pub fn splash_image(kit: &orb_cli::mods::Kit) -> Option<egui::ColorImage> {
     let bytes = match kit {
         orb_cli::mods::Kit::Mod(p) => mod_file(p, SPLASH).ok()?,
         orb_cli::mods::Kit::Standard => rbm::standard::builtin_file(SPLASH)?,
@@ -116,10 +120,7 @@ pub fn splash_image(kit: &orb_cli::mods::Kit) -> Option<eframe::egui::ColorImage
         .ok()?
         .to_rgba8();
     let size = [img.width() as usize, img.height() as usize];
-    Some(eframe::egui::ColorImage::from_rgba_unmultiplied(
-        size,
-        img.as_raw(),
-    ))
+    Some(egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
 }
 
 /// What Mods > Info shows of a mod file besides its splash (task-106).

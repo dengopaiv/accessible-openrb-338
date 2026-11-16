@@ -4,7 +4,7 @@
 //! windows). Several errors queue: one box at a time, in the order they came. What was done
 //! (`App::status`) stays on the status line.
 
-use eframe::egui::{
+use egui::{
     self, Align, Color32, Context, Event, Frame, Id, Key, Label, Layout, Margin, Order, RichText,
     Sense, Stroke,
 };

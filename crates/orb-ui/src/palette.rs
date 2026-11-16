@@ -2,7 +2,7 @@
 //! slate of the boxes and the amber of the lamps. A color that one window alone uses stays in
 //! that window's module.
 
-use eframe::egui::Color32;
+use egui::Color32;
 
 /// The text ink: the main texts of the windows.
 pub const INK: Color32 = Color32::from_rgb(0xe9, 0xed, 0xf2);

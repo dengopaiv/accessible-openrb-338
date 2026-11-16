@@ -11,6 +11,11 @@ name = "orb_plugin"
 # The plugin library the bundles hold (cdylib), and a lib for the tests.
 crate-type = ["cdylib", "lib"]
 
+# The CLAP editor in a minimal host on the main thread (AppKit needs it): no test harness.
+[[test]]
+name = "clap_gui"
+harness = false
+
 [dependencies]
 orb-engine = { path = "../orb-engine" }
 # The lock-free Player/Audio split, run in 64-frame calls (task-197).
@@ -19,8 +24,19 @@ orb-player = { path = "../orb-player" }
 rbs = { path = "../rbs" }
 rbm = { path = "../rbm" }
 # The plugin framework (ISC), the community fork of nih-plug; its VST3 bindings are the `vst3`
-# crate (MIT OR Apache-2.0). No editor yet (task-201), no logger.
-nice-plug = { version = "0.4.2", default-features = false, features = ["vst3"] }
+# crate (MIT OR Apache-2.0). No logger.
+nice-plug = { version = "0.4.2", default-features = false, features = ["vst3", "editor"] }
+# The editor (task-201): orb-ui's panel in the host's window through nice-plug's egui adapter
+# (ISC; egui 0.37 as orb-ui, on egui-baseview with wgpu 30 as eframe). orb-ui without its
+# standalone window (no eframe, no winit).
+nice-plug-egui = { version = "0.6.0", default-features = false, features = ["wgpu"] }
+orb-ui = { path = "../orb-ui", default-features = false }
+orb-cli = { path = "../orb-cli" }
+egui = "0.37.0"
+# The system fonts as a fallback for the glyphs egui's fonts lack, as eframe's `system_fonts`
+# gives the standalone app (the same crate eframe uses).
+egui_system_font_provider = "0.37.0"
+egui_extras = { version = "0.37.0", features = ["svg"] }
 # The state's document (JSON, bytes as base64) and the embedded mod's SHA-256.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -33,3 +49,7 @@ sha2 = "0.10"
 clap-sys = "0.5.0"
 vst3 = "0.3.0"
 libloading = "0.8.9"
+# examples/editor_preview.rs: the editor's panel in a window of its own, for screenshots.
+eframe = "0.37.0"
+# tests/editor.rs: a song and a mod file for File > Open and the Mods menu.
+tempfile = "3.27.0"

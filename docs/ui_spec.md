@@ -1618,3 +1618,26 @@ the first complete frame after the start, `ORB_UI_START_STATS=1`, maximized wind
 after. A resize drag of 40 frames, headless (`crates/orb-ui/tests/startup_resize_cost.rs`):
 284 ms (1x) and 611 ms (2x) before, every frame rasterizing everything; 52 and 86 ms after,
 plus one rasterizing of 63 and 128 ms when the size settles.
+
+## 20. The panel as the plugin's editor (task-201)
+
+The VST3/CLAP plugin (`docs/plugin.md` section 10) shows this panel, drawn by the same code
+(`crates/orb-ui/src/embed.rs`), with these differences; the standalone app is unchanged.
+
+- **The window** is the menu bar of section 18 (22 points, not scaled) and the panel under it,
+  scaled to the window's width; no desk around it (section 19's backdrop is the standalone's).
+  Its height is `round(width * 510 / 624) + 22`; an invisible 14-point corner at the bottom
+  right resizes it (the resize cursor and a faint grip of three diagonal strokes while it is
+  hovered or dragged).
+- **The transport** has no Pattern/Song switch, Rewind, Fast forward, Record, bar display, loop
+  or tempo arrows (section 3; Fast forward and the bar display are task-213's decision). The
+  tempo display is read-only (the tempo the plugin plays at). Play and Stop are the plugin's
+  mode (pattern mode / note mode). Where the bar and loop displays were, a Bar display shows
+  the host position's bar while the plugin follows it, dark otherwise (no Beat display, the
+  user's decision of 2026-11-16). The Sync LED
+  lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
+- **The menus**: File has New, Open and Info only; nothing asks to save. Options has no
+  keyboard modes; Help no Keyboard Shortcuts.
+- **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
+  shortcut; every key goes on to the host (decided by the user, 2026-11-16). The mouse
+  gestures of section 2 are the same.

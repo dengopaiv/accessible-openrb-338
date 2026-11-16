@@ -8,7 +8,7 @@
 //! action fails the first, a new or removed binding the second. The menu shortcuts come from
 //! [`crate::shortcuts`], the one definition of them.
 
-use eframe::egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
+use egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
 
 use crate::app::App;
 use crate::keys::{Action, KeyMode};

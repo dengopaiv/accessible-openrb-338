@@ -1,6 +1,16 @@
 [workspace]
 resolver = "3"
 members = ["crates/rbs", "crates/orb-engine", "crates/orb-cli", "crates/rbm", "crates/orb-player", "crates/orb-ui-art", "crates/orb-ui", "crates/orb-testkit", "crates/orb-plugin", "xtask"]
+# Patched copies of crates.io crates (the [patch.crates-io] below), not members.
+exclude = ["vendor"]
+
+# raw-window-metal 1.1.0 (MIT OR Apache-2.0, wgpu's macOS surface) with its layer class
+# registered under a name unique to the loaded image: with the fixed name
+# "RawWindowMetalLayer" the second plugin image in one process (the VST3 and the CLAP bundle,
+# or another wgpu plugin) panicked opening its editor and aborted the host (task-201,
+# docs/plugin.md "The vendored raw-window-metal").
+[patch.crates-io]
+raw-window-metal = { path = "vendor/raw-window-metal" }
 
 [workspace.package]
 version = "0.1.0"

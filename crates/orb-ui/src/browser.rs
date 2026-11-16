@@ -29,7 +29,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use eframe::egui::{
+use egui::{
     self, Align, Color32, Context, Event, Frame, Id, Key, Layout, Margin, Modal, Modifiers, Rect,
     RichText, Sense, Stroke, TextEdit, Ui, Vec2,
 };

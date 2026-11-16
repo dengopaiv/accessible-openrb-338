@@ -958,6 +958,52 @@ fn transport_bg(out: &mut Vec<Part>) {
     }));
 }
 
+/// The plugin transport's display of the host position (task-201), the bar: x, y, w, h in the
+/// transport. orb-ui's `embed::PLUGIN_BAR` draws the digits in it. (A Beat display beside it
+/// was removed by the user's decision of 2026-11-16.)
+pub const PLUGIN_BAR: (f32, f32, f32, f32) = (184.0, 27.0, 27.0, 16.0);
+
+/// The plugin's transport (task-201): the standalone's without what plays only in song mode or
+/// the plugin leaves to the host (the Pattern/Song switch, Rewind, Fast forward, Record, the
+/// bar arrows, the loop) and without the tempo's arrows (the tempo is the host's); a well for
+/// Play and Stop, and the host position as a Bar display. The lit Sync and MIDI
+/// LED is `led_transport_on`.
+fn transport_plugin_bg(out: &mut Vec<Part>) {
+    out.push(Part::new("bg_transport_plugin", 592.0, 50.0, |s| {
+        gray_plate(s, 592.0, 50.0, 16.0, 0.0);
+        let l = St::label();
+        stext(s, 8.0, 37.6, "0", 5.4, l);
+        stext(s, 32.4, 37.6, "10", 5.4, l);
+        stext(s, 20.0, 45.8, "SHUFFLE", 5.6, l.w(700).ls(0.1));
+        led_round(s, 44.5, 7.5, 1.9, "G", false);
+        stext(s, 50.0, 10.2, "Sync", 7.2, l.start().fill(LIGHT));
+        led_round(s, 79.5, 7.5, 1.9, "G", false);
+        stext(s, 85.0, 10.2, "MIDI", 7.2, l.start().fill(LIGHT));
+        let title = l.start().w(700).ls(0.0);
+        stext(s, 44.0, 24.2, "Tempo", 8.6, title);
+        display_frame(s, 44.0, 27.0, 27.0, 16.0);
+        // the well of Play and Stop, as the five keys' well
+        rect(
+            s,
+            95.4,
+            20.2,
+            66.2,
+            27.2,
+            2.2,
+            "#000",
+            r#"opacity="0.5" filter="url(#b1)""#,
+        );
+        rect(s, 94.8, 19.8, 66.4, 27.4, 2.0, "#0c0d0e", "");
+        // the host position: the bar
+        let (x, y, w, h) = PLUGIN_BAR;
+        stext(s, x, 24.2, "Bar", 8.6, title);
+        display_frame(s, x, y, w, h);
+    }));
+    out.push(Part::with_bleed("led_transport_on", 11.0, 11.0, 1.0, |s| {
+        led_round(s, 5.5, 5.5, 1.9, "G", true)
+    }));
+}
+
 /// The color of the wind keys' arrows.
 const WIND: &str = "#4b545a";
 
@@ -2556,6 +2602,7 @@ pub fn all_parts() -> Vec<Part> {
     let mut v = Vec::new();
     wood(&mut v);
     transport_bg(&mut v);
+    transport_plugin_bg(&mut v);
     logo(&mut v);
     pattern_bg(&mut v);
     tb303_bg(&mut v);

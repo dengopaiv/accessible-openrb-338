@@ -7,7 +7,7 @@
 //! `Minus`, `NumpadDivide` to `Slash`; `NumpadMultiply` gives no key at all). So the keys the
 //! original keeps apart on its own codes are resolved by the mode and the focus, see [`map`].
 
-use eframe::egui::Key;
+use egui::Key;
 
 /// The Options menu's keyboard mode (docs/ui_spec.md section 10): one setting, two values.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

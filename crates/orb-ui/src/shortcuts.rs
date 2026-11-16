@@ -3,7 +3,7 @@
 //! the two cannot drift. The command modifier is Cmd on macOS and Ctrl elsewhere (egui's
 //! `Modifiers::COMMAND`).
 
-use eframe::egui::{Context, Key, KeyboardShortcut, ModifierNames, Modifiers, Ui};
+use egui::{Context, Key, KeyboardShortcut, ModifierNames, Modifiers, Ui};
 
 pub const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
 pub const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);

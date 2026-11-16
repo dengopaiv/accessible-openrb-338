@@ -12,9 +12,7 @@ use std::time::Duration;
 
 use orb_engine::samples::SampleSet;
 
-use eframe::egui::{
-    self, Color32, Image, Key, Pos2, Rect, Response, Sense, Ui, Vec2, emath::GuiRounding,
-};
+use egui::{self, Color32, Image, Key, Pos2, Rect, Response, Sense, Ui, Vec2, emath::GuiRounding};
 
 use crate::art;
 use crate::behavior::{self, Mods};
@@ -206,6 +204,8 @@ pub struct App {
     resize_until: f64,
     /// The frames `show` has drawn.
     shown: u64,
+    /// The plugin, when this is a plugin's editor (`App::embedded`, task-201).
+    pub(crate) plugin: Option<crate::embed::Plugin>,
 }
 
 impl App {
@@ -261,6 +261,7 @@ impl App {
             last_px_scale: None,
             resize_until: f64::NEG_INFINITY,
             shown: 0,
+            plugin: None,
         }
     }
 
@@ -347,6 +348,7 @@ impl App {
     }
 }
 
+#[cfg(feature = "app")]
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ui.ctx());
@@ -805,6 +807,8 @@ impl App {
         }
         // a frame drawn outside `show` may have left part textures to rasterize
         flush_part_textures(ui.ctx());
+        // a plugin's editor: the plugin's song when it changed (task-201)
+        self.embed_refresh();
         let mut avail = ui.ctx().content_rect();
         if self.menu {
             // the panel takes the window below the menu bar
@@ -814,17 +818,27 @@ impl App {
         let view = View::fit(avail, ppp);
         let now = ui.input(|i| i.time);
         self.track_resize(ui.ctx(), view.scale * ppp, now);
-        crate::backdrop::paint(ui, avail, &view);
+        if self.is_plugin() {
+            crate::embed::paint_surround(ui, avail);
+        } else {
+            crate::backdrop::paint(ui, avail, &view);
+        }
         self.panel.held = None;
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
         // and no clicks of its own.
-        if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
+        if self.is_plugin() {
+            // a plugin's editor has no keyboard at all (task-201): the host keeps its keys
+            self.holds.clear();
+            if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
+                self.focus_click(ui, &view);
+            }
+        } else if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
             if shortcuts::consume(ui, &shortcuts::NEW) {
                 self.new_song();
             } else if shortcuts::consume(ui, &shortcuts::OPEN) {
                 self.open_browser(Mode::OpenSong);
-            } else if shortcuts::consume(ui, &shortcuts::SAVE) {
+            } else if !self.is_plugin() && shortcuts::consume(ui, &shortcuts::SAVE) {
                 self.save();
             } else {
                 // Ctrl/Cmd+F and +G: the Options menu's two keyboard modes.
@@ -848,6 +862,12 @@ impl App {
         }
 
         for (name, x, y) in layout::backgrounds() {
+            // the plugin's transport has its own background (task-201)
+            let name = if name == "bg_transport" && self.is_plugin() {
+                "bg_transport_plugin"
+            } else {
+                name
+            };
             let (w, h) = part_size(name);
             if name == logo_anim::LOGO_PART {
                 // once per app start, from the first frame the logo is drawn
@@ -872,6 +892,9 @@ impl App {
 
         let ctls = std::mem::take(&mut self.ctls);
         for c in &ctls {
+            if self.hidden(&c.id) {
+                continue;
+            }
             self.control(ui, &view, c, now);
         }
         self.ctls = ctls;
@@ -880,6 +903,8 @@ impl App {
         }
         self.drum_strips(ui, &view);
         self.instrument_selection(ui, &view);
+        // a plugin's LEDs, menus and resize corner (task-201)
+        self.plugin_ui(ui, &view, now);
 
         // Send what was done, take what the engine did (the panel follows playback).
         self.note_edits();
@@ -891,7 +916,9 @@ impl App {
             // The repaint rule (task-153, docs/ui_spec.md section 16): at the meter rate while
             // the engine's side of the panel moves, else not at all (input repaints). Without
             // a working audio stream the snapshot never moves.
-            let sound = self.audio_health.is_some() && !self.audio_reported;
+            // (a plugin's engine runs in the host)
+            let sound =
+                (self.audio_health.is_some() && !self.audio_reported) || self.plugin.is_some();
             if sound && link.moving(&self.panel) {
                 ui.ctx().request_repaint_after(METER_FRAME);
             }
@@ -1422,8 +1449,8 @@ impl App {
     }
 
     /// With `--screenshot`: after a few frames (the SVGs are loaded and rasterized) save the
-    /// window to the file and quit.
-    fn screenshot(&mut self, ctx: &egui::Context) {
+    /// window to the file and quit. Each frame of the window calls it after [`App::show`].
+    pub fn screenshot(&mut self, ctx: &egui::Context) {
         let Some(shot) = &mut self.shot else {
             return;
         };
@@ -1513,7 +1540,8 @@ mod geometry_tests {
     }
 }
 
-fn save_png(path: &PathBuf, image: &egui::ColorImage) -> Result<(), image::ImageError> {
+/// Saves an egui screenshot as a PNG (`--screenshot`).
+pub fn save_png(path: &PathBuf, image: &egui::ColorImage) -> Result<(), image::ImageError> {
     let [w, h] = image.size;
     let mut raw = Vec::with_capacity(w * h * 4);
     for p in &image.pixels {

@@ -114,7 +114,7 @@ pub fn knob_design(part: &str) -> &'static KnobDesign {
 }
 
 /// The window's icon: the `app_icon` part rendered at `size` x `size` pixels.
-pub fn app_icon(size: u32) -> eframe::egui::IconData {
+pub fn app_icon(size: u32) -> egui::IconData {
     let svg = part("app_icon").expect("app_icon part").svg;
     let tree = resvg::usvg::Tree::from_data(svg, &resvg::usvg::Options::default())
         .expect("app_icon parses");
@@ -134,7 +134,7 @@ pub fn app_icon(size: u32) -> eframe::egui::IconData {
             [c.red(), c.green(), c.blue(), c.alpha()]
         })
         .collect();
-    eframe::egui::IconData {
+    egui::IconData {
         rgba,
         width: size,
         height: size,

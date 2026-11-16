@@ -461,6 +461,30 @@ pub fn value_of(s: &Spec, b: u8) -> i32 {
     }
 }
 
+/// The parameter a panel message sets and its value (the editor, task-201): the index in
+/// [`SPECS`] and [`value_of`] the message's byte. `None` for a message that is no parameter's.
+pub fn of_command(c: &Command) -> Option<(usize, i32)> {
+    let (target, b) = match *c {
+        Command::Shuffle(v) => (Target::Shuffle, v),
+        Command::MixerGlobal { id: 0, value } => (Target::Master, value),
+        Command::MixerGlobal { id: 1, value } => (Target::CompId, value),
+        Command::MixerGlobal { id: 2, value } => (Target::PcfId, value),
+        Command::MixerChannel {
+            channel,
+            field,
+            value,
+        } => (Target::Channel(channel, field), value),
+        Command::DeviceParam {
+            device,
+            ctrl,
+            value,
+        } => (Target::Ctrl(device, ctrl), value),
+        _ => return None,
+    };
+    let i = SPECS.iter().position(|s| s.target == target)?;
+    Some((i, value_of(&SPECS[i], b)))
+}
+
 /// The panel's message for a parameter value, as a player command (`None` for the mode, which
 /// the process side holds as a level, `crate::core`).
 pub fn command(s: &Spec, v: i32) -> Option<Command> {

@@ -2,7 +2,7 @@
 //! project link in a small centered window. The version string is computed by `build.rs`
 //! (`crate::version`).
 
-use eframe::egui::{self, Context, Key, Modifiers, RichText};
+use egui::{self, Context, Key, Modifiers, RichText};
 
 use crate::app::{self, App};
 use crate::logo_anim::{self, LOGO_H, LOGO_W};

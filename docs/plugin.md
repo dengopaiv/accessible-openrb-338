@@ -3,16 +3,17 @@
 OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are task-185's final
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
 the core described here; task-198 the host sync, the pattern selection by notes and the Standard
-Mapping (section 8); task-200 note mode (section 9); the editor is task-201, packaging and the
-validators task-204.
+Mapping (section 8); task-200 note mode (section 9); task-201 the editor (section 10); packaging
+and the validators are task-204.
 
 ## 1. What runs
 
 One instance is the whole ReBirth: the two 303s, the 808, the 909, the effects and the mixer,
 the engine of `orb-engine` driven as orb-player drives it in the standalone app. The plugin is
 built on nice-plug 0.4.2 (codeberg.org/RustAudio/nice-plug, ISC), the community fork of
-nih-plug, with only its `vst3` feature (no editor and no logger yet). Its VST3 bindings are the
-`vst3` crate 0.3.0 (MIT OR Apache-2.0); both licenses are compatible with the repository's
+nih-plug, with its `vst3` and `editor` features (no logger). Its VST3 bindings are the `vst3`
+crate 0.3.0 (MIT OR Apache-2.0); the editor is on nice-plug-egui 0.6.0 (ISC, egui-baseview
+0.9 with wgpu 30, section 10). These licenses are compatible with the repository's
 GPL-3.0-only.
 
 | File | Thread | What |
@@ -22,6 +23,7 @@ GPL-3.0-only.
 | `src/core.rs` | audio | the 64-frame block scheduler, the parameter changes, the mode |
 | `src/resample.rs` | audio | the resampler for host rates other than 44.1 kHz |
 | `src/params.rs` | both | the parameter table (a constant) |
+| `src/editor.rs` | main | the editor: orb-ui's panel in the host's window (section 10) |
 
 The process side reuses orb-player's lock-free split (`crates/orb-player/src/lib.rs`): the
 UI half (`Player`) stays on the main thread behind a mutex that `process` never takes, the
@@ -142,7 +144,7 @@ field, `orb`, a JSON object (version 1):
 | `patterns` | the four pattern arrays as edited (303 #1 and #2: 32 x 98 bytes; 808 and 909: 32 x 194), base64 |
 | `vintage` | the Vintage sound model |
 | `mod` | null for the built-in kit (never embedded); else `{name, sha256, data}`: the mod's INFO name, the SHA-256 of its bytes and the recrypted `.rbm`, base64 (the mods are 2.6 to 9.4 MB, so about 3.5 to 12.5 MB of text) |
-| `editor_size` | the editor's size, for task-201 |
+| `editor_size` | the editor window's size in logical points (section 10); absent: 624 x 532 |
 | `remote_enabled` | whether the Standard Mapping (Remote MIDI) is on; false by default and when absent (section 8) |
 | `remote_channel` | the Standard Mapping's MIDI channel, 0-based (15: channel 16, the default and when absent); a section's channel (0..3, MIDI 1..4) restores as 15 with `last_error` set, the rest of the state kept (section 8) |
 
@@ -208,7 +210,8 @@ the library, loads it with the dynamic loader, checks the CLAP descriptor and th
 class info, and runs a minimal CLAP host that restores a state with a song and the mode at
 Play, activates at 44.1 kHz, processes, and gets the same samples as the process side run
 directly. Loading in a real host (Reaper) has not been tried by the tests. `sync.rs` (task-198)
-runs a simulated host transport (section 8), `note_mode.rs` (task-200) note mode (section 9).
+runs a simulated host transport (section 8), `note_mode.rs` (task-200) note mode (section 9),
+`editor.rs` (task-201) the editor headless (section 10).
 
 ## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
 
@@ -401,3 +404,219 @@ shared slots by their first sound: LT, MT, HT, RS, CP), then for the 808 LC, MC,
   set": `mask & ac != 0`.
 
 The minimum on-time and the drawing are the editor's (task-202).
+
+## 10. The editor (task-201)
+
+The editor is orb-ui's panel, drawn by the same code as the standalone app
+(`crates/orb-ui/src/app.rs`), in the host's plugin window: nice-plug-egui's `EguiEditor` on
+egui-baseview with wgpu (the wgpu of eframe, 30.x, and egui 0.37 as orb-ui). orb-ui takes eframe
+only in its default `app` feature, so the plugin links no eframe and no winit. `src/editor.rs`
+has the pieces; orb-ui's side is `crates/orb-ui/src/embed.rs`.
+
+**The window.** The standalone app's menu bar (File, Mods, Options, Help; egui-drawn, 22
+points high, `MENU_H`) on top, not scaled, and the panel under it, scaled to the window's width:
+the window is these two and nothing else (no desk around the panel). Its height is therefore
+`round(width * 510 / 624) + 22` points (`embed::window_height`), which no fixed aspect ratio
+expresses. So `Editor::resize_hint()` says resizable both ways with a minimum of half the panel
+(312 x 277) and no aspect ratio, and the editor's handle (`OrbHandle`, egui's handle with its
+own `EditorHandle::adjust_size`) gives the host the closest size of the rule: nice-plug calls
+`adjust_size` from CLAP `gui.adjust_size` and from VST3 `IPlugView::checkSizeConstraint`
+(nice-plug 0.4.2, `wrapper/clap/wrapper.rs` and `wrapper/vst3/view.rs`), so no patch of
+nice-plug is needed. The side the host changed more (relatively) decides the width
+(`editor::adjust_logical`). `EditorHandle::set_size` (egui's) applies the host's size.
+
+**The resize corner.** An invisible 14 x 14 point corner at the window's bottom right (the
+right wood's foot, no control there): the cursor turns to the diagonal resize arrow over it, a
+faint grip of three diagonal strokes (`embed::paint_grip`) shows while it is hovered or dragged,
+and a drag asks for the size of the rule at the larger of the two scales the drag gives
+(`embed::corner_size`), once per new size. egui's `ViewportCommand::InnerSize` would not do:
+egui-baseview 0.9 turns it into baseview's `Window::resize`, which resizes the plugin's view
+without telling the host (baseview 0.4.2 `src/window.rs`: "does *not* trigger the
+`HostCallbacks::request_resize` callback"; macOS `notify_host = false`), so the host's window
+would not follow. nice-plug 0.4.2 has no `GuiContext::request_resize` (nih-plug's), but it
+hands the host's callbacks (`HostMethods`, whose `request_resize` is VST3
+`IPlugFrame::resizeView` or CLAP `gui.request_resize`) to `Editor::spawn` for baseview.
+`OrbEditor::spawn` puts a proxy in between (`HostRoute`, `HostProxy`) that keeps them
+reachable from the window's thread, and the corner's size (`Embed::request_size`) goes to
+them; the host then sizes the window through `EditorHandle::set_size`. The request is made
+after the egui frame, not in it: egui-baseview 0.9 holds its window state borrowed for the
+whole frame (`src/window.rs` 584-592), and a host that answers with `set_size` at once
+(Reaper does) resizes the window, whose `resized` borrows that state again (`window.rs` 736)
+and panics ("already borrowed"; baseview's own handler borrow is shared and nests). So
+`HostRoute::request` only records the size (the newest wins) and posts one flush to the
+window's thread, which asks the host once the current event is over: libdispatch's main
+queue on macOS (`dispatch_async_f`, from the main thread only), a thread timer on Windows
+(`SetTimer` without a window, 0 ms). Where the callbacks are not reachable or nothing can be
+posted (no host callbacks; X11, whose baseview window runs on a thread of its own) the window
+resizes itself with `InnerSize`. The posted callback is code of the plugin's image. When the
+editor closes, Windows kills the route's pending timers (`cancel_posts`; a `WM_TIMER` already
+in the queue is not removed by `KillTimer`). macOS cannot take back a block on the main queue;
+it finds no route and does nothing. The residual risk: a host that closes the editor and
+unloads the bundle within the same turn of its event loop as a corner drag, before the posted
+callback runs, would have it run unmapped code. Hosts keep a bundle loaded well past an
+editor's close (Reaper unloads none while the project is open), and pinning the image for each
+post (`dlopen` of itself, released by a block outside the image) was not worth the code. The size of each resize (egui's `resized`) goes into
+the state (`editor_size`, logical points); the editor opens at it. No zoom presets (task-185).
+
+**The panel's differences** (`embed.rs`; the standalone app draws as before, its screenshots
+are pixel-identical):
+- Hidden (`PLUGIN_HIDDEN`, and no parameters, section 3): the Pattern/Song switch, Rewind,
+  Fast forward, Record, the bar display and its arrows, the loop switch and range, the tempo's
+  arrows. Fast forward and the bar display are hidden beyond task-185's list because they act
+  only in song mode; task-213 decides. The transport's background is the art part
+  `bg_transport_plugin` (the standalone's without those, a well for Play and Stop).
+- The tempo display shows the tempo orb plays at (the snapshot's: the host's, or the song's when
+  the host reports none), read-only.
+- The host position: a Bar display (3 digits) where the song position was
+  (`embed::host_position`): while orb follows the host (the snapshot's `host_sync`: pattern
+  mode, orb and the host playing) the engine's position is the host's (section 8.2), shown as
+  bar `tick / 768 + 1` (bars of four quarter notes, whatever the host's time signature,
+  task-206). In note mode, and with the host stopped (orb free-runs and has no host position),
+  it is dark, as the standalone's bar display in pattern mode. No Beat display: the first
+  version had one beside the Bar (1 digit, `tick % 768 / 192 + 1`); the user removed it after
+  the Reaper check (2026-11-16).
+- Play and Stop set the mode parameter (`g1`); the Play light is the engine's.
+- The Sync LED is lit while the snapshot's `host_sync` is; the MIDI LED for 0.1 s after the
+  snapshot's `midi_in` count changes (art part `led_transport_on`). The editor redraws at least
+  every 50 ms while open so that the LEDs follow.
+- File has New, Open and Info (no Save, Save As, Export); nothing asks to save (the song lives
+  in the host's project). File > Open loads the file into the plugin (`OrbParams::load_song`),
+  sets the song's control values as host parameters and the mode to Play (pattern mode,
+  task-185); File > New keeps the mode. The file browser is orb-ui's own, egui-drawn (task-046),
+  so no native dialog is opened from the plugin window; its folders and the Mods folder are the
+  standalone's settings file (`OpenRB-338/ui.toml`), shared.
+- Mods: a mod chosen (the Mods menu, a song's mod, Choose file) is read and given to the plugin
+  (`OrbParams::set_mod`, embedded in the state). An editor that opens on a state's mod names a
+  copy of its bytes in the temporary folder (`OpenRB-338/mods/<sha256>.rbm`), or the file an
+  editor of the process chose, for the 808's mod window and Mods > Info.
+- **No keyboard** (the user, 2026-11-16): hosts take keys from plugin windows, and the 303
+  plugins surveyed (task-185) have no shortcuts. The editor acts on no key: no menu
+  accelerators (no shortcut texts in the menus), no Program Synth / Select Patterns modes in
+  Options, no Help > Keyboard Shortcuts, no computer-keyboard keys of the panel. The window
+  passes every key on to the host (egui-baseview `KeyCapture::IgnoreAll`) except while a text
+  field (the file browser's) has the focus; so the browser's arrows, Enter and Escape also
+  reach the host while no text field has the focus (egui still sees them). Mouse gestures
+  (drags, Shift-drags, double-click reset, the 909's Ctrl/Alt clicks) are the standalone's.
+  The key forwarding itself is egui-baseview's and is checked in a host only.
+
+**Repainting.** The panel asks egui for its repaints as in the standalone app (orb-ui's
+repaint rule, docs/ui_spec.md section 16: the meter rate while the engine's side moves; the
+plugin's LEDs and Bar every 50 ms, `embed::POLL`), but egui-baseview 0.9 passes those requests
+to baseview's waker, and baseview 0.4.2 on macOS loses one made while the window draws (a zero
+delay sets the display link running at once, `platform/macos/waker.rs` 20-26 and
+`wrappers/appkit/main_thread.rs` 73-77, and the frame's end pauses it again,
+`platform/macos/view.rs` 280-296). egui makes such a request at the start of the frame after
+any immediate one (egui 0.37 `context.rs` 113-125), and the delayed requests of that frame then
+skip the callback (`context.rs` 164-172), so the editor stopped drawing until the mouse moved:
+LEDs, step lights, Sync/MIDI and the Bar froze (the user's Reaper check, 2026-11-16). The
+editor replaces egui's repaint callback (`EditorApp::build`) with `editor::RepaintClock`: a
+thread per open editor that keeps the earliest requested time and, at it, sets nice-plug's
+`RepaintNotifier`, which egui-baseview's window timer polls every 1/64 s outside the frame and
+turns into a redraw. With no request the thread sleeps and the window does not draw, so a
+still panel costs no CPU; playing, it draws at the panel's meter rate. The thread ends when the
+editor closes (`editor_closed`). Whether a window the host hides but keeps open still draws
+is the display link's (it is paused while nothing is requested).
+
+**Fonts.** egui 0.37 has no default features; the standalone app gets `default_fonts` (and the
+system fonts as a fallback, `egui_system_font_provider`) from eframe's defaults. orb-ui asks
+egui for `default_fonts` itself, and the editor adds the system font provider as eframe does.
+Without them every egui text of the editor was drawn as boxes (the user's first Reaper try,
+2026-11-16), which the screenshots did not show: the crate's dev-dependency eframe turns the
+feature on for its tests and examples. `tests/fonts.rs` asks `cargo tree` for the features of
+the plugin's normal dependencies and requires `default_fonts`; the editor debug-asserts that
+egui has fonts.
+
+**The vendored raw-window-metal.** wgpu's Metal surface (wgpu-hal 30 `metal/mod.rs`,
+`raw_window_metal::Layer::from_ns_view`) puts a `CAMetalLayer` subclass into the editor's view.
+raw-window-metal 1.1.0 registers that class with objc2's `define_class!` under the fixed name
+`RawWindowMetalLayer` (`src/observer.rs`), and Objective-C classes are process-wide: the second
+image of the plugin in one process (Reaper loads the `.vst3` and the `.clap`, two copies of the
+same binary, when both formats are used; any other plugin linking raw-window-metal does the
+same) panicked opening its editor ("could not create new class \"RawWindowMetalLayer\",
+perhaps a class with that name already exists?"). The panic is inside the host's call (CLAP
+`gui.create`, VST3 `IPlugView::attached`), an `extern "C"` function of nice-plug, so it
+aborted Reaper (the user's check of 2026-11-16, macOS arm64, Reaper 7.86, either order of
+the two formats). The repository carries raw-window-metal 1.1.0 under `vendor/` (MIT OR
+Apache-2.0, its licence files kept), used through `[patch.crates-io]` of the workspace
+`Cargo.toml`, so it applies to the whole workspace: the standalone OpenRB-338 app (eframe on
+wgpu) uses the patched crate too. The patch is not a minimal diff: `src/observer.rs` (marked
+"OpenRB-338 patch") is rewritten from `define_class!` to `ClassBuilder` (about 300 lines),
+and `src/lib.rs` changes in 3 places (`extern crate std`, the two uses of `ObserverLayer::new`).
+It registers the class at run time with `ClassBuilder` under
+`RawWindowMetalLayer_<address of a static of the image>_<n>`, taking the next `n` when a name
+is taken (an image unloaded from the same address); the instance variable is a boxed
+`Weak<CALayer>` and `dealloc` removes the observers as the original's `Drop` did. One behavior
+differs: the key-value observer ignores an unexpected change (no change dictionary, no new
+value, a value of the wrong type, an unknown key path) where the original panicked, since a
+panic there would unwind into AppKit. Otherwise the layer behaves as the original (the
+crate's own tests pass on the copy). Without a name, `define_class!` would
+reuse the class of the first image (objc2's rule for generated names), whose code goes away
+when that image is unloaded, so the patch uses a unique name instead. baseview names its view
+class with a UUID already. The rest of the plugin's macOS dependency tree registers no class
+under a fixed name (searched for `define_class!`, `declare_class!`, `ClassBuilder::new` and
+`#[name = ...]` in the 277 crates; objc2-app-kit's `#[name]`s bind AppKit's own classes).
+Upstream issue text (not posted): "raw-window-metal: `RawWindowMetalLayer` has a fixed class
+name, so two dynamic libraries that each link raw-window-metal (audio plugins, e.g. a VST3 and
+a CLAP build of one plugin, or two wgpu plugins) cannot both create a layer in one process: the
+second `define_class!` registration panics. Please register the class under a name unique to
+the image (e.g. with a random or address suffix through `ClassBuilder`), as baseview does for
+its NSView subclass."
+
+**No panic reaches the host.** Every method of `OrbEditor` (`spawn`, `size`, `resize_hint`)
+and of `OrbHandle` (`run_until_closed`, `set_parent`, `show`, `hide`, `set_size`,
+`adjust_size`, `set_fallback_scale_factor`, the main-thread, key, state and parameter
+callbacks), the egui app's `build`, frame, `resized` and `editor_closed`, and the posted
+resize request run under `editor::guard` (`catch_unwind`): a panic is logged (`nice_error!`)
+and becomes an error or a safe fallback (no adjustment, the default size, the default resize
+hint, the state's size unchanged), so the host gets no editor (`gui.create` false) or an
+empty window instead of an abort. nice-plug has no hook of its own for this. `tests/clap_gui.rs`
+(macOS, no test harness, on the main thread) loads the library twice as two files, as Reaper
+does, and in each makes instances that open their editor through CLAP `gui.create`, process
+audio while it is open and close it; with the old bundle's binary (`ORB_TEST_CLAP_LIBRARY`) it
+aborts on the class name as Reaper did. The VST3 path opens the same `OrbEditor`; a VST3 host
+with an `IPlugFrame` and a parent `NSView` is left to the Reaper check.
+
+**The audio thread's SIGSEGV in the first crash report.** The first report
+(`REAPER-2026-11-16-140356.ips`) also had Reaper's audio worker crashed at a byte write to
+`0x50` in `orb_engine::delay::Delay as SendEffect::process` (from the CLAP instance's
+`process`), while the main thread was still in the panic hook printing the backtrace before
+the abort. Delay's code is safe and the second report (`REAPER-2026-11-16-140655.ips`, same
+trigger) has no audio-thread fault, only the abort. Taken as a consequence of the process
+being torn down by the non-unwinding panic, not a defect of its own; not reproduced
+(`tests/clap_gui.rs` processes 200 blocks per instance with the editor open in both copies).
+
+**The panel's commands** (`PluginPort`, orb-ui's `link::Port`): a control's message becomes its
+host parameter (`params::of_command`; `ParamSetter` begin, set, end), so the host records and
+saves it and the process side sends it to the engine (section 3); a pattern button on the
+pattern its parameter already holds sends the message itself (`select_pattern`, section 6); a
+pattern edit goes to `OrbParams::edit`, the Vintage flag to `set_vintage`, the mod's startup
+sound to `OrbParams::preview`; the song mode, record, loop, locate and tempo messages are
+dropped. The panel takes the engine's values again (the snapshot after the last engine call,
+which shows host automation, notes' pattern choices and the Standard Mapping's changes) only
+8192 engine frames after its last command (`FOLLOW_FRAMES`, longer than a host buffer), since a
+parameter reaches the engine through the host's next `process`.
+
+**The song in the editor.** `OrbParams::revision` counts loads, File > New and state restores;
+when it changes the editor shows the song anew from `OrbParams::view`: the patterns and a
+snapshot of a throwaway engine built from the document and the parameter values (one stopped
+call of 64 frames, not heard), so an editor opened before the first activation, or right after
+a load or a restore the host has not run yet, shows the song. The plugin's garbage queue is now
+emptied on the main thread at every command and every editor frame (`OrbParams::collect_garbage`).
+
+**Screenshots without a host.** `cargo run --release -p orb-plugin --example editor_preview --
+[SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--screenshot OUT.png]` shows the
+editor in a window of its own with a stand-in host that runs the process side (no sound) and
+applies parameter changes at once.
+
+**Tests** (`tests/editor.rs`, headless egui with a stand-in `GuiContext`): the editor shows the
+plugin's song; a knob drag and a pattern button set their parameters through the host; Play
+and Stop set the mode; the hidden controls take no clicks; no key acts; the LEDs and the
+Bar display follow the snapshot; File > Open loads the song in pattern mode and New
+asks nothing; a mod from the Mods menu goes into the state; the File menu opens from the bar;
+the corner asks for sizes of the rule, through the host's callbacks after the frame (a host
+that sizes the window inside its request finds the window's state free); a window
+1.5 times larger still hits the controls; the size rule of the host's resizing and the state's
+size. `tests/fonts.rs`: the plugin's normal build has egui's fonts. `tests/clap_gui.rs`: two
+copies of the library each open CLAP editors (above), and the corner's request posted to the
+main queue reaches the host once, after the event. The real-host checks (Reaper, VST3 and
+CLAP) are the user's (task-201's notes).

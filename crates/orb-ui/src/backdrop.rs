@@ -12,7 +12,7 @@
 //! from 5 left of the unit at 55 % and one of 20 from 8 inside its right edge at 85 %, both
 //! blurred with a deviation of 5; the same above and below in a tall window.
 
-use eframe::egui::{Color32, Mesh, Pos2, Rect, Shape, TextureOptions, Ui, Vec2};
+use egui::{Color32, Mesh, Pos2, Rect, Shape, TextureOptions, Ui, Vec2};
 
 use crate::app::{View, part_texture};
 use crate::art;

@@ -13,6 +13,7 @@ pub mod behavior;
 pub mod browser;
 pub mod crash;
 pub mod document;
+pub mod embed;
 pub mod error_box;
 pub mod info;
 pub mod key_help;
