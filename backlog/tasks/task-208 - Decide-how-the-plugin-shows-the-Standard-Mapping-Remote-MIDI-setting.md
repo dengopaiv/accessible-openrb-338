@@ -5,11 +5,10 @@ status: To Do
 assignee:
   - '@pingw33n'
 created_date: '2026-11-16T09:43:00Z'
-updated_date: '2026-11-16T10:40:00Z'
+updated_date: '2026-11-16T16:01:00Z'
 labels:
   - decision
   - ui
-milestone: m-7
 dependencies: []
 references:
   - backlog task-207
@@ -42,3 +41,9 @@ Recommendation: A (the cheapest, no dialog in a plugin window, the current value
 <!-- AC:BEGIN -->
 - [ ] #1 The outcome and its date are in the final summary, and task-209 says what to build
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The user, 2026-11-16: for later; the first plugin release has no remote MIDI channel (the Standard Mapping stays off and has no UI). Taken out of m-7; decide when the remote channel is planned after the release.
+<!-- SECTION:NOTES:END -->

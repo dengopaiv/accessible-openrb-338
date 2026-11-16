@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T15:59:00Z'
+updated_date: '2026-11-16T16:02:00Z'
 labels:
   - ui
   - docs
@@ -14,7 +15,6 @@ dependencies:
   - TASK-219
   - TASK-202
   - TASK-203
-  - TASK-209
 references:
   - docs/plugin.md
   - docs/midi.md
@@ -72,3 +72,9 @@ ordinal: 228000
 - [ ] #5 Screenshots at 1x and 2x; the user reviews the page in Reaper before merge
 - [ ] #6 cargo test, clippy -D warnings and nightly fmt pass
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The user, 2026-11-16: no remote MIDI channel in the first release (task-208/209 deferred). The page doesn't describe the Standard Mapping or channel 16; it says only that the devices listen on channels 1..4. Dependency on task-209 removed.
+<!-- SECTION:NOTES:END -->

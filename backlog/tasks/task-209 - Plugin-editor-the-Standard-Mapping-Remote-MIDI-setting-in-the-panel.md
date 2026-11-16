@@ -5,9 +5,9 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T10:40:00Z'
+updated_date: '2026-11-16T16:01:00Z'
 labels:
   - ui
-milestone: m-7
 dependencies:
   - TASK-201
   - TASK-207
@@ -35,3 +35,9 @@ The plugin's Standard Mapping (Remote MIDI) has an on/off (`remote_enabled`, off
 - [ ] #3 The user reviewed it (screenshots or a build) and approved it before merge
 - [ ] #4 cargo test, clippy -D warnings and nightly fmt pass
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Deferred with task-208 (the user, 2026-11-16): no remote MIDI channel in the first plugin release. Taken out of m-7.
+<!-- SECTION:NOTES:END -->
