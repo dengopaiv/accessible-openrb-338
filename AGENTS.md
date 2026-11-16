@@ -118,7 +118,7 @@ Everything else goes into the task's notes or a knowledge document.
 
 ## Build and test
 
-The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crates/orb-engine`, `crates/orb-cli`, whose binary is `orb`, `orb-player`, `orb-ui`, `orb-ui-art` and `orb-testkit`; `rbs` and `rbm` keep their names because they are ReBirth's file formats). The toolchain is pinned in `rust-toolchain.toml`.
+The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crates/orb-engine`, `crates/orb-cli`, whose binary is `orb`, `orb-player`, `orb-ui`, `orb-ui-art`, `orb-testkit` and `orb-plugin`, the VST3/CLAP plugin, plus `xtask`, its bundler: `cargo xtask bundle orb-plugin --release`, docs/plugin.md; `rbs` and `rbm` keep their names because they are ReBirth's file formats). The toolchain is pinned in `rust-toolchain.toml`.
 
 - Build: `cargo build --release`
 - Test: `cargo test`. Tests that run `tools/*.py` find Python 3 through `tests/common/python.rs`: `ORB_PYTHON` (a program path, or a command split on whitespace such as `py -3`) if set, else `python3`, `python` or `py -3` on PATH; none is a failure naming `ORB_PYTHON`, not a skip.

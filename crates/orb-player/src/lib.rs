@@ -28,6 +28,10 @@
 //! device's own buffer size does not change the engine's output. The original drains with a
 //! time budget (at least one message per call); the player drains every queued command.
 //!
+//! A player made with [`Player::with_call_frames`] runs calls of another size: the plugin
+//! (`orb-plugin`, task-197) runs 64-frame calls, one engine block each, through
+//! [`Audio::drain`], [`Audio::apply_now`] and [`Audio::render_call`].
+//!
 //! # Songs
 //!
 //! A song is built on the UI thread ([`Player::build`]: the song constructor, then the load's
@@ -331,7 +335,8 @@ impl LiveBlock {
 /// What the UI reads back: the current song's state after the last engine call.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Snapshot {
-    /// The frames the engine has rendered (44.1 kHz), a multiple of [`CALL_FRAMES`].
+    /// The frames the engine has rendered (44.1 kHz), a multiple of the call size
+    /// ([`CALL_FRAMES`] unless the player was made with [`Player::with_call_frames`]).
     pub frames: u64,
     /// The songs made current so far (0: the initial empty song).
     pub generation: u32,
@@ -415,8 +420,10 @@ pub struct Audio {
     tracks: triple_buffer::Input<Tracks>,
     /// The generation and revision of the last tracks published.
     tracks_published: Option<(u32, u64)>,
-    /// The int16 output of the last engine call.
-    buf: Box<[i16; 2 * CALL_FRAMES]>,
+    /// The frames of one engine call ([`CALL_FRAMES`] by default).
+    call_frames: usize,
+    /// The int16 output of the last engine call, `2 * call_frames` samples.
+    buf: Box<[i16]>,
     /// The frames of `buf` already handed out.
     pos: usize,
     frames: u64,
@@ -436,6 +443,17 @@ impl Player {
     /// "Untitled song" before a song is opened), with the drum samples `samples` (`None`: silent
     /// drum machines).
     pub fn new(tables: Arc<Tables>, samples: Option<Arc<SampleSet>>) -> (Player, Audio) {
+        Self::with_call_frames(tables, samples, CALL_FRAMES)
+    }
+
+    /// [`Player::new`] with engine calls of `call_frames` frames (at least 1) instead of
+    /// [`CALL_FRAMES`]: the queued commands apply at the start of each call.
+    pub fn with_call_frames(
+        tables: Arc<Tables>,
+        samples: Option<Arc<SampleSet>>,
+        call_frames: usize,
+    ) -> (Player, Audio) {
+        let call_frames = call_frames.max(1);
         let process = ProcessState::new();
         let current = Box::new(Engine::new(
             tables.clone(),
@@ -453,8 +471,9 @@ impl Player {
             snapshot: si,
             tracks: ti,
             tracks_published: None,
-            buf: Box::new([0; 2 * CALL_FRAMES]),
-            pos: CALL_FRAMES,
+            call_frames,
+            buf: vec![0; 2 * call_frames].into_boxed_slice(),
+            pos: call_frames,
             frames: 0,
             generation: 0,
             output_errors: 0,
@@ -595,10 +614,10 @@ impl Audio {
     fn pull(&mut self, frames: usize, mut put: impl FnMut(usize, i16, i16)) {
         let mut i = 0;
         while i < frames {
-            if self.pos == CALL_FRAMES {
+            if self.pos == self.call_frames {
                 self.call();
             }
-            let n = (CALL_FRAMES - self.pos).min(frames - i);
+            let n = (self.call_frames - self.pos).min(frames - i);
             for k in 0..n {
                 let s = 2 * (self.pos + k);
                 put(i + k, self.buf[s], self.buf[s + 1]);
@@ -608,16 +627,41 @@ impl Audio {
         }
     }
 
-    /// One engine call: the queued commands, then 1024 frames, then the snapshot.
+    /// One engine call: the queued commands, then the call's frames, then the snapshot.
     fn call(&mut self) {
+        self.drain();
+        self.render_call();
+    }
+
+    /// The first step of an engine call: applies the commands queued by the UI side, as many as
+    /// the garbage queue has room for ([`GARBAGE_PER_COMMAND`] slots each).
+    pub fn drain(&mut self) {
         while self.garbage.slots() >= GARBAGE_PER_COMMAND {
             let Ok(c) = self.commands.pop() else { break };
             self.apply(c);
         }
+    }
+
+    /// Applies a command at once, from the callback's own thread (a plugin's host events),
+    /// as a queued one would be applied at the start of a call. Refused (given back) when the
+    /// garbage queue has fewer than [`GARBAGE_PER_COMMAND`] free slots.
+    pub fn apply_now(&mut self, c: Command) -> Result<(), Command> {
+        if self.garbage.slots() < GARBAGE_PER_COMMAND {
+            return Err(c);
+        }
+        self.apply(c);
+        Ok(())
+    }
+
+    /// The rest of an engine call, after [`Audio::drain`]: renders the call's frames, mixes the
+    /// preview player and publishes the snapshot. Returns the call's output (interleaved stereo
+    /// int16, `2 * call_frames` samples). A caller that renders this way does not also use
+    /// [`Audio::render_i16`] or [`Audio::render_f32`], which would hand the call out again.
+    pub fn render_call(&mut self) -> &[i16] {
         // a faulting call writes nothing (`Engine::fault`): silence rather than the last call
         self.buf.fill(0);
         let faults = self.faults();
-        self.current.render(&mut self.buf[..], CALL_FRAMES);
+        self.current.render(&mut self.buf[..], self.call_frames);
         if self.faults() != faults {
             self.buf.fill(0);
         }
@@ -632,8 +676,9 @@ impl Audio {
             }
         }
         self.pos = 0;
-        self.frames += CALL_FRAMES as u64;
+        self.frames += self.call_frames as u64;
         self.publish();
+        &self.buf
     }
 
     fn faults(&self) -> u64 {
@@ -857,6 +902,21 @@ impl Audio {
     /// The current song (for tests and diagnostics; the UI reads the [`Snapshot`]).
     pub fn current(&self) -> &Engine {
         &self.current
+    }
+
+    /// The song the commands address: the pending one, else the current one.
+    pub fn newest(&self) -> &Engine {
+        self.pending.as_deref().unwrap_or(&self.current)
+    }
+
+    /// A loaded song waits for Play (the current one plays).
+    pub fn has_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// The frames of one engine call.
+    pub fn call_frames(&self) -> usize {
+        self.call_frames
     }
 
     /// The current song, mutable (for tests, and for reading the empty song `Player::new`
