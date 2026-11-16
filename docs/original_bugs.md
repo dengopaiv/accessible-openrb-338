@@ -592,3 +592,22 @@ See OB-8 for the unclean buffer.
 - **Corpus.** None (the corpus uses one song, and its exports change no mod).
 - **orb.** Not modelled: orb opens one song.
 - **Home.** `docs/rbm.md` section 14.5.
+
+### Q-5: a rising 303 slide ends 1.56 cents flat [C]
+
+- **What.** The 303's glide is `p = (11*p + target) / 12` in unsigned integers, once per 64-frame
+  block. Rising, it truncates to `p` once `target - p < 12`, so it stops 1..11 units below the
+  target; the pitch index `p >> 4` (16 units each, 64 indices a semitone) stays one below:
+  1/64 semitone, 1.5625 cents flat, until the next note-on without slide resets `p`. Falling,
+  it reaches the target exactly.
+- **Where.** 0x100248EB..0x10024940 (2.0 sound: `p` in eax from `+0xCB4`; `lea ecx,[eax+eax*8]`,
+  `lea eax,[ecx+eax*2]` make 11p; the target `+0xCB0` is loaded into ecx at 0x1002491D and added
+  at 0x10024929; `mov ecx, 0Ch` at 0x1002492B, then `div ecx` at 0x10024936; the result stored
+  to `+0xCB4` at 0x10024940), the Vintage copy at 0x10023F9F..0x10023FC8; the index load at
+  0x1002499E.
+- **Trigger.** A slide (or a tie into a slide) to a higher note, whatever its distance.
+- **Verdict.** Not claimed as a defect: the error is inaudible and is the integer arithmetic the
+  sample-exact goal makes orb repeat.
+- **Corpus.** [G] Every corpus song with a rising 303 slide; the songs were not counted.
+- **orb.** `crates/orb-engine/src/tb303.rs` (`glide`), the same arithmetic.
+- **Home.** `docs/initial_investigation.md` 6.1; `docs/midi.md` 5.3.

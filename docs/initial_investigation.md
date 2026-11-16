@@ -574,6 +574,14 @@ The phase runs from -1 to 1, so frequency = tab·22050; index 3072 is 65.4 Hz.
 (1/44100 at 0x10153AB0); `tab[i] = f32(pow(p, i)*k)`, all with the CRT pow 0x1002DDF0. The
 tune table at 0x10033F90 is i16[32].
 
+[C] task-199 (the note-on 0x10023E61..0x10023EBF, the 2.0 glide 0x100248EB..0x1002499E): the
+frequency is `65.406 Hz * 2^((i - 3072)/768)`, index `i = 64*(tuneTab + note + 12*up - 12*down)
++ 3072`, so pattern note 0 (C) at Tune 52..75 is 65.406 Hz = `55 * 2^(3/12)`: C two octaves
+below middle C at concert pitch (A = 440 Hz), MIDI note 36. The load `flt_10125364[p >> 4]`
+checks no bound: the table's 6144 entries cover -48..+47 semitones from that C; the pattern
+reaches -12..+24 at Tune center (MIDI 24..60) and -24..+36 over the Tune range. A rising glide stops 1..11 units of `p` short (index one below, 1.56 cents
+flat; `docs/original_bugs.md` Q-5), a falling one reaches the target. `docs/midi.md` 5.3.
+
 ### 6.2 DSP (Vintage engine, inline in 0x10023F10; per 64 samples, control values every 4 samples) [C]
 
 The survey called this the 2.0 engine. It runs when the sound-model flag +21 is non-zero, which is
@@ -829,6 +837,11 @@ after each pair.
   - Instruments trigger in **descending** order.
   - [C] RBS 909 values 0..3 reach the step function unchanged (no shift to 1..4): 1 = ×0.8, 2 = ×2.0,
     3 = ×0.8 with flam; 4 never occurs. The AC column holds 0 or 2 (`docs/song_load.md` §4.8).
+  - [C] task-199: with the panel's AC value 2 the accent is `1 + knob/16`, so an accented low
+    step (`0.8*(1 + knob/16)`) is louder than an unaccented high one (2.0) only from Accent knob
+    25 up (equal at 24). The snare's snappy level is not scaled by the gain (`sub_1002DC54`:
+    `snappy * flt_10154648` at 0x1002DC77; only the tone part takes `+0x191C`, 0x1002DCDB).
+    `docs/midi.md` 5.5.
   - [C] task-025 (Rust: `crates/orb-engine/src/tr909.rs`; the 33 909 corpus songs match byte for
     byte): the step function is the 808's position logic (§6.4) with the 909's offsets: pattern
     `+0x18D3`, latch `+0x18D4` (1 from the ctor), wrap `+0x18D5`, last position `+0x18D8`, last
