@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@pingw33n'
 created_date: '2026-11-16T09:43:00Z'
+updated_date: '2026-11-16T10:40:00Z'
 labels:
   - decision
   - ui
@@ -39,5 +40,5 @@ Recommendation: A (the cheapest, no dialog in a plugin window, the current value
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The outcome and its date are in the final summary, and task-201 says what to build
+- [ ] #1 The outcome and its date are in the final summary, and task-209 says what to build
 <!-- AC:END -->
