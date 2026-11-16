@@ -38,6 +38,8 @@ and Windows.
 - **Audio export** of the loop to WAV, FLAC or Ogg Vorbis.
 - **Plays from the computer keyboard:** program the synths and select patterns without a mouse
   (Help > Keyboard Shortcuts).
+- **Pattern commands:** cut, copy, paste and duplicate a pattern, with one level of undo (the
+  Edit menu).
 - **`orb`, a command-line tool,** to work with songs and mods from the terminal:
   - `orb render`: render a song's loop to WAV, FLAC or Ogg, far faster than real time (a
     five-minute song takes about a second and a half);
@@ -52,8 +54,7 @@ and Windows.
 - ReWire, and MIDI input or sync in the standalone application (the VST 3/CLAP plugin below takes
   the MIDI of its host).
 - Mod themes: a mod changes the drum sounds, not the look of the panel.
-- The original's Edit menu functions on patterns (copy, paste, clear, shift, randomize and the
-  like), and undo.
+- The original's other Edit menu functions on patterns (clear, shift, randomize and the like).
 - The original's preferences and its Windows menu.
 - Export to AIFF (use WAV, FLAC or Ogg).
 

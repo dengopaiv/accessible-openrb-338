@@ -16,6 +16,7 @@ use orb_player::{Audio, CALL_FRAMES, Snapshot};
 use orb_ui::app::App;
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
 use orb_ui::link::{Link, Msg};
+use orb_ui::menu::Cmd;
 use orb_ui::model::{BAR, Panel};
 
 fn root() -> PathBuf {
@@ -1361,4 +1362,687 @@ fn the_songs_automation_moves_a_knob_on_after_a_double_click() {
         seen.insert(live);
     }
     assert!(seen.len() > 3, "the cutoff moved: {seen:?}");
+}
+
+// ---- whole patterns ------------------------------------------------------------------------
+
+const ROW_DEVICES: [Device; 4] = [
+    Device::Tb303_1,
+    Device::Tb303_2,
+    Device::Tr808,
+    Device::Tr909,
+];
+
+/// The pattern length and the step length of row `r`.
+fn pattern_layout(r: usize) -> (usize, usize) {
+    if r < 2 { (98, 6) } else { (194, 12) }
+}
+
+/// A pattern of row `r` with every step set, 12 steps long, shuffled: on a 303 the notes `n`
+/// and up with accent; on a drum machine the BD (instrument 1), and on odd steps the LT (3) at
+/// `n % 4` (1 on the 808).
+fn full_pattern(r: usize, n: u8) -> Vec<u8> {
+    let (plen, slen) = pattern_layout(r);
+    let mut p = vec![0u8; plen];
+    p[..2].copy_from_slice(&[1, 12]);
+    for s in 0..16 {
+        let step = &mut p[2 + slen * s..][..slen];
+        if r < 2 {
+            step.copy_from_slice(&[n + s as u8 % 12, 0, 1, 0, 0, 0]);
+        } else {
+            step[1] = 1;
+            step[3] = (s % 2) as u8 * if r == 2 { 1 } else { n % 4 };
+        }
+    }
+    p
+}
+
+fn set_pattern(h: &mut Harness, r: usize, p: u8, bytes: &[u8]) -> bool {
+    let link = h.app.link.as_mut().unwrap();
+    link.set_pattern(r, p, bytes, &mut h.app.panel)
+}
+
+#[test]
+fn a_whole_pattern_goes_to_the_engine_as_one_message_on_every_row() {
+    let mut h = Harness::new();
+    for (r, d) in ROW_DEVICES.into_iter().enumerate() {
+        let (plen, _) = pattern_layout(r);
+        // sub 44, 61 or 78 `{p, bytes}` (docs/song_load.md section 4.10)
+        let sub = [44, 44, 61, 78][r];
+        // B6, and D8: the last pattern of the array (task-077)
+        for p in [13u8, 31] {
+            let bytes = full_pattern(r, 2 + p % 3);
+            assert!(set_pattern(&mut h, r, p, &bytes), "row {r} pattern {p}");
+            let mut data = vec![p];
+            data.extend(&bytes);
+            assert_eq!(
+                h.take_log(),
+                vec![dev(d, sub, &data)],
+                "row {r} pattern {p}"
+            );
+            h.calls(1);
+            let at = plen * p as usize;
+            assert!(
+                h.engine_patterns(r)[at..at + plen] == bytes[..],
+                "row {r} pattern {p}: the engine holds the pattern after one call"
+            );
+            assert_eq!(h.app.link.as_ref().unwrap().pattern(r, p), &bytes[..]);
+            // the same bytes again change nothing
+            assert!(!set_pattern(&mut h, r, p, &bytes));
+            assert_eq!(h.take_log(), vec![]);
+        }
+    }
+}
+
+#[test]
+fn the_panel_shows_a_written_pattern_at_once() {
+    let mut h = Harness::new();
+    for r in 0..4 {
+        let n = r + 1;
+        // D8 (31) selected; B6 (13) not
+        h.click(&format!("pattern{n}.bankD"));
+        h.click(&format!("pattern{n}.pattern8"));
+        h.calls(1);
+        for p in [31u8, 13] {
+            set_pattern(&mut h, r, p, &full_pattern(r, 5));
+            let panel = &h.app.panel;
+            let row = &panel.rows[r];
+            assert_eq!((row.len[p as usize], row.shuffle[p as usize]), (12, true));
+            if r < 2 {
+                let steps = &panel.synth[r].patterns[p as usize];
+                assert!(steps.iter().all(|s| s.accent && !s.rest), "row {r} {p}");
+                assert_eq!(steps[3].note, 8);
+            }
+        }
+        assert_eq!(h.app.panel.display(&format!("pattern{n}.steps")), Some(12));
+    }
+    // the drum strips show the selected pattern
+    let panel = &h.app.panel;
+    assert!(panel.steps808[1].iter().all(|&b| b));
+    assert_eq!(panel.steps808[3][..4], [false, true, false, true]);
+    assert!(panel.steps909[1].iter().all(|&b| b == 1));
+    assert_eq!(panel.steps909[3][..4], [0, 1, 0, 1]);
+    // and keep showing it after the next engine calls
+    h.calls(2);
+    assert!(h.app.panel.steps909[1].iter().all(|&b| b == 1));
+    assert_eq!(h.app.panel.rows[2].len[13], 12);
+}
+
+// ---- Edit > Cut, Copy, Paste and Duplicate Pattern -----------------------------------------
+
+/// Selects pattern `p` of row `r` by clicks on its bank and button (the row takes the focus).
+fn select(h: &mut Harness, r: usize, p: u8) {
+    let n = r + 1;
+    let bank = (b'A' + p / 8) as char;
+    h.click(&format!("pattern{n}.bank{bank}"));
+    h.click(&format!("pattern{n}.pattern{}", p % 8 + 1));
+}
+
+/// The whole-pattern message of row `r`: `{p, bytes}`.
+fn pattern_msg(r: usize, p: u8, bytes: &[u8]) -> Msg {
+    let mut data = vec![p];
+    data.extend(bytes);
+    dev(ROW_DEVICES[r], [44, 44, 61, 78][r], &data)
+}
+
+#[test]
+fn copy_then_paste_works_on_every_row_and_from_one_303_to_the_other() {
+    let mut h = Harness::new();
+    for r in 0..4 {
+        let (plen, _) = pattern_layout(r);
+        let bytes = full_pattern(r, 3);
+        set_pattern(&mut h, r, 0, &bytes);
+        select(&mut h, r, 0);
+        h.app.command(Cmd::CopyPattern);
+        h.app.doc.modified = false;
+        // into C5 (20), and into D8 (31)
+        for p in [20u8, 31] {
+            select(&mut h, r, p);
+            h.take_log();
+            h.app.command(Cmd::PastePattern);
+            assert_eq!(h.take_log(), vec![pattern_msg(r, p, &bytes)], "row {r}");
+            h.calls(1);
+            let at = plen * p as usize;
+            assert!(
+                h.engine_patterns(r)[at..at + plen] == bytes[..],
+                "row {r} {p}"
+            );
+        }
+        assert!(h.app.doc.modified);
+        let name = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"][r];
+        assert_eq!(
+            h.app.status.as_deref(),
+            Some(&*format!("{name}: pasted into D8"))
+        );
+    }
+    // TB-303 1's pattern into TB-303 2
+    let bytes = full_pattern(0, 9);
+    set_pattern(&mut h, 0, 4, &bytes);
+    select(&mut h, 0, 4);
+    h.app.command(Cmd::CopyPattern);
+    select(&mut h, 1, 6);
+    h.take_log();
+    h.app.command(Cmd::PastePattern);
+    assert_eq!(h.take_log(), vec![pattern_msg(1, 6, &bytes)]);
+}
+
+#[test]
+fn a_paste_of_another_kind_or_of_no_pattern_changes_nothing() {
+    let mut h = Harness::new();
+    select(&mut h, 2, 0);
+    h.take_log();
+    h.app.command(Cmd::PastePattern);
+    assert_eq!(h.take_log(), vec![]);
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("The clipboard holds no pattern")
+    );
+    // a 303 pattern does not paste into the 808 or the 909
+    set_pattern(&mut h, 0, 0, &full_pattern(0, 1));
+    select(&mut h, 0, 0);
+    h.app.command(Cmd::CopyPattern);
+    for r in [2, 3] {
+        select(&mut h, r, 1);
+        h.take_log();
+        h.app.doc.modified = false;
+        h.app.command(Cmd::PastePattern);
+        assert_eq!(h.take_log(), vec![]);
+        assert!(!h.app.doc.modified);
+        let link = h.app.link.as_ref().unwrap();
+        assert!(orb_ui::link::is_empty_pattern(r, link.pattern(r, 1)));
+        assert_eq!(
+            h.app.status.as_deref(),
+            Some("The clipboard holds a TB-303 pattern")
+        );
+    }
+    // nor an 808 pattern into the 909
+    select(&mut h, 2, 1);
+    h.app.command(Cmd::CopyPattern);
+    select(&mut h, 3, 1);
+    h.take_log();
+    h.app.command(Cmd::PastePattern);
+    assert_eq!(h.take_log(), vec![]);
+}
+
+#[test]
+fn copy_and_a_paste_that_changes_nothing_leave_the_song_unmodified() {
+    let mut h = Harness::new();
+    set_pattern(&mut h, 3, 0, &full_pattern(3, 2));
+    h.app.doc.modified = false;
+    select(&mut h, 3, 0);
+    h.frame(vec![]);
+    // the click on the selected pattern sent the selection, an edit
+    h.app.doc.modified = false;
+    h.take_log();
+    h.app.command(Cmd::CopyPattern);
+    assert!(!h.app.doc.modified);
+    assert_eq!(h.app.status.as_deref(), Some("TR-909: A1 copied"));
+    h.app.command(Cmd::PastePattern);
+    h.frame(vec![]);
+    assert_eq!(h.take_log(), vec![]);
+    assert!(!h.app.doc.modified);
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("TR-909: A1 holds the pattern already")
+    );
+}
+
+#[test]
+fn cut_empties_the_steps_keeps_length_and_shuffle_and_pastes_back() {
+    let mut h = Harness::new();
+    for r in 0..4 {
+        let bytes = full_pattern(r, 4);
+        set_pattern(&mut h, r, 31, &bytes);
+        select(&mut h, r, 31);
+        h.calls(1);
+        h.take_log();
+        h.app.doc.modified = false;
+        h.app.command(Cmd::CutPattern);
+        let empty = orb_ui::link::emptied_pattern(r, &bytes);
+        assert_eq!(h.take_log(), vec![pattern_msg(r, 31, &empty)], "row {r}");
+        assert!(h.app.doc.modified);
+        let link = h.app.link.as_ref().unwrap();
+        let cut = link.pattern(r, 31);
+        assert!(orb_ui::link::is_empty_pattern(r, cut), "row {r}");
+        assert_eq!(&cut[..2], &[1, 12], "row {r}: shuffle and length stay");
+        assert_eq!(h.app.panel.rows[r].len[31], 12);
+        // the cut pattern pastes
+        select(&mut h, r, 30);
+        h.take_log();
+        h.app.command(Cmd::PastePattern);
+        assert_eq!(h.take_log(), vec![pattern_msg(r, 30, &bytes)], "row {r}");
+    }
+    // a 303's cut steps are the Clear button's: note 0, rest on
+    let link = h.app.link.as_ref().unwrap();
+    assert_eq!(&link.pattern(1, 31)[2..8], &[0, 0, 0, 0, 0, 1]);
+}
+
+#[test]
+fn duplicate_writes_the_next_empty_pattern_then_selects_it() {
+    let mut h = Harness::new();
+    for r in 0..4 {
+        let n = r + 1;
+        // A1 .. B1 used: A1's duplicate goes to B2, past the bank border
+        for p in 0..=8 {
+            set_pattern(&mut h, r, p, &full_pattern(r, p % 5));
+        }
+        select(&mut h, r, 0);
+        h.take_log();
+        h.app.doc.modified = false;
+        h.app.command(Cmd::DuplicatePattern);
+        // the pattern now, the selection with the panel's events: the pattern first
+        h.frame(vec![]);
+        let bytes = full_pattern(r, 0);
+        let d = ROW_DEVICES[r];
+        assert_eq!(
+            h.take_log(),
+            vec![pattern_msg(r, 9, &bytes), dev(d, sub_of(d), &[1, 9])],
+            "row {n}"
+        );
+        assert!(h.app.doc.modified);
+        let row = &h.app.panel.rows[r];
+        assert_eq!((row.pattern, row.bank), (9, 1), "row {n}: B2 shown");
+        assert_eq!(h.app.panel.focus, r);
+        let name = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"][r];
+        let want = format!("{name}: A1 duplicated to B2");
+        assert_eq!(h.app.status.as_deref(), Some(&*want));
+        h.calls(2);
+        assert_eq!(h.snap().live[d as usize].as_slice()[1], 9);
+        // from D8 on past A1 .. B2, used now, to B3
+        let bytes = full_pattern(r, 3);
+        set_pattern(&mut h, r, 31, &bytes);
+        select(&mut h, r, 31);
+        h.take_log();
+        h.app.command(Cmd::DuplicatePattern);
+        h.frame(vec![]);
+        assert_eq!(
+            h.take_log(),
+            vec![pattern_msg(r, 10, &bytes), dev(d, sub_of(d), &[1, 10])],
+            "row {n}"
+        );
+        assert_eq!(h.app.panel.rows[r].bank, 1);
+    }
+}
+
+#[test]
+fn duplicate_with_no_empty_pattern_left_sends_nothing() {
+    let mut h = Harness::new();
+    for p in 0..32 {
+        set_pattern(&mut h, 2, p, &full_pattern(2, p));
+    }
+    select(&mut h, 2, 3);
+    h.frame(vec![]);
+    h.take_log();
+    h.app.doc.modified = false;
+    h.app.command(Cmd::DuplicatePattern);
+    h.frame(vec![]);
+    assert_eq!(h.take_log(), vec![]);
+    assert!(!h.app.doc.modified);
+    assert_eq!(h.app.panel.rows[2].pattern, 3);
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("TR-808: no empty pattern left")
+    );
+    // the clipboard is Copy's only
+    assert_eq!(h.app.clip, None);
+}
+
+#[test]
+fn a_duplicate_while_playing_switches_to_the_copy_at_the_bar_line() {
+    let mut h = Harness::new();
+    let o = layout::TR808_ORIGIN;
+    // pattern 0: BD on step 1
+    h.click_at(Pos2::new(o.0 + 16.0 + 8.0, o.1 + 99.0));
+    h.click("transport.play");
+    h.calls(30);
+    assert_eq!(h.snap().patterns[2], Some(0));
+    h.app.panel.focus = 2;
+    h.app.command(Cmd::DuplicatePattern);
+    assert_eq!(h.app.panel.rows[2].pattern, 1);
+    // the strip shows the copy at once
+    h.calls(1);
+    assert!(h.app.panel.steps808[1][0]);
+    let mut change = None;
+    for i in 0..120 {
+        h.calls(1);
+        let s = h.snap();
+        if s.patterns[2] == Some(1) {
+            change = Some((i, s.tick));
+            break;
+        }
+    }
+    let (i, tick) = change.expect("the pattern changes");
+    assert!(i > 0, "not at once");
+    assert!(tick % BAR < 24, "at the bar line: tick {tick}");
+    let at = 194;
+    assert_eq!(
+        h.engine_patterns(2)[at + 2 + 1],
+        1,
+        "the engine plays the copy"
+    );
+}
+
+#[test]
+fn a_duplicate_while_recording_is_recorded_as_a_click_is() {
+    let mut h = Harness::new();
+    h.click("transport.mode");
+    h.click("transport.record");
+    h.click("transport.play");
+    h.calls(20);
+    assert!(h.app.panel.transport.recording);
+    h.click("pattern3.pattern3");
+    // the next bar: a track holds one event of a controller per tick
+    h.calls(160);
+    // the selection goes with the frame's panel events, as a click's does
+    h.app.command(Cmd::DuplicatePattern);
+    h.frame(vec![]);
+    assert_eq!(h.app.panel.rows[2].pattern, 3);
+    // past the bar line, where the engine takes the selection
+    h.calls(80);
+    h.click("transport.record");
+    h.calls(2);
+    assert!(!h.app.panel.transport.recording);
+    let link = h.app.link.as_ref().unwrap();
+    // the 808's pattern selections (controller 1) after tick 0: the click's A3, then the
+    // duplicate's A4
+    let recorded: Vec<u8> = link.recorded_tracks().expect("the merge's tracks")
+        [Device::Tr808 as usize]
+        .iter()
+        .filter(|e| e.tick > 0 && e.ctrl == 1)
+        .map(|e| e.value)
+        .collect();
+    assert_eq!(recorded[..2], [2, 3], "{recorded:?}");
+}
+
+// ---- Edit > Undo ---------------------------------------------------------------------------
+
+fn link_pattern(h: &Harness, r: usize, p: u8) -> Vec<u8> {
+    h.app.link.as_ref().unwrap().pattern(r, p).to_vec()
+}
+
+#[test]
+fn undo_puts_back_what_paste_cut_and_duplicate_wrote() {
+    let mut h = Harness::new();
+    let (a1, a2) = (full_pattern(3, 1), full_pattern(3, 2));
+    set_pattern(&mut h, 3, 0, &a1);
+    set_pattern(&mut h, 3, 1, &a2);
+    assert_eq!(h.app.undo_name(), None);
+
+    // Paste A1 over A2
+    select(&mut h, 3, 0);
+    h.app.command(Cmd::CopyPattern);
+    select(&mut h, 3, 1);
+    h.app.command(Cmd::PastePattern);
+    assert_eq!(h.app.undo_name(), Some("Paste Pattern"));
+    h.take_log();
+    h.app.command(Cmd::Undo);
+    assert_eq!(h.take_log(), vec![pattern_msg(3, 1, &a2)]);
+    assert_eq!(link_pattern(&h, 3, 1), a2);
+    assert_eq!(h.app.panel.steps909[3][1], 2, "the strip shows A2 again");
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("TR-909: Paste Pattern undone")
+    );
+    // one level: a second Undo does nothing
+    h.app.command(Cmd::Undo);
+    assert_eq!(h.take_log(), vec![]);
+    assert_eq!(h.app.undo_name(), None);
+
+    // Cut A2
+    h.app.command(Cmd::CutPattern);
+    h.take_log();
+    h.app.command(Cmd::Undo);
+    assert_eq!(h.take_log(), vec![pattern_msg(3, 1, &a2)]);
+
+    // Duplicate A1 to A3, then Undo: A1 selected again, as a click selects it, then A3 empty
+    // again once the engine took the selection
+    select(&mut h, 3, 0);
+    let empty = link_pattern(&h, 3, 2);
+    h.app.command(Cmd::DuplicatePattern);
+    h.frame(vec![]);
+    assert_eq!(h.app.panel.rows[3].pattern, 2);
+    h.take_log();
+    h.app.command(Cmd::Undo);
+    h.frame(vec![]);
+    assert_eq!(h.take_log(), vec![dev(Device::Tr909, 74, &[1, 0])]);
+    assert_eq!(h.app.panel.rows[3].pattern, 0);
+    // the mirror (what Save writes) holds the undone pattern at once
+    assert_eq!(link_pattern(&h, 3, 2), empty);
+    // stopped, it goes from the first snapshot that ran the selection
+    h.calls(2);
+    assert_eq!(h.take_log(), vec![pattern_msg(3, 2, &empty)]);
+    h.calls(2);
+    assert_eq!(h.engine_patterns(3)[2 * 194..3 * 194], empty[..]);
+}
+
+#[test]
+fn an_undo_of_a_duplicate_while_playing_never_plays_the_emptied_copy() {
+    let mut h = Harness::new();
+    let o = layout::TR808_ORIGIN;
+    // pattern 0: BD on step 1
+    h.click_at(Pos2::new(o.0 + 16.0 + 8.0, o.1 + 99.0));
+    h.click("transport.play");
+    h.calls(30);
+    h.app.panel.focus = 2;
+    h.app.command(Cmd::DuplicatePattern);
+    let copy = link_pattern(&h, 2, 1);
+    let empty = orb_ui::link::emptied_pattern(2, &copy);
+    // until the engine plays the copy, then into its bar
+    for _ in 0..200 {
+        h.calls(1);
+        if h.snap().patterns[2] == Some(1) {
+            break;
+        }
+    }
+    assert_eq!(h.snap().patterns[2], Some(1), "the engine plays the copy");
+    h.calls(20);
+    assert!(h.snap().tick % BAR >= 24, "not at a bar line");
+    h.take_log();
+    h.app.command(Cmd::Undo);
+    assert_eq!(h.app.panel.rows[2].pattern, 0);
+    assert_eq!(link_pattern(&h, 2, 1), empty);
+    // the selection goes at once, the empty pattern only once the engine left the copy: while
+    // the engine plays pattern 1 it holds the copy
+    let mut left = None;
+    for i in 0..200 {
+        let at = 194;
+        let held = h.engine_patterns(2)[at..at + 194].to_vec();
+        let s = h.snap();
+        if s.patterns[2] == Some(1) {
+            assert_eq!(held, copy, "call {i}: the engine plays the copy whole");
+        } else if left.is_none() {
+            left = Some((i, s.tick));
+        }
+        if held == empty {
+            break;
+        }
+        h.calls(1);
+    }
+    let (i, tick) = left.expect("the engine leaves the copy");
+    assert!(i > 0, "not at once");
+    assert!(tick % BAR < 24, "at the bar line: tick {tick}");
+    assert_eq!(h.snap().patterns[2], Some(0));
+    assert_eq!(h.engine_patterns(2)[194..2 * 194], empty[..]);
+    assert!(!h.app.link.as_ref().unwrap().has_deferred_pattern());
+    // the selection, then the pattern
+    assert_eq!(
+        h.take_log(),
+        vec![dev(Device::Tr808, 57, &[1, 0]), pattern_msg(2, 1, &empty)]
+    );
+}
+
+#[test]
+fn a_pattern_held_back_by_undo_goes_before_a_selection_of_it() {
+    let mut h = Harness::new();
+    let o = layout::TR808_ORIGIN;
+    h.click_at(Pos2::new(o.0 + 16.0 + 8.0, o.1 + 99.0));
+    h.click("transport.play");
+    h.calls(30);
+    h.app.panel.focus = 2;
+    h.app.command(Cmd::DuplicatePattern);
+    let empty = orb_ui::link::emptied_pattern(2, &link_pattern(&h, 2, 1));
+    for _ in 0..200 {
+        h.calls(1);
+        if h.snap().patterns[2] == Some(1) {
+            break;
+        }
+    }
+    h.calls(20);
+    h.app.command(Cmd::Undo);
+    h.take_log();
+    // the user picks the emptied pattern again before the bar line: it is empty when chosen
+    h.click("pattern3.pattern2");
+    assert_eq!(
+        h.take_log(),
+        vec![pattern_msg(2, 1, &empty), dev(Device::Tr808, 57, &[1, 1])]
+    );
+    assert!(!h.app.link.as_ref().unwrap().has_deferred_pattern());
+}
+
+#[test]
+fn after_a_duplicate_a_selection_makes_undo_leave_the_selection_alone() {
+    let mut h = Harness::new();
+    let a1 = full_pattern(2, 1);
+    set_pattern(&mut h, 2, 0, &a1);
+    select(&mut h, 2, 0);
+    let empty = link_pattern(&h, 2, 1);
+    h.app.command(Cmd::DuplicatePattern);
+    h.frame(vec![]);
+    assert_eq!(h.app.panel.rows[2].pattern, 1);
+    // the user goes to A5 on the 808, then Undo
+    h.click("pattern3.pattern5");
+    assert_eq!(h.app.undo_name(), Some("Duplicate Pattern"));
+    h.take_log();
+    h.app.command(Cmd::Undo);
+    h.frame(vec![]);
+    assert_eq!(h.app.panel.rows[2].pattern, 4, "the selection stays");
+    assert_eq!(h.app.panel.focus, 2);
+    assert_eq!(link_pattern(&h, 2, 1), empty, "the copy is undone");
+    h.calls(2);
+    assert_eq!(
+        h.take_log(),
+        vec![pattern_msg(2, 1, &empty)],
+        "no selection"
+    );
+    assert_eq!(h.app.panel.rows[2].pattern, 4);
+    // a selection in another row counts too
+    select(&mut h, 2, 0);
+    h.app.command(Cmd::DuplicatePattern);
+    h.frame(vec![]);
+    select(&mut h, 3, 6);
+    h.take_log();
+    h.app.command(Cmd::Undo);
+    h.calls(2);
+    assert_eq!(h.take_log(), vec![pattern_msg(2, 1, &empty)]);
+    assert_eq!(
+        (h.app.panel.rows[2].pattern, h.app.panel.rows[3].pattern),
+        (1, 6)
+    );
+}
+
+#[test]
+fn an_undo_of_a_duplicate_while_recording_is_recorded_as_a_click_is() {
+    let mut h = Harness::new();
+    h.click("transport.mode");
+    h.click("transport.record");
+    h.click("transport.play");
+    h.calls(20);
+    h.click("pattern3.pattern3");
+    h.calls(160);
+    h.app.command(Cmd::DuplicatePattern);
+    h.frame(vec![]);
+    h.calls(160);
+    // Undo selects A3 again: recorded as the click's and the duplicate's selections are
+    h.app.command(Cmd::Undo);
+    h.frame(vec![]);
+    assert_eq!(h.app.panel.rows[2].pattern, 2);
+    h.calls(160);
+    h.click("transport.record");
+    h.calls(2);
+    let link = h.app.link.as_ref().unwrap();
+    let recorded: Vec<u8> = link.recorded_tracks().expect("the merge's tracks")
+        [Device::Tr808 as usize]
+        .iter()
+        .filter(|e| e.tick > 0 && e.ctrl == 1)
+        .map(|e| e.value)
+        .collect();
+    assert_eq!(recorded[..3], [2, 3, 2], "{recorded:?}");
+}
+
+#[test]
+fn another_pattern_edit_a_new_song_and_an_open_forget_the_undo() {
+    let mut h = Harness::new();
+    let o = layout::TR808_ORIGIN;
+    let edits: [&dyn Fn(&mut Harness); 5] = [
+        // an 808 step, the length, the shuffle flag, a 303 step, the 303's Clear
+        &|h| h.click_at(Pos2::new(o.0 + 16.0 + 8.0, o.1 + 99.0)),
+        &|h| h.click("pattern3.steps_down"),
+        &|h| h.click("pattern3.shuffle"),
+        &|h| h.click("tb303_1.key3"),
+        &|h| h.click("tb303_1.clear"),
+    ];
+    let a1 = full_pattern(2, 1);
+    for (i, edit) in edits.iter().enumerate() {
+        set_pattern(&mut h, 2, 0, &a1);
+        set_pattern(&mut h, 2, 1, &orb_ui::link::emptied_pattern(2, &a1));
+        select(&mut h, 2, 0);
+        h.app.command(Cmd::CopyPattern);
+        select(&mut h, 2, 1);
+        h.app.command(Cmd::PastePattern);
+        assert_eq!(h.app.undo_name(), Some("Paste Pattern"), "edit {i}");
+        edit(&mut h);
+        assert_eq!(h.app.undo_name(), None, "edit {i}");
+        h.take_log();
+        h.app.command(Cmd::Undo);
+        h.frame(vec![]);
+        assert_eq!(h.take_log(), vec![], "edit {i}");
+    }
+    // a selection is not an edit of a pattern
+    h.app.panel.focus = 2;
+    h.app.command(Cmd::CutPattern);
+    select(&mut h, 2, 5);
+    assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
+    // File > New builds the drum machines with the app's kit, as the app has it
+    h.app.samples = Some(samples());
+    h.app.new_now();
+    assert_eq!(h.app.undo_name(), None, "File > New");
+    h.app.panel.focus = 3;
+    set_pattern(&mut h, 3, 0, &full_pattern(3, 1));
+    h.app.command(Cmd::CutPattern);
+    h.app.open_now(&root().join("tests/songs/shipped/Calm.rbs"));
+    assert!(h.app.errors.is_empty(), "{:?}", h.app.errors);
+    assert_eq!(h.app.undo_name(), None, "an open");
+}
+
+#[test]
+fn a_command_takes_the_panels_pending_edits_first() {
+    let mut h = Harness::new();
+    select(&mut h, 2, 0);
+    h.take_log();
+    // a step set without a frame is still an event of the panel when the command runs
+    let i = h.app.panel.inst808;
+    h.app.panel.set_step808(4, true);
+    h.app.command(Cmd::DuplicatePattern);
+    h.frame(vec![]);
+    let copy = link_pattern(&h, 2, 1);
+    assert_eq!(copy[2 + 12 * 4 + i], 1, "the copy has the step");
+    assert_eq!(
+        h.take_log(),
+        vec![
+            dev(Device::Tr808, 62, &[0, 4, i as u8, 1]),
+            pattern_msg(2, 1, &copy),
+            dev(Device::Tr808, 57, &[1, 1]),
+        ]
+    );
+    // a pending edit forgets the undo before Undo runs
+    assert_eq!(h.app.undo_name(), Some("Duplicate Pattern"));
+    h.app.panel.set_step808(5, true);
+    h.app.command(Cmd::Undo);
+    h.frame(vec![]);
+    assert_eq!(h.app.undo_name(), None);
+    assert_eq!(
+        h.take_log(),
+        vec![dev(Device::Tr808, 62, &[1, 5, i as u8, 1])]
+    );
+    assert_eq!(h.app.panel.rows[2].pattern, 1);
 }

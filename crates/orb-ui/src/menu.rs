@@ -1,5 +1,5 @@
 //! The menu (task-047): load, save and export the song, choose its mod, the Vintage sound flag
-//! and the keyboard mode, with the unsaved-changes prompt. Nothing else of the original's menu.
+//! and the keyboard mode, with the unsaved-changes prompt, and orb's own pattern commands.
 //!
 //! What each item does (docs/ui_spec.md section 18):
 //! - **File**: New (Ctrl/Cmd+N: the state of the app's start), Open (Ctrl/Cmd+O), Save (Ctrl/Cmd+S;
@@ -7,6 +7,9 @@
 //!   As, Info ([`crate::info`]), Export loop as audio file. The browser (task-046) returns paths
 //!   only; the writes happen here and their errors are shown in the message box
 //!   ([`crate::error_box`]).
+//! - **Edit**: Undo (one level), Cut, Copy, Paste and Duplicate Pattern on the focused row's
+//!   selected pattern ([`App::undo`], [`App::copy_pattern`], [`App::paste_pattern`],
+//!   [`App::duplicate_pattern`]), orb's own commands.
 //! - **Mods**: "Standard ReBirth", the mods of the Mods folder (one entry per INFO menu name, as
 //!   the original's Mods menu: `sub_40C163`, docs/rbm.md section 14), and a file picked in the
 //!   browser. A choice is the original's `sub_42D80D` -> `sub_426FB3`: the song is marked modified,
@@ -37,6 +40,7 @@ use crate::app::App;
 use crate::browser::{ExportFormat, Mode};
 use crate::document::{self, Document};
 use crate::keys::KeyMode;
+use crate::link::{emptied_pattern, next_empty_pattern};
 use crate::palette::{INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 use crate::session;
 use crate::shortcuts;
@@ -101,6 +105,48 @@ pub enum Cmd {
     /// The plugin's pattern or note mode (the panel's mode selector, a plugin's editor only;
     /// task-217, task-231: the Options menu has no mode items).
     SetPluginMode(crate::embed::PluginMode),
+    /// Edit > Undo ([`App::undo`]).
+    Undo,
+    /// Edit > Cut Pattern ([`App::copy_pattern`]).
+    CutPattern,
+    CopyPattern,
+    /// Edit > Paste Pattern from the app's clipboard ([`App::paste_pattern`]).
+    PastePattern,
+    DuplicatePattern,
+}
+
+/// A pattern on the app's clipboard (Edit > Copy Pattern and Cut Pattern).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Clip {
+    /// The row it came from (0..=3): it pastes into a row of the same kind.
+    pub row: usize,
+    /// The whole pattern (98 or 194 bytes).
+    pub bytes: Vec<u8>,
+    /// The text the copy put on the system clipboard: a paste of that text pastes this
+    /// pattern (docs/ui_spec.md section 16).
+    pub marker: String,
+}
+
+/// What Edit > Undo puts back: pattern `pattern` of row `row` held `bytes` before the command
+/// `what`; after a Duplicate, `select` is the pattern it came from, until the user selects a
+/// pattern ([`App::note_edits`]).
+#[derive(Clone, Debug)]
+pub struct Undo {
+    what: &'static str,
+    row: usize,
+    pattern: u8,
+    bytes: Vec<u8>,
+    select: Option<u8>,
+}
+
+/// The names of the four rows on the status line.
+const ROW_NAMES: [&str; 4] = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"];
+/// The kind of each row's patterns: a pattern pastes into a row of its kind.
+const ROW_KINDS: [&str; 4] = ["TB-303", "TB-303", "TR-808", "TR-909"];
+
+/// The name of pattern `p` (0..=31): bank and button, A1 to D8.
+fn pattern_name(p: u8) -> String {
+    format!("{}{}", (b'A' + p / 8) as char, p % 8 + 1)
 }
 
 /// One entry of the Mods menu: a mod of the Mods folder, or the several mods that share an
@@ -603,6 +649,7 @@ impl App {
             mod_name,
             kit,
         };
+        self.undo = None;
         self.events_seen = 0;
     }
 
@@ -989,7 +1036,208 @@ impl App {
                     e.set_mode(m);
                 }
             }
+            Cmd::Undo => self.undo(),
+            Cmd::CutPattern => self.copy_pattern(true),
+            Cmd::CopyPattern => self.copy_pattern(false),
+            Cmd::PastePattern => self.paste_pattern(),
+            Cmd::DuplicatePattern => self.duplicate_pattern(),
         }
+    }
+
+    // ---- patterns -----------------------------------------------------------------------
+
+    /// The row with the focus and its selected pattern, after the panel's pending events were
+    /// noted and sent; `None` without a link (the demo panel).
+    fn pattern_target(&mut self) -> Option<(usize, u8)> {
+        self.link.as_ref()?;
+        self.note_edits();
+        self.link.as_mut()?.forward(&mut self.panel);
+        let r = self.panel.focus;
+        Some((r, self.panel.rows[r].pattern))
+    }
+
+    /// Writes `bytes` into pattern `p` of row `r` ([`crate::link::Link::set_pattern`]) for the
+    /// command `what`: when the pattern changes the song is modified and Undo puts its former
+    /// bytes back. False when it held `bytes` already.
+    fn write_pattern(&mut self, r: usize, p: u8, bytes: &[u8], what: &'static str) -> bool {
+        let Some(link) = &mut self.link else {
+            return false;
+        };
+        let before = link.pattern(r, p).to_vec();
+        let changed = link.set_pattern(r, p, bytes, &mut self.panel);
+        if changed {
+            self.doc.modified = true;
+            self.undo = Some(Undo {
+                what,
+                row: r,
+                pattern: p,
+                bytes: before,
+                select: None,
+            });
+        }
+        changed
+    }
+
+    /// The command Edit > Undo undoes ("Paste Pattern"); `None` when there is none.
+    pub fn undo_name(&self) -> Option<&'static str> {
+        self.undo.as_ref().map(|u| u.what)
+    }
+
+    /// Edit > Undo, one level: the pattern the last Cut, Paste or Duplicate Pattern wrote gets
+    /// its former bytes back, and after a Duplicate the pattern it came from is selected again
+    /// (unless a pattern was selected since). The selection goes first: a pattern the row does
+    /// not select then reaches the engine only once the engine no longer plays it
+    /// ([`crate::link::Link::set_pattern_unplayed`]), so a playing row never plays the emptied
+    /// copy for the rest of the bar.
+    pub fn undo(&mut self) {
+        // the panel's pending edits go first, and may forget the undo
+        if self.pattern_target().is_none() {
+            return;
+        }
+        let Some(u) = self.undo.take() else {
+            return;
+        };
+        if let Some(p) = u.select {
+            // a click's selection: an edit, recorded in song mode with record on
+            self.select_pattern(u.row, p);
+            self.note_edits();
+        }
+        let Some(link) = &mut self.link else {
+            return;
+        };
+        let changed = if self.panel.rows[u.row].pattern == u.pattern {
+            link.set_pattern(u.row, u.pattern, &u.bytes, &mut self.panel)
+        } else {
+            link.set_pattern_unplayed(u.row, u.pattern, &u.bytes, &mut self.panel)
+        };
+        self.doc.modified |= changed;
+        self.status = Some(format!("{}: {} undone", ROW_NAMES[u.row], u.what));
+    }
+
+    /// Edit > Copy Pattern, and with `cut` Cut Pattern: the focused row's selected pattern goes
+    /// to the app's clipboard ([`Clip`]) and its marker to the system clipboard; Cut then
+    /// empties its steps, the length and the shuffle flag stay.
+    pub fn copy_pattern(&mut self, cut: bool) {
+        let Some((r, p)) = self.pattern_target() else {
+            return;
+        };
+        let Some(link) = &self.link else {
+            return;
+        };
+        let bytes = link.pattern(r, p).to_vec();
+        let (row, name) = (ROW_NAMES[r], pattern_name(p));
+        // the process id and the count tell this copy from another instance's
+        self.clip_count += 1;
+        let marker = format!(
+            "OpenRB-338 pattern: {row} {name} [{}.{}]",
+            std::process::id(),
+            self.clip_count
+        );
+        self.clip_text = Some(marker.clone());
+        let empty = emptied_pattern(r, &bytes);
+        self.clip = Some(Clip {
+            row: r,
+            bytes,
+            marker,
+        });
+        if cut {
+            self.write_pattern(r, p, &empty, "Cut Pattern");
+            self.status = Some(format!("{row}: {name} cut"));
+        } else {
+            self.status = Some(format!("{row}: {name} copied"));
+        }
+    }
+
+    /// Edit > Paste Pattern: the app's clipboard into the focused row's selected pattern, when
+    /// the row is of its kind (a TB-303 pattern pastes into either 303).
+    pub fn paste_pattern(&mut self) {
+        let Some((r, p)) = self.pattern_target() else {
+            return;
+        };
+        let Some(clip) = &self.clip else {
+            self.status = Some("The clipboard holds no pattern".into());
+            return;
+        };
+        let kind = ROW_KINDS[clip.row];
+        if kind != ROW_KINDS[r] {
+            self.status = Some(format!("The clipboard holds a {kind} pattern"));
+            return;
+        }
+        let bytes = clip.bytes.clone();
+        let (row, name) = (ROW_NAMES[r], pattern_name(p));
+        self.status = Some(if self.write_pattern(r, p, &bytes, "Paste Pattern") {
+            format!("{row}: pasted into {name}")
+        } else {
+            format!("{row}: {name} holds the pattern already")
+        });
+    }
+
+    /// Edit > Duplicate Pattern: the focused row's selected pattern goes into the row's next
+    /// empty pattern ([`next_empty_pattern`]), which is then selected as a click on its button
+    /// selects it. The clipboard stays as it is.
+    pub fn duplicate_pattern(&mut self) {
+        let Some((r, p)) = self.pattern_target() else {
+            return;
+        };
+        let Some(link) = &self.link else {
+            return;
+        };
+        let row = ROW_NAMES[r];
+        let Some(to) = next_empty_pattern(r, &link.patterns()[r], p) else {
+            self.status = Some(format!("{row}: no empty pattern left"));
+            return;
+        };
+        let bytes = link.pattern(r, p).to_vec();
+        let before = link.pattern(r, to).to_vec();
+        // the pattern first, then the selection: the engine never plays `to` before it holds it
+        self.write_pattern(r, to, &bytes, "Duplicate Pattern");
+        self.select_pattern(r, to);
+        // the selection goes now, so the next frame's selections are the user's (which make
+        // Undo leave the selection alone)
+        self.note_edits();
+        if let Some(link) = &mut self.link {
+            link.forward(&mut self.panel);
+        }
+        // Undo selects `p` again, also when `to` held the bytes already
+        self.undo = Some(Undo {
+            what: "Duplicate Pattern",
+            row: r,
+            pattern: to,
+            bytes: before,
+            select: Some(p),
+        });
+        let (from, to) = (pattern_name(p), pattern_name(to));
+        self.status = Some(format!("{row}: {from} duplicated to {to}"));
+    }
+
+    /// A paste of the system clipboard's `text` (Ctrl/Cmd+V, Edit > Paste Pattern): the app's
+    /// clipboard when `text` is its marker, else nothing. Nothing without a link.
+    pub fn paste_text(&mut self, text: &str) {
+        if self.link.is_none() {
+            return;
+        }
+        if self.clip.as_ref().is_some_and(|c| c.marker == text) {
+            self.paste_pattern();
+        } else {
+            self.status = Some("The clipboard holds no pattern".into());
+        }
+    }
+
+    /// Where the Edit menu drew its items last, by text, and whether each was enabled (for
+    /// tests).
+    pub fn edit_item(&self, text: &str) -> Option<(egui::Rect, bool)> {
+        self.edit_items
+            .iter()
+            .find(|(t, ..)| *t == text)
+            .map(|&(_, r, on)| (r, on))
+    }
+
+    /// Selects pattern `p` of row `r` as a click on its button does (`Panel::press`): the bank
+    /// shows it, the row takes the focus, the selection is sent with the panel's events.
+    fn select_pattern(&mut self, r: usize, p: u8) {
+        self.panel.rows[r].bank = p / 8;
+        let button = format!("pattern{}.pattern{}", r + 1, p % 8 + 1);
+        self.panel.press(&button, 0.0);
     }
 
     /// What a browser chose, by its mode (not an open: `open_song`).
@@ -1017,6 +1265,29 @@ impl App {
                 _ => true,
             }
         });
+        // any other edit of a pattern forgets what Undo would put back
+        let pattern_edited = events.iter().any(|e| {
+            use crate::model::Event;
+            match e {
+                Event::Set { id, .. } => {
+                    id.starts_with("pattern")
+                        && (id.ends_with(".shuffle") || id.ends_with(".steps"))
+                }
+                Event::Press { .. } | Event::Pattern { .. } => false,
+                _ => true,
+            }
+        });
+        if pattern_edited {
+            self.undo = None;
+        }
+        // after the user selects a pattern, Undo of a Duplicate leaves the selection alone
+        if events
+            .iter()
+            .any(|e| matches!(e, crate::model::Event::Pattern { .. }))
+            && let Some(u) = &mut self.undo
+        {
+            u.select = None;
+        }
         self.doc.modified |= edited;
         // with a player the events are drained at the sync that follows
         self.events_seen = if self.link.is_some() {
@@ -1174,13 +1445,25 @@ impl App {
                     });
                 });
             });
-        if let Some(c) = cmd {
-            self.command(c);
+        match cmd {
+            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V
+            Some(Cmd::PastePattern) => {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+            Some(c) => {
+                self.command(c);
+                // the panel shows the change in the next frame, also with no audio stream
+                ui.ctx().request_repaint();
+            }
+            None => {}
         }
     }
 
-    /// The menus of the bar: File, Mods, Options and Help; what is chosen goes to `cmd`. A
-    /// plugin's File menu has New, Open and Info only (task-201).
+    /// The menus of the bar: File, Edit, Mods, Options and Help; what is chosen goes to `cmd`
+    /// (Edit > Paste Pattern as [`Cmd::PastePattern`], which `menu_bar` turns into a paste of
+    /// the system clipboard). A plugin's File menu has New, Open and Info only, and a plugin's
+    /// editor has no Edit menu (task-201).
     fn menu_items(&mut self, ui: &mut Ui, cmd: &mut Option<Cmd>) {
         let plugin = self.is_plugin();
         // a plugin's editor has no keyboard shortcuts (task-201): no shortcut texts
@@ -1217,6 +1500,30 @@ impl App {
                 ui.close();
             }
         });
+        // the pattern commands paste through the system clipboard and its keys, which a
+        // plugin's editor does not take (task-201)
+        if !plugin {
+            ui.menu_button("Edit", |ui| {
+                let song = self.link.is_some();
+                self.edit_items.clear();
+                // "Undo Paste Pattern": the item names what it undoes
+                let what = self.undo_name().filter(|_| song);
+                let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
+                let r = item_if(ui, what.is_some(), &text, Some(&shortcuts::UNDO));
+                self.edit_items.push(("Undo", r.rect, what.is_some()));
+                if r.clicked() {
+                    *cmd = Some(Cmd::Undo);
+                }
+                ui.separator();
+                for (text, sc, c) in EDIT_ITEMS {
+                    let r = item_if(ui, song, text, Some(sc));
+                    self.edit_items.push((text, r.rect, song));
+                    if r.clicked() {
+                        *cmd = Some(c);
+                    }
+                }
+            });
+        }
         ui.menu_button("Mods", |ui| {
             let (std_on, checked) = match &self.mod_list {
                 Some(Ok(l)) => self.mod_checks(l),
@@ -1344,6 +1651,18 @@ impl App {
     }
 }
 
+/// The pattern items of the Edit menu, in order.
+const EDIT_ITEMS: [(&str, &egui::KeyboardShortcut, Cmd); 4] = [
+    ("Cut Pattern", &shortcuts::CUT, Cmd::CutPattern),
+    ("Copy Pattern", &shortcuts::COPY, Cmd::CopyPattern),
+    ("Paste Pattern", &shortcuts::PASTE, Cmd::PastePattern),
+    (
+        "Duplicate Pattern",
+        &shortcuts::DUPLICATE,
+        Cmd::DuplicatePattern,
+    ),
+];
+
 /// The items of the Help menu, in order.
 const HELP_ITEMS: &[(&str, Cmd)] = &[
     ("Keyboard Shortcuts...", Cmd::KeyHelp),
@@ -1352,15 +1671,25 @@ const HELP_ITEMS: &[(&str, Cmd)] = &[
 
 /// A menu item with its shortcut; true when clicked (the menu closes).
 fn item(ui: &mut Ui, text: &str, shortcut: Option<&egui::KeyboardShortcut>) -> bool {
+    item_if(ui, true, text, shortcut).clicked()
+}
+
+/// [`item`], enabled or not; its response.
+fn item_if(
+    ui: &mut Ui,
+    enabled: bool,
+    text: &str,
+    shortcut: Option<&egui::KeyboardShortcut>,
+) -> egui::Response {
     let mut b = egui::Button::new(text);
     if let Some(sc) = shortcut {
         b = b.shortcut_text(shortcuts::text(ui.ctx(), sc));
     }
-    let clicked = ui.add(b).clicked();
-    if clicked {
+    let r = ui.add_enabled(enabled, b);
+    if r.clicked() {
         ui.close();
     }
-    clicked
+    r
 }
 
 /// The order of the Mods menu's top-level entries (task-167): the names with ASCII letters

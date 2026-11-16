@@ -12,7 +12,10 @@ use std::time::Duration;
 
 use orb_engine::samples::SampleSet;
 
-use egui::{self, Color32, Image, Key, Pos2, Rect, Response, Sense, Ui, Vec2, emath::GuiRounding};
+use egui::{
+    self, Color32, Image, Key, Pos2, Rect, Response, Sense, Ui, Vec2, emath::GuiRounding,
+    text_selection::LabelSelectionState,
+};
 
 use crate::art;
 use crate::behavior::{self, Mods};
@@ -23,7 +26,7 @@ use crate::keys::{self, Action, KeyMode};
 use crate::layout::{self, Ctl, PANEL_H, PANEL_W};
 use crate::link::Link;
 use crate::logo_anim;
-use crate::menu::{Job, MENU_H, ModEntry, Then};
+use crate::menu::{Cmd, Job, MENU_H, ModEntry, Then};
 use crate::model::Panel;
 use crate::settings::Settings;
 use crate::shortcuts;
@@ -153,6 +156,17 @@ pub struct App {
     pub(crate) error_text: Option<Rect>,
     /// What was done, shown at the bottom of the window ("Saved ...").
     pub status: Option<String>,
+    /// The pattern Edit > Copy Pattern or Cut Pattern took last.
+    pub clip: Option<crate::menu::Clip>,
+    /// Its marker, for the system clipboard at the end of the frame.
+    pub(crate) clip_text: Option<String>,
+    /// The copies made so far (the marker's count).
+    pub(crate) clip_count: u32,
+    /// What Edit > Undo puts back (`App::undo`).
+    pub(crate) undo: Option<crate::menu::Undo>,
+    /// Where the Edit menu drew its items last, and whether each was enabled
+    /// (`App::edit_item`).
+    pub(crate) edit_items: Vec<(&'static str, Rect, bool)>,
     /// The Options menu's keyboard mode (Ctrl/Cmd+F / +G).
     pub key_mode: KeyMode,
     /// Whether the window draws the menu bar (the window of OpenRB-338 does; the headless tests
@@ -237,6 +251,11 @@ impl App {
             error_copy: None,
             error_text: None,
             status: None,
+            clip: None,
+            clip_text: None,
+            clip_count: 0,
+            undo: None,
+            edit_items: Vec::new(),
             key_mode: KeyMode::default(),
             menu: false,
             prompt: None,
@@ -872,6 +891,7 @@ impl App {
                     // field's, not the panel's
                     self.holds.clear();
                 } else {
+                    self.pattern_keys(ui);
                     self.keyboard(ui);
                 }
                 self.focus_click(ui, &view);
@@ -968,6 +988,9 @@ impl App {
         self.plugin_usage_ui(&ctx);
         self.mod_info_ui(&ctx);
         self.poll_export(&ctx);
+        if let Some(marker) = self.clip_text.take() {
+            ctx.copy_text(marker);
+        }
         self.update_title(&ctx);
         self.close_if_allowed(&ctx);
         // the part textures this frame drew as placeholders, rasterized together
@@ -1008,6 +1031,30 @@ impl App {
             ctx.request_repaint();
         } else if now < until {
             ctx.request_repaint_after(Duration::from_secs_f64(until - now));
+        }
+    }
+
+    /// The Edit menu's keys: Ctrl/Cmd+Z and +D, and egui's Cut, Copy and Paste events
+    /// (docs/ui_spec.md section 16). A Cut or Copy while a window's text is selected is the
+    /// text's.
+    fn pattern_keys(&mut self, ui: &Ui) {
+        if shortcuts::consume(ui, &shortcuts::UNDO) {
+            self.command(Cmd::Undo);
+        }
+        if shortcuts::consume(ui, &shortcuts::DUPLICATE) {
+            self.command(Cmd::DuplicatePattern);
+        }
+        let text_selected = ui
+            .ctx()
+            .plugin_opt::<LabelSelectionState>()
+            .is_some_and(|s| s.lock().has_selection());
+        for e in ui.input(|i| i.events.clone()) {
+            match e {
+                egui::Event::Cut if !text_selected => self.command(Cmd::CutPattern),
+                egui::Event::Copy if !text_selected => self.command(Cmd::CopyPattern),
+                egui::Event::Paste(text) => self.paste_text(&text),
+                _ => {}
+            }
         }
     }
 
@@ -1112,7 +1159,7 @@ impl App {
         if let Some(p) = pressed {
             // A press on a window, a menu or any other layer over the panel is not the
             // panel's (task-235): a window's close button over the logo played the startup
-            // sound.
+            // sound, and a click on an Edit menu item moved the focus to the row under it.
             if ui.ctx().layer_id_at(p).is_some_and(|l| l != ui.layer_id()) {
                 return;
             }

@@ -7,6 +7,7 @@ use eframe::egui::{self, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, 
 use orb_ui::app::App;
 use orb_ui::art;
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
+use orb_ui::menu::Cmd;
 use orb_ui::model::{BAR, Event as Out, Panel};
 
 struct Harness {
@@ -488,4 +489,25 @@ fn a_double_click_on_a_knob_of_the_panel_without_a_song_does_nothing() {
     h.click("tb303_1.cutoff");
     h.click("tb303_1.cutoff");
     assert_eq!(h.app.panel.knob("tb303_1.cutoff"), 300);
+}
+
+#[test]
+fn the_pattern_commands_do_nothing_on_the_panel_without_a_song() {
+    let mut h = Harness::new();
+    h.app.panel = Panel::demo();
+    let steps = h.app.panel.synth[0].patterns.clone();
+    for cmd in [
+        Cmd::CopyPattern,
+        Cmd::CutPattern,
+        Cmd::PastePattern,
+        Cmd::DuplicatePattern,
+    ] {
+        h.app.command(cmd);
+        h.frame(vec![]);
+    }
+    assert_eq!(h.app.panel.synth[0].patterns, steps);
+    assert_eq!(h.app.panel.rows[0].pattern, 0);
+    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.status, None);
+    assert!(!h.app.doc.modified);
 }
