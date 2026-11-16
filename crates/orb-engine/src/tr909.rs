@@ -267,6 +267,8 @@ pub struct Tr909 {
     ac_bits: u32,
     /// Not in the original (task-218): the plugin's pattern gate ([`ChannelDevice::set_gate`]).
     pub pattern_gate: Gate,
+    /// The hits per sound ([`Sounding::hits`]).
+    hits: [u32; 16],
 }
 
 const SIMPLE_RS: usize = 0;
@@ -310,6 +312,7 @@ impl Tr909 {
             hit_ac: false,
             ac_bits: 0,
             pattern_gate: Gate::default(),
+            hits: [0; 16],
         }
     }
 
@@ -357,6 +360,7 @@ impl Tr909 {
         Sounding {
             mask,
             ac: self.ac_bits,
+            hits: self.hits,
         }
     }
 
@@ -417,6 +421,7 @@ impl Tr909 {
         }
         // not in the original: the hit's accent for [`Tr909::sounding`] (sound = column - 1)
         let bit = 1u32 << (i - 1);
+        self.hits[i - 1] = self.hits[i - 1].wrapping_add(1);
         if self.hit_ac {
             self.ac_bits |= bit;
         } else {

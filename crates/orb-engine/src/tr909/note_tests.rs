@@ -157,6 +157,17 @@ fn the_closed_hihat_darkens_the_open_one() {
 }
 
 #[test]
+fn every_hit_is_counted_retriggers_too() {
+    let mut d = device(44_100);
+    d.key_on(46, 64);
+    d.key_on(46, 64);
+    d.key_on(42, 64);
+    let h = d.sounding().hits;
+    assert_eq!((h[sound::OH as usize], h[sound::CH as usize]), (2, 1));
+    assert_eq!(h.iter().sum::<u32>(), 3);
+}
+
+#[test]
 fn either_bass_drum_voice_lights_the_bd() {
     let mut d = device(44_100);
     d.key_on(36, 127);

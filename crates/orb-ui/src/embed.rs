@@ -192,9 +192,88 @@ pub fn corner_size(desired: Vec2) -> Vec2 {
     Vec2::new(w, window_height(w))
 }
 
+/// How long a voice's light stays on at least, in seconds (task-202; tuned by eye).
+pub const MIN_ON: f64 = 0.1;
+
+/// How often the panel is drawn while a note-mode light is lit or the engine plays (else the
+/// 50 ms [`POLL`] carries it: a hit is seen by its count, not by being sampled while it sounds).
+pub const LIGHT_POLL: Duration = Duration::from_millis(16);
+
+/// The 808 and the 909 in [`Lit`] and [`Lights`].
+pub const LIT_808: usize = 0;
+pub const LIT_909: usize = 1;
+
+/// The drum voices that light in the panel in note mode (task-202).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Lit {
+    /// Per device (808, 909): the sounds lit, bit `n` as in `orb_engine::tr808::sound` and
+    /// `orb_engine::tr909::sound`.
+    pub mask: [u32; 2],
+    /// Per device: AC is lit, while a lit sound's last hit had accent.
+    pub ac: [bool; 2],
+}
+
+impl Lit {
+    /// Whether anything is lit.
+    pub fn any(&self) -> bool {
+        self.mask != [0, 0]
+    }
+}
+
+/// What lights the drum voices in note mode: the engine's sounding mask per block (voice
+/// active and gain above -60 dB, `orb_engine::frame::Sounding`) held on for at least
+/// [`MIN_ON`] from every hit: the engine counts the hits of each sound
+/// (`Sounding::hits`, every trigger, retriggers too, never lost between two snapshots) and a
+/// count that changed since the last frame is an onset, which restarts the minimum. So a hit
+/// that begins and ends between two frames lights for [`MIN_ON`], and a retrigger of a sounding
+/// voice restarts the light. A voice that stops (a choke) goes dark when its minimum is over.
+#[derive(Clone, Debug, Default)]
+pub struct Lights {
+    /// Per device and sound: the time until which the light is held on.
+    until: [[f64; 16]; 2],
+    /// Per device: the hit counts of the last frame; `None` before the first (the counts at
+    /// that time are not hits seen).
+    seen: Option<[[u32; 16]; 2]>,
+    lit: Lit,
+}
+
+impl Lights {
+    /// The lights at `now` from the devices' `sounding` (808, 909); `None` when the panel
+    /// does not show them (pattern mode, the preview, no snapshot): everything dark.
+    pub fn update(&mut self, sounding: Option<[orb_engine::frame::Sounding; 2]>, now: f64) -> Lit {
+        let Some(sounding) = sounding else {
+            *self = Self::default();
+            return self.lit;
+        };
+        let mut lit = Lit::default();
+        let before = self.seen.unwrap_or([sounding[0].hits, sounding[1].hits]);
+        let mut seen = [[0; 16]; 2];
+        for (d, s) in sounding.iter().enumerate() {
+            seen[d] = s.hits;
+            for (n, (hits, was)) in s.hits.iter().zip(&before[d]).enumerate() {
+                let bit = 1u32 << n;
+                if hits != was {
+                    self.until[d][n] = now + MIN_ON;
+                }
+                if s.mask & bit != 0 || now < self.until[d][n] {
+                    lit.mask[d] |= bit;
+                    if s.ac & bit != 0 {
+                        lit.ac[d] = true;
+                    }
+                }
+            }
+        }
+        self.seen = Some(seen);
+        self.lit = lit;
+        lit
+    }
+}
+
 /// The plugin's editor state of the [`App`].
 pub(crate) struct Plugin {
     pub(crate) embed: Box<dyn Embed>,
+    /// The note-mode lights of the drum voices (task-202).
+    pub(crate) lights: Lights,
     /// The revision shown.
     revision: Option<u64>,
     /// The MIDI count last seen and the time until which the LED is lit.
@@ -222,6 +301,7 @@ impl App {
         app.samples = Some(rbm::standard::builtin_samples());
         app.plugin = Some(Plugin {
             embed,
+            lights: Lights::default(),
             revision: None,
             midi_seen: None,
             midi_until: f64::NEG_INFINITY,
@@ -311,6 +391,29 @@ impl App {
     /// Whether the last frame lit the Sync and the MIDI LED; `None` in the standalone app.
     pub fn plugin_leds(&self) -> Option<(bool, bool)> {
         self.plugin.as_ref().map(|p| p.leds)
+    }
+
+    /// The drum voices lit in note mode (task-202): the plugin's note mode (not its preview,
+    /// which plays the patterns) and the 808's and 909's sounding masks of the last block.
+    /// Nothing in the standalone app or in pattern mode. The panel is drawn every
+    /// [`LIGHT_POLL`] only while a light is lit (a new hit lights, so a count that changed
+    /// this frame is covered) or the engine plays; otherwise the [`POLL`] of
+    /// [`App::plugin_ui`] carries it and a hit is seen by its count at the next frame.
+    pub(crate) fn note_lights(&mut self, ui: &Ui, now: f64) -> Lit {
+        let snap = self.link.as_mut().map(|l| {
+            let s = l.player().snapshot();
+            (s.sounding, s.playing)
+        });
+        let Some(p) = &mut self.plugin else {
+            return Lit::default();
+        };
+        let note = p.embed.mode() == Some(PluginMode::Note) && p.embed.previewing() != Some(true);
+        let sounding = snap.filter(|_| note).map(|(s, _)| [s[2], s[3]]);
+        let lit = p.lights.update(sounding, now);
+        if lit.any() || (note && snap.is_some_and(|(_, playing)| playing)) {
+            ui.ctx().request_repaint_after(LIGHT_POLL);
+        }
+        lit
     }
 
     /// Whether the control `id` is hidden in a plugin's panel.
@@ -474,6 +577,84 @@ mod tests {
         assert_eq!(host_position(&s), Some(1));
         s.tick = 0;
         assert_eq!(host_position(&s), Some(1));
+    }
+
+    /// The 808's sounding: `mask`, `ac` and the hit counts of sounds 0 and 1.
+    fn sounding(mask: u32, ac: u32, hits: [u32; 2]) -> Option<[orb_engine::frame::Sounding; 2]> {
+        let mut s = orb_engine::frame::Sounding {
+            mask,
+            ac,
+            ..Default::default()
+        };
+        s.hits[..2].copy_from_slice(&hits);
+        Some([s, orb_engine::frame::Sounding::default()])
+    }
+
+    fn lit808(l: &mut Lights, s: Option<[orb_engine::frame::Sounding; 2]>, now: f64) -> u32 {
+        l.update(s, now).mask[LIT_808]
+    }
+
+    #[test]
+    fn a_light_stays_on_for_the_minimum_and_follows_the_voice() {
+        let mut l = Lights::default();
+        assert_eq!(lit808(&mut l, sounding(0, 0, [0, 0]), 0.0), 0);
+        // a hit: lit; it ends after 30 ms but the light is held to 100 ms
+        assert_eq!(lit808(&mut l, sounding(0b1, 0, [1, 0]), 1.0), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [1, 0]), 1.03), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [1, 0]), 1.09), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [1, 0]), 1.11), 0);
+        // a long voice stays lit while it sounds, and dark when it ends
+        assert_eq!(lit808(&mut l, sounding(0b1, 0, [2, 0]), 2.0), 1);
+        assert_eq!(lit808(&mut l, sounding(0b1, 0, [2, 0]), 2.5), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [2, 0]), 2.51), 0);
+    }
+
+    #[test]
+    fn a_hit_between_two_reads_lights() {
+        let mut l = Lights::default();
+        lit808(&mut l, sounding(0, 0, [0, 0]), 0.0);
+        // the voice began and ended between the frames: the mask is clear, the count moved
+        assert_eq!(lit808(&mut l, sounding(0, 0, [1, 0]), 1.0), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [1, 0]), 1.09), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [1, 0]), 1.11), 0);
+        // several hits between the frames count as one onset; another sound stays dark
+        assert_eq!(lit808(&mut l, sounding(0, 0, [4, 0]), 2.0), 1);
+    }
+
+    #[test]
+    fn a_retrigger_of_a_sounding_voice_restarts_the_light() {
+        let mut l = Lights::default();
+        lit808(&mut l, sounding(0, 0, [0, 0]), 0.0);
+        assert_eq!(lit808(&mut l, sounding(0b1, 0, [1, 0]), 1.0), 1);
+        // still sounding, hit again at 1.08: the minimum runs to 1.18
+        assert_eq!(lit808(&mut l, sounding(0b1, 0, [2, 0]), 1.08), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [2, 0]), 1.15), 1);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [2, 0]), 1.19), 0);
+    }
+
+    #[test]
+    fn the_counts_at_the_start_are_not_hits() {
+        let mut l = Lights::default();
+        assert_eq!(lit808(&mut l, sounding(0, 0, [7, 3]), 0.0), 0);
+        assert_eq!(lit808(&mut l, sounding(0, 0, [7, 3]), 0.01), 0);
+        // dark in pattern mode and the preview, and the counts are taken anew
+        assert!(!l.update(None, 1.0).any());
+        assert_eq!(lit808(&mut l, sounding(0, 0, [9, 3]), 2.0), 0);
+    }
+
+    #[test]
+    fn ac_is_lit_while_a_lit_voice_had_accent() {
+        let mut l = Lights::default();
+        lit808(&mut l, sounding(0, 0, [0, 0]), 0.0);
+        // voice 0 plain, voice 1 accented: AC lit; a mask without the accented voice: dark
+        let lit = l.update(sounding(0b11, 0b10, [1, 1]), 1.0);
+        assert!(lit.ac[LIT_808]);
+        assert!(!lit.ac[LIT_909]);
+        let lit = l.update(sounding(0b01, 0b10, [1, 1]), 1.5);
+        assert!(
+            !lit.ac[LIT_808],
+            "voice 1 is dark: its accent no longer counts"
+        );
     }
 
     #[test]

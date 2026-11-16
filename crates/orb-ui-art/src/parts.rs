@@ -1714,6 +1714,20 @@ pub const MOD_PICTURE: (f32, f32, f32) = (4.2, 3.7, 76.0);
 
 /// An 808 chip of w x h at (x, y) with its label; selected, lighter with an orange ring.
 fn chip808(s: &mut Svg, x: f32, y: f32, w: f32, h: f32, label_: &str, sel: bool, shadow: bool) {
+    chip808_ring(s, (x, y, w, h), label_, (sel, sel, false), shadow);
+}
+
+/// An 808 chip: `(light, orange, lit)` are the selected chip's lighter fill, the selection's
+/// orange ring and the green ring of a voice that sounds in the plugin's note mode (task-202).
+/// The green ring has the orange ring's shape and replaces it; it differs from it by more than
+/// its hue (for the color-blind): a bright white core and a wider glow, which orange has not.
+fn chip808_ring(
+    s: &mut Svg,
+    (x, y, w, h): (f32, f32, f32, f32),
+    label_: &str,
+    (light, orange, lit): (bool, bool, bool),
+    shadow: bool,
+) {
     if shadow {
         rect(
             s,
@@ -1726,7 +1740,7 @@ fn chip808(s: &mut Svg, x: f32, y: f32, w: f32, h: f32, label_: &str, sel: bool,
             r#"opacity="0.5" filter="url(#b05)""#,
         );
     }
-    let fill = if sel { "#fbf6d6" } else { CREAM };
+    let fill = if light { "#fbf6d6" } else { CREAM };
     rect(
         s,
         x,
@@ -1747,8 +1761,25 @@ fn chip808(s: &mut Svg, x: f32, y: f32, w: f32, h: f32, label_: &str, sel: bool,
         "#fff",
         r#"opacity="0.45""#,
     );
-    if sel {
-        let (rx, ry, rw, rh) = (x - 0.9, y - 0.9, w + 1.8, h + 1.8);
+    let (rx, ry, rw, rh) = (x - 0.9, y - 0.9, w + 1.8, h + 1.8);
+    if lit {
+        // a wide glow, the ring and a bright core on it
+        let none = "none";
+        let glow = r##"stroke="#7dff5a" stroke-width="3.6" opacity="1" filter="url(#b05)""##;
+        rect(s, rx, ry, rw, rh, 2.3, none, glow);
+        let ring = r##"stroke="#5cff4a" stroke-width="1.6""##;
+        rect(s, rx, ry, rw, rh, 2.3, none, ring);
+        rect(
+            s,
+            rx,
+            ry,
+            rw,
+            rh,
+            2.3,
+            none,
+            r##"stroke="#fff" stroke-width="0.7""##,
+        );
+    } else if orange {
         rect(
             s,
             rx,
@@ -1933,6 +1964,28 @@ fn tr808_controls(out: &mut Vec<Part>) {
             2.5,
             |s| chip808(s, 0.0, 0.0, uw, uh, name, true, false),
         ));
+    }
+    // a sounding voice in the plugin's note mode (task-202): the chip with a green ring, plain
+    // or lighter when it is also the selected chip (the green replaces the orange)
+    for (prefix, light) in [("lit808_", false), ("litsel808_", true)] {
+        for name in NAMES_808 {
+            out.push(Part::with_bleed(
+                format!("{prefix}{name}"),
+                lw,
+                lh,
+                3.5,
+                |s| chip808_ring(s, (0.0, 0.0, lw, lh), name, (light, false, true), false),
+            ));
+        }
+        for name in UPPER_808 {
+            out.push(Part::with_bleed(
+                format!("{prefix}{name}"),
+                uw,
+                uh,
+                3.5,
+                |s| chip808_ring(s, (0.0, 0.0, uw, uh), name, (light, false, true), false),
+            ));
+        }
     }
     // the mod's window: a dark well for the kit's splash and its name (the app paints both),
     // and the glass laid over the picture
@@ -2295,6 +2348,15 @@ fn tr909_controls(out: &mut Vec<Part>) {
     for (name, r) in [("led909_on", 1.05), ("led909ac_on", 1.1)] {
         out.push(Part::with_bleed(name, 5.0, 5.0, 2.0, |s| {
             led_round(s, 2.5, 2.5, r, "R", true)
+        }));
+    }
+    // a sounding instrument in the plugin's note mode (task-202): the LED green, with a wider
+    // halo and a white core (brightness and glow, not hue alone, set it apart from the red)
+    for (name, r) in [("led909_lit", 1.05), ("led909ac_lit", 1.1)] {
+        out.push(Part::with_bleed(name, 5.0, 5.0, 4.0, |s| {
+            circle(s, 2.5, 2.5, r * 3.8, "url(#haloG)", "");
+            led_round(s, 2.5, 2.5, r, "G", true);
+            circle(s, 2.5, 2.5, r * 0.6, "#fff", r#"opacity="0.9""#);
         }));
     }
 }

@@ -222,6 +222,8 @@ pub struct Tr808 {
     ac_bits: u32,
     /// Not in the original (task-218): the plugin's pattern gate ([`ChannelDevice::set_gate`]).
     pub pattern_gate: Gate,
+    /// The hits per sound ([`Sounding::hits`]).
+    hits: [u32; 16],
 }
 
 const SIMPLE_RS: usize = 0;
@@ -263,6 +265,7 @@ impl Tr808 {
             hit_ac: false,
             ac_bits: 0,
             pattern_gate: Gate::default(),
+            hits: [0; 16],
         }
     }
 
@@ -314,11 +317,13 @@ impl Tr808 {
         Sounding {
             mask,
             ac: self.ac_bits,
+            hits: self.hits,
         }
     }
 
     /// Records the hit of `bit` for [`Tr808::sounding`].
     fn hit(&mut self, bit: u32) {
+        self.hits[bit as usize] = self.hits[bit as usize].wrapping_add(1);
         if self.hit_ac {
             self.ac_bits |= 1 << bit;
         } else {

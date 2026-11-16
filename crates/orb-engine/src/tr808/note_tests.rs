@@ -227,6 +227,20 @@ fn the_sounding_mask_follows_the_voices() {
 }
 
 #[test]
+fn every_hit_is_counted_retriggers_too() {
+    let mut d = device(100);
+    assert_eq!(d.sounding().hits, [0; 16]);
+    d.key_on(64, 127);
+    d.key_on(64, 127);
+    d.key_on(36, 64);
+    // the voice ends, the count stays: a reader that missed the mask still sees the hits
+    assert_eq!(sounding_blocks(&mut d, sound::LC, 10), 2);
+    let h = d.sounding().hits;
+    assert_eq!((h[sound::LC as usize], h[sound::BD as usize]), (2, 1));
+    assert_eq!(h.iter().sum::<u32>(), 3);
+}
+
+#[test]
 fn pattern_steps_set_the_mask_and_the_ac_flags_too() {
     let mut d = device(44_100);
     let pat = &mut d.patterns[..PATTERN_LEN];

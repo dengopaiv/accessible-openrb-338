@@ -3,14 +3,17 @@
 //!
 //! ```text
 //! cargo run --release -p orb-plugin --example editor_preview -- [SONG.rbs] [--size WxH]
-//!     [--ppp S] [--host-playing] [--midi] [--mode latch|gate|note] [--preview] [--click X,Y]...
+//!     [--ppp S] [--host-playing] [--midi] [--note CH,NOTE,VEL]... [--mode latch|gate|note]
+//!     [--preview] [--idle] [--click X,Y]...
 //!     [--screenshot OUT.png]
 //! ```
 //!
 //! A stand-in host runs the plugin's process side in step with the frames (no sound): the
 //! song loaded as File > Open loads it (Latch Pattern Mode), `--host-playing`
 //! plays the host's transport from bar 1 (the Sync LED), `--midi` sends a host message on
-//! channel 10 (which nothing maps) in every buffer (the MIDI LED stays lit). `--mode` sets the
+//! channel 10 (which nothing maps) in every buffer (the MIDI LED stays lit); each `--note
+//! CH,NOTE,VEL` sends that note-on (channel 1..4 the devices, 3 the 808, 4 the 909; for the
+//! note-mode lights, task-202) in every buffer, so the voice keeps sounding. `--mode` sets the
 //! plugin's mode after the load, `--preview` enters the preview (the panel's Play, task-217),
 //! and each `--click X,Y` clicks the window at that point (in points; one click every 6 frames
 //! from frame 10, e.g. to open a menu for a screenshot). The parameters the
@@ -62,8 +65,12 @@ struct Args {
     ppp: Option<f32>,
     host_playing: bool,
     midi: bool,
+    /// (channel 0..15, note, velocity) of each `--note`.
+    notes: Vec<(u8, u8, u8)>,
     mode: Option<Mode>,
     preview: bool,
+    /// `--idle`: the harness asks for no frames itself (for measuring the panel's own repaints).
+    idle: bool,
     clicks: Vec<egui::Pos2>,
     shot: Option<PathBuf>,
 }
@@ -75,8 +82,10 @@ fn args() -> Args {
         ppp: None,
         host_playing: false,
         midi: false,
+        notes: Vec::new(),
         mode: None,
         preview: false,
+        idle: false,
         clicks: Vec::new(),
         shot: None,
     };
@@ -91,6 +100,14 @@ fn args() -> Args {
             "--ppp" => a.ppp = Some(it.next().and_then(|v| v.parse().ok()).expect("--ppp S")),
             "--host-playing" => a.host_playing = true,
             "--midi" => a.midi = true,
+            "--note" => {
+                let v = it.next().expect("--note CH,NOTE,VEL");
+                let p: Vec<u8> = v.split(',').map(|n| n.parse().expect("a number")).collect();
+                let [ch, note, vel] = p[..] else {
+                    panic!("--note CH,NOTE,VEL")
+                };
+                a.notes.push((ch - 1, note, vel));
+            }
             "--mode" => {
                 a.mode = Some(match it.next().as_deref() {
                     Some("latch") => Mode::Latch,
@@ -100,6 +117,7 @@ fn args() -> Args {
                 })
             }
             "--preview" => a.preview = true,
+            "--idle" => a.idle = true,
             "--click" => {
                 let v = it.next().expect("--click X,Y");
                 let (x, y) = v.split_once(',').expect("--click X,Y");
@@ -122,6 +140,8 @@ struct Preview {
     frames: u64,
     host_playing: bool,
     midi: bool,
+    notes: Vec<(u8, u8, u8)>,
+    idle: bool,
     clicks: Vec<egui::Pos2>,
     shot: Option<PathBuf>,
     shown: u32,
@@ -141,7 +161,7 @@ impl Preview {
                 tempo: Some(120.0),
                 pos_beats: Some(if self.host_playing { beats } else { 0.0 }),
             };
-            let events: Vec<HostEvent> = self
+            let mut events: Vec<HostEvent> = self
                 .midi
                 .then_some(HostEvent {
                     frame: 0,
@@ -153,6 +173,18 @@ impl Preview {
                 })
                 .into_iter()
                 .collect();
+            events.extend(
+                self.notes
+                    .iter()
+                    .map(|&(channel, note, velocity)| HostEvent {
+                        frame: 0,
+                        message: Message::NoteOn {
+                            channel,
+                            note,
+                            velocity,
+                        },
+                    }),
+            );
             self.core
                 .process_with(&mut l, &mut r, &self.params.values(), &t, &events);
             self.frames += BUF as u64;
@@ -190,7 +222,9 @@ impl eframe::App for Preview {
         let now = ui.input(|i| i.time);
         self.host(now);
         self.app.show(ui);
-        ui.ctx().request_repaint();
+        if !self.idle {
+            ui.ctx().request_repaint();
+        }
         self.shown += 1;
         if self.shown == 30
             && let Some(path) = self.shot.take()
@@ -246,6 +280,8 @@ fn main() -> eframe::Result {
                 frames: 0,
                 host_playing: a.host_playing,
                 midi: a.midi,
+                notes: a.notes,
+                idle: a.idle,
                 clicks: a.clicks,
                 shot: a.shot,
                 shown: 0,

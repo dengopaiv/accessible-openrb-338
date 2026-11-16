@@ -496,7 +496,43 @@ shared slots by their first sound: LT, MT, HT, RS, CP), then for the 808 LC, MC,
   note in an AC band), in pattern mode too. The panel's AC light is "any lit sound whose bit is
   set": `mask & ac != 0`.
 
-The minimum on-time and the drawing are the editor's (task-202).
+The minimum on-time and the drawing are the editor's (section 9.4).
+
+### 9.4 The note-mode lights (task-202)
+
+In the plugin's note mode (Options > Note Mode, not the preview, which plays the patterns) the
+panel lights the 808's and the 909's sounding voices (`embed::Lights`, `App::note_lights`,
+`App::instrument_selection`). The 303s show nothing; pattern mode and the preview are as
+before (the standalone app has no lights and is unchanged).
+
+- **808:** a green ring of the selection ring's shape on the chip of the sound played: the lower
+  legend (`LT`, `RS`, ...) or the upper chip (`LC`, `CL`, ...) by the sound's bit, whatever the
+  slot's switch says. A chip that is also the selected one gets the green ring instead of the
+  orange (the `litsel808_*` part: the selected chip's lighter fill and the green ring); the
+  selected chip when the switch shows the other label of the slot keeps its orange ring. AC's
+  chip is lit while AC is.
+- **909:** the instrument's LED in the name row (and the AC box for AC) is green; on the
+  selected instrument the green LED replaces the red one (the selected name's label stays lit).
+- **Not by hue alone:** the green ring is wider (1.6 against 1.1 panel pixels) with a white core
+  and a wide, strong glow, the orange ring is thin with a faint glow; the green LED has a wider
+  halo and a white core, the red selection LED has neither (checked in a deuteranopia
+  simulation of the screenshots).
+- **When lit:** a sound is lit while the latest block's mask has it, and for at least 100 ms
+  (`MIN_ON`, tuned by eye) from every hit, so several voices light at once. A choke darkens a
+  voice when its minimum is over. AC is lit while a lit sound's `ac` bit is set. The engine
+  counts the hits of each sound (`Sounding::hits`, wrapping, in the snapshot: every trigger,
+  retriggers of a sounding voice too); the editor keeps the counts it saw and a count that
+  changed since its last frame is an onset that restarts the minimum. The counts are state,
+  not events, so no hit is lost between two snapshots or two frames (a hit shorter than a frame
+  lights for 100 ms, a retrigger restarts the light) with no atomics or locks. The first frame
+  after note mode starts takes the counts without lighting. The panel is drawn every 16 ms
+  (`LIGHT_POLL`) only while a light is lit or the engine plays; otherwise the 50 ms `POLL`
+  carries it (idle note mode costs about the same as pattern mode, within the harness's noise: one run
+  of each gave 7.3% and 5.0% of a core), and a hit is seen by its count
+  at the next frame.
+- **The art:** `lit808_<name>` and `litsel808_<name>` (17 chips each), `led909_lit`,
+  `led909ac_lit` (assets/ui/README.md). `editor_preview --note CH,NOTE,VEL` sends host notes
+  for screenshots.
 
 ## 10. The editor (task-201)
 

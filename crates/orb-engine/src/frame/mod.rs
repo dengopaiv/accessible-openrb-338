@@ -391,11 +391,14 @@ impl Gate {
 /// What a drum machine sounds (not in the original; task-200): bit `n` of `mask` is set while
 /// sound `n` (`crate::tr808::sound`, `crate::tr909::sound`) is sounding, i.e. one of its voices
 /// is active with a peak gain at or above [`AUDIBLE`]; bit `n` of `ac` is set when the sound's
-/// last hit had accent (a step with AC, or an accented note).
+/// last hit had accent (a step with AC, or an accented note). `hits[n]` counts the hits of
+/// sound `n` (wrapping; every trigger, a retrigger of a sounding voice too): a reader that
+/// keeps the counts it saw sees a hit that began and ended between two reads (task-202).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Sounding {
     pub mask: u32,
     pub ac: u32,
+    pub hits: [u32; 16],
 }
 
 /// The gain from which a drum voice counts as sounding: -60 dB of full scale, for a full-scale

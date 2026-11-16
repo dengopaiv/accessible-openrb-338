@@ -235,6 +235,13 @@ Every `pressed` state is variant F (above). The push buttons' bleed is 3 (their 
 - `sel909_<AC..RC>`: the selected 909 instrument's label lit on its chip (y 4.6, 9.2 high; a
   patch of the chip with the label glowing orange), and `led909_on` / `led909ac_on` (5 x 5) its
   lit selection LED in the name row or the AC box.
+- `lit808_<AC..CH|LC..MA>` and `litsel808_<...>` (task-202): the plugin's note-mode light of a
+  sounding 808 voice, the chip (cream, or lighter for `litsel808_`, the selected chip) with a
+  green ring of the selection ring's shape, which replaces the orange; the ring has a white core
+  and a wide glow, so it differs from the orange by more than hue (bleed 3.5).
+- `led909_lit` / `led909ac_lit` (5 x 5, bleed 4): the plugin's note-mode light of a sounding 909
+  instrument or of AC, a green LED with a wide halo and a white core, drawn over the name row's
+  or the AC box's LED (instead of the red selection LED).
 
 ### Displays and meters
 

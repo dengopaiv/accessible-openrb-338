@@ -18,6 +18,7 @@ use crate::art;
 use crate::behavior::{self, Mods};
 use crate::browser::{Browser, Mode, Poll};
 use crate::document::Document;
+use crate::embed::{LIT_808, LIT_909, Lit};
 use crate::keys::{self, Action, KeyMode};
 use crate::layout::{self, Ctl, PANEL_H, PANEL_W};
 use crate::link::Link;
@@ -902,7 +903,8 @@ impl App {
             paint_part(ui, name, view.rect(x, y, w, h));
         }
         self.drum_strips(ui, &view);
-        self.instrument_selection(ui, &view);
+        let lit = self.note_lights(ui, now);
+        self.instrument_selection(ui, &view, &lit);
         // a plugin's LEDs, menus and resize corner (task-201)
         self.plugin_ui(ui, &view, now);
 
@@ -1389,7 +1391,13 @@ impl App {
 
     /// The legends and name rows select the instrument; dragging keeps selecting.
     /// Also draws the selection frames.
-    fn instrument_selection(&mut self, ui: &mut Ui, view: &View) {
+    ///
+    /// `lit` are the voices lit in the plugin's note mode (task-202): a green ring on the
+    /// 808's chip of the sound played (the lower legend or the upper chip, by the voice and not
+    /// by the switch), replacing the orange one when it is the selected chip, and a green LED
+    /// on the 909's name row, replacing the red one on the selected instrument. AC is lit
+    /// the same way. Nothing is lit in the standalone app.
+    fn instrument_selection(&mut self, ui: &mut Ui, view: &View, lit: &Lit) {
         let (o8, o9) = (layout::TR808_ORIGIN, layout::TR909_ORIGIN);
         /// (is the 808, section origin, [x y w h] in the section, name)
         type Area = (bool, (f32, f32), [f32; 4], &'static str);
@@ -1428,29 +1436,70 @@ impl App {
         let i = self.panel.inst808.min(11);
         let upper = (3..=7).contains(&i)
             && self.panel.switch_position(&format!("tr808.slot{i}_switch")) == 0;
-        let (name, (x, y, w, h)) = if upper {
-            let (x, y, w, h) = UPPER_CHIP_808;
-            (UPPER_808[i - 3], (x + 22.0 * (i - 3) as f32, y, w, h))
-        } else {
-            let (x, y, w, h) = LEGEND_808;
-            (NAMES_808[i], (x + 22.0 * i as f32, y, w, h))
+        let selected = (upper, if upper { i - 3 } else { i });
+        // the 808's chips lit in note mode, as (upper label, index): AC, then the sounds
+        let mut lit808 = Vec::new();
+        if lit.ac[LIT_808] {
+            lit808.push((false, 0));
+        }
+        for bit in (0..16).filter(|b| lit.mask[LIT_808] & 1 << b != 0) {
+            // the sounds are the legend's chips 1..=11, then the upper labels (LC..MA)
+            lit808.push(if bit <= 10 {
+                (false, bit + 1)
+            } else {
+                (true, bit - 11)
+            });
+        }
+        let chip = |(upper, k): (bool, usize)| {
+            let (names, (x, y, w, h)) = if upper {
+                (&UPPER_808[..], UPPER_CHIP_808)
+            } else {
+                (&NAMES_808[..], LEGEND_808)
+            };
+            let x = x + 22.0 * k as f32;
+            (names[k], view.rect(o8.0 + x, o8.1 + y, w, h))
         };
-        paint_part(
-            ui,
-            &format!("sel808_{name}"),
-            view.rect(o8.0 + x, o8.1 + y, w, h),
-        );
+        let (name, r) = chip(selected);
+        if !lit808.contains(&selected) {
+            paint_part(ui, &format!("sel808_{name}"), r);
+        }
+        for c in lit808 {
+            let (name, r) = chip(c);
+            // the selected chip stays lighter; its green ring replaces the orange one
+            let prefix = if c == selected {
+                "litsel808_"
+            } else {
+                "lit808_"
+            };
+            paint_part(ui, &format!("{prefix}{name}"), r);
+        }
         let i = self.panel.inst909.min(11);
         let (x, w) = chip_909(i);
         let r = view.rect(o9.0 + x, o9.1 + 4.6, w, 9.2);
         paint_part(ui, &format!("sel909_{}", NAMES_909[i]), r);
-        let (cx, cy) = led_909(i);
-        let led = if i == 0 { "led909ac_on" } else { "led909_on" };
-        paint_part(
-            ui,
-            led,
-            view.rect(o9.0 + cx - 2.5, o9.1 + cy - 2.5, 5.0, 5.0),
+        // the 909's LEDs lit in note mode: the sounds are the name row's 1..=11, and AC's
+        let mut lit909 = Vec::new();
+        if lit.ac[LIT_909] {
+            lit909.push(0);
+        }
+        lit909.extend(
+            (0..11)
+                .filter(|b| lit.mask[LIT_909] & 1 << b != 0)
+                .map(|b| b + 1),
         );
+        let led_rect = |i: usize| {
+            let (cx, cy) = led_909(i);
+            view.rect(o9.0 + cx - 2.5, o9.1 + cy - 2.5, 5.0, 5.0)
+        };
+        // the selection LED, unless the instrument is lit: the green LED replaces the red one
+        if !lit909.contains(&i) {
+            let led = if i == 0 { "led909ac_on" } else { "led909_on" };
+            paint_part(ui, led, led_rect(i));
+        }
+        for i in lit909 {
+            let led = if i == 0 { "led909ac_lit" } else { "led909_lit" };
+            paint_part(ui, led, led_rect(i));
+        }
     }
 
     /// With `--screenshot`: after a few frames (the SVGs are loaded and rasterized) save the
