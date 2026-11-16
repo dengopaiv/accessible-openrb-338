@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-14T07:36:00Z'
-updated_date: '2026-11-16T09:43:00Z'
+updated_date: '2026-11-16T10:49:00Z'
 labels:
   - decision
   - ui
@@ -150,4 +150,6 @@ Decided by the user, 2026-11-15/16. Where this differs from the description's re
 **Follow-up tasks (2026-11-16).** task-197 plugin core, task-198 host sync and pattern mode, task-199 note mapping doc, task-200 note mode, task-201 editor, task-202 note-mode visual feedback, task-203 pattern drag-out, task-204 packaging; task-196 decides the 'Later' items. The user reviews task-201, task-202 and task-203 before merge. task-194/195 (live play in general) are untouched: for the plugin, task-200 implements what this task decided.
 
 **Change of 2026-11-16 (the user):** the device channels are 1..4 (303 #1 = 1, 303 #2 = 2, 808 = 3, 909 = 4), not 2..5, and the Standard Mapping is off by default in the plugin (channel 16 when on, any channel but 1..4; its transport notes ignored; the host's MIDI learn is the main controller mapping): task-207. Its UI: task-208. Pattern alignment under other time signatures: task-206, option A.
+
+**Correction of 2026-11-16 (task-199, checked in the DLL at 0x1002ACAF..0x1002ACD1 and in tr909.rs):** the 909's AC step value is 2, so the AC factor is 1 + knob/16; the four velocity bands (low, high, low+AC, high+AC) get louder in that order only from Accent knob **25** up (at 24 low+AC equals high), not from 16 as written above. docs/midi.md section 5.5 has the gain table.
 <!-- SECTION:FINAL_SUMMARY:END -->
