@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-14T07:36:00Z'
-updated_date: '2026-11-16T10:49:00Z'
+updated_date: '2026-11-16T11:46:00Z'
 labels:
   - decision
   - ui
@@ -152,4 +152,6 @@ Decided by the user, 2026-11-15/16. Where this differs from the description's re
 **Change of 2026-11-16 (the user):** the device channels are 1..4 (303 #1 = 1, 303 #2 = 2, 808 = 3, 909 = 4), not 2..5, and the Standard Mapping is off by default in the plugin (channel 16 when on, any channel but 1..4; its transport notes ignored; the host's MIDI learn is the main controller mapping): task-207. Its UI: task-208. Pattern alignment under other time signatures: task-206, option A.
 
 **Correction of 2026-11-16 (task-199, checked in the DLL at 0x1002ACAF..0x1002ACD1 and in tr909.rs):** the 909's AC step value is 2, so the AC factor is 1 + knob/16; the four velocity bands (low, high, low+AC, high+AC) get louder in that order only from Accent knob **25** up (at 24 low+AC equals high), not from 16 as written above. docs/midi.md section 5.5 has the gain table.
+
+**Change of 2026-11-16 (the user):** the plugin editor has no keyboard shortcuts at all (no menu accelerators, no keyboard modes or computer-keyboard step entry, no key handling; hosts take keys from plugin windows, and Phoscyon 2 and ABL3 advertise none either). Mouse gestures stay. The menu strip stays as in the standalone app, above the panel and unscaled; host resizing follows height = width x panel ratio + strip height; the transport display shows the host's bar.beat (task-201).
 <!-- SECTION:FINAL_SUMMARY:END -->
