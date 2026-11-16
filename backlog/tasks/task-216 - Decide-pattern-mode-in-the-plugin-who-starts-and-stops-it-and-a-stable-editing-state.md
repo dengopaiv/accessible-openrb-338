@@ -3,10 +3,11 @@ id: TASK-216
 title: >-
   Decide: pattern mode in the plugin: who starts and stops it, and a stable
   editing state
-status: To Do
+status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-16T12:56:00Z'
+updated_date: '2026-11-16T13:33:00Z'
 labels:
   - decision
   - player
@@ -66,6 +67,22 @@ ordinal: 223000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user has chosen an option for Q1 to Q4 (or written their own), recorded in the final summary with the date
-- [ ] #2 A follow-up implementation task exists with the chosen behaviour, labels, milestone m-7 and dependencies
+- [x] #1 The user has chosen an option for Q1 to Q4 (or written their own), recorded in the final summary with the date
+- [x] #2 A follow-up implementation task exists with the chosen behaviour, labels, milestone m-7 and dependencies
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by the user on 2026-11-16, with their own design in place of options Q1 to Q4.
+
+- **orb Play/Stop enter and leave a pattern preview.** Preview is the standalone app's pattern mode inside the plugin. While preview runs, all host input is ignored: notes, MIDI and parameter changes. The panel plays its own patterns at the song's tempo, free-running, whatever the host's transport does.
+- **Preview edits are a separate preview set.** Knobs, switches and pattern selections changed during preview live in a preview set kept in the plugin's state. Leaving preview returns playback and the panel to the host's parameter values; the host never sees the preview edits. The preview set comes back the next time preview is entered. The first entry starts from the current values. Pattern step edits are pattern data, so they persist as before.
+- **A separate pattern/note mode setting in the plugin's state,** not a host parameter, so automation can't flip it. It is a panel or Options control, saved with the project.
+  - Pattern mode plays only while the host plays, with the step following the host position as now. When the host is stopped there is no sound, and pattern-select notes only change the panel's selected patterns.
+  - Note mode: notes play the devices, as now.
+- **The mode leaves the host parameters,** so `g1` is removed as a host parameter. Stopping from MIDI is the host's transport stop in pattern mode; no stop note is added.
+- The Lock panel toggle (Q4) is not needed, because preview is the stable editing state.
+
+The implementation is task-217.
+<!-- SECTION:FINAL_SUMMARY:END -->
