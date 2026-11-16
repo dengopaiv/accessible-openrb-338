@@ -431,8 +431,9 @@ fn notes_select_patterns_at_once_and_latch() {
                 at.insert(end, playing(core));
             },
         );
-        // a note at frame t is in the block rendered after it, one block (64 frames) later
-        let after = |f: usize| at[&(f / 64 * 64 + 128)];
+        // a note at frame t reaches the first block at or after it (task-226), which is
+        // rendered 64 frames after its start
+        let after = |f: usize| at[&(f.div_ceil(64) * 64 + 128)];
         assert_ne!(start[0], Some(5));
         assert_eq!(after(10_000)[0], Some(5), "at once, not at the bar line");
         assert_eq!(
@@ -487,8 +488,8 @@ fn with_the_host_stopped_notes_only_select() {
         0.0,
         "no sound while the host is stopped"
     );
-    let after = |f: usize| at[&(f / 64 * 64 + 128)];
-    assert_ne!(at[&9_984].0[0], 5);
+    let after = |f: usize| at[&(f.div_ceil(64) * 64 + 128)];
+    assert_ne!(at[&10_048].0[0], 5);
     assert_eq!(after(10_000).0[0], 5, "the selection changes");
     assert_eq!(after(20_000).0[3], 17);
     assert!(!after(30_000).1, "stopped");

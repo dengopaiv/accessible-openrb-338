@@ -183,8 +183,9 @@ fn a_note_starts_and_its_note_off_stops_the_section_at_its_block() {
             core.audio().last_snapshot().playing,
             "the song follows the host"
         );
-        // a note-on at host frame 16384 + 1000: the section sounds from the block after the
-        // event's frame (the plugin's 64-frame blocks, `docs/plugin.md` section 4)
+        // a note-on at host frame 16384 + 1000: the section sounds from the first block that
+        // starts at or after the event's frame (16384 + 1024, heard 64 frames later; the
+        // plugin's 64-frame blocks, `docs/plugin.md` section 4)
         let mut out = Vec::new();
         let ev = [on(1000, 0, 0)];
         let mut done = 0;
@@ -203,7 +204,7 @@ fn a_note_starts_and_its_note_off_stops_the_section_at_its_block() {
         }
         let (first, _) = sounding_range(&out).expect("the section sounds");
         assert!(
-            (1024..1088).contains(&first),
+            (1088..1152).contains(&first),
             "buf {buf}: the first sound at {first}"
         );
         assert_eq!(closed(&core), [false, true, true, true]);
@@ -225,12 +226,13 @@ fn a_note_starts_and_its_note_off_stops_the_section_at_its_block() {
             done += k;
         }
         let (_, last) = sounding_range(&out).expect("it sounded until the note-off");
-        // the block after the event's frame fades the section out (task-222), then silence
+        // the first block at or after the event's frame fades the section out (task-222), then
+        // silence
         assert!(
-            (1024..1088).contains(&last),
+            (1088..1152).contains(&last),
             "buf {buf}: the last sound at {last}"
         );
-        assert!(out[2 * 1088..].iter().all(|&v| v == 0.0));
+        assert!(out[2 * 1152..].iter().all(|&v| v == 0.0));
         assert_eq!(closed(&core), [true; 4]);
         assert!(
             core.audio().last_snapshot().playing,
@@ -292,9 +294,10 @@ fn with_the_host_stopped_a_note_plays_from_step_1_at_the_hosts_tempo() {
         assert_ne!(song_tempo, 97_250);
         assert_eq!(peak(&call(&p, &mut core, 8192, &t, &[])), 0.0);
         assert!(!core.audio().last_snapshot().playing);
-        // the note-on in the last frame before a block: the next block starts at step 1
+        // the note-on in the last frame before a block: the next block starts at step 1 (it
+        // plays from the call after the next)
         call(&p, &mut core, 64, &t, &[on(63, 2, 9)]);
-        call(&p, &mut core, 64, &t, &[]);
+        call(&p, &mut core, 128, &t, &[]);
         let s = core.audio().last_snapshot();
         assert!(s.playing && !s.host_sync);
         assert_eq!(s.tick, 0, "{t:?}");
@@ -314,10 +317,12 @@ fn with_the_host_stopped_a_note_plays_from_step_1_at_the_hosts_tempo() {
         );
         // the note-off stops the section, and the song with it
         let out = call(&p, &mut core, 4096, &t, &[off(0, 2, 9)]);
-        assert!(out[2 * 128..].iter().all(|&v| v == 0.0));
+        assert!(out[2 * 192..].iter().all(|&v| v == 0.0));
         assert!(!core.audio().last_snapshot().playing);
         // the next note starts at step 1 again
         call(&p, &mut core, 128, &t, &[on(63, 2, 9)]);
+        // its block is the first at or after the note, rendered up to 127 frames later
+        call(&p, &mut core, 64, &t, &[]);
         let s = core.audio().last_snapshot();
         assert!(s.playing && s.tick < 2, "tick {}", s.tick);
     }
@@ -340,7 +345,8 @@ fn the_last_note_pressed_wins() {
             }
             None => {
                 assert!(closed(&core)[row], "{ev:?}");
-                assert!(out[2 * 128..].iter().all(|&v| v == 0.0), "{ev:?}");
+                // an event in the frames 1..63 reaches the block of frame 64, which fades out
+                assert!(out[2 * 192..].iter().all(|&v| v == 0.0), "{ev:?}");
             }
         }
     };
@@ -526,9 +532,9 @@ fn leaving_gate_mode_opens_the_sections_and_a_new_song_is_gated() {
     assert_eq!(closed(&core), [true; 4]);
 }
 
-/// The stop fades out over the block after the note-off (task-222): over 40 note-off
-/// positions the step from the last sample to silence stays below 0.002 of full scale, and
-/// the section is silent from the second block on. Without the fade (the first build's hard
+/// The stop fades out over the first block at or after the note-off (task-222): over 40
+/// note-off positions the step from the last sample to silence stays below 0.002 of full scale,
+/// and the section is silent after that block. Without the fade (the first build's hard
 /// cut) it reached 0.036 (the 303s, peak 0.125), 0.047 (the 808, peak 0.077) and 0.037 (the
 /// 909, peak 0.069) at the default levels; `--nocapture` prints the values.
 #[test]
@@ -544,9 +550,11 @@ fn the_stop_fades_out_over_one_block() {
             pk = pk.max(peak(&a));
             let out = host.call(&p, &mut core, 4096, &[off(0, ch, 0)]);
             if let Some((_, last)) = sounding_range(&out) {
+                // the fade is the first block at or after the note-off's frame, 64 to 127 frames
+                // into the call with the latency
                 assert!(
-                    last < 128,
-                    "channel {ch}: silent from the second block, {last}"
+                    last < 192,
+                    "channel {ch}: silent after the fade block, {last}"
                 );
                 let j = out[2 * last].abs().max(out[2 * last + 1].abs());
                 worst = worst.max(j);

@@ -64,8 +64,9 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
   with the player's `Command` (`Action::command`) or a view change (the shown bank, the focus,
   the selected drum instrument, the keyboard mode). It does not know where the bytes come from:
   the VST3/CLAP plugin will feed it the host's events with their sample offsets, task-188 a MIDI
-  port. Applying an action at the 64-frame block its time falls in is the caller's choice; the
-  layer only keeps the time.
+  port. Which 64-frame block applies an action is the caller's choice (the plugin: the first
+  block that starts at or after its time, never an earlier one, task-227); the layer only
+  keeps the time.
 - **The state.** The toggles read a `State` (the mixer's switches, the effects' on switches, the
   sections' on switches and patterns, the transport) that the caller refreshes from the player's
   snapshot (`StandardMapping::follow`); the layer updates it with each action it gives, so two
@@ -202,9 +203,9 @@ The same notes 0..31 on the same channels, as gates (the user's design of 2026-1
 `docs/plugin.md` section 11):
 
 - A section sounds only while a note 0..31 on its channel is held, and then plays pattern
-  n + 1. The note-on starts it at once (at the plugin's 64-frame block after the event), the
-  note-off stops it at once, with no bar-line wait (a linear fade over that one block, 1.45 ms,
-  task-222); a gap between notes is silence.
+  n + 1. The note-on starts it at once (at the first of the plugin's 64-frame blocks at or
+  after the event, task-227), the note-off stops it at once, with no bar-line wait (a linear
+  fade over that one block, 1.45 ms, task-222); a gap between notes is silence.
 - With the host playing the pattern plays from the step at the host's position, in step with
   the song, and follows the host's loops and seeks. The step at the position plays at once,
   except for a note within 5 ms (at most a quarter step) before the next step boundary, which

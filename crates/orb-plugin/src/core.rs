@@ -6,16 +6,20 @@
 //!
 //! The engine runs in calls of one block ([`BLOCK`] frames, `orb_player::Audio` made with
 //! `Player::with_call_frames`). Host frame `j` (counted from the activation) plays engine frame
-//! `j - 64`: one block is rendered ahead, and the plugin reports 64 frames of latency. The block
-//! is rendered when its first frame is due, and a host event at frame `t` (a parameter change,
-//! a MIDI message) is applied right after frame `t` is produced. So the block that plays at
-//! host frames `[64m, 64m + 64)` (after the host's latency compensation, the block of those
-//! very frames) holds exactly the events of those frames, and the output is a function of the
-//! events' times alone, not of the host's buffer sizes.
+//! `j - 64`: one block is rendered ahead, and the plugin reports 64 frames of latency. After the
+//! host's latency compensation block `m` plays at host frames `[64m, 64m + 64)`. A host event at
+//! frame `t` (a parameter change, a MIDI message) reaches the first block with `64m >= t`, never
+//! an earlier one (task-227, the user's decision of 2026-11-16): before applying it the blocks
+//! that start before `t` are rendered, ahead of their time if need be (at most one beyond the
+//! one being handed out); a block is otherwise rendered when its first frame is due. An event
+//! sounds 0 to 63 frames late, never early (an early one lost its start at a realtime start off
+//! the block grid, where the host drops what comes before the play position), and the output is
+//! a function of the events' times alone, not of the host's buffer sizes.
 //!
 //! With a resampler ([`Resampler`]) host frame `j` plays the engine at
-//! `j * 44100 / rate - (64 + W)`, and the block a host frame needs is again rendered when that
-//! frame is due, after the events before it.
+//! `j * 44100 / rate - (64 + W)`; the blocks whose first frame plays at or before host frame
+//! `t - 1` after the compensation are rendered before an event at `t`
+//! ([`Resampler::render_before`]), the others when a host frame needs them.
 //!
 //! # Parameters
 //!
@@ -315,7 +319,11 @@ impl Engine {
             return;
         }
         self.send_gate(c);
-        if self.held[c].len > 0 && !self.audio.has_pending() && !self.audio.current().playing() {
+        if self.held[c].len > 0
+            && !self.host_playing()
+            && !self.audio.has_pending()
+            && !self.audio.current().playing()
+        {
             // the host is stopped and nothing plays: a held note plays its pattern from step 1,
             // free-running at the host's tempo (`sync`); a gate that opens while another
             // section plays joins it in step (the user, 2026-11-16)
@@ -372,6 +380,12 @@ impl Engine {
             oldest = r;
         }
         oldest
+    }
+
+    /// Whether the host plays in the current call (its newest record): the next block's
+    /// [`Engine::sync`] then starts the song itself, at the host's position.
+    fn host_playing(&self) -> bool {
+        self.len > 0 && self.records[(self.next + RECORDS - 1) % RECORDS].t.playing
     }
 
     /// Before block `blocks` renders: the tempo, whether the song plays, and the position while
@@ -532,11 +546,39 @@ impl Blocks for Engine {
     }
 }
 
+/// The silent blocks [`settle`] renders: enough for the mixer's per-block gain smoothing
+/// (`g = f32(g*0.93 + t*0.07)`, 0x100136B7) to reach its f32 fixed point from the new song's
+/// 1e-6 (`0.93^k` below `2^-24` takes 230 blocks, after the first mixer update at block 6),
+/// and a multiple of the mixer update's 16-block period.
+pub const SETTLE_BLOCKS: usize = 256;
+
+/// Readies a new player's callback side at the activation, on the main thread: applies the
+/// queued commands (the activation's `Command::Load`), then renders [`SETTLE_BLOCKS`] silent
+/// blocks (the song is stopped, nothing sounds) and drops them, so that the mixer's gains have
+/// risen from the new song's 1e-6 to their targets.
+///
+/// Without it a host event of the first host frames was applied to `Player`'s placeholder
+/// song and lost when the first block's `Audio::drain` loaded the activation's song over it
+/// (a note at the start of an offline render), and a note in the first blocks after the load
+/// sounded softer, under the fade-in of a song load (task-226).
+pub fn settle(audio: &mut Audio) {
+    audio.drain();
+    for _ in 0..SETTLE_BLOCKS {
+        audio.render_call();
+    }
+}
+
+/// The blocks [`Out::Direct`] holds: the one being handed out and the ones rendered ahead.
+const AHEAD: usize = 3;
+
 /// How engine frames become host frames.
 enum Out {
-    /// At 44.1 kHz: the current block and the next frame of it to hand out.
+    /// At 44.1 kHz: the blocks rendered and not yet handed out, `ring[(front + k) % AHEAD]` for
+    /// `k` in `0..=queued` (the front one is being handed out, its next frame `pos`).
     Direct {
-        block: [i16; 2 * BLOCK],
+        ring: Box<[[i16; 2 * BLOCK]; AHEAD]>,
+        front: usize,
+        queued: usize,
         pos: usize,
     },
     Resampled(Resampler),
@@ -555,12 +597,20 @@ impl Core {
     /// The process side for host rate `rate`, with the parameter values `values` as the ones
     /// already seen (the engine was built with them, `crate::instance`) and the main thread's
     /// settings `shared`. `audio` must run [`BLOCK`]-frame calls.
-    pub fn new(audio: Audio, rate: u32, values: &[i32; COUNT], shared: Arc<Shared>) -> Core {
+    ///
+    /// The activation's song is put in place here, on the main thread, before the first call
+    /// ([`settle`]): a host event of the first call reaches it, and its first block plays at
+    /// the mixer's full gain (task-226).
+    pub fn new(mut audio: Audio, rate: u32, values: &[i32; COUNT], shared: Arc<Shared>) -> Core {
         assert_eq!(audio.call_frames(), BLOCK);
+        settle(&mut audio);
         let out = if rate == ENGINE_RATE {
             // the block ahead: the first 64 host frames are silence
             Out::Direct {
-                block: [0; 2 * BLOCK],
+                // made here, on the main thread
+                ring: Box::new([[0; 2 * BLOCK]; AHEAD]),
+                front: 0,
+                queued: 0,
                 pos: 0,
             }
         } else {
@@ -656,16 +706,18 @@ impl Core {
             return;
         }
         self.engine.record(self.frames, *transport);
-        // the changes come after their frame (see the module doc)
-        self.produce(&mut l[..1], &mut r[..1]);
+        // the changes reach the blocks at or after their frame, never one before it (see the
+        // module doc)
+        self.render_before(self.frames);
         self.apply(values);
-        let mut done = 1;
+        let mut done = 0;
         for e in events {
             let t = (e.frame as usize).min(n - 1);
-            if t + 1 > done {
-                self.produce(&mut l[done..=t], &mut r[done..=t]);
-                done = t + 1;
+            if t > done {
+                self.produce(&mut l[done..t], &mut r[done..t]);
+                done = t;
             }
+            self.render_before(self.frames + t as u64);
             self.engine.message(&e.message);
         }
         self.produce(&mut l[done..n], &mut r[done..n]);
@@ -692,14 +744,50 @@ impl Core {
         self.engine.preview
     }
 
+    /// Renders, ahead of their time, the engine blocks whose first frame plays before host frame
+    /// `host` after the host's latency compensation, so that an event at `host` reaches only the
+    /// blocks at or after it (task-226). At 44.1 kHz block `m` plays from host frame
+    /// `64m + 64`, `64m` compensated: the blocks with `64m < host`.
+    fn render_before(&mut self, host: u64) {
+        match &mut self.out {
+            Out::Direct {
+                ring,
+                front,
+                queued,
+                ..
+            } => {
+                while self.engine.blocks * (BLOCK as u64) < host {
+                    // at most the playing block and one more (`host` is the next frame to play)
+                    assert!(*queued + 1 < AHEAD, "the blocks ahead fit");
+                    let slot = (*front + 1 + *queued) % AHEAD;
+                    ring[slot].copy_from_slice(self.engine.next_block());
+                    *queued += 1;
+                }
+            }
+            Out::Resampled(rs) => rs.render_before(host, &mut self.engine),
+        }
+    }
+
     fn produce(&mut self, l: &mut [f32], r: &mut [f32]) {
         match &mut self.out {
-            Out::Direct { block, pos } => {
+            Out::Direct {
+                ring,
+                front,
+                queued,
+                pos,
+            } => {
                 for (ol, or) in l.iter_mut().zip(r.iter_mut()) {
                     if *pos == BLOCK {
-                        block.copy_from_slice(self.engine.next_block());
+                        if *queued == 0 {
+                            let slot = (*front + 1) % AHEAD;
+                            ring[slot].copy_from_slice(self.engine.next_block());
+                            *queued = 1;
+                        }
+                        *front = (*front + 1) % AHEAD;
+                        *queued -= 1;
                         *pos = 0;
                     }
+                    let block = &ring[*front];
                     // exact: an int16 over 32768
                     *ol = block[2 * *pos] as f32 / 32768.0;
                     *or = block[2 * *pos + 1] as f32 / 32768.0;

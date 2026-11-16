@@ -101,7 +101,9 @@ impl Resampler {
         let scale = if ratio > 1.0 { 1.0 / ratio } else { 1.0 };
         let half = (HALF as f64 / scale).ceil() as usize;
         let cutoff = CUTOFF * scale;
-        let cap = (2 * half + 2 * BLOCK).next_power_of_two();
+        // the kernel, the block ahead and, rendered before an event, one block more
+        // (`render_before`), with a block to spare
+        let cap = (2 * half + 4 * BLOCK).next_power_of_two();
         let mut r = Resampler {
             num,
             den,
@@ -141,6 +143,22 @@ impl Resampler {
     fn push(&mut self, l: i16, r: i16) {
         self.ring[self.next as usize & self.mask] = [l, r];
         self.next += 1;
+    }
+
+    /// Renders, ahead of their time, the engine blocks whose first frame plays at or before host
+    /// frame `host - 1` after the host's latency compensation ([`Resampler::latency`]): engine
+    /// frame `b` plays at host frame `(b + delay) * den / num`, compensated
+    /// `(b + delay) * den / num - latency`, a fraction of a frame early at most (the latency is
+    /// rounded up). An event at `host` then reaches only the blocks that start after frame
+    /// `host - 1`, within a frame of it or later (`crate::core`, task-226).
+    pub fn render_before(&mut self, host: u64, engine: &mut impl Blocks) {
+        let limit = (host as i128 - 1 + self.latency() as i128) * self.num as i128;
+        while (self.next as i128 + self.delay as i128) * (self.den as i128) <= limit {
+            let b = engine.next_block();
+            for &[fl, fr] in b.as_chunks::<2>().0 {
+                self.push(fl, fr);
+            }
+        }
     }
 
     /// Fills `l` and `r` with host frames, pulling engine blocks from `engine` as they are

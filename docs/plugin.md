@@ -96,15 +96,25 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
 
 - **One block ahead.** Host frame `j` (counted from the activation) plays engine frame
   `j - 64`; the first 64 frames after an activation are silence, and the plugin reports 64
-  frames of latency. A block is rendered when its first frame is due.
+  frames of latency. A block is rendered when its first frame is due, or earlier when an event
+  after its start comes first (below).
 - **Events.** A host event at frame `t` (a parameter change; with
   `SAMPLE_ACCURATE_AUTOMATION` nice-plug splits the host's buffer at each change, so a change is
-  always at a call's first frame) is applied right after frame `t` is produced. The block that
-  plays at host frames `[64m, 64m + 64)`, which after the host's latency compensation is the
-  block of those very frames, is rendered after exactly the events of frames before `64m`.
-  The output is therefore a function of the events' frames alone: buffer sizes 1, 63, 64, 512
-  and 4096 give the same samples (`tests/timing.rs`). A call of no frames takes no changes;
-  they are seen at the next call.
+  always at a call's first frame; a MIDI message) reaches the first block that starts at or
+  after `t`, never one before it (the user's decision of task-227, 2026-11-16): after the
+  host's latency compensation block `m` plays at host frames `[64m, 64m + 64)`, and an event
+  at `t` is applied before the first block with `64m >= t`, so it sounds 0 to 63 frames late
+  and never early. Before each event the plugin renders, ahead of their time, the blocks that
+  start before it (at 44.1 kHz at most one beyond the one being played; resampled, the
+  blocks whose first frame plays at or before host frame `t - 1` after the compensation:
+  engine frame `b` with `(b + 64 + W) * den <= (t - 1 + latency) * num`, which allows the
+  half frame the rounded-up latency adds). The rule was the reverse before (the block that
+  held `t`, up to 63 frames early): at a realtime start off the block grid the early part of
+  a note fell before the play position, where the host drops it (task-226 round 3: a 909
+  bass drum at frame 0 after 7777 stopped frames came 33 frames early). The output is a
+  function of the events' frames alone: buffer sizes 1, 63, 64, 512 and 4096 give the same
+  samples (`tests/timing.rs`). A call of no frames takes no changes; they are seen at the next
+  call.
 - **The mode** (task-217, task-218; a setting of the state, not a parameter, section 5) is
   read before each block and at each section note. In **Latch Pattern Mode** (task-217's
   pattern mode, renamed) the song plays (song msg 35 `{1,1}`) only while the host plays, its
@@ -123,9 +133,30 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   the parameters (section 5), so an offline bounce does not depend on what played before it and
   reads no clock. The UI side's commands are applied at the start of the next block, as the
   standalone player's are at the start of its call.
+- **The activation's song is in place before the first call** (task-226, `core::settle`, on the
+  main thread in `Core::new`): the player's queue (the activation's `Command::Load`) is drained
+  there, and 256 silent blocks are rendered and dropped. Before, the load was applied by the
+  first block's drain, 64 host frames after the activation (more when resampled), so a host
+  event of those frames went to the player's placeholder song and was lost (a note at position
+  0 of an offline render, for every device; a parameter change, the cause of task-214). And a
+  new song's mixer gains start at 1e-6 and reach their targets through the per-block
+  smoothing `g = f32(g*0.93 + t*0.07)` (0x100136B7) after the first mixer update (block 6), a
+  fade-in of about 50 ms that made a drum note of the first blocks softer (an 808 bass drum's
+  peak 0.097 against 0.135). 256 blocks (`0.93^230 < 2^-24`, and a multiple of the update's 16-block
+  period) reach the gains' f32 fixed point; the song is stopped at the activation, so the
+  settle plays nothing (state that runs free in silence, such as the 303s' voices, moves on as
+  it would in any silent blocks). A note at frame 0 of the first call now sounds
+  as the same note later (`tests/first_note.rs`; through the CLAP and VST3 wrappers,
+  `tests/exports.rs`): for the drums at 44.1 kHz within one LSB, as two later notes differ
+  from each other (engine state that runs on in silence shifts the int16 truncation of a
+  sample now and then; the 303s' voices, for one, run free, their amp adding 1e-6 every block
+  at 0x1002494C; which state it is was not isolated), and for the 303s as loud, their waveform
+  depending on when the note starts (two later 303 notes differ by up to 0.33).
 - **The same engine as the app.** Without changes the plugin's output equals orb-player's for the
   same song in pattern mode, 64 frames later, with a host that plays and reports no tempo or
-  position (`the_plugin_plays_as_the_player_one_block_later`).
+  position, once the player has settled the same way
+  (`the_plugin_plays_as_the_player_one_block_later`). The app's own song load keeps the
+  fade-in, as the original's does.
 
 ### 4.1 Another host rate
 
@@ -822,27 +853,32 @@ unchanged; the preview overrides Gate as it overrides the other modes (section 4
   gate, closed until a note 0..31 on its channel is held; the sections gate independently. A
   closed section is silent and does not step; the song itself plays as in Latch (following
   the host while it plays).
-- **The note-on opens it at once**, at the 64-frame block after the event's frame (section 4,
+- **The note-on opens it at once**, at the first 64-frame block at or after the event's frame
+  (section 4,
   the same resolution as every host event), on pattern n+1 (A1..D8), from the step at the
   song's position: with the host playing the host-position step, mid-pattern in step with the
   song, following loops and seeks as Latch does. The step at the position sounds at once,
   wherever in the step the note comes (a 303 note of a step entered late ends by the step's
   end, so the next step comes on time), **except near a step boundary** (the user's choice of
   2026-11-16): a note-on within 5 ms before the next step, at most 12 ticks (a quarter step),
-  takes that step, which then plays on time. A clip note on the grid arrives while the
-  engine's position is up to one block (1.45 ms) before its step, because the event is applied
-  between blocks; without the snap it would play the previous step's last instant (and a 303
-  note of it that swallows the next step's start). 5 ms covers that block with room for host
-  timing jitter and stays below the ~10 ms at which an early note is heard as a separate
-  event; the 12-tick cap keeps the snap near the boundary at fast tempos (5 ms is 16 ticks at
-  999 BPM, where a step lasts 15 ms). The window is in time, not ticks, so it means the same
-  at any tempo below 750 BPM.
-- **The note-off closes it at once**: the section fades out linearly over the next 64-frame
-  block (1.45 ms; gain `(63 - i) / 64` on sample `i` of the section's channel bus, before the
-  inserts) and is silent from the block after (the device's voices get slot 6 at the fade's
-  end, and its bus is zeroed; a delay or insert tail of what it played before continues). The
-  fade is the user's decision of task-222 (2026-11-16): the first build's hard cut stepped to
-  silence by up to 0.036 (303), 0.047 (808), 0.037 (909) of full scale at the default levels,
+  takes that step, which then plays on time. Under task-218's timing a clip note on the grid
+  arrived while the engine's position was up to one block (1.45 ms) before its step, because
+  the event was applied to the block that held it; without the snap it would play the
+  previous step's last instant (and a 303 note of it that swallows the next step's start).
+  Since task-227 an event reaches the first block at or after its frame, so a grid note finds
+  the position at its step or up to a block after it; the snap stays for a host whose notes
+  come a little before the grid. 5 ms covers a block with room for host timing jitter and
+  stays below the ~10 ms at which an early note is heard as a separate event; the 12-tick cap
+  keeps the snap near the boundary at fast tempos (5 ms is 16 ticks at 999 BPM, where a step
+  lasts 15 ms). The window is in time, not ticks, so it means the same at any tempo below 750
+  BPM.
+- **The note-off closes it at once**: the section fades out linearly over the first 64-frame
+  block at or after the note-off (1.45 ms; gain `(63 - i) / 64` on sample `i` of the
+  section's channel bus, before the inserts) and is silent from the block after (the device's
+  voices get slot 6 at the fade's end, and its bus is zeroed; a delay or insert tail of what it
+  played before continues). The fade is the user's decision of task-222 (2026-11-16): the
+  first build's hard cut stepped to silence by up to 0.036 (303), 0.047 (808), 0.037 (909) of
+  full scale at the default levels,
   an audible click; with the fade the step is below 0.002 (measured 0.0016, 0.0007, 0.0008).
   The bound depends on the level: the ramp's last non-zero sample has gain 1/64, so the step
   is about the section's peak / 64, below 0.002 only for a peak below about 0.128 (the 303's
@@ -862,7 +898,10 @@ unchanged; the preview overrides Gate as it overrides the other modes (section 4
   that opens while another section plays joins it in step, at the running position (the
   user's choice of 2026-11-16: the sections stay in step; the song is located to 0 only when
   nothing plays). A host that stops while notes are held leaves the song playing on from where
-  it is.
+  it is. "Stopped" is the transport of the note's own call: a note in the call where the host
+  starts, before the first block that sees it play (a note at the host's position 0), leaves
+  the start to that block's sync, at the host's position; it does not start the song
+  free-running first, which the sync's Stop (slot 6) would cut (task-226).
 - **The On/off switch is the user's mute** (the supervisor's clarification of task-185's rule
   that notes never change parameters): the gate never changes it, nor any parameter, and sends
   no host gesture. A section sounds only when its switch is on and its gate is open. Opening a

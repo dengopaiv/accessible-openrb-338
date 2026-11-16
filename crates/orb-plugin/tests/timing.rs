@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use common::{Change, activate, host, host_with, peak, song_bytes, with_song};
 use orb_player::{Command, Player};
-use orb_plugin::core::HostTransport;
+use orb_plugin::core::{BLOCK, HostTransport, settle};
 use orb_plugin::instance::Mode;
 
 /// Changes of every kind of target: a 303 knob, a pattern selection, an 808 voice switch, the
@@ -124,20 +124,27 @@ fn pattern_mode_stops_and_starts_with_the_host() {
 }
 
 /// Without changes the plugin plays what orb-player plays for the same song in pattern mode,
-/// one block later: the same engine, the same messages.
+/// one block later: the same engine, the same messages, after the same settling of the mixer's
+/// gains at the activation (task-226).
 #[test]
 fn the_plugin_plays_as_the_player_one_block_later() {
     let plugin = run(44_100, 333, &[]);
     let song = orb_plugin::instance::parse_song(&song_bytes("full_mix")).unwrap();
-    let (mut p, mut a) = Player::new(Arc::new(orb_engine::tables::Tables::new()), None);
+    let tables = Arc::new(orb_engine::tables::Tables::new());
+    let (mut p, mut a) = Player::with_call_frames(tables, None, BLOCK);
     assert!(
         p.load(&song, Some(rbm::standard::builtin_samples()))
             .is_ok()
     );
+    settle(&mut a);
     assert!(p.send(Command::SongMode(false)).is_ok());
     assert!(p.send(Command::Play).is_ok());
-    let mut player = vec![0f32; 2 * FRAMES];
-    a.render_f32(&mut player);
+    // the player's calls as the plugin makes them (render_call after settle, not render_f32)
+    let mut player = Vec::with_capacity(2 * FRAMES);
+    while player.len() < 2 * FRAMES {
+        a.drain();
+        player.extend(a.render_call().iter().map(|&s| s as f32 / 32768.0));
+    }
     assert!(
         plugin[..128].iter().all(|&x| x == 0.0),
         "the block ahead is silence"
