@@ -299,6 +299,43 @@ for both Windows targets (x86_64 with the `CL` variable above, which the scripts
 check -p orb-ui` passed for `x86_64-apple-darwin`, and the host build is `aarch64-apple-darwin`.
 Not run: the packages (`scripts/package.sh`) and the CI matrix. Details: docs/ui_spec.md 18.0.1.
 
+## The test profile (task-205)
+
+`cargo test` builds with `[profile.test]` of the workspace `Cargo.toml`: `opt-level = 3` and
+`debug = "line-tables-only"`. The profile inherits `debug-assertions` and `overflow-checks` from
+`dev`, so both stay on (a test sees `cfg!(debug_assertions)` true; `cargo test -v` shows
+`-C debug-assertions=on` next to `-C opt-level=3`, and no `-C overflow-checks` flag, because
+rustc's default for overflow checks follows debug assertions). The output stays
+in `target/debug`, so `crates/orb-plugin/tests/exports.rs` (it builds the plugin with a nested
+`cargo build`, the dev profile, and loads `target/debug/...`) is unchanged and correct; under
+`cargo test --release` the same test builds and loads the release library.
+
+- Units: in a clean `cargo test -v --workspace` 401 of the 495 rustc runs are at opt-level 3: every
+  workspace crate, every test binary and every runtime dependency (sha2, the engine's and the
+  UI's libraries). The rest are the host-side units (build scripts, proc macros and their
+  dependencies: syn, quote, ...), which cargo builds with the `build-override` settings
+  (opt-level 0); they are small and optimizing them would only lengthen the clean build, so no
+  `[profile.dev.package."*"]` entry is needed. (`[profile.dev.package.sha2]` stays for `cargo
+  build`, `cargo run` and `cargo check`, which keep the dev profile.)
+- Bit-exactness: the engine's floats do not depend on opt-level (Rust does not contract or
+  reorder float operations); the corpus tests (corpus_golden, corpus_mods, export_equal) pass in
+  this profile, with `ORB_CD_ISO` set and unset.
+- No test branches on `debug_assertions` any more. The workloads that were reduced or ignored in
+  an unoptimized build (the 3 shipped-song tests of corpus_mods, the shipped songs of
+  corpus_golden, 164 instead of 10 export_equal entries, 400 instead of 40 merge cases, 200
+  instead of 2 frame_cost runs) always run in full: 2, 2, 3.4, 4 and 0.3 s. No `ORB_FULL_TESTS`
+  variable is needed.
+- Times (this Mac, 10 cores, with other agents' builds running, so only the ratios mean much;
+  `cargo test --workspace --no-fail-fast`, `ORB_CD_ISO` unset): clean 7m32s before, 3m14s after;
+  after a change in orb-engine 5m17s before, 1m56s after; nothing changed 4m37s before, 1m17s
+  after (the test run itself: menu.rs 85 s before, 10 s after). With `ORB_CD_ISO` set, the
+  corpus tests included: 1m27s after. With `ORB_CD_ISO` unset the corpus tests that need the
+  image (corpus_mods, ...) report `ok` after a message on stderr, not `ignored`, as they skip
+  themselves. The third-party run (`cargo test -p orb-cli --test thirdparty`) needs no
+  `--release` any more: the test profile is optimized.
+- The timing measurements marked `#[ignore]` (`merge_timing`, `part_cost`, ...) still say
+  `cargo test --release`: their numbers are for the release profile.
+
 ## GitHub Actions (`.github/workflows/`)
 
 Decisions of the user (2026-10-28): the cost of six release package jobs and the three-OS CI

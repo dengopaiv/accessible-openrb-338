@@ -13,7 +13,7 @@
 //!
 //! ```text
 //! ORB_THIRDPARTY_MODS_DIR=~/rb-mods/mods ORB_THIRDPARTY_SONGS_DIR=~/rb-songs/songs \
-//!     cargo test --release -p orb-cli --test thirdparty -- --nocapture --test-threads 1
+//!     cargo test -p orb-cli --test thirdparty -- --nocapture --test-threads 1
 //! ```
 //!
 //! - `mods`: every recrypted `.rbm` through `crates/rbm` (parse, the embedded key bytes, every

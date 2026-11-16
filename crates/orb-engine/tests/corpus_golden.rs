@@ -8,9 +8,9 @@
 //!   between the original and the reference.
 //! - `shipped`: the 8 shipped songs that use the built-in kit ("Standard ReBirth"), rbhost at 9088,
 //!   sha256 and frame count only (no audio committed). They render 41 minutes of audio (108170728
-//!   frames), measured at 1.5 s in a release build but 24 s in a debug one (10 cores; the longest
-//!   song, TGV's KiloMix '98 at 15 minutes, runs on one thread), so the test is ignored in debug
-//!   builds: `cargo test --release` runs it, as does `cargo test -- --ignored`.
+//!   frames), measured at 2 s in the optimized test profile (`[profile.test]`; 10 cores; the
+//!   longest song, TGV's KiloMix '98 at 15 minutes, runs on one thread), so plain `cargo test` runs
+//!   it (24 s in an unoptimized build, which is no longer the test build).
 //!
 //! Out of this file: the 8 shipped songs that use another mod than "Standard ReBirth" (the sets
 //! `mod`, rbhost with the mod, and `modapp`, 3 app exports; task-031) are checked by
@@ -148,10 +148,6 @@ fn app_exports_match_at_their_fitted_n() {
 
 /// AC #1, #2: the 8 shipped songs that use the built-in kit (sha256 and frames only).
 #[test]
-#[cfg_attr(
-    debug_assertions,
-    ignore = "41 minutes of audio, 24 s in a debug build; runs in cargo test --release"
-)]
 fn shipped_songs_match_their_references() {
     assert_eq!(check_set("shipped"), 8);
 }

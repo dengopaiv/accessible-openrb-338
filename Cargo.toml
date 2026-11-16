@@ -8,6 +8,15 @@ edition = "2024"
 license = "GPL-3.0-only"
 publish = false
 
+# `cargo test` builds optimized (the unoptimized run of the corpus tests takes many minutes) but
+# keeps debug_assertions and overflow-checks, which it inherits from dev, so the tests still see
+# the engine's debug asserts and its integer overflow checks. The profile applies to every unit
+# `cargo test` builds (the workspace libraries, the test binaries and the dependencies); the
+# build scripts and proc macros stay at the dev settings. Output goes to target/debug.
+[profile.test]
+opt-level = 3
+debug = "line-tables-only"
+
 # The SHA-256 of the 128 MB RB20FUL.DAT (rbm::dat) takes seconds unoptimized: the tests of
 # `orb mod recrypt` hash a stand-in file several times.
 [profile.dev.package.sha2]

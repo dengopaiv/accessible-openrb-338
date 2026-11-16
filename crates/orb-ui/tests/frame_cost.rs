@@ -1,7 +1,8 @@
 //! What one frame of the panel costs (task-153): the shapes `App::show` emits, the meshes and
 //! vertices egui tessellates them into, the textures they bind, and the CPU time of the two, in
-//! a headless context (no GPU). `cargo test --release -p orb-ui --test frame_cost -- --nocapture`
-//! prints the numbers (a debug run draws 10 frames and checks only the counts' upper bounds).
+//! a headless context (no GPU). `cargo test -p orb-ui --test frame_cost -- --nocapture`
+//! prints the numbers (200 timed frames; plain `cargo test` runs it in the optimized test
+//! profile too, in 0.3 s).
 
 use std::collections::HashSet;
 use std::time::Instant;
@@ -36,8 +37,8 @@ fn cost(size: Vec2, ppp: f32) -> Cost {
     let mut app = App::new(Panel::demo(), None);
     app.menu = true;
     const WARM: usize = 8;
-    // the timing needs many frames; a debug run only checks the counts
-    const RUNS: usize = if cfg!(debug_assertions) { 2 } else { 200 };
+    // the timing needs many frames
+    const RUNS: usize = 200;
     let mut c = Cost {
         shapes: 0,
         meshes: 0,

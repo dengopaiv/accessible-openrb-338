@@ -145,11 +145,11 @@ fn chase_somewhere(s: &mut Sequencer, rng: &mut Rng, ticks: u64) {
 /// The one-pass merge gives what the insert-by-insert one gives: the same pool (every list,
 /// node for node), applied pointers, hold masks and counters; over random songs, recordings
 /// (playing or stopped, the loop wrap's tick rule), merge ticks, and pools down to their last
-/// nodes, where the merge's inserts are refused. 400 cases in release, 40 in a debug build.
+/// nodes, where the merge's inserts are refused. 400 cases.
 #[test]
 fn the_merge_matches_the_reference() {
     let mut rng = Rng(0x0123_4567_89AB_CDEF);
-    let cases = if cfg!(debug_assertions) { 40 } else { 400 };
+    let cases = 400;
     for case in 0..cases {
         let ctrls = [3, 8, 40, 128][case % 4];
         let n = rng.below(3000) as usize;
