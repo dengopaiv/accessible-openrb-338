@@ -36,6 +36,33 @@ renders through `Audio::drain`, `Audio::apply_now` and `Audio::render_call`. Com
 mods travel in orb-player's command queue, and what the audio thread lets go of goes back in
 its garbage queue, so `process` allocates and frees nothing.
 
+**When the garbage queue is full (task-225).** The garbage queue (`GARBAGE` = 64 slots) fills
+when the main thread sends commands that hand a box back (a pattern edit, a data block, a song,
+a mod, a preview) faster than it collects them (`OrbParams::collect_garbage`, at every
+main-thread command and every editor frame; the editor may be closed). orb-player then holds
+back only what does not fit, `Audio::room_for`:
+- a command that carries no box and replaces none lets go of nothing and is always applied:
+  everything `process` sends for the host (the parameters' messages, the Standard Mapping's
+  controls, notes, gates, pattern selections, Play, Stop, Locate, Position, Tempo);
+- `Play` while a song loaded over the playing one is pending lets go of the current song: it
+  needs one slot, and that slot is kept free for it, since a command with a box takes
+  `GARBAGE_PER_COMMAND` (2) free slots plus one more while a song is pending;
+- the main thread's commands are applied in their order at the start of each block
+  (`Audio::drain`) as long as the next one fits: the first box command that does not fit
+  waits, with everything queued after it, until the main thread collects.
+
+So no host event is lost or delayed by a full queue: it reaches the block at or after its
+frame as usual. Host events are not ordered after the main-thread commands still queued: while
+a box command waits, the box-free commands queued behind it (the editor's pattern selection,
+the panel's Play or Stop) wait too, and a host event applied in that time comes before them.
+The window lasts until the main thread collects, about one editor frame (or the next
+main-thread command). `Core::dropped_events` counts the commands `Audio::apply_now` refused, which can
+only be one with a box; `process` sends none, so it stays 0 (`tests/full_garbage.rs`: 128
+uncollected edits, a Latch note, note-mode notes and the host's start and stop, frame for frame
+equal to an instance that collects). Before task-225 any command was refused with fewer than
+two free slots and only counted: a Latch note's pattern, a note-mode note-on or note-off, the
+host's start or stop and a parameter change could be lost (task-218's gates alone were resent).
+
 ## 2. Identity
 
 Permanent after the first release (task-185):
@@ -945,8 +972,8 @@ full corpus renders as before, 175 of 175 equal):
 - orb-player `Command::Gate {device, gate}`. The plugin keeps each channel's held notes in a
   fixed array (no allocation in `process`) and, before every block and every section note,
   sends any engine gate that differs from what the held notes say: this covers a newly loaded
-  song (its gates are off) and a `Gate` command the full garbage queue refused
-  (`Audio::apply_now`).
+  song (its gates are off). (A full garbage queue no longer refuses a `Gate`, task-225,
+  section 1.)
 
 ## 12. The pattern drag-out (task-203)
 

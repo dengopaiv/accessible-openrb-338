@@ -133,9 +133,9 @@ fn instance() -> (OrbParams, Core) {
         call(&p, &mut core, 64, &HostTransport::default(), &[]);
         p.collect_garbage();
     }
-    // the gates the first blocks could not send (the garbage queue full of the edits) were
-    // sent again
-    assert!(core.dropped_events() > 0);
+    // the gates went to the engine at the first block although the garbage queue was full of
+    // the edits (task-225: a command without a box is never refused)
+    assert_eq!(core.dropped_events(), 0);
     assert_eq!(closed(&core), [true; 4]);
     (p, core)
 }

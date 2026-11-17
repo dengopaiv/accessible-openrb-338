@@ -75,6 +75,15 @@
 //! controls are applied, the transport ones (Play, Stop, Record, Locate) are not: the
 //! transport is the host's. The preview ignores every message.
 //!
+//! # A full garbage queue (task-225)
+//!
+//! Every host event is applied at once (`Audio::apply_now`), even while the garbage queue is
+//! full of what the main thread's edits, loads and mods handed back and has not collected yet:
+//! none of the process side's commands carries a box, and orb-player refuses only those that
+//! do (`Audio::room_for`; a song's Play while it is pending finds the slot kept for it). The
+//! main thread's commands wait in their queue, in order, from the first one with a box that
+//! does not fit.
+//!
 //! Nothing here allocates, frees or locks: the queues and the snapshot are orb-player's
 //! lock-free ones, the parameter table is a constant, and the buffers are made at activation.
 
@@ -172,8 +181,9 @@ struct Engine {
     host: [i32; COUNT],
     /// The preview set's values as last applied.
     shown: [i32; COUNT],
-    /// The host events that could not be applied (the garbage queue was full); counted, not
-    /// retried.
+    /// The commands `Audio::apply_now` refused. It refuses only a command that carries a box
+    /// and finds the garbage queue full (`Audio::room_for`), and the process side sends none,
+    /// so this stays 0 (task-225); a diagnostic.
     dropped: u64,
     /// The host rate.
     rate: u32,
@@ -279,8 +289,7 @@ impl Engine {
     /// The pattern gates follow the mode and the preview: Gate Pattern Mode outside the preview
     /// closes the four gates (no note is held yet), anything else turns them off (the original's
     /// path); either change forgets the held notes. Any engine gate that is not as it should
-    /// be is sent again: a newly loaded song's (its gates are off), or one whose command the
-    /// full garbage queue refused.
+    /// be is sent again: a newly loaded song's (its gates are off).
     fn gates(&mut self) {
         let want = self.mode == Mode::Gate && !self.previewing();
         if want != self.gating {
@@ -667,7 +676,8 @@ impl Core {
         &self.engine.audio
     }
 
-    /// Host events that could not be applied because the garbage queue was full.
+    /// The process side's commands `Audio::apply_now` refused: 0, as none of them carries a box,
+    /// and only such a command is refused when the garbage queue is full (task-225).
     pub fn dropped_events(&self) -> u64 {
         self.engine.dropped
     }

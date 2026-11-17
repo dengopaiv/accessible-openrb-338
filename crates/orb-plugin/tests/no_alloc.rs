@@ -8,7 +8,8 @@
 //! and Standard Mapping control changes (task-198). Between the calls, unarmed, the main thread
 //! does what the editor and the host do: parameter changes of every kind, the mode off and on, a
 //! song loaded over the playing one (pending, then switched by the mode), a mod change, pattern
-//! edits, the Vintage switch and a state restore. At 44.1 kHz, at 48 kHz (the resampler's table)
+//! edits, the Vintage switch, the garbage queue left full of uncollected edits in each mode
+//! (task-225) and a state restore. At 44.1 kHz, at 48 kHz (the resampler's table)
 //! and at 44101 Hz (its weights computed per frame), with buffers of 1 to 4096 frames.
 //!
 //! Locks: the process side's sources (`core.rs`, `resample.rs`, `params.rs`) name no lock type,
@@ -25,8 +26,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use common::{activate, set, song_bytes, test_mod, with_song};
 use nice_plug::prelude::Params;
 use orb_engine::song::Device;
-use orb_player::Command;
 use orb_player::midi::Message;
+use orb_player::{Command, GARBAGE_PER_COMMAND};
 use orb_plugin::core::{Core, HostEvent, HostTransport};
 use orb_plugin::instance::{Mode, OrbParams};
 
@@ -234,6 +235,22 @@ fn session(rate: u32) {
     events += run(&p, &mut core, &mut h, 10_000, 700);
     p.set_mod(None).unwrap();
     events += run(&p, &mut core, &mut h, 5000, 100);
+    // task-225: in each mode, the garbage queue full of 128 pattern edits the main thread does
+    // not collect, while the host plays, stops and sends its notes
+    for mode in [Mode::Latch, Mode::Gate, Mode::Note] {
+        p.set_mode(mode);
+        for k in 0..128 {
+            p.edit(Command::Pattern {
+                device: Device::Tr909,
+                pattern: k % 32,
+                bytes: vec![k; 194].into_boxed_slice(),
+            })
+            .unwrap();
+        }
+        events += run(&p, &mut core, &mut h, 5000, 256);
+        assert!(core.audio().garbage_room() < GARBAGE_PER_COMMAND);
+    }
+    p.set_mode(Mode::Latch);
     // a state restore while running
     let saved = p.serialize_fields();
     p.deserialize_fields(&saved);

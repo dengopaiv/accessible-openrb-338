@@ -110,8 +110,10 @@ pub const CALL_FRAMES: usize = REALTIME_FRAMES;
 /// The command queue's capacity.
 pub const COMMANDS: usize = 1024;
 /// The garbage queue's capacity. Each command lets go of at most [`GARBAGE_PER_COMMAND`]
-/// boxes, and the callback takes a command only when that many slots are free, so nothing is
-/// ever dropped in the callback; a UI that does not collect stalls its commands, not the audio.
+/// boxes, and the callback takes a command only when the queue has room for what it lets go
+/// of ([`Audio::room_for`]), so nothing is ever dropped in the callback; a UI that does not
+/// collect stalls its commands that carry a box (and the ones queued after them), not the
+/// audio, and not the commands that let go of nothing (task-225).
 pub const GARBAGE: usize = 64;
 /// The boxes one command can hand back: a load replaces the pending song and the current one.
 pub const GARBAGE_PER_COMMAND: usize = 2;
@@ -678,24 +680,64 @@ impl Audio {
         self.render_call();
     }
 
-    /// The first step of an engine call: applies the commands queued by the UI side, as many as
-    /// the garbage queue has room for ([`GARBAGE_PER_COMMAND`] slots each).
+    /// The first step of an engine call: applies the commands queued by the UI side, in order,
+    /// while the next one fits the garbage queue ([`Audio::room_for`]): one that does not waits,
+    /// with the ones queued after it, for the UI side to collect.
     pub fn drain(&mut self) {
-        while self.garbage.slots() >= GARBAGE_PER_COMMAND {
+        while let Ok(c) = self.commands.peek() {
+            if !self.room_for(c) {
+                break;
+            }
             let Ok(c) = self.commands.pop() else { break };
             self.apply(c);
         }
     }
 
     /// Applies a command at once, from the callback's own thread (a plugin's host events),
-    /// as a queued one would be applied at the start of a call. Refused (given back) when the
-    /// garbage queue has fewer than [`GARBAGE_PER_COMMAND`] free slots.
+    /// as a queued one would be applied at the start of a call. Refused (given back) only when
+    /// it does not fit the garbage queue ([`Audio::room_for`]): never a command that carries
+    /// no box (task-225).
     pub fn apply_now(&mut self, c: Command) -> Result<(), Command> {
-        if self.garbage.slots() < GARBAGE_PER_COMMAND {
+        if !self.room_for(&c) {
             return Err(c);
         }
         self.apply(c);
         Ok(())
+    }
+
+    /// Whether the garbage queue has room for what applying `c` now lets go of (task-225):
+    ///
+    /// - a command that carries no box and replaces none lets go of nothing: it always fits;
+    /// - [`Command::Play`] while a song is pending switches to it and lets go of the current song:
+    ///   one slot;
+    /// - a command that carries a box ([`Command::DeviceData`], [`Command::Pattern`],
+    ///   [`Command::Mod`], [`Command::Preview`], [`Command::Load`]) lets go of at most
+    ///   [`GARBAGE_PER_COMMAND`]; it takes that many free slots, and one more while a song is
+    ///   pending, kept for that song's Play.
+    ///
+    /// So while a song is pending one slot is always free: a load that makes a song pending
+    /// (the current one plays, none was pending) lets go of nothing, a box command applied
+    /// while one is pending lets go of at most [`GARBAGE_PER_COMMAND`] of the
+    /// `GARBAGE_PER_COMMAND + 1` free slots it took, and only `Play` ends the wait. Every
+    /// command that carries no box, `Play` included, fits whatever the UI side has collected.
+    pub fn room_for(&self, c: &Command) -> bool {
+        let pending = self.pending.is_some() as usize;
+        let need = match c {
+            Command::Play => pending,
+            Command::DeviceData { .. }
+            | Command::Pattern { .. }
+            | Command::Mod(_)
+            | Command::Preview(_)
+            | Command::Load(_) => GARBAGE_PER_COMMAND + pending,
+            _ => 0,
+        };
+        self.garbage.slots() >= need
+    }
+
+    /// The garbage queue's free slots: what the callback can still hand back before the UI
+    /// side collects.
+    pub fn garbage_room(&self) -> usize {
+        self.garbage.slots()
     }
 
     /// The rest of an engine call, after [`Audio::drain`]: renders the call's frames, mixes the
@@ -731,7 +773,8 @@ impl Audio {
     }
 
     fn throw(&mut self, g: Garbage) {
-        // `call` keeps GARBAGE_PER_COMMAND slots free for every command it applies
+        // `drain` and `apply_now` apply a command only when `room_for` finds a slot for each
+        // box it lets go of (a Play while a song is pending takes the slot kept for it)
         if let Err(rtrb::PushError::Full(g)) = self.garbage.push(g) {
             // unreachable; leak rather than free memory in the callback
             std::mem::forget(g);
