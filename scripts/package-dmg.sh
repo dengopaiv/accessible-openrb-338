@@ -3,6 +3,8 @@
 # version is the UTC build time, scripts/version.sh; task-110, task-136): a single-architecture
 # OpenRB-338.app with the CLI inside, an /Applications link for drag-install, the license and a
 # readme. One image per architecture, Apple silicon and Intel; there is no universal binary.
+# The plugins are not in the image: scripts/package-pkg.sh makes their installer, a release
+# asset of its own (task-238).
 #
 #   scripts/package-dmg.sh aarch64-apple-darwin|x86_64-apple-darwin
 #
@@ -42,18 +44,6 @@ rm -rf "$stage"
 mkdir -p "$stage"
 "$root/scripts/macos-app.sh" "$stage" "$out/bin/OpenRB-338" "$out/bin/orb"
 ln -s /Applications "$stage/Applications"
-# The plugin (task-204): the bundles scripts/build.sh made (signed ad hoc by the bundler, and
-# checked here), with a link to each system plugin folder to drag them onto. cp -R keeps the
-# signature.
-for p in OpenRB-338.vst3 OpenRB-338.clap; do
-    [ -e "$out/plugins/$p" ] || { echo "missing $out/plugins/$p" >&2; exit 1; }
-    cp -R "$out/plugins/$p" "$stage/$p"
-    codesign --verify --strict "$stage/$p"
-    lipo -archs "$stage/$p/Contents/MacOS/OpenRB-338" | grep -qx "$arch" \
-        || { echo "$p is not $arch only" >&2; exit 1; }
-done
-ln -s /Library/Audio/Plug-Ins/VST3 "$stage/VST3"
-ln -s /Library/Audio/Plug-Ins/CLAP "$stage/CLAP"
 cp "$root/LICENSE" "$stage/LICENSE"
 cat > "$stage/README.txt" <<EOF
 OpenRB-338 $version
@@ -73,17 +63,11 @@ the developer cannot be verified"). Pick one:
         xattr -dr com.apple.quarantine /Applications/OpenRB-338.app
 
 The plugin (a VST® 3 and CLAP instrument for a DAW; VST is a registered trademark of
-Steinberg Media Technologies GmbH): drag OpenRB-338.vst3 onto the VST3 link and
-OpenRB-338.clap onto the CLAP link (they are /Library/Audio/Plug-Ins/VST3 and /CLAP, for all
-users, asks for an admin password; ~/Library/Audio/Plug-Ins/ is for you only, and the folders
-may not exist yet: make them in Finder or Terminal first). The bundles are signed ad hoc only;
-if the host refuses them, run (the bundles in /Library are owned by root):
-    sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 \\
-        /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap
-or, for the ones in ~/Library/Audio/Plug-Ins/, without sudo:
-    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 \\
-        ~/Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap
-Then rescan plugins in the host.
+Steinberg Media Technologies GmbH) is not in this image: it comes as a separate installer,
+OpenRB-338-Plugins-$version-$target.pkg, from the same release. It is unsigned too (open it
+as the app above); it installs OpenRB-338.vst3 and OpenRB-338.clap for all users into
+/Library/Audio/Plug-Ins/VST3 and /CLAP, and its first page says how to open it and how to
+remove the plugins (delete those two bundles).
 
 The command line tool orb is inside the app. To use it from a terminal:
     sudo ln -s /Applications/OpenRB-338.app/Contents/MacOS/orb /usr/local/bin/orb

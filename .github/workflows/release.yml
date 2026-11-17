@@ -190,6 +190,15 @@ jobs:
           name: dmg-${{ matrix.target }}
           path: dist/${{ matrix.target }}/OpenRB-338-*.dmg
           if-no-files-found: error
+      - name: Build the plugin .pkg
+        # task-238: the VST3 and CLAP installer, its own release asset (not in the .dmg); it
+        # needs the plugins-<target> bundles downloaded above and pkgbuild/productbuild (Xcode)
+        run: scripts/package-pkg.sh "${{ matrix.target }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pkg-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/OpenRB-338-Plugins-*.pkg
+          if-no-files-found: error
 
   installer:
     # The Windows installers (task-111): NSIS, one per architecture, from the Windows `bin-`
@@ -300,7 +309,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: "{package-*,dmg-*,installer-*,appimage-*}"
+          pattern: "{package-*,dmg-*,pkg-*,installer-*,appimage-*}"
           path: release-in
           merge-multiple: true
       - name: Check the packages and write SHA256SUMS.txt

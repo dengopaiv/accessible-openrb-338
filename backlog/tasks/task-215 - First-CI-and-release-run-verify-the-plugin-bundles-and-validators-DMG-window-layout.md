@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-16T12:13:00Z'
-updated_date: '2026-11-17T07:48:00Z'
+updated_date: '2026-11-17T16:05:00Z'
 labels:
   - tools
   - tests
@@ -44,4 +44,8 @@ Follow-up of task-204 (task-134, the first release run, is Done and the user's, 
 
 <!-- SECTION:NOTES:BEGIN -->
 AC #1 verified by the supervisor: CI run 43865111270 on 5b6b10f (push of task-204, 2026-11-16 12:16 UTC) passed; jobs 'plugin validators (ubuntu-22.04)' and 'plugin validators (macos-latest)' both success, as were fmt and clippy/test on Linux, Windows and macOS. Also: scripts/validate-plugin.sh passed locally on the task-201 branch's rebuilt bundles (c92bd6f): clap-validator and pluginval 'validators: all passed'.
+
+task-238 supersedes AC 5 (the DMG window layout with the VST3 and CLAP links and icon positions): the DMG no longer has plugin links or loose bundles, it holds the app, the Applications link, Install OpenRB-338 Plugins.pkg and README.txt. A headless icon layout was never built and task-238 adds none.
+
+Update (task-238, user's decision 2026-11-17): the plugin installer is not in the DMG either; it is its own release asset OpenRB-338-Plugins-<version>-<target>.pkg. The DMG holds only the app, the Applications link, LICENSE and README.txt.
 <!-- SECTION:NOTES:END -->

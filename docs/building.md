@@ -394,8 +394,11 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
   - `dmg` (task-110, task-136), one job per macOS target after the package jobs, on the runner
     of its target (`macos-15-intel`, `macos-15`; not one runner for both, so each job needs only
     its own `bin-<target>` and the target's own tools check the image): downloads that
-    `bin-<target>` and `plugins-<target>` artifacts (the bundles go into the image, task-204), runs `SKIP_BUILD=1 scripts/package-dmg.sh <target>` and uploads the
-    artifact `dmg-<target>` (`OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg`). It reuses the package
+    `bin-<target>` and `plugins-<target>` artifacts (the bundles go into the plugin pkg,
+    task-204, task-238), runs `SKIP_BUILD=1 scripts/package-dmg.sh <target>` and uploads the
+    artifact `dmg-<target>` (`OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg`), then runs
+    `scripts/package-pkg.sh <target>` and uploads `pkg-<target>`
+    (`OpenRB-338-Plugins-<YYYY.MMDD.HHMM>-<target>.pkg`, task-238). It reuses the package
     build and the `prepare` build time, so the app's version string is theirs.
   - `installer` (task-111), one job per Windows architecture on `ubuntu-latest` after the package
     jobs: installs NSIS (`apt-get install nsis`), downloads `bin-x86_64-pc-windows-msvc` or
@@ -438,14 +441,14 @@ git push origin v2026.1028.1930
   `^v[0-9]{4}\.[0-9]{4}\.[0-9]{4}$` (and that the date exists); another tag (`v1`, `vfoo`) fails
   there with a message, the other jobs are skipped and no release is created.
 - When `package`, `dmg`, `installer` and `appimage` all pass, the `release` job:
-  1. downloads `package-*`, `dmg-*`, `installer-*` and `appimage-*`;
-  2. `scripts/release-assets.sh` checks that exactly the 12 files of a release are there (four
-     `.tar.gz`, two `.zip`, the two `.dmg`, the two `-setup.exe`, the two `.AppImage`, all named with
-     the tag's version) and writes `SHA256SUMS.txt` over them (`sha256sum -c` form, sorted);
+  1. downloads `package-*`, `dmg-*`, `pkg-*`, `installer-*` and `appimage-*`;
+  2. `scripts/release-assets.sh` checks that exactly the 14 files of a release are there (four
+     `.tar.gz`, two `.zip`, the two `.dmg`, the two plugin `.pkg`, the two `-setup.exe`, the two
+     `.AppImage`, all named with the tag's version) and writes `SHA256SUMS.txt` over them (`sha256sum -c` form, sorted);
      a missing or foreign file fails the job, so a release never ships without a package;
   3. `scripts/changelog.sh` writes the release body;
   4. creates a draft release with `gh release create --draft --verify-tag`, titled
-     `OpenRB-338 <version>`, with the 12 files and `SHA256SUMS.txt` attached (13 assets).
+     `OpenRB-338 <version>`, with the 14 files and `SHA256SUMS.txt` attached (15 assets).
 - It never publishes. The release is a draft that only the user can see: read the body and the
   assets on the Releases page, then press "Publish release" (or `gh release edit TAG --draft=false`).
   Nothing is signed (Gatekeeper and SmartScreen: "What the system shows for an unsigned
@@ -523,9 +526,11 @@ Mac can run it under Rosetta but should take the aarch64 one.
   and nothing is left behind, the bundle's seal covers both, and an update replaces both.
   The cost is a longer path; `README.txt` in the image gives
   `sudo ln -s /Applications/OpenRB-338.app/Contents/MacOS/orb /usr/local/bin/orb`.
-- An `Applications` link, `LICENSE` and `README.txt` (install, Gatekeeper, the `orb` link). There
-  is no background picture or icon layout (that needs Finder scripting, which is not
-  reproducible on a runner).
+- An `Applications` link, `LICENSE` and `README.txt` (install, Gatekeeper, a note that the
+  plugins come as the separate `OpenRB-338-Plugins-<version>-<target>.pkg` of the same release,
+  the `orb` link). The plugins are not in the image (task-238; "The macOS pkg" in the plugin
+  section). There is no background picture or icon layout (that needs Finder scripting, which
+  is not reproducible on a runner).
 - Signing is ad hoc only (Apple silicon refuses an unsigned bundle; no Developer ID, no
   notarization): `orb` is signed explicitly (`codesign --force -s -`; before, only the linker had
   signed it on its own), then the bundle without `--deep`, whose seal covers both executables,
@@ -856,10 +861,10 @@ there is no Developer ID signing or notarization.
 
 **Where they go.** `scripts/package.sh` puts `plugins/` (both bundles) into every package archive
 (all six targets, with the plugin folders of the OS in its `README.txt`); `scripts/package-dmg.sh`
-puts them next to the app in the `.dmg`, with the links `VST3` and `CLAP` to
-`/Library/Audio/Plug-Ins/VST3` and `/Library/Audio/Plug-Ins/CLAP` to drag them onto. It checks
-the signature (`codesign --verify --strict`) and that the library has the image's architecture
-only. In `release.yml` the package jobs upload `plugins-<target>` (one day) for the `dmg` jobs.
+is not given them; `scripts/package-pkg.sh` packs them into
+`OpenRB-338-Plugins-<version>-<target>.pkg`, a release asset of its own (task-238; below). It
+checks the signature (`codesign --verify --strict`) and that the library has the target's
+architecture only. In `release.yml` the package jobs upload `plugins-<target>` (one day) for the `dmg` jobs.
 `scripts/build-all.sh` needs no change: it calls `package.sh`, so a skipped target skips its
 plugin too. Built and checked on this Mac (aarch64-apple-darwin) only; the other five are the
 same code path, run first by the release workflow.
@@ -872,10 +877,52 @@ same code path, run first by the release workflow.
 | Windows | `%COMMONPROGRAMFILES%\VST3\` (current user only: `%LOCALAPPDATA%\Programs\Common\VST3\`) | `%COMMONPROGRAMFILES%\CLAP\` (or `%LOCALAPPDATA%\Programs\Common\CLAP\`) |
 | Linux | `~/.vst3/` (or `/usr/lib/vst3/`) | `~/.clap/` (or `/usr/lib/clap/`) |
 
-A plugin from a downloaded `.dmg` or archive is quarantined on macOS; with the ad hoc signature
-only, a host can refuse it. Remove the flag from the installed bundles:
+**The macOS pkg** (task-238). The `.dmg` held links to the two system folders to drag the
+bundles onto; macOS creates neither folder (only plugin installers do), so a link was broken on
+a fresh Mac and a drop did not work. Now `scripts/package-pkg.sh TARGET` builds
+`dist/<target>/OpenRB-338-Plugins-<YYYY.MMDD.HHMM>-<target>.pkg` (`pkgbuild` and `productbuild`,
+which ship with the Xcode command line tools, so the macOS jobs need nothing more) from
+`dist/<target>/plugins/`. The pkg is a release asset of its own, not part of the `.dmg` (the
+user's decision, 2026-11-17: the image holds only the app, the `Applications` link, `LICENSE`
+and `README.txt`, which names the pkg). The `dmg` job of `release.yml` runs the script after
+`package-dmg.sh` and uploads `pkg-<target>`; `release-assets.sh` requires both pkgs. No icon
+layout: none was ever made, see task-215.
+- The Installer's welcome page (`productbuild --resources`, `welcome.txt`) carries what the
+  `.dmg` README cannot: how to open the unsigned pkg, what is installed where, the quarantine
+  note and the removal (the README repeats it in short).
+- Two component packages, `net.emphased.openrb338.plugin.vst3` and `.clap`, each with
+  `--install-location /Library/Audio/Plug-Ins/VST3` or `/CLAP` (the Installer creates the
+  folder), owner root:wheel (`--ownership recommended`), version = the build time.
+- A Distribution with two choices, "VST3 plugin" and "CLAP plugin", both `start_selected` and
+  enabled, so Customize can drop one. Machine-wide only (`enable_localSystem`; the Installer asks
+  for the admin password once). `hostArchitectures` is `arm64` in the aarch64 pkg, `x86_64,arm64`
+  in the x86_64 one.
+- Upgrade: the component plist is an empty array, so `pkgbuild` records no bundle (the default
+  would write `<bundle>`, `<upgrade-bundle>` and `<relocate/>` entries keyed by the bundle
+  identifier, and both plugins have the same `CFBundleIdentifier`, `com.nice-plug.orb-plugin`; a
+  relocatable bundle is also updated wherever the Installer finds it, say a build in a project
+  folder). The package is plain files at the fixed install path, and a `preinstall` script
+  (`rm -rf "$3/Library/Audio/Plug-Ins/<VST3|CLAP>/OpenRB-338.<ext>"`, `$3` the target volume)
+  removes the old bundle first, so a file the new version no longer has is not left inside it.
+  Checked on the package (`pkgutil --expand`: `relocatable="false"`, no bundle entries, the
+  scripts); the user then ran the Installer on macOS 15 (2026-11-17) and it worked (below).
+- Unsigned (no Developer ID), like the app: macOS blocks the downloaded pkg the first time;
+  right-click > Open (macOS 14 and older) or Open Anyway in System Settings > Privacy & Security
+  (15 and newer). The files an Installer package writes are not quarantined (only the pkg is), so
+  the bundles need no `xattr` command; they are signed ad hoc only. Verified on macOS 15 after
+  the user's install of the pkg (2026-11-17): `xattr -lr` on the installed `OpenRB-338.vst3`
+  and `.clap` shows only `com.apple.provenance`, no `com.apple.quarantine`; `find -name '._*'`
+  finds nothing in either; `pkgutil --pkgs` lists `net.emphased.openrb338.plugin.vst3` and
+  `.clap`. Local builds on a Mac whose sandbox adds `com.apple.provenance` to every file show
+  `._` entries in the pkg's Bom, but they did not land as files. The Destination page offers
+  only the whole disk (machine-wide, as built); "for me only" and "specific disk" are greyed
+  out, which is accepted.
+- No uninstaller: delete the two bundles from the two folders (`README.txt` says so).
+
+For a manual copy from a `.tar.gz` (which is quarantined when downloaded in a browser; with the
+ad hoc signature only, a host can refuse it), remove the flag from the copied bundles:
 `sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap`
-(the bundles dragged into `/Library` with an admin password are owned by root), or without
+(the bundles copied into `/Library` with an admin password are owned by root), or without
 `sudo` for the ones in `~/Library/Audio/Plug-Ins/VST3/` and `/CLAP/`. Windows may show SmartScreen for the unsigned DLL the first
 time a host loads it. The dev tasks do not install into the user's plugin folders.
 
