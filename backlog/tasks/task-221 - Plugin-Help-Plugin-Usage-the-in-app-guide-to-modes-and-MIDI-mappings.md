@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T15:59:00Z'
-updated_date: '2026-11-17T07:48:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels:
   - ui
   - docs
@@ -16,6 +16,7 @@ dependencies:
   - TASK-218
   - TASK-219
   - TASK-228
+  - TASK-231
 references:
   - docs/plugin.md
   - docs/midi.md
