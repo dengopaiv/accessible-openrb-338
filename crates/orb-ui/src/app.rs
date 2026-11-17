@@ -335,7 +335,14 @@ impl App {
         );
         // Clicks in the browser, the prompt or the box over it do not dismiss it.
         let blocked = self.browser.is_some() || self.prompt.is_some() || self.error_open();
-        if !blocked && self.export.is_none() && ui.input(|i| i.pointer.any_click()) {
+        // nor does a click on a window or menu over the bar (task-235): the click's layer
+        // must be the panel's
+        let clicked = ui.input(|i| i.pointer.any_click().then(|| i.pointer.interact_pos()));
+        if !blocked
+            && self.export.is_none()
+            && let Some(p) = clicked
+            && p.is_none_or(|p| ui.ctx().layer_id_at(p).is_none_or(|l| l == ui.layer_id()))
+        {
             self.status = None;
         }
     }
@@ -1097,6 +1104,12 @@ impl App {
                 .flatten()
         });
         if let Some(p) = pressed {
+            // A press on a window, a menu or any other layer over the panel is not the
+            // panel's (task-235): a window's close button over the logo played the startup
+            // sound.
+            if ui.ctx().layer_id_at(p).is_some_and(|l| l != ui.layer_id()) {
+                return;
+            }
             let p = view.to_panel(p);
             if let Some(r) = layout::row_at(p.x, p.y) {
                 self.panel.focus = r;

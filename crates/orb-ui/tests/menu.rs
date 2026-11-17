@@ -3394,3 +3394,102 @@ fn the_info_fields_fill_the_window_and_follow_its_width() {
         win(&h).width()
     );
 }
+
+/// task-235: a window's close button over the logo (or any panel control) does not reach the
+/// panel under it: closing About that way does not play the startup sound, and a click on its
+/// body or title bar over the logo does not either. Without the window the same click plays it.
+#[test]
+fn a_click_on_a_window_over_the_logo_does_not_reach_the_panel() {
+    let mut h = Harness::with_menu();
+    h.app.settings.startup_sound = false;
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let rect = |h: &Harness| h.ctx.memory(|m| m.area_rect(h.app.about_id())).unwrap();
+    let button = |p: Pos2, pressed| Event::PointerButton {
+        pos: p,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    // drag the window by its title so the close button is over the logo
+    let logo = Pos2::new(540.0, MENU_H + 25.0);
+    let r = rect(&h);
+    let close = Pos2::new(r.max.x - 12.0, r.min.y + 10.0);
+    let grab = Pos2::new(r.center().x, r.min.y + 10.0);
+    let to = grab + (logo - close);
+    h.frame(vec![Event::PointerMoved(grab)]);
+    h.frame(vec![button(grab, true)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![button(to, false)]);
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let r = rect(&h);
+    let close = Pos2::new(r.max.x - 12.0, r.min.y + 10.0);
+    assert!(
+        (close - logo).abs().max_elem() < 4.0,
+        "{close:?} over {logo:?}"
+    );
+    // a press in the window's title bar over the logo: no startup sound
+    h.click(close - Vec2::new(30.0, 0.0));
+    h.calls(4);
+    assert_eq!(h.audio.preview_position(), None, "a click on the window");
+    assert!(h.app.about_is_open());
+    // the close button closes it, and the sound does not play
+    h.click(close);
+    h.calls(4);
+    assert!(!h.app.about_is_open(), "the close button closes it");
+    assert_eq!(h.audio.preview_position(), None, "the close click");
+    // the same point with no window plays it
+    h.click(logo);
+    h.calls(4);
+    assert!(h.audio.preview_position().is_some(), "the logo plays");
+}
+
+/// task-235: a click on a window over the status bar does not dismiss the status line; a click
+/// on the bar itself does.
+#[test]
+fn a_click_on_a_window_over_the_status_bar_keeps_the_status() {
+    let mut h = Harness::with_menu();
+    h.app.status = Some("a status".to_string());
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let rect = |h: &Harness| h.ctx.memory(|m| m.area_rect(h.app.about_id())).unwrap();
+    let button = |p: Pos2, pressed| Event::PointerButton {
+        pos: p,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    // drag the window by its title to the bottom: the screen keeps it in, its body is over
+    // the bar
+    let r = rect(&h);
+    let grab = Pos2::new(r.center().x, r.min.y + 10.0);
+    let to = Pos2::new(grab.x, h.height - 2.0);
+    h.frame(vec![Event::PointerMoved(grab)]);
+    h.frame(vec![button(grab, true)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![button(to, false)]);
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let r = rect(&h);
+    let on_bar = Pos2::new(r.center().x, h.height - 10.0);
+    assert!(r.contains(on_bar), "the window covers the bar: {r:?}");
+    assert_eq!(h.app.status.as_deref(), Some("a status"));
+    h.click(on_bar);
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("a status"),
+        "a click on the window"
+    );
+    // beside the window, on the bar: dismissed
+    h.click(Pos2::new(5.0, h.height - 10.0));
+    assert_eq!(h.app.status, None, "a click on the bar");
+}

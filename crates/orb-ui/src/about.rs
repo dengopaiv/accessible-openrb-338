@@ -99,7 +99,8 @@ impl App {
             .resizable(false)
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ctx.content_rect().center())
-            .frame(egui::Frame::window(&ctx.global_style()).inner_margin(0.0))
+            // the default frame, like every other window (task-235): a zero inner margin
+            // made the title bar flat and tight against the edge
             .show(ctx, |ui| {
                 // The layout of the mockup session (task-115), points from the top left of
                 // the content: the icon, the wordmark at 2x, and under its subtitle the
