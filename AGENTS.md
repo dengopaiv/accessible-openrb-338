@@ -107,6 +107,8 @@ Planning, progress and decisions live in `backlog/` (Backlog.md). The shared age
 
 Subject: `<area>: <what>`, at most 72 characters. The area is one of `engine`, `player`, `cli`, `ui`, `tools`, `tests`, `docs` or `backlog`; `player` is the real-time player and audio output (`orb-player`), `ui` the desktop UI (`orb-ui`, `orb-ui-art`), `tools` the Python tools and scripts. A change to several areas names them comma-separated, without spaces, the main one first: `player,cli,ui: <what>` (`scripts/changelog.sh` lists it under the first).
 
+**No `#<number>` in a subject or body** unless it names a GitHub issue or pull request: GitHub links every `#N` in a pushed commit to issue or PR N. Write `303 1` or `the first 303`, `AC 1` or `criterion 1`, `step 3`, not `303 #1` or `AC #1`.
+
 Body, in this order:
 1. **Change**: what and where.
 2. **Result**: the numbers before and after, what works now, and the corpus result for an engine change.
