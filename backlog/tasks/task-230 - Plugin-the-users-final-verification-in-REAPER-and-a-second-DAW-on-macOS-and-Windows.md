@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@pingw33n'
 created_date: '2026-11-17T07:48:00Z'
-updated_date: '2026-11-17T07:48:00Z'
+updated_date: '2026-11-17T11:09:00Z'
 labels:
   - player
   - ui
@@ -19,6 +19,7 @@ dependencies:
   - TASK-221
   - TASK-228
   - TASK-229
+  - TASK-235
 priority: high
 type: task
 ordinal: 3000
