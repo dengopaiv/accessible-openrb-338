@@ -188,6 +188,9 @@ pub struct App {
     /// The same for the Help > Keyboard Shortcuts window (`App::key_help_ui`).
     pub(crate) key_help_open: bool,
     pub(crate) key_help_serial: u32,
+    /// The same for the plugin's Help > Plugin Usage window (`App::plugin_usage_ui`, task-221).
+    pub(crate) plugin_usage_open: bool,
+    pub(crate) plugin_usage_serial: u32,
     /// What the info window drew last (`App::info_shown`).
     pub(crate) info_shown: Option<crate::info::SongInfo>,
     pub(crate) events_seen: usize,
@@ -251,6 +254,8 @@ impl App {
             mod_info_shown: None,
             key_help_open: false,
             key_help_serial: 0,
+            plugin_usage_open: false,
+            plugin_usage_serial: 0,
             info_shown: None,
             events_seen: 0,
             allow_close: false,
@@ -947,6 +952,7 @@ impl App {
         self.info_ui(&ctx);
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);
+        self.plugin_usage_ui(&ctx);
         self.mod_info_ui(&ctx);
         self.poll_export(&ctx);
         self.update_title(&ctx);

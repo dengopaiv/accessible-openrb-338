@@ -60,7 +60,8 @@ and Windows.
 
 OpenRB-338 also comes as an instrument plugin in the VST® 3 and CLAP formats (`OpenRB-338.vst3`
 and `OpenRB-338.clap`), with the same engine and panel inside a DAW. Quick start step 2 installs
-it; docs/plugin.md describes it.
+it; [docs/plugin_usage.md](docs/plugin_usage.md) is the guide to its modes and MIDI mappings (also
+in the plugin: Help > Plugin Usage), and docs/plugin.md describes how it works.
 
 <p align="center">
   <picture>

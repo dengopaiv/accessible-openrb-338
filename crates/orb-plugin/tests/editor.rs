@@ -343,6 +343,68 @@ fn the_options_menu_has_no_mode_items() {
     }
 }
 
+/// task-221: the plugin's Help menu has Plugin Usage (and About, no Keyboard Shortcuts); the
+/// item opens the guide, a scrollable window that shows the trademark terms, and its close
+/// button closes it. The standalone's Help menu has no Plugin Usage (orb-ui's tests).
+#[test]
+fn the_help_menu_opens_the_plugin_usage_page() {
+    let mut h = Harness::new(with("303_accent0"));
+    // Help is the fourth title of the bar (File, Mods, Options, Help)
+    h.click(Pos2::new(150.0, MENU_H / 2.0));
+    h.frame(vec![]);
+    h.frame(vec![]);
+    assert!(egui::Popup::is_any_open(&h.ctx), "Help opened");
+    let texts = h.texts.join("|");
+    assert!(texts.contains("Plugin Usage..."), "{texts}");
+    assert!(texts.contains("About OpenRB-338..."), "{texts}");
+    assert!(!texts.contains("Keyboard Shortcuts"), "{texts}");
+    assert!(!h.app.plugin_usage_is_open());
+
+    // the item: the first of the menu, under the title
+    h.click(Pos2::new(190.0, MENU_H + 14.0));
+    for _ in 0..30 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.plugin_usage_is_open(), "Plugin Usage opened");
+    let texts = h.texts.join("|");
+    assert!(texts.contains("Plugin Usage"), "{texts}");
+    assert!(
+        texts.contains("VST\u{ae} 3"),
+        "the registered sign at the first VST: {texts}"
+    );
+    // the trademark sentence is at the bottom of the page (scrolled out of the first screen)
+    let rect = h
+        .ctx
+        .memory(|m| m.area_rect(h.app.plugin_usage_id()))
+        .unwrap();
+    let screen = Rect::from_min_size(Pos2::ZERO, h.size);
+    assert!(screen.contains_rect(rect), "{rect:?} in {screen:?}");
+
+    // the window closes with the mouse: its title bar's close button
+    h.click(Pos2::new(rect.right() - 12.0, rect.top() + 12.0));
+    h.frame(vec![]);
+    assert!(!h.app.plugin_usage_is_open(), "the close button closes it");
+}
+
+/// task-221: the page works at the smallest window the host may give (half the panel).
+#[test]
+fn the_plugin_usage_page_fits_the_smallest_window() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.size = Vec2::new(312.0, 255.0 + MENU_H);
+    h.app.command(orb_ui::menu::Cmd::PluginUsage);
+    for _ in 0..30 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.plugin_usage_is_open());
+    let rect = h
+        .ctx
+        .memory(|m| m.area_rect(h.app.plugin_usage_id()))
+        .unwrap();
+    let screen = Rect::from_min_size(Pos2::ZERO, h.size);
+    assert!(screen.contains_rect(rect), "{rect:?} in {screen:?}");
+    assert!(rect.width() >= 200.0 && rect.height() >= 150.0, "{rect:?}");
+}
+
 #[test]
 fn a_knob_sets_its_parameter_through_the_host() {
     let mut h = Harness::new(with("303_accent0"));

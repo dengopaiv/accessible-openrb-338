@@ -77,6 +77,8 @@ pub enum Cmd {
     Info,
     /// Help > Keyboard Shortcuts.
     KeyHelp,
+    /// Help > Plugin Usage (a plugin's editor only, task-221).
+    PluginUsage,
     /// Help > About.
     About,
     /// "Choose file..." of the Mods menu: the browser for a mod.
@@ -958,6 +960,11 @@ impl App {
             }
             Cmd::Info => self.show_info(),
             Cmd::KeyHelp => self.show_key_help(),
+            Cmd::PluginUsage => {
+                if self.is_plugin() {
+                    self.show_plugin_usage();
+                }
+            }
             Cmd::About => self.show_about(),
             Cmd::ChooseModFile => self.open_browser(Mode::ChooseMod),
             Cmd::UseKit(kit) => self.use_kit(kit),
@@ -1320,6 +1327,10 @@ impl App {
         });
         // Last in the bar. An item is one line of `HELP_ITEMS`.
         ui.menu_button("Help", |ui| {
+            // the plugin's guide (task-221); the standalone's menu is unchanged
+            if plugin && item(ui, "Plugin Usage...", None) {
+                *cmd = Some(Cmd::PluginUsage);
+            }
             for (text, c) in HELP_ITEMS {
                 // no Keyboard Shortcuts in a plugin's editor (task-201)
                 if plugin && *c == Cmd::KeyHelp {

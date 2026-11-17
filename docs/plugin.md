@@ -716,6 +716,23 @@ are pixel-identical):
   removed them on 2026-11-17 when task-231 added the mode selector below, the only place to
   change the mode (orb-ui `embed::MODE_ITEMS` names the modes, `Embed::mode` / `set_mode`,
   `Cmd::SetPluginMode`).
+- **Help > Plugin Usage** (task-221): the plugin's Help menu has Plugin Usage... first, then
+  About; no Keyboard Shortcuts. It opens a scrollable window (`orb-ui/src/plugin_usage.rs`,
+  resizable, 580 x 520 points at most and 200 x 150 at least, closed by its button or Escape)
+  with the guide to the modes, channels, pattern selection, note mappings, host parameters and
+  recipes. The text is `docs/plugin_usage.md`, embedded with `include_str!` and drawn from its
+  Markdown subset, so the page and the file are one (the README links the file, the release
+  notes can). The VST3 plugin's page ends with Steinberg's terms (assets/README.md, task-233);
+  the file marks that section with `<!-- vst3-only -->` and `<!-- /vst3-only -->` and the CLAP
+  plugin's page leaves it out (the editor knows its format, `Embed::format`; the file keeps it,
+  the user's decision of 2026-11-17). The section: the official VST
+  Compatible Logo, the variant for the dark window (`VST_Compatible_Logo_Steinberg_negative.svg`,
+  drawn unaltered from the file's bytes, 96 x 61.7 points: above 15 x 10 mm, 57 x 38 px at 1x),
+  "VST®" at the first VST of the page and "VST is a registered trademark of Steinberg Media
+  Technologies GmbH.", all checked by tests (`plugin_usage::tests`, `tests/editor.rs`). The
+  first release has no Standard Mapping on the page (the user, 2026-11-16: task-208/209
+  deferred): it says only that the sections listen on channels 1..4. The standalone's Help menu
+  is unchanged.
 - **The mode selector** (task-231; the user's design of 2026-11-17): in the transport, after the
   Bar display. A gray knob (Shuffle's design at 1.6 times its size, no ticks) at transport
   (250, 26) with an engraved line per position running to a yellow LED (the mixer routing keys'
@@ -876,16 +893,22 @@ emptied on the main thread at every command and every editor frame (`OrbParams::
 
 **Screenshots without a host.** `cargo run --release -p orb-plugin --example editor_preview --
 [SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--mode latch|gate|note] [--preview]
-[--format vst3|clap] [--click X,Y]... [--screenshot OUT.png]` shows the editor in a window of its own with a
+[--format vst3|clap] [--click X,Y]... [--scroll Y] [--screenshot OUT.png]` shows the editor in a window of its own with a
 stand-in host that runs the process side (no sound) and applies parameter changes at once;
 `--preview` enters the preview, `--click` clicks a point of the window (one every 6 frames from
-frame 10: `--click 104,11` opens Options at 1:1).
+frame 10: `--click 104,11` opens Options at 1:1; `--click 150,11 --click 190,39` opens Help >
+Plugin Usage); `--scroll Y` scrolls the window under the pointer down by Y points after the
+clicks (task-221); the screenshot is taken 24 frames and 1.5 s after the last click (16 frames
+more after a scroll), so a window opened by it has faded in and the scroll has settled, also on
+a loaded machine. `--ppp 1` is the system's scale (2 physical pixels a point on a Retina
+Mac), `--ppp 2` twice that.
 
 **Tests** (`tests/editor.rs`, headless egui with a stand-in `GuiContext`): the editor shows the
 plugin's song; a knob drag and a pattern button set their parameters through the host; Play
 and Stop enter and leave the preview, and in it a knob drag and a pattern button go to the
 preview set with no host gesture; the Play light is the preview's, not the host transport's;
-the Options menu has no mode items; a click on each mode selector row sets the mode, a vertical drag on its knob steps the modes, and the
+the Options menu has no mode items; the Help menu has Plugin Usage, which opens the
+guide with the trademark terms and fits the smallest window (task-221); a click on each mode selector row sets the mode, a vertical drag on its knob steps the modes, and the
 selector's mode is saved with the state (task-231); the editor reports its plugin format; the hidden
 controls take no clicks; no key acts; the LEDs and the Bar display follow the snapshot (dark
 Sync and Bar in the preview, the MIDI LED still lit by input); File > Open keeps the mode and New

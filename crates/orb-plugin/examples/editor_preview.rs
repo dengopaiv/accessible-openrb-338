@@ -4,7 +4,7 @@
 //! ```text
 //! cargo run --release -p orb-plugin --example editor_preview -- [SONG.rbs] [--size WxH]
 //!     [--ppp S] [--host-playing] [--midi] [--note CH,NOTE,VEL]... [--mode latch|gate|note]
-//!     [--preview] [--format vst3|clap] [--idle] [--click X,Y]...
+//!     [--preview] [--format vst3|clap] [--idle] [--click X,Y]... [--scroll Y]
 //!     [--screenshot OUT.png]
 //! ```
 //!
@@ -74,6 +74,8 @@ struct Args {
     /// `--idle`: the harness asks for no frames itself (for measuring the panel's own repaints).
     idle: bool,
     clicks: Vec<egui::Pos2>,
+    /// `--scroll Y`: scroll the window under the pointer down by Y points, after the clicks.
+    scroll: f32,
     shot: Option<PathBuf>,
 }
 
@@ -90,6 +92,7 @@ fn args() -> Args {
         format: PluginApi::Clap,
         idle: false,
         clicks: Vec::new(),
+        scroll: 0.0,
         shot: None,
     };
     let mut it = std::env::args().skip(1);
@@ -134,6 +137,7 @@ fn args() -> Args {
                 a.clicks
                     .push(egui::pos2(x.parse().unwrap(), y.parse().unwrap()));
             }
+            "--scroll" => a.scroll = it.next().expect("--scroll Y").parse().unwrap(),
             "--screenshot" => a.shot = Some(it.next().expect("--screenshot OUT.png").into()),
             s if !s.starts_with('-') => a.song = Some(s.into()),
             s => panic!("unknown option {s}"),
@@ -153,8 +157,11 @@ struct Preview {
     notes: Vec<(u8, u8, u8)>,
     idle: bool,
     clicks: Vec<egui::Pos2>,
+    scroll: f32,
     shot: Option<PathBuf>,
     shown: u32,
+    /// The time (egui's clock) from which the screenshot may be taken.
+    ready_at: f64,
 }
 
 impl Preview {
@@ -204,10 +211,24 @@ impl Preview {
 
 impl eframe::App for Preview {
     /// The `--click`s: a press at frame `10 + 6k`, the release two frames later.
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         let f = self.shown as usize;
         if f < 10 {
             return;
+        }
+        // the scroll: the pointer to the middle, then the wheel, 14 frames after the last click
+        let scroll_at = 10 + 6 * self.clicks.len() + 14;
+        if self.scroll != 0.0 && f == scroll_at {
+            raw.events
+                .push(egui::Event::PointerMoved(ctx.content_rect().center()));
+        } else if self.scroll != 0.0 && f == scroll_at + 2 {
+            raw.events.push(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -self.scroll),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: egui::Modifiers::NONE,
+            });
         }
         let (k, r) = ((f - 10) / 6, (f - 10) % 6);
         let Some(&pos) = self.clicks.get(k) else {
@@ -236,7 +257,19 @@ impl eframe::App for Preview {
             ui.ctx().request_repaint();
         }
         self.shown += 1;
-        if self.shown == 30
+        // 30 frames, or 24 after the last click (a window opened by it has faded in), and 16
+        // more after a scroll (it has settled, task-221)
+        let shot_at = 30.max(10 + 6 * self.clicks.len() as u32 + 24)
+            + if self.scroll != 0.0 { 16 } else { 0 };
+        // and 1.5 s of the clock after the last click and scroll, for a machine under load,
+        // where frames are slow and animations run by time
+        let last = 10 + 6 * self.clicks.len() as u32 + if self.scroll != 0.0 { 16 } else { 0 };
+        if self.shown == last {
+            self.ready_at = now + 1.5;
+        }
+        if self.shown >= shot_at
+            && now >= self.ready_at
+            && self.shot.is_some()
             && let Some(path) = self.shot.take()
         {
             ui.ctx()
@@ -293,8 +326,10 @@ fn main() -> eframe::Result {
                 notes: a.notes,
                 idle: a.idle,
                 clicks: a.clicks,
+                scroll: a.scroll,
                 shot: a.shot,
                 shown: 0,
+                ready_at: 0.0,
             }))
         }),
     )
