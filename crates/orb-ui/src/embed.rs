@@ -599,6 +599,10 @@ impl App {
         }
         let id = Id::unique("orb mode knob");
         let r = ui.interact(hit, id, Sense::drag());
+        // like `knob`: also during a drag that has left the area
+        if r.hovered() || r.is_pointer_button_down_on() || r.dragged() {
+            ui.ctx().set_cursor_icon(CursorIcon::ResizeVertical);
+        }
         if r.drag_started() {
             ui.data_mut(|d| d.insert_temp(id, current));
         }

@@ -3,10 +3,11 @@ id: TASK-241
 title: >-
   Plugin panel: the mode knob shows the vertical-resize cursor like the other
   knobs
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-17T17:35:00Z'
+updated_date: '2026-11-17T17:45:00Z'
 labels:
   - ui
   - player
@@ -33,8 +34,30 @@ Add a test (crates/orb-ui, where the embed/mode selector tests are, e.g. embed.r
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Hovering or dragging the mode knob shows the vertical-resize cursor, as the other knobs do; the mode rows don't change the cursor.
-- [ ] #2 A test checks the cursor for the knob and a row.
-- [ ] #3 cargo test, cargo clippy --all-targets -- -D warnings and cargo +nightly fmt --all --check pass.
-- [ ] #4 The user's check in a DAW (Ableton Live or REAPER): the cursor changes over the mode knob.
+- [x] #1 Hovering or dragging the mode knob shows the vertical-resize cursor, as the other knobs do; the mode rows don't change the cursor.
+- [x] #2 A test checks the cursor for the knob and a row.
+- [x] #3 cargo test, cargo clippy --all-targets -- -D warnings and cargo +nightly fmt --all --check pass.
+- [x] #4 The user's check in a DAW (Ableton Live or REAPER): the cursor changes over the mode knob.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. embed.rs mode_selector: set CursorIcon::ResizeVertical when the knob's response is hovered, pressed or dragged (as app.rs knob). 2. Headless integration test crates/orb-ui/tests/plugin_mode_cursor.rs with a fake Embed (App::embedded): knob center gives ResizeVertical, a mode row does not, a drag that leaves the knob keeps it. 3. fmt, clippy, cargo test, build bundles.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-a26130b7ff1bbc4fe
+
+Fix: crates/orb-ui/src/embed.rs mode_selector sets ResizeVertical when the knob response is hovered, pressed or dragged. Test: crates/orb-ui/tests/plugin_mode_cursor.rs (fake Embed via App::embedded; knob center ResizeVertical, mode row not, kept during a drag that left the knob, gone after release). fmt check ok, clippy ok, cargo test 896 pass 0 fail. Bundles built: target/bundled/OpenRB-338.clap and .vst3 in the worktree. AC 4 awaits the user's DAW check.
+
+User check in Ableton Live, 2026-11-17: 'it works', the cursor changes over the mode knob (AC 4).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The mode knob's drag area sets the vertical-resize cursor on hover, press or drag, like the other knobs; the rows set none. New headless test plugin_mode_cursor. cargo test 896 pass, clippy and nightly fmt clean. The user's check in Ableton Live passed 2026-11-17.
+<!-- SECTION:FINAL_SUMMARY:END -->
