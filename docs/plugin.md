@@ -696,7 +696,9 @@ are pixel-identical):
   sets the song's control values as host parameters and note mode to Latch Pattern Mode
   (task-185; a pattern mode stays, task-218); File > New keeps the mode. The file browser is orb-ui's own, egui-drawn (task-046),
   so no native dialog is opened from the plugin window; its folders and the Mods folder are the
-  standalone's settings file (`OpenRB-338/ui.toml`), shared.
+  standalone's settings file (`OpenRB-338/ui.toml`), shared; a save merges only its own
+  change into the file as it is then, so open instances do not overwrite each other
+  (task-229).
 - Mods: a mod chosen (the Mods menu, a song's mod, Choose file) is read and given to the plugin
   (`OrbParams::set_mod`, embedded in the state). An editor that opens on a state's mod names a
   copy of its bytes in the temporary folder (`OpenRB-338/mods/<sha256>.rbm`), or the file an

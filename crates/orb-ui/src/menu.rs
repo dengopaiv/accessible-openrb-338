@@ -969,7 +969,8 @@ impl App {
                 self.panel.set_vintage(on);
             }
             Cmd::ToggleStartupSound => {
-                self.settings.startup_sound = !self.settings.startup_sound;
+                let on = !self.settings.startup_sound;
+                self.settings.set_startup_sound(on);
                 if let Err(e) = self.settings.save() {
                     self.fail(e);
                 }

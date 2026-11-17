@@ -212,3 +212,192 @@ fn orb_ui_config_names_the_settings_file() {
         assert_eq!(default.parent().unwrap().file_name().unwrap(), "OpenRB-338");
     }
 }
+
+/// task-229: a save applies only this instance's change to the file as it is now.
+#[test]
+fn a_save_keeps_the_changes_another_instance_made() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    let mut seed = Settings::load_from(&file);
+    seed.recent = vec![p("/r0")];
+    seed.save().unwrap();
+
+    let mut a = Settings::load_from(&file);
+    let mut b = Settings::load_from(&file);
+    a.mods_dir = Some(p("/mods"));
+    a.save().unwrap();
+    b.note_recent(&p("/r1"));
+    b.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.mods_dir, Some(p("/mods")));
+    assert_eq!(r.recent, vec![p("/r1"), p("/r0")]);
+    // b's memory reflects the merged file.
+    assert_eq!(b, r);
+
+    // Every other key: a save changes only the key it was for.
+    let mut a = Settings::load_from(&file);
+    let mut b = Settings::load_from(&file);
+    a.songs_dir = Some(p("/songs"));
+    a.last_song_dir = Some(p("/ls"));
+    a.last_mod_dir = Some(p("/lm"));
+    a.set_preferred_mod("AXIOM", Some("a.rbm"));
+    a.startup_sound = false;
+    a.note_recent(&p("/r2"));
+    a.save().unwrap();
+    b.set_preferred_mod("Alpha", Some("b.rbm"));
+    b.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.songs_dir, Some(p("/songs")));
+    assert_eq!(r.last_song_dir, Some(p("/ls")));
+    assert_eq!(r.last_mod_dir, Some(p("/lm")));
+    assert!(!r.startup_sound);
+    assert_eq!(r.mods_dir, Some(p("/mods")));
+    assert_eq!(r.preferred_mod("AXIOM"), Some("a.rbm"));
+    assert_eq!(r.preferred_mod("Alpha"), Some("b.rbm"));
+    assert_eq!(r.recent, vec![p("/r2"), p("/r1"), p("/r0")]);
+    assert_eq!(b, r);
+
+    // The other direction: b changes keys a did not; a clears a preference and notes a
+    // folder that is already in the list.
+    let mut a = Settings::load_from(&file);
+    let mut b = Settings::load_from(&file);
+    b.last_mod_dir = Some(p("/lm2"));
+    b.startup_sound = true;
+    b.songs_dir = Some(p("/songs2"));
+    b.save().unwrap();
+    a.set_preferred_mod("alpha", None);
+    a.note_recent(&p("/r0"));
+    a.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.last_mod_dir, Some(p("/lm2")));
+    assert_eq!(r.songs_dir, Some(p("/songs2")));
+    assert!(r.startup_sound);
+    assert_eq!(r.preferred_mod("Alpha"), None);
+    assert_eq!(r.preferred_mod("AXIOM"), Some("a.rbm"));
+    assert_eq!(r.recent, vec![p("/r0"), p("/r2"), p("/r1")]);
+    assert_eq!(a, r);
+}
+
+/// An explicit set that equals what this instance last saw still wins over another
+/// instance's change; clearing a key merges too.
+#[test]
+fn an_explicit_set_wins_even_when_equal_to_the_loaded_value() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    let mut seed = Settings::load_from(&file);
+    seed.set_last_song_dir(Some(p("/D")));
+    seed.set_songs_dir(Some(p("/SD")));
+    seed.set_mods_dir(Some(p("/MD")));
+    seed.set_last_mod_dir(Some(p("/LM")));
+    seed.save().unwrap();
+
+    let mut a = Settings::load_from(&file);
+    let mut b = Settings::load_from(&file);
+    b.set_last_song_dir(Some(p("/E")));
+    b.set_songs_dir(Some(p("/SE")));
+    b.set_mods_dir(Some(p("/ME")));
+    b.save().unwrap();
+    a.set_last_song_dir(Some(p("/D")));
+    a.set_songs_dir(Some(p("/SD")));
+    a.set_mods_dir(Some(p("/MD")));
+    a.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.last_song_dir, Some(p("/D")));
+    assert_eq!(r.songs_dir, Some(p("/SD")));
+    assert_eq!(r.mods_dir, Some(p("/MD")));
+    assert_eq!(a, r);
+
+    // Clearing merges across instances and leaves the other keys alone.
+    let mut a = Settings::load_from(&file);
+    let mut b = Settings::load_from(&file);
+    b.set_last_mod_dir(Some(p("/LM2")));
+    b.save().unwrap();
+    a.set_songs_dir(None);
+    a.set_mods_dir(None);
+    a.set_last_song_dir(None);
+    a.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(
+        (r.songs_dir, r.mods_dir, r.last_song_dir),
+        (None, None, None)
+    );
+    assert_eq!(r.last_mod_dir, Some(p("/LM2")));
+    let mut a = Settings::load_from(&file);
+    a.set_last_mod_dir(None);
+    a.save().unwrap();
+    assert_eq!(Settings::load_from(&file).last_mod_dir, None);
+}
+
+/// A missing or damaged file at save time gets this instance's whole copy.
+#[test]
+fn a_save_over_a_missing_or_damaged_file_writes_the_whole_copy() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    let mut a = Settings::load_from(&file);
+    a.set_mods_dir(Some(p("/mods")));
+    a.set_startup_sound(false);
+    a.save().unwrap();
+    let mut b = Settings::load_from(&file);
+    fs::remove_file(&file).unwrap();
+    b.note_recent(&p("/r"));
+    b.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.mods_dir, Some(p("/mods")));
+    assert!(!r.startup_sound);
+    assert_eq!(r.recent, vec![p("/r")]);
+    // Damaged.
+    let mut c = Settings::load_from(&file);
+    fs::write(&file, "this is [not toml").unwrap();
+    c.set_songs_dir(Some(p("/s")));
+    c.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.mods_dir, Some(p("/mods")));
+    assert_eq!(r.songs_dir, Some(p("/s")));
+}
+
+/// A read error other than "not found" fails the save and leaves the file and the settings
+/// alone.
+#[test]
+#[cfg(unix)]
+fn a_save_fails_on_an_unreadable_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    let mut a = Settings::load_from(&file);
+    a.set_mods_dir(Some(p("/mods")));
+    a.save().unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&file).is_ok() {
+        eprintln!("skipped: the file stays readable (running as root?)");
+        return;
+    }
+    let mut b = Settings::load_from(&file);
+    b.set_songs_dir(Some(p("/s")));
+    let before = b.clone();
+    assert!(b.save().is_err());
+    assert_eq!(b, before);
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(Settings::load_from(&file).mods_dir, Some(p("/mods")));
+    assert_eq!(Settings::load_from(&file).songs_dir, None);
+}
+
+/// The merged recent list keeps the dedupe and the limit.
+#[test]
+fn merged_recent_folders_are_deduped_and_limited() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    let mut a = Settings::load_from(&file);
+    let mut b = Settings::load_from(&file);
+    for i in 0..MAX_RECENT {
+        a.note_recent(&p(&format!("/a{i}")));
+    }
+    a.save().unwrap();
+    b.note_recent(&p("/a3"));
+    b.note_recent(&p("/b"));
+    b.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.recent.len(), MAX_RECENT);
+    assert_eq!(&r.recent[..2], &[p("/b"), p("/a3")]);
+    assert_eq!(r.recent.iter().filter(|d| **d == p("/a3")).count(), 1);
+    assert_eq!(b, r);
+}

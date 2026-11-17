@@ -1014,7 +1014,19 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   (an array) and `startup_sound` at `$ORB_UI_CONFIG`, else `OpenRB-338/ui.toml` (task-068;
   settings of the old `rb/` folder are not carried over) in `$XDG_CONFIG_HOME` (Linux
   `~/.config`, macOS `~/Library/Application Support`, Windows `%APPDATA%`); it is rewritten
-  whole, through a temporary file and a rename, when a path is chosen or a folder set. A
+  written through a temporary file and a rename, when a path is chosen or a folder set. The
+  file is shared by the standalone and every plugin instance, so a save (task-229) reads it
+  again first and applies only what this instance changed since it last read or wrote it: a
+  key set overwrites that key, a folder noted is pushed onto the file's `recent` list (dedupe,
+  8), a preferred mod sets or clears its entry; the in-memory settings then take the merged
+  result. A key is "changed" when its setter (`set_songs_dir`, `set_mods_dir`,
+  `set_last_song_dir`, `set_last_mod_dir`, `set_startup_sound`, `set_preferred_mod`) was
+  called, even to the value last seen, so it wins over another instance's change; `recent`
+  changes only through `note_recent`. When the file is missing or damaged at save time the
+  whole in-memory copy is written (an unrelated save never resets this instance's values to
+  the defaults); any other read error fails the save and leaves the file and the settings
+  alone. The temporary file name is unique per process and call. Saves in the same instant
+  can still race (no lock). A
   missing or damaged file means the defaults (a damaged one stays until the next save), a key
   of the wrong type is skipped, unknown keys are ignored. A path that is not valid UTF-8 is
   left out of the file on save (a `recent` entry is dropped; `songs_dir`, `mods_dir`,

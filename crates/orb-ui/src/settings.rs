@@ -12,22 +12,36 @@
 //! Reading never fails: a missing or damaged file gives the defaults (a damaged file stays as
 //! it is until the next save), a key of the wrong type is skipped and the others kept, and
 //! unknown keys are
-//! ignored. Saving writes the whole file through a temporary file and a rename, and returns
-//! its errors for the browser to show. A path that is not valid UTF-8 cannot be stored in
-//! TOML (and a lossy string would name another folder), so a save leaves it out: a `recent`
-//! entry is dropped, `songs_dir`, `mods_dir`, `last_song_dir` and `last_mod_dir` are omitted and
-//! fall back to the default. An empty `$ORB_UI_CONFIG` counts as unset. The old `ui.conf` is
-//! neither read nor deleted.
+//! ignored. Saving reads the file again and applies only what this instance changed since it
+//! last read or wrote it, so another instance's changes survive (task-229; saves in the same
+//! instant can still race, there is no lock). A change is recorded by the setters
+//! (`set_songs_dir`, `set_mods_dir`, `set_last_song_dir`, `set_last_mod_dir`,
+//! `set_startup_sound`, `set_preferred_mod`), which win over the file even when the value
+//! equals what this instance last saw; a field assigned directly counts as changed when it
+//! differs from what was last read or written. The list `recent` is changed only through
+//! `note_recent` (a folder is pushed onto the file's list; a direct assignment is not
+//! merged unless nothing was noted). When the file is missing or damaged at save time, the
+//! whole in-memory copy is written, so an unrelated save never resets this instance's values
+//! to the defaults; any other read error (not "not found") makes the save fail and leaves the
+//! file and these settings alone. The result is written through a unique temporary file in
+//! the same folder and a rename, these settings are refreshed from it, and the errors are
+//! returned for the browser to show. `base`, `noted` and `dirty` are public only so a struct
+//! literal with `..Settings::default()` compiles outside the crate (its `base` is the defaults). A
+//! path that is not valid UTF-8 cannot be stored in TOML (and a lossy string would name another
+//! folder), so a save leaves it out: a `recent` entry is dropped, `songs_dir`, `mods_dir`,
+//! `last_song_dir` and `last_mod_dir` are omitted and fall back to the default. An empty
+//! `$ORB_UI_CONFIG` counts as unset. The old `ui.conf` is neither read nor deleted.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 
 /// How many recent folders are kept.
 pub const MAX_RECENT: usize = 8;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Settings {
     /// The original's preference "Play Mod Startup Sound" (on by default: the preferences'
     /// constructor `sub_41CAA4` sets it, 0x41CB13): a mod change plays the mod's startup
@@ -51,7 +65,42 @@ pub struct Settings {
     pub preferred_mods: BTreeMap<String, String>,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
+    /// The values as last read from or written to the file: a save changes only what differs
+    /// from them (task-229).
+    /// Public only so `..Settings::default()` works outside the crate; not for use.
+    #[doc(hidden)]
+    pub base: Box<Values>,
+    /// Folders noted since the last read or write, oldest first: a save pushes them onto the
+    /// list found in the file.
+    #[doc(hidden)]
+    pub noted: Vec<PathBuf>,
+    /// What the setters recorded since the last read or write: the key names, and
+    /// `pref:<lowercase INFO name>` for a preferred mod.
+    #[doc(hidden)]
+    pub dirty: BTreeSet<String>,
 }
+
+/// The stored values of [`Settings`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[doc(hidden)]
+pub struct Values {
+    startup_sound: bool,
+    songs_dir: Option<PathBuf>,
+    mods_dir: Option<PathBuf>,
+    recent: Vec<PathBuf>,
+    last_song_dir: Option<PathBuf>,
+    last_mod_dir: Option<PathBuf>,
+    preferred_mods: BTreeMap<String, String>,
+}
+
+/// Equal when the public fields are (the save bookkeeping is not compared).
+impl PartialEq for Settings {
+    fn eq(&self, o: &Self) -> bool {
+        self.values() == o.values() && self.file == o.file
+    }
+}
+
+impl Eq for Settings {}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -64,6 +113,12 @@ impl Default for Settings {
             last_mod_dir: None,
             preferred_mods: BTreeMap::new(),
             file: None,
+            base: Box::new(Values {
+                startup_sound: true,
+                ..Values::default()
+            }),
+            noted: Vec::new(),
+            dirty: BTreeSet::new(),
         }
     }
 }
@@ -149,15 +204,25 @@ impl Settings {
     /// Reads `file`; a missing or unreadable file gives the defaults. Later writes go to
     /// `file`.
     pub fn load_from(file: &Path) -> Self {
-        let mut s = Self {
-            file: Some(file.to_path_buf()),
-            ..Self::default()
-        };
-        let Ok(text) = std::fs::read_to_string(file) else {
-            return s;
+        let mut s = Self::read(file).ok().flatten().unwrap_or_default();
+        s.file = Some(file.to_path_buf());
+        s.base = Box::new(s.values());
+        s
+    }
+
+    /// The values of `file`: `None` when it is missing or damaged, an error for any other
+    /// read error.
+    fn read(file: &Path) -> Result<Option<Self>, std::io::Error> {
+        let mut s = Self::default();
+        let text = match std::fs::read_to_string(file) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            // Not UTF-8: damaged.
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Ok(None),
+            Err(e) => return Err(e),
         };
         let Ok(table) = text.parse::<toml::Table>() else {
-            return s;
+            return Ok(None);
         };
         if let Some(b) = table.get("startup_sound").and_then(|v| v.as_bool()) {
             s.startup_sound = b;
@@ -180,7 +245,115 @@ impl Settings {
                 }
             }
         }
-        s
+        Ok(Some(s))
+    }
+
+    fn values(&self) -> Values {
+        Values {
+            startup_sound: self.startup_sound,
+            songs_dir: self.songs_dir.clone(),
+            mods_dir: self.mods_dir.clone(),
+            recent: self.recent.clone(),
+            last_song_dir: self.last_song_dir.clone(),
+            last_mod_dir: self.last_mod_dir.clone(),
+            preferred_mods: self.preferred_mods.clone(),
+        }
+    }
+
+    /// The file's current values with this instance's changes since it last read or wrote
+    /// applied: each key set through its setter or differing from the base overwrites that
+    /// key, the noted folders are pushed onto the file's `recent`, a preferred mod that was
+    /// set, changed or cleared sets, changes or clears only its entry. A missing or damaged
+    /// file gives this instance's whole copy; another read error is returned.
+    fn merged(&self, file: &Path) -> Result<Values, std::io::Error> {
+        let v = self.values();
+        let Some(disk) = Self::read(file)? else {
+            return Ok(v);
+        };
+        let mut m = disk.values();
+        let b = &*self.base;
+        let set = |k: &str| self.dirty.contains(k);
+        if set("startup_sound") || v.startup_sound != b.startup_sound {
+            m.startup_sound = v.startup_sound;
+        }
+        if set("songs_dir") || v.songs_dir != b.songs_dir {
+            m.songs_dir = v.songs_dir;
+        }
+        if set("mods_dir") || v.mods_dir != b.mods_dir {
+            m.mods_dir = v.mods_dir;
+        }
+        if set("last_song_dir") || v.last_song_dir != b.last_song_dir {
+            m.last_song_dir = v.last_song_dir;
+        }
+        if set("last_mod_dir") || v.last_mod_dir != b.last_mod_dir {
+            m.last_mod_dir = v.last_mod_dir;
+        }
+        if self.noted.is_empty() && v.recent != b.recent {
+            // The list was assigned as a whole.
+            m.recent = v.recent;
+        }
+        for dir in &self.noted {
+            m.recent.retain(|d| d != dir);
+            m.recent.insert(0, dir.clone());
+            m.recent.truncate(MAX_RECENT);
+        }
+        for name in b.preferred_mods.keys() {
+            if !v.preferred_mods.contains_key(name) {
+                m.preferred_mods
+                    .retain(|n, _| !n.eq_ignore_ascii_case(name));
+            }
+        }
+        for (name, f) in &v.preferred_mods {
+            if b.preferred_mods.get(name) != Some(f) {
+                m.preferred_mods
+                    .retain(|n, _| !n.eq_ignore_ascii_case(name));
+                m.preferred_mods.insert(name.clone(), f.clone());
+            }
+        }
+        for key in &self.dirty {
+            let Some(low) = key.strip_prefix("pref:") else {
+                continue;
+            };
+            m.preferred_mods.retain(|n, _| !n.eq_ignore_ascii_case(low));
+            if let Some((n, f)) = v
+                .preferred_mods
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(low))
+            {
+                m.preferred_mods.insert(n.clone(), f.clone());
+            }
+        }
+        Ok(m)
+    }
+
+    /// Sets `songs_dir`; the next save writes it whatever the file holds.
+    pub fn set_songs_dir(&mut self, dir: Option<PathBuf>) {
+        self.songs_dir = dir;
+        self.dirty.insert("songs_dir".into());
+    }
+
+    /// Sets `mods_dir`; the next save writes it whatever the file holds.
+    pub fn set_mods_dir(&mut self, dir: Option<PathBuf>) {
+        self.mods_dir = dir;
+        self.dirty.insert("mods_dir".into());
+    }
+
+    /// Sets `last_song_dir`; the next save writes it whatever the file holds.
+    pub fn set_last_song_dir(&mut self, dir: Option<PathBuf>) {
+        self.last_song_dir = dir;
+        self.dirty.insert("last_song_dir".into());
+    }
+
+    /// Sets `last_mod_dir`; the next save writes it whatever the file holds.
+    pub fn set_last_mod_dir(&mut self, dir: Option<PathBuf>) {
+        self.last_mod_dir = dir;
+        self.dirty.insert("last_mod_dir".into());
+    }
+
+    /// Sets `startup_sound`; the next save writes it whatever the file holds.
+    pub fn set_startup_sound(&mut self, on: bool) {
+        self.startup_sound = on;
+        self.dirty.insert("startup_sound".into());
     }
 
     /// The file preferred for the INFO name `name` (ignoring ASCII case), if one is set.
@@ -199,21 +372,30 @@ impl Settings {
         if let Some(f) = file {
             self.preferred_mods.insert(name.to_string(), f.to_string());
         }
+        self.dirty
+            .insert(format!("pref:{}", name.to_ascii_lowercase()));
     }
 
-    /// Writes the settings to their file (a no-op without one).
-    pub fn save(&self) -> Result<(), String> {
-        let Some(file) = &self.file else {
+    /// Writes this instance's changes to the file (a no-op without one): the file is read
+    /// again first and only what changed here since the last read or write is applied to it,
+    /// so another instance's changes to other keys survive (task-229). These settings then
+    /// take the merged values.
+    pub fn save(&mut self) -> Result<(), String> {
+        let Some(file) = self.file.clone() else {
             return Ok(());
         };
+        let file = &file;
+        let m = self
+            .merged(file)
+            .map_err(|e| format!("{}: cannot read: {e}", file.display()))?;
         let text = toml::to_string(&Stored {
-            songs_dir: self.songs_dir.as_deref().and_then(storable),
-            mods_dir: self.mods_dir.as_deref().and_then(storable),
-            startup_sound: self.startup_sound,
-            recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
-            last_song_dir: self.last_song_dir.as_deref().and_then(storable),
-            last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),
-            preferred_mods: self
+            songs_dir: m.songs_dir.as_deref().and_then(storable),
+            mods_dir: m.mods_dir.as_deref().and_then(storable),
+            startup_sound: m.startup_sound,
+            recent: m.recent.iter().filter_map(|p| storable(p)).collect(),
+            last_song_dir: m.last_song_dir.as_deref().and_then(storable),
+            last_mod_dir: m.last_mod_dir.as_deref().and_then(storable),
+            preferred_mods: m
                 .preferred_mods
                 .iter()
                 .map(|(n, f)| (n.as_str(), f.as_str()))
@@ -225,15 +407,33 @@ impl Settings {
                 .map_err(|e| format!("{}: cannot create: {e}", dir.display()))?;
         }
         // Written next to the file and renamed over it, so a crash never leaves half a file.
+        // The name is unique per process and call, so two instances saving at once never
+        // share a temporary file.
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
         let mut tmp = file.as_os_str().to_owned();
-        tmp.push(".tmp");
+        tmp.push(format!(
+            ".{}.{}.tmp",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         let tmp = PathBuf::from(tmp);
         std::fs::write(&tmp, text)
             .and_then(|()| std::fs::rename(&tmp, file))
             .map_err(|e| {
                 let _ = std::fs::remove_file(&tmp);
                 format!("{}: cannot write: {e}", file.display())
-            })
+            })?;
+        self.startup_sound = m.startup_sound;
+        self.songs_dir = m.songs_dir.clone();
+        self.mods_dir = m.mods_dir.clone();
+        self.recent = m.recent.clone();
+        self.last_song_dir = m.last_song_dir.clone();
+        self.last_mod_dir = m.last_mod_dir.clone();
+        self.preferred_mods = m.preferred_mods.clone();
+        *self.base = m;
+        self.noted.clear();
+        self.dirty.clear();
+        Ok(())
     }
 
     /// Puts `dir` first in the recent folders.
@@ -241,5 +441,7 @@ impl Settings {
         self.recent.retain(|d| d != dir);
         self.recent.insert(0, dir.to_path_buf());
         self.recent.truncate(MAX_RECENT);
+        self.noted.retain(|d| d != dir);
+        self.noted.push(dir.to_path_buf());
     }
 }

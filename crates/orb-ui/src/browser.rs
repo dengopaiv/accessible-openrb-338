@@ -575,11 +575,10 @@ impl Browser {
         }
         if let Some(dir) = path.parent() {
             settings.note_recent(dir);
-            let last = match self.mode {
-                Mode::ChooseMod => &mut settings.last_mod_dir,
-                _ => &mut settings.last_song_dir,
-            };
-            *last = Some(dir.to_path_buf());
+            match self.mode {
+                Mode::ChooseMod => settings.set_last_mod_dir(Some(dir.to_path_buf())),
+                _ => settings.set_last_song_dir(Some(dir.to_path_buf())),
+            }
             if let Err(e) = settings.save() {
                 // The choice stands; the failed note does not block it, the app shows it.
                 self.failures.push(e);
@@ -822,19 +821,19 @@ impl Browser {
             self.hits
                 .push(("button:Use as songs folder".into(), b.rect));
             if b.clicked() {
-                settings.songs_dir = Some(self.dir.clone());
+                settings.set_songs_dir(Some(self.dir.clone()));
                 self.save_settings(settings);
             }
             let b = ui.button("Use as mods folder");
             self.hits.push(("button:Use as mods folder".into(), b.rect));
             if b.clicked() {
-                settings.mods_dir = Some(self.dir.clone());
+                settings.set_mods_dir(Some(self.dir.clone()));
                 self.save_settings(settings);
             }
         });
     }
 
-    fn save_settings(&mut self, settings: &Settings) {
+    fn save_settings(&mut self, settings: &mut Settings) {
         if let Err(e) = settings.save() {
             self.failures.push(e);
         }
