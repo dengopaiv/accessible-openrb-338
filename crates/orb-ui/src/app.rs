@@ -665,7 +665,7 @@ pub fn flush_part_textures(ctx: &egui::Context) {
     });
 }
 
-fn paint_part_rotated(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>) {
+pub(crate) fn paint_part_rotated(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>) {
     paint_part_with(ui, name, rect, rot, Color32::WHITE);
 }
 

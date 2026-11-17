@@ -11,7 +11,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::svg::{Part, Svg, n, pal};
+use crate::svg::{Part, Svg, n, pal, polar};
 use crate::text::{self, Anchor, Label};
 
 /// The sweep of a knob: the pointer turns from -KNOB_SWEEP to +KNOB_SWEEP degrees (0 =
@@ -452,23 +452,29 @@ fn knob_body(s: &mut Svg, k: &KnobDesign) {
         _ => {
             // the gray sections': a flat blue-gray cap in a black knurled collar
             knob_ticks(s, cx, cy, 9.4, 11.6, 7, "#e6ecef", 0.7, 0.9);
-            let (r, t) = (7.7, 5.75);
-            s.g_at(cx, cy);
-            knob_shadow(s, 1.4, 1.7, 2.0 * r + 1.4, 0.10, 2.0 * r, 0.30);
-            circle(s, 0.0, 0.0, r, "url(#gGrayCollar)", &sk("#050506", 0.35));
-            knurl(
-                s,
-                (r + t) / 2.0 + 0.1,
-                "#8a9098",
-                0.35,
-                r - t - 0.5,
-                "0.4 0.62",
-            );
-            circle(s, 0.0, 0.0, t, "url(#gGrayTop)", "");
-            circle(s, 0.0, 0.0, t - 0.2, "none", &rim(0.4));
-            s.end_g();
+            gray_knob_cap(s, cx, cy);
         }
     }
+}
+
+/// The gray knob's collar and cap centered at (cx, cy), without its ticks.
+fn gray_knob_cap(s: &mut Svg, cx: f32, cy: f32) {
+    let rim = |w: f32| format!(r#"stroke="url(#gRimLight)" stroke-width="{}""#, n(w));
+    let (r, t) = (7.7, 5.75);
+    s.g_at(cx, cy);
+    knob_shadow(s, 1.4, 1.7, 2.0 * r + 1.4, 0.10, 2.0 * r, 0.30);
+    circle(s, 0.0, 0.0, r, "url(#gGrayCollar)", &sk("#050506", 0.35));
+    knurl(
+        s,
+        (r + t) / 2.0 + 0.1,
+        "#8a9098",
+        0.35,
+        r - t - 0.5,
+        "0.4 0.62",
+    );
+    circle(s, 0.0, 0.0, t, "url(#gGrayTop)", "");
+    circle(s, 0.0, 0.0, t - 0.2, "none", &rim(0.4));
+    s.end_g();
 }
 
 /// The level fader: the track (11 ticks and the slot, 15 x 54) and the handle (15 x 11).
@@ -963,6 +969,28 @@ fn transport_bg(out: &mut Vec<Part>) {
 /// was removed by the user's decision of 2026-11-16.)
 pub const PLUGIN_BAR: (f32, f32, f32, f32) = (184.0, 27.0, 27.0, 16.0);
 
+/// The plugin format's logo parts (`plugin_logo_vst3`, `plugin_logo_clap`): x, y, w, h in the
+/// transport, where orb-ui paints the one of the plugin's format.
+pub const PLUGIN_LOGO: (f32, f32, f32, f32) = (344.0, 0.0, 112.0, 50.0);
+/// The size of the "VST3" text (`plugin_logo_vst3`) and the x of its right edge in the logo
+/// part (the CLAP logo is placed by its own shift).
+const PLUGIN_VST_TEXT_SIZE: f32 = 28.0;
+const PLUGIN_LOGO_RIGHT: f32 = 107.5;
+
+/// The plugin's mode selector (task-231): the center of its knob in the transport, the
+/// knob's size as a multiple of the gray knob's, and each position's pointer angle (degrees,
+/// 0 = up, clockwise) and label, top to bottom.
+pub const PLUGIN_MODE_KNOB: (f32, f32) = (250.0, 26.0);
+pub const PLUGIN_MODE_SCALE: f32 = 1.6;
+/// The x of the positions' LEDs (their labels follow) and the y of each row.
+pub const PLUGIN_MODE_LED_X: f32 = 285.0;
+pub const PLUGIN_MODE_ROWS: [f32; 3] = [13.0, 26.0, 39.0];
+pub const PLUGIN_MODE_LABELS: [(f32, &str); 3] = [
+    (45.0, "Latch Pattern"),
+    (90.0, "Gate Pattern"),
+    (135.0, "Note"),
+];
+
 /// The plugin's transport (task-201): the standalone's without what plays only in song mode or
 /// the plugin leaves to the host (the Pattern/Song switch, Rewind, Fast forward, Record, the
 /// bar arrows, the loop) and without the tempo's arrows (the tempo is the host's); a well for
@@ -998,6 +1026,117 @@ fn transport_plugin_bg(out: &mut Vec<Part>) {
         let (x, y, w, h) = PLUGIN_BAR;
         stext(s, x, 24.2, "Bar", 8.6, title);
         display_frame(s, x, y, w, h);
+        // the mode selector (task-231): the knob's body, a tick per position and its label
+        // beside the tick, around the knob; orb-ui draws the pointer
+        let (cx, cy) = PLUGIN_MODE_KNOB;
+        let mut lines = String::new();
+        for (i, (deg, _)) in PLUGIN_MODE_LABELS.into_iter().enumerate() {
+            // a tick out of the knob that turns level at the row and runs to its LED
+            let y = PLUGIN_MODE_ROWS[i];
+            let (x0, y0) = polar(cx, cy, 15.8, deg);
+            let r = (y - cy).abs() / deg.to_radians().sin().max(0.01);
+            let (x1, _) = polar(cx, cy, r.max(15.8), deg);
+            let x2 = PLUGIN_MODE_LED_X - 4.5;
+            if y == cy {
+                lines += &format!("M{} {} L{} {}", n(x0), n(y), n(x2), n(y));
+            } else {
+                let (a, b) = (n(x1), n(y));
+                lines += &format!("M{} {} L{a} {b} L{} {b}", n(x0), n(y0), n(x2));
+            }
+            led_round(s, PLUGIN_MODE_LED_X, y, 1.9, "Y", false);
+        }
+        // engraved: a dark groove with a light lower edge
+        let join = r#"stroke-linecap="round" stroke-linejoin="round""#;
+        s.g("translate(0 0.55)", "");
+        stroke_path(
+            s,
+            &lines,
+            "#edf1f3",
+            0.6,
+            &format!(r#"{join} opacity="0.35""#),
+        );
+        s.end_g();
+        stroke_path(
+            s,
+            &lines,
+            "#1b262c",
+            0.8,
+            &format!(r#"{join} opacity="0.6""#),
+        );
+        s.g(
+            &format!(
+                "translate({} {}) scale({})",
+                n(cx),
+                n(cy),
+                n(PLUGIN_MODE_SCALE)
+            ),
+            "",
+        );
+        gray_knob_cap(s, 0.0, 0.0);
+        s.end_g();
+    }));
+    // the plugin format's mark in a part of PLUGIN_LOGO (112 x 50 at x = 344 of the transport),
+    // right-aligned 6 px before the wordmark. VST3 (task-232, the user's decision of
+    // 2026-11-17): the plain text "VST3" in the panel's label font (Inter, bold), engraved as
+    // the CLAP logo, not Steinberg's logo (which does not fit the panel)
+    out.push(Part::new("plugin_logo_vst3", 112.0, 50.0, |s| {
+        let (size, right) = (PLUGIN_VST_TEXT_SIZE, PLUGIN_LOGO_RIGHT);
+        // the baseline puts the capitals' middle (0.727 of the size high) at y = 25
+        let y = 25.0 + size * 0.727 / 2.0;
+        let st = St::plain("").end();
+        for (dy, fill, op) in [(0.6, "#edf1f3", 0.22), (0.0, "#1b262c", 0.38)] {
+            let d = text::outline(&label(right, y + dy, "VST3", size, st));
+            s.raw(&format!(r#"<path d="{d}" fill="{fill}" opacity="{op}"/>"#));
+        }
+    }));
+    // the CLAP logo (MIT), engraved: a dark copy over a light copy 0.6 px lower
+    // (the path, its center, scale, the shift of its center from the part's)
+    {
+        let (d, (mx, my), k, dx) = (
+            crate::plugin_logos::CLAP,
+            (127.5, 133.5),
+            42.0 / 203.0,
+            32.0,
+        );
+        out.push(Part::new("plugin_logo_clap", 112.0, 50.0, |s| {
+            for (dy, fill, op) in [(0.6, "#edf1f3", 0.22), (0.0, "#1b262c", 0.38)] {
+                s.g(
+                    &format!(
+                        "translate({} {}) scale({k})",
+                        n(56.0 + dx - mx * k),
+                        n(25.0 + dy - my * k)
+                    ),
+                    &format!(r#"fill="{fill}" opacity="{op}""#),
+                );
+                s.raw(&format!(r#"<path d="{d}"/>"#));
+                s.end_g();
+            }
+        }));
+    }
+    // the mode selector's labels, 62 x 10 each: bold when selected
+    for (i, (_, label)) in PLUGIN_MODE_LABELS.into_iter().enumerate() {
+        // unselected as Sync and MIDI; selected bold and in the labels' bright color
+        for (state, weight, fill) in [("off", 500, LIGHT), ("on", 700, "#edf1f3")] {
+            out.push(Part::with_bleed(
+                format!("mode_label_{i}_{state}"),
+                62.0,
+                10.0,
+                1.0,
+                |s| {
+                    stext(
+                        s,
+                        0.0,
+                        7.7,
+                        label,
+                        7.2,
+                        St::label().start().w(weight).fill(fill),
+                    )
+                },
+            ));
+        }
+    }
+    out.push(Part::with_bleed("led_mode_on", 11.0, 11.0, 1.0, |s| {
+        led_round(s, 5.5, 5.5, 1.9, "Y", true)
     }));
     out.push(Part::with_bleed("led_transport_on", 11.0, 11.0, 1.0, |s| {
         led_round(s, 5.5, 5.5, 1.9, "G", true)

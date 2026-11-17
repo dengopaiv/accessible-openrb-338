@@ -96,7 +96,8 @@ pub enum Cmd {
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
     ToggleStartupSound,
     SetKeyMode(KeyMode),
-    /// The plugin's pattern or note mode (Options, a plugin's editor only; task-217).
+    /// The plugin's pattern or note mode (the panel's mode selector, a plugin's editor only;
+    /// task-217, task-231: the Options menu has no mode items).
     SetPluginMode(crate::embed::PluginMode),
 }
 
@@ -1290,19 +1291,9 @@ impl App {
                 *cmd = Some(Cmd::ToggleStartupSound);
                 ui.close();
             }
-            // the keyboard modes: none in a plugin's editor (task-201); the plugin's pattern
-            // and note modes instead (task-217)
+            // the keyboard modes: none in a plugin's editor (task-201); the plugin's mode is the
+            // panel's selector only (task-231), not a menu item
             if plugin {
-                let mode = self.plugin.as_ref().and_then(|p| p.embed.mode());
-                if let Some(mode) = mode {
-                    ui.separator();
-                    for (m, text) in crate::embed::MODE_ITEMS {
-                        if ui.radio(mode == m, text).clicked() {
-                            *cmd = Some(Cmd::SetPluginMode(m));
-                            ui.close();
-                        }
-                    }
-                }
                 return;
             }
             ui.separator();

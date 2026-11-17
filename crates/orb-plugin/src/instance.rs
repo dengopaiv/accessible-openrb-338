@@ -800,8 +800,8 @@ impl OrbParams {
         self.main().doc.mode
     }
 
-    /// Sets the mode (the Options menu; File > Open and File > New keep it, task-228); the
-    /// process side takes it at its next engine block.
+    /// Sets the mode (the panel's mode selector; File > Open and File > New keep it, task-228);
+    /// the process side takes it at its next engine block.
     pub fn set_mode(&self, mode: Mode) {
         let mut m = self.main();
         m.doc.mode = mode;

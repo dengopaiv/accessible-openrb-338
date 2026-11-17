@@ -13,9 +13,10 @@
 //!   width (a window of another shape, which the plugin's size hooks do not let the host make, is
 //!   filled black around the panel);
 //! - the Sync and MIDI LEDs light from the snapshot's flags (`host_sync`, `midi_in`);
-//! - Options has the plugin's mode ([`PluginMode`], [`MODE_ITEMS`], task-217, task-218); Play and
-//!   Stop are the plugin's preview, and the Play light shows only whether it runs
-//!   ([`Embed::previewing`]), not the engine's play state;
+//! - the plugin's mode ([`PluginMode`], [`MODE_ITEMS`], task-217, task-218) is set by the mode
+//!   selector of the transport (task-231), not by the Options menu; Play and Stop are the plugin's
+//!   preview, and the Play light shows only whether it runs ([`Embed::previewing`]), not the
+//!   engine's play state;
 //! - an invisible corner at the bottom right (the right wood's foot) resizes the window: the cursor
 //!   changes over it and a faint grip shows while hovered or dragged, and a drag asks the host for
 //!   a size of that rule.
@@ -34,6 +35,7 @@ use crate::app::{App, View};
 use crate::document::Document;
 use crate::layout::{PANEL_H, PANEL_W};
 use crate::link::Link;
+use crate::menu::Cmd;
 pub use crate::menu::MENU_H;
 use crate::model::Panel;
 use crate::session;
@@ -80,14 +82,19 @@ pub trait Embed: Send {
         let _ = size;
         None
     }
-    /// The plugin's pattern/note mode (task-217), which the Options menu shows and sets; `None`
-    /// when the plugin has no such setting.
+    /// The plugin's pattern/note mode (task-217), which the panel's mode selector shows and sets;
+    /// `None` when the plugin has no such setting.
     fn mode(&self) -> Option<PluginMode> {
         None
     }
-    /// The Options menu chose `mode`.
+    /// The mode selector chose `mode`.
     fn set_mode(&mut self, mode: PluginMode) {
         let _ = mode;
+    }
+    /// The plugin format the editor runs in (task-231): its logo shows on the transport. `None`
+    /// (the default): no logo.
+    fn format(&self) -> Option<PluginFormat> {
+        None
     }
     /// Whether the plugin's preview runs (task-217): the Play light shows this, not whether
     /// the engine plays, so the host's transport does not change Play and Stop. `None`: the
@@ -122,12 +129,44 @@ pub enum PluginMode {
     Note,
 }
 
-/// The Options menu's items for [`PluginMode`], in order.
+/// The plugin format of an editor ([`Embed::format`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PluginFormat {
+    Vst3,
+    Clap,
+}
+
+/// The modes of [`PluginMode`] in the order of the mode selector's rows (top to bottom), with
+/// their full names.
 pub const MODE_ITEMS: [(PluginMode, &str); 3] = [
     (PluginMode::Latch, "Latch Pattern Mode"),
     (PluginMode::Gate, "Gate Pattern Mode"),
     (PluginMode::Note, "Note Mode"),
 ];
+
+/// The mode selector (task-231) in panel pixels: the art's `PLUGIN_MODE_*` moved by the
+/// transport's x (16). The knob's center, its scale, the x of the LEDs and the y of the three
+/// rows (Latch, Gate, Note), and the pointer's angle per row (degrees, 0 = up, clockwise).
+pub const PLUGIN_MODE_KNOB: (f32, f32) = (16.0 + 250.0, 26.0);
+pub const PLUGIN_MODE_SCALE: f32 = 1.6;
+/// The knob's collar radius (the art's 7.7 times the scale): the knob's drag area is its square.
+pub const PLUGIN_MODE_KNOB_RADIUS: f32 = 7.7 * PLUGIN_MODE_SCALE;
+pub const PLUGIN_MODE_LED_X: f32 = 16.0 + 285.0;
+pub const PLUGIN_MODE_ROWS: [f32; 3] = [13.0, 26.0, 39.0];
+pub const PLUGIN_MODE_ANGLES: [f32; 3] = [45.0, 90.0, 135.0];
+
+/// The plugin format's logo part in panel pixels (x, y, w, h): the art's `PLUGIN_LOGO` moved by
+/// the transport's x.
+pub const PLUGIN_LOGO: (f32, f32, f32, f32) = (16.0 + 344.0, 0.0, 112.0, 50.0);
+
+/// A vertical drag on the mode knob moves one mode per this many panel pixels.
+pub const MODE_DRAG_STEP: f32 = 12.0;
+
+/// The mode index (0 Latch, 1 Gate, 2 Note) a drag of `dy` panel pixels (down is positive)
+/// reaches from the mode `start`.
+fn drag_mode(start: usize, dy: f32) -> usize {
+    (start as f32 + (dy / MODE_DRAG_STEP).round()).clamp(0.0, 2.0) as usize
+}
 
 /// The transport controls the plugin's panel does not have (task-185's list, and Fast forward
 /// and the bar display, which act only in song mode; task-213 decides on those two).
@@ -439,6 +478,7 @@ impl App {
         if self.plugin.is_none() {
             return;
         }
+        self.mode_selector(ui, view);
         let snap = self.link.as_mut().map(|l| *l.player().snapshot());
         let Some(p) = &mut self.plugin else {
             return;
@@ -475,6 +515,78 @@ impl App {
         }
         ui.ctx().request_repaint_after(POLL);
         self.resize_corner(ui);
+    }
+
+    /// The mode selector of the plugin's transport (task-231) and the plugin format's logo: the
+    /// background has the gray knob's body, the lines and the dark LEDs; here the pointer, the
+    /// selected row's LED, the labels (the selected one bold) and the logo. The only way to
+    /// set the mode (the Options menu has no mode items), through [`Embed::set_mode`]
+    /// ([`Cmd::SetPluginMode`]):
+    /// - a click on a row (its line, LED or label) selects its mode;
+    /// - a vertical drag on the knob steps through the modes, one per [`MODE_DRAG_STEP`] panel
+    ///   pixels, up toward Latch and down toward Note, from the mode the drag started in; a click
+    ///   on the knob does nothing;
+    /// - no keys (the plugin takes none).
+    ///
+    /// Nothing is hit while the file browser, a prompt or the error box is open.
+    fn mode_selector(&mut self, ui: &mut Ui, view: &View) {
+        let Some(p) = &self.plugin else {
+            return;
+        };
+        let mode = p.embed.mode().unwrap_or(PluginMode::Note);
+        let current = MODE_ITEMS.iter().position(|(m, _)| *m == mode).unwrap_or(2);
+        if let Some(format) = p.embed.format() {
+            let name = match format {
+                PluginFormat::Vst3 => "plugin_logo_vst3",
+                PluginFormat::Clap => "plugin_logo_clap",
+            };
+            let (x, y, w, h) = PLUGIN_LOGO;
+            crate::app::paint_part(ui, name, view.rect(x, y, w, h));
+        }
+        let k = crate::art::knob_design("knob_gray");
+        let (cx, cy) = PLUGIN_MODE_KNOB;
+        let s = PLUGIN_MODE_SCALE;
+        let knob = view.rect(cx - k.cx * s, cy - k.cy * s, k.w * s, k.h * s);
+        // the drag area is the collar's square; the rows start at its right edge
+        let rc = PLUGIN_MODE_KNOB_RADIUS;
+        let hit = view.rect(cx - rc, cy - rc, 2.0 * rc, 2.0 * rc);
+        let pivot = Vec2::new(k.cx / k.w, k.cy / k.h);
+        let angle = PLUGIN_MODE_ANGLES[current].to_radians();
+        crate::app::paint_part_rotated(ui, "knob_gray_pointer", knob, Some((angle, pivot)));
+        let (lx, ly) = (PLUGIN_MODE_LED_X, PLUGIN_MODE_ROWS[current]);
+        crate::app::paint_part(ui, "led_mode_on", view.rect(lx - 5.5, ly - 5.5, 11.0, 11.0));
+        for (i, y) in PLUGIN_MODE_ROWS.into_iter().enumerate() {
+            let state = if i == current { "on" } else { "off" };
+            let r = view.rect(lx + 5.5, y - 5.0, 62.0, 10.0);
+            crate::app::paint_part(ui, &format!("mode_label_{i}_{state}"), r);
+        }
+        if self.browsing() || self.prompt.is_some() || self.error_open() {
+            return;
+        }
+        // the rows' hit areas: the whole line, from the collar's edge to the label's end
+        let from = cx + rc;
+        let mut chosen = None;
+        for (i, y) in PLUGIN_MODE_ROWS.into_iter().enumerate() {
+            let rect = view.rect(from, y - 6.5, lx + 5.5 + 62.0 - from, 13.0);
+            let r = ui.interact(rect, Id::unique(("orb mode row", i)), Sense::click());
+            if r.clicked() {
+                chosen = Some(i);
+            }
+        }
+        let id = Id::unique("orb mode knob");
+        let r = ui.interact(hit, id, Sense::drag());
+        if r.drag_started() {
+            ui.data_mut(|d| d.insert_temp(id, current));
+        }
+        if r.dragged()
+            && let Some(d) = r.total_drag_delta()
+            && let Some(start) = ui.data(|d| d.get_temp::<usize>(id))
+        {
+            chosen = Some(drag_mode(start, d.y / view.scale));
+        }
+        if let Some(i) = chosen.filter(|&i| i != current) {
+            self.command(Cmd::SetPluginMode(MODE_ITEMS[i].0));
+        }
     }
 
     /// The pattern drag-out (task-203): a press on a pattern button (`c`, a "grid" control
@@ -740,5 +852,48 @@ mod tests {
         let led = crate::art::part("led_transport_on").expect("the lit LED part");
         assert_eq!((led.w, led.h), (SYNC_LED.2, SYNC_LED.3));
         assert!(crate::art::part("bg_transport_plugin").is_some());
+    }
+
+    #[test]
+    fn the_mode_selector_matches_the_art() {
+        use orb_ui_art::parts as art;
+        assert_eq!(
+            PLUGIN_MODE_KNOB,
+            (16.0 + art::PLUGIN_MODE_KNOB.0, art::PLUGIN_MODE_KNOB.1)
+        );
+        assert_eq!(PLUGIN_MODE_SCALE, art::PLUGIN_MODE_SCALE);
+        // the art's collar radius (gray_knob_cap) is 7.7; the lines start at 15.8 from the center
+        assert_eq!(PLUGIN_MODE_KNOB_RADIUS, 7.7 * art::PLUGIN_MODE_SCALE);
+        const { assert!(PLUGIN_MODE_KNOB_RADIUS < 15.8) };
+        assert_eq!(PLUGIN_MODE_LED_X, 16.0 + art::PLUGIN_MODE_LED_X);
+        assert_eq!(PLUGIN_MODE_ROWS, art::PLUGIN_MODE_ROWS);
+        for (i, (deg, _)) in art::PLUGIN_MODE_LABELS.into_iter().enumerate() {
+            assert_eq!(PLUGIN_MODE_ANGLES[i], deg);
+        }
+        let (x, y, w, h) = art::PLUGIN_LOGO;
+        assert_eq!(PLUGIN_LOGO, (16.0 + x, y, w, h));
+        for name in ["plugin_logo_vst3", "plugin_logo_clap"] {
+            let p = crate::art::part(name).expect(name);
+            assert_eq!((p.w, p.h), (w, h), "{name}");
+        }
+        let led = crate::art::part("led_mode_on").expect("the lit mode LED");
+        assert_eq!((led.w, led.h), (11.0, 11.0));
+        for i in 0..3 {
+            for state in ["off", "on"] {
+                let p = crate::art::part(&format!("mode_label_{i}_{state}")).unwrap();
+                assert_eq!((p.w, p.h), (62.0, 10.0));
+            }
+        }
+    }
+
+    #[test]
+    fn a_drag_steps_through_the_modes_and_stops_at_the_ends() {
+        assert_eq!(drag_mode(2, 0.0), 2);
+        assert_eq!(drag_mode(2, -MODE_DRAG_STEP), 1);
+        assert_eq!(drag_mode(2, -2.0 * MODE_DRAG_STEP), 0);
+        assert_eq!(drag_mode(2, -500.0), 0);
+        assert_eq!(drag_mode(0, 500.0), 2);
+        assert_eq!(drag_mode(1, MODE_DRAG_STEP * 0.4), 1);
+        assert_eq!(drag_mode(1, MODE_DRAG_STEP * 0.6), 2);
     }
 }

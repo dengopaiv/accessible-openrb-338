@@ -1,4 +1,6 @@
-# The VST3/CLAP plugin (`crates/orb-plugin`)
+# The VST® 3/CLAP plugin (`crates/orb-plugin`)
+
+VST is a registered trademark of Steinberg Media Technologies GmbH.
 
 OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are task-185's final
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
@@ -558,7 +560,7 @@ The minimum on-time and the drawing are the editor's (section 9.4).
 
 ### 9.4 The note-mode lights (task-202)
 
-In the plugin's note mode (Options > Note Mode, not the preview, which plays the patterns) the
+In the plugin's note mode (the mode selector's Note, not the preview, which plays the patterns) the
 panel lights the 808's and the 909's sounding voices (`embed::Lights`, `App::note_lights`,
 `App::instrument_selection`). The 303s show nothing; pattern mode and the preview are as
 before (the standalone app has no lights and is unchanged).
@@ -709,12 +711,38 @@ are pixel-identical):
   sync in `App::show`): the host's start and stop do not change Play and Stop, and pattern
   mode following a playing host does not light Play (the user's Reaper check, 2026-11-16; the
   first build lit it from the engine).
-- Options has, below the standalone's two checkboxes, the mode as three radio items (task-217,
-  task-218; orb-ui `embed::MODE_ITEMS`, `Embed::mode` / `set_mode`, `Cmd::SetPluginMode`):
-  "Latch Pattern Mode", "Gate Pattern Mode" and "Note Mode" (task-217's two were "Pattern
-  Mode" and "Note Mode"; the user dropped the first build's descriptions in parentheses). The
-  menu was chosen over a panel control: the panel has no free switch (the hidden Pattern/Song
-  switch's art says Pattern/Song).
+- Options has only the standalone's two checkboxes. It had the mode as three radio items
+  (task-217, task-218: "Latch Pattern Mode", "Gate Pattern Mode", "Note Mode"); the user
+  removed them on 2026-11-17 when task-231 added the mode selector below, the only place to
+  change the mode (orb-ui `embed::MODE_ITEMS` names the modes, `Embed::mode` / `set_mode`,
+  `Cmd::SetPluginMode`).
+- **The mode selector** (task-231; the user's design of 2026-11-17): in the transport, after the
+  Bar display. A gray knob (Shuffle's design at 1.6 times its size, no ticks) at transport
+  (250, 26) with an engraved line per position running to a yellow LED (the mixer routing keys'
+  lamp) and a label: "Latch Pattern" (row y 13, pointer at 45 degrees), "Gate Pattern" (26,
+  90) and "Note" (39, 135). The selected mode's LED is lit, its label bold and bright, the
+  others as Sync and MIDI. Art (orb-ui-art `parts.rs`, constants `PLUGIN_MODE_*`, mirrored and
+  checked in orb-ui `embed.rs`): the body, lines and dark LEDs are in `bg_transport_plugin`;
+  orb-ui draws the pointer (`knob_gray_pointer` turned), `led_mode_on` and the parts
+  `mode_label_{0,1,2}_{off,on}` (`mode_selector`). Behavior: a click on a row (its line, LED or
+  label) selects that mode; a vertical drag on the knob steps through the modes, one per
+  `MODE_DRAG_STEP` (12) panel pixels from the mode the drag started in, up toward Latch and
+  down toward Note; a click on the knob does nothing; no keys; no tooltips (the
+  user's decision of 2026-11-17). It calls `Embed::set_mode` (`Cmd::SetPluginMode`), which sets `OrbParams::mode`,
+  and the state keeps it (section 5). Nothing is hit while
+  the file browser, a prompt or the error box is open. The standalone app has none of it.
+- **The plugin format's mark**: one mark right of the selector, before the wordmark, right-aligned
+  6 px before it, engraved (a dark copy at 0.38 opacity over a light copy 0.6 px lower): the
+  CLAP logo (MIT) in the CLAP plugin, and the plain text "VST3" in the panel's label font
+  (Inter bold, 28 px) in the VST3 plugin (parts `plugin_logo_vst3`, `plugin_logo_clap`, 112 x
+  50 at transport x 344; the CLAP data in `orb-ui-art/src/plugin_logos.rs`; sources and terms
+  in `assets/README.md`). The user's decision of 2026-11-17 (task-232): Steinberg's official
+  VST Compatible Logo does not fit the panel, so the text names the format (the guidelines'
+  section 2 allow "VST" in a standard font to denote compatibility); the logo and the
+  attribution go to the README and Help > Plugin Usage (task-233). VST® is a registered
+  trademark of Steinberg Media Technologies GmbH. The editor knows its format from the wrapper in use: nice-plug's
+  `GuiContext::plugin_api()` is `Vst3` or `Clap` (`Embed::format`, `EditorEmbed::format`); the
+  stand-in host of `editor_preview` takes `--format vst3|clap`.
 - The Sync LED is lit while the snapshot's `host_sync` is; the MIDI LED for 0.1 s after the
   snapshot's `midi_in` count changes (art part `led_transport_on`), in the preview too. The editor redraws at least
   every 50 ms while open so that the LEDs follow.
@@ -848,7 +876,7 @@ emptied on the main thread at every command and every editor frame (`OrbParams::
 
 **Screenshots without a host.** `cargo run --release -p orb-plugin --example editor_preview --
 [SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--mode latch|gate|note] [--preview]
-[--click X,Y]... [--screenshot OUT.png]` shows the editor in a window of its own with a
+[--format vst3|clap] [--click X,Y]... [--screenshot OUT.png]` shows the editor in a window of its own with a
 stand-in host that runs the process side (no sound) and applies parameter changes at once;
 `--preview` enters the preview, `--click` clicks a point of the window (one every 6 frames from
 frame 10: `--click 104,11` opens Options at 1:1).
@@ -857,7 +885,8 @@ frame 10: `--click 104,11` opens Options at 1:1).
 plugin's song; a knob drag and a pattern button set their parameters through the host; Play
 and Stop enter and leave the preview, and in it a knob drag and a pattern button go to the
 preview set with no host gesture; the Play light is the preview's, not the host transport's;
-the Options menu's command sets the mode; the hidden
+the Options menu has no mode items; a click on each mode selector row sets the mode, a vertical drag on its knob steps the modes, and the
+selector's mode is saved with the state (task-231); the editor reports its plugin format; the hidden
 controls take no clicks; no key acts; the LEDs and the Bar display follow the snapshot (dark
 Sync and Bar in the preview, the MIDI LED still lit by input); File > Open keeps the mode and New
 asks nothing; a mod from the Mods menu goes into the state; the File menu opens from the bar;
@@ -1003,8 +1032,8 @@ makes a MIDI item of it, as a MIDI file dragged from the file manager. The detai
   - the values the panel plays (the preview set during the preview): the Shuffle knob and the
     808's five shared-slot switches.
 
-**The clip is meant for note mode.** Played on a track into an instance in note mode (Options >
-Note Mode), it plays the pattern as the pattern plays: for the 303, bit for bit the step path,
+**The clip is meant for note mode.** Played on a track into an instance in note mode (the mode
+selector's Note), it plays the pattern as the pattern plays: for the 303, bit for bit the step path,
 except for three things the clip cannot carry (`docs/midi.md` 5.6): a tie's own accent, a
 rest's effect on the release tail, and a played step after a rest that slid. A slide out of
 the last step into the next loop is lost too, as the clip is one loop. In the pattern modes,

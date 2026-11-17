@@ -4,7 +4,7 @@
 //! ```text
 //! cargo run --release -p orb-plugin --example editor_preview -- [SONG.rbs] [--size WxH]
 //!     [--ppp S] [--host-playing] [--midi] [--note CH,NOTE,VEL]... [--mode latch|gate|note]
-//!     [--preview] [--idle] [--click X,Y]...
+//!     [--preview] [--format vst3|clap] [--idle] [--click X,Y]...
 //!     [--screenshot OUT.png]
 //! ```
 //!
@@ -35,11 +35,11 @@ use orb_ui::app::App;
 use orb_ui::settings::Settings;
 
 /// A host that applies a parameter change at once.
-struct Host;
+struct Host(PluginApi);
 
 impl GuiContextInner for Host {
     fn plugin_api(&self) -> PluginApi {
-        PluginApi::Clap
+        self.0
     }
 
     unsafe fn raw_begin_set_parameter(&self, _param: ParamPtr) {}
@@ -69,6 +69,8 @@ struct Args {
     notes: Vec<(u8, u8, u8)>,
     mode: Option<Mode>,
     preview: bool,
+    /// `--format vst3|clap`: the plugin format the stand-in host reports (the logo; default clap).
+    format: PluginApi,
     /// `--idle`: the harness asks for no frames itself (for measuring the panel's own repaints).
     idle: bool,
     clicks: Vec<egui::Pos2>,
@@ -85,6 +87,7 @@ fn args() -> Args {
         notes: Vec::new(),
         mode: None,
         preview: false,
+        format: PluginApi::Clap,
         idle: false,
         clicks: Vec::new(),
         shot: None,
@@ -117,6 +120,13 @@ fn args() -> Args {
                 })
             }
             "--preview" => a.preview = true,
+            "--format" => {
+                a.format = match it.next().as_deref() {
+                    Some("vst3") => PluginApi::Vst3,
+                    Some("clap") => PluginApi::Clap,
+                    _ => panic!("--format vst3|clap"),
+                }
+            }
             "--idle" => a.idle = true,
             "--click" => {
                 let v = it.next().expect("--click X,Y");
@@ -241,7 +251,7 @@ impl eframe::App for Preview {
 fn main() -> eframe::Result {
     let a = args();
     let params = Arc::new(OrbParams::new());
-    let host = GuiContext::new(Arc::new(Host));
+    let host = GuiContext::new(Arc::new(Host(a.format)));
     let core = instance::core(&params, 44100);
     let mut app = editor_app(params.clone(), host, Settings::load());
     if let Some(song) = &a.song {

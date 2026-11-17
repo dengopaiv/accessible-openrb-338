@@ -52,3 +52,18 @@ The CD's exe gives the splash without the Steinberg logo that the installed `Reb
 DLL and the exe from it (`orb-testkit`, task-121), rebuilds the file and checks it byte for byte.
 `orb mod pack-standard --iso CD.iso -o FILE` (task-065, docs/rbm.md 16) reads both files straight
 from the CD image and gives the same bytes.
+
+## Plugin format logos (task-231)
+
+The plugin's transport shows the mark of its format, engraved: the CLAP logo (data in
+`crates/orb-ui-art/src/plugin_logos.rs`, part `plugin_logo_clap`) in the CLAP plugin, and in the
+VST® 3 plugin the plain text "VST3" in the panel's label font (part `plugin_logo_vst3`). Steinberg's
+official VST Compatible Logo was considered and not used: it does not fit the panel (task-232,
+decided by the user on 2026-11-17; the Olivier Clero redraw of the first mockup is gone too).
+
+| Logo | Source | Terms |
+|---|---|---|
+| CLAP | `CLAP - Clever Audio Plugin Logo.svg` on Wikimedia Commons (https://upload.wikimedia.org/wikipedia/commons/a/ae/CLAP_-_Clever_Audio_Plugin_Logo.svg; the CLAP project's `artwork/CLAP Full Logo.svg`), by Alexandre Bique | MIT license (Commons' license field) |
+| VST3 | the text "VST3" (Inter bold, the panel's label font), no artwork | Steinberg's VST3 usage guidelines (https://github.com/steinbergmedia/vst3sdk#trademark-and-logo-usage, `VST3_Usage_Guidelines.pdf`, SDK 3.8 of 16.10.2025): the logo is used "as provided by Steinberg", in unaltered form, in the About box or an equivalent UI element (section 1e); at least 15 x 10 mm "in all digital and printed uses" (section 14; the variant with the trademark line needs 20 x 18.7 mm); the first use of "VST" in product material carries the registered sign and "VST is a registered trademark of Steinberg Media Technologies GmbH." appears in all product credits and documentation (section 15); "VST" in a standard font may denote compatibility (section 2), which still wants the official logo (`artwork/VST_Compatible_Logo_Steinberg*.svg` of https://github.com/steinbergmedia/vst3_doc, unaltered, 15 x 10 mm minimum) in a relevant context near the uses of "VST": the README and Help > Plugin Usage (task-233) |
+
+VST® is a registered trademark of Steinberg Media Technologies GmbH.

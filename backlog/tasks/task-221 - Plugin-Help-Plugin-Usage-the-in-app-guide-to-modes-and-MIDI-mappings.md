@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T15:59:00Z'
-updated_date: '2026-11-17T08:06:00Z'
+updated_date: '2026-11-17T09:30:00Z'
 labels:
   - ui
   - docs
@@ -17,6 +17,7 @@ dependencies:
   - TASK-219
   - TASK-228
   - TASK-231
+  - TASK-233
 references:
   - docs/plugin.md
   - docs/midi.md
@@ -38,7 +39,7 @@ ordinal: 228000
 **Write it last.** This task depends on the remaining plugin features, so the guide describes the released behavior. Take the facts from the code and from docs/plugin.md, docs/midi.md and docs/standard_midi_mapping.md, not from memory; where they disagree, fix the doc that is wrong and say so in the notes.
 
 **Content, short and task-oriented (what to put in the DAW and what happens):**
-1. **Modes (Options menu).** Latch Pattern Mode, Gate Pattern Mode and Note Mode: what each does with the host playing and stopped. The preview on the panel's Play/Stop: it ignores host input, keeps its own preview set and uses the host's tempo. Which mode a new instance starts in.
+1. **Modes (the panel's mode selector).** Latch Pattern Mode, Gate Pattern Mode and Note Mode: what each does with the host playing and stopped. The preview on the panel's Play/Stop: it ignores host input, keeps its own preview set and uses the host's tempo. Which mode a new instance starts in.
 2. **Channels.** Devices on MIDI channels 1..4: 1 and 2 the ORB-303s, 3 the ORB-808, 4 the ORB-909. The Standard Mapping (remote) channel, 16 by default and off by default, and how to turn it on (task-209's UI).
 3. **Pattern selection (both pattern modes).**
    - Notes 0..31 select patterns A1..D8 (0 = A1, 7 = A8, 8 = B1, 31 = D8). Show them as note names in the DAW's usual octave naming, and say which naming is used.

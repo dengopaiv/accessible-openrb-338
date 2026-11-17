@@ -35,7 +35,7 @@ use orb_engine::samples::SampleSet;
 use orb_engine::song::Song;
 use orb_player::{Command, Snapshot, Tracks};
 use orb_ui::app::App;
-use orb_ui::embed::{Embed, MENU_H, PluginMode, SongView, window_height};
+use orb_ui::embed::{Embed, MENU_H, PluginFormat, PluginMode, SongView, window_height};
 use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::link::{Link, Port};
 use orb_ui::settings::Settings;
@@ -1208,6 +1208,17 @@ impl Embed for EditorEmbed {
 
     fn previewing(&self) -> Option<bool> {
         Some(self.params.previewing())
+    }
+
+    /// The wrapper in use tells (both formats come from this one crate): nice-plug's
+    /// `GuiContext::plugin_api` is `Vst3` in the VST3 wrapper's editor and `Clap` in the CLAP
+    /// wrapper's (wrapper/vst3/context.rs, wrapper/clap/context.rs); no logo in a standalone.
+    fn format(&self) -> Option<PluginFormat> {
+        match self.gui.plugin_api() {
+            PluginApi::Vst3 => Some(PluginFormat::Vst3),
+            PluginApi::Clap => Some(PluginFormat::Clap),
+            PluginApi::Standalone => None,
+        }
     }
 
     fn set_mode(&mut self, mode: PluginMode) {

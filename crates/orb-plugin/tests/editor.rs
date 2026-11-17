@@ -24,7 +24,10 @@ use orb_plugin::editor::{
 };
 use orb_plugin::instance::{self, Kit, Mode, OrbParams};
 use orb_ui::app::App;
-use orb_ui::embed::{CORNER, DRAG_OUT, MENU_H, PLUGIN_HIDDEN, PluginMode, window_height};
+use orb_ui::embed::{
+    CORNER, DRAG_OUT, Embed, MENU_H, MODE_DRAG_STEP, PLUGIN_HIDDEN, PLUGIN_MODE_KNOB,
+    PLUGIN_MODE_LED_X, PLUGIN_MODE_ROWS, PluginFormat, PluginMode, window_height,
+};
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
 use orb_ui::menu::Cmd;
 use orb_ui::settings::Settings;
@@ -75,6 +78,8 @@ struct Harness {
     commands: Vec<ViewportCommand>,
     /// The cursor of the last frame.
     cursor: egui::CursorIcon,
+    /// The texts drawn in the last frame.
+    texts: Vec<String>,
     playing: bool,
     beats: f64,
 }
@@ -107,6 +112,7 @@ impl Harness {
             size: Vec2::new(PANEL_W, PANEL_H + MENU_H),
             commands: Vec::new(),
             cursor: egui::CursorIcon::Default,
+            texts: Vec::new(),
             playing: false,
             beats: 0.0,
         };
@@ -150,6 +156,14 @@ impl Harness {
         let mut out = self.ctx.run_ui(input, |ui| app.show(ui));
         out.textures_delta.clear();
         self.cursor = out.platform_output.cursor_icon;
+        self.texts = out
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
         self.commands = out
             .viewport_output
             .values()
@@ -311,18 +325,22 @@ fn the_play_light_is_the_preview_not_the_hosts_transport() {
     );
 }
 
+/// task-231 (the user's decision of 2026-11-17): the Options menu has no mode items; the
+/// panel's selector is the only place to change the mode.
 #[test]
-fn the_options_menu_sets_the_mode() {
+fn the_options_menu_has_no_mode_items() {
     let mut h = Harness::new(with("303_accent0"));
-    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Note));
-    h.app.command(Cmd::SetPluginMode(PluginMode::Latch));
-    assert_eq!(h.params.mode(), Mode::Latch);
-    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Latch));
-    h.app.command(Cmd::SetPluginMode(PluginMode::Gate));
-    assert_eq!(h.params.mode(), Mode::Gate);
-    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Gate));
-    h.app.command(Cmd::SetPluginMode(PluginMode::Note));
-    assert_eq!(h.params.mode(), Mode::Note);
+    // Options is the third title of the bar (File, Mods, Options, Help)
+    h.click(Pos2::new(104.0, MENU_H / 2.0));
+    h.frame(vec![]);
+    h.frame(vec![]);
+    assert!(egui::Popup::is_any_open(&h.ctx), "Options opened");
+    let texts = h.texts.join("|");
+    assert!(texts.contains("Vintage ReBirth Synth Sound"), "{texts}");
+    assert!(texts.contains("Play Mod Startup Sound"), "{texts}");
+    for gone in ["Latch Pattern Mode", "Gate Pattern Mode", "Note Mode"] {
+        assert!(!texts.contains(gone), "{gone} in {texts}");
+    }
 }
 
 #[test]
@@ -911,4 +929,163 @@ fn a_click_on_a_pattern_button_still_selects_it() {
     h.move_to(at + Vec2::new(30.0, 0.0));
     h.button(false);
     assert_eq!(h.value("d1c1"), 4, "A5");
+}
+
+/// The center of the mode selector's row `i` (0 Latch, 1 Gate, 2 Note) in the window: its label.
+fn mode_row(i: usize) -> Pos2 {
+    Pos2::new(PLUGIN_MODE_LED_X + 30.0, MENU_H + PLUGIN_MODE_ROWS[i])
+}
+
+fn mode_knob() -> Pos2 {
+    Pos2::new(PLUGIN_MODE_KNOB.0, MENU_H + PLUGIN_MODE_KNOB.1)
+}
+
+/// task-231 AC 2: a click on a row of the mode selector sets the mode (`Embed::set_mode`, the
+/// plugin's `OrbParams::mode`), and the selector shows the mode the plugin has.
+#[test]
+fn a_click_on_a_row_of_the_mode_selector_sets_the_mode() {
+    let mut h = Harness::new(with("303_accent0"));
+    assert_eq!(h.app.embed().unwrap().mode(), Some(PluginMode::Note));
+    for (i, (mode, want)) in [
+        (PluginMode::Latch, Mode::Latch),
+        (PluginMode::Gate, Mode::Gate),
+        (PluginMode::Note, Mode::Note),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // from another mode so that a click changes it
+        h.app.command(Cmd::SetPluginMode(match mode {
+            PluginMode::Latch => PluginMode::Note,
+            _ => PluginMode::Latch,
+        }));
+        h.click(mode_row(i));
+        assert_eq!(h.params.mode(), want, "row {i}");
+        assert_eq!(h.app.embed().unwrap().mode(), Some(mode), "row {i}");
+        // the rows' order
+        assert_eq!(orb_ui::embed::MODE_ITEMS[i].0, mode);
+    }
+    // a click on the row of the mode it is in changes nothing
+    h.click(mode_row(2));
+    assert_eq!(h.params.mode(), Mode::Note);
+}
+
+/// task-231: a vertical drag on the knob steps through the modes (up toward Latch), a click on
+/// it does nothing.
+#[test]
+fn a_drag_on_the_mode_knob_steps_the_modes() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.click(mode_knob());
+    assert_eq!(h.params.mode(), Mode::Note, "a click does nothing");
+    let at = mode_knob();
+    h.move_to(at);
+    h.button(true);
+    h.move_to(at + Vec2::new(0.0, -MODE_DRAG_STEP));
+    assert_eq!(h.params.mode(), Mode::Gate);
+    h.move_to(at + Vec2::new(0.0, -2.0 * MODE_DRAG_STEP));
+    assert_eq!(h.params.mode(), Mode::Latch);
+    h.move_to(at + Vec2::new(0.0, -80.0));
+    assert_eq!(h.params.mode(), Mode::Latch, "stops at the end");
+    h.move_to(at + Vec2::new(0.0, -MODE_DRAG_STEP));
+    assert_eq!(
+        h.params.mode(),
+        Mode::Gate,
+        "the drag goes back with the pointer"
+    );
+    h.button(false);
+    assert_eq!(h.params.mode(), Mode::Gate);
+}
+
+/// task-231 AC #3: the mode chosen on the selector is saved with the state.
+#[test]
+fn the_mode_from_the_selector_is_saved_with_the_state() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.click(mode_row(1));
+    assert_eq!(h.params.mode(), Mode::Gate);
+    let fields = h.params.serialize_fields();
+    let b = OrbParams::new();
+    b.deserialize_fields(&fields);
+    assert_eq!(b.mode(), Mode::Gate);
+}
+
+/// task-231: the editor tells its plugin format (the logo) from the wrapper's context.
+#[test]
+fn the_editor_knows_its_plugin_format() {
+    let mut h = Harness::new(with("303_accent0"));
+    assert_eq!(h.app.embed().unwrap().format(), Some(PluginFormat::Vst3));
+}
+
+/// task-231: the whole line of a row is a hit area, from the knob's edge (x 14 right of the
+/// knob's center is on the line of the Latch row, beyond the collar), and the knob's drag
+/// area ends where the rows begin.
+#[test]
+fn a_click_on_a_rows_line_selects_it() {
+    let mut h = Harness::new(with("303_accent0"));
+    let near = |row: usize| Pos2::new(PLUGIN_MODE_KNOB.0 + 14.0, MENU_H + PLUGIN_MODE_ROWS[row]);
+    h.click(near(0));
+    assert_eq!(h.params.mode(), Mode::Latch);
+    h.click(near(1));
+    assert_eq!(h.params.mode(), Mode::Gate);
+    h.click(near(2));
+    assert_eq!(h.params.mode(), Mode::Note);
+    // a drag starting there is no knob drag
+    h.move_to(near(2));
+    h.button(true);
+    h.move_to(near(2) + Vec2::new(0.0, -2.0 * MODE_DRAG_STEP));
+    h.button(false);
+    assert_eq!(h.params.mode(), Mode::Note);
+}
+
+/// task-231: with the file browser or the error box open the rows and the knob take no hit.
+/// (A prompt, `App::prompt`, is crate-private: not reachable from here.)
+#[test]
+fn the_mode_selector_takes_no_hit_under_the_browser_or_the_error_box() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.app.fail("an error");
+    h.frame(vec![]);
+    h.click(mode_row(0));
+    assert_eq!(h.params.mode(), Mode::Note, "the error box is open");
+    let at = mode_knob();
+    h.move_to(at);
+    h.button(true);
+    h.move_to(at + Vec2::new(0.0, -2.0 * MODE_DRAG_STEP));
+    h.button(false);
+    assert_eq!(h.params.mode(), Mode::Note, "the error box is open");
+
+    let mut h = Harness::new(with("303_accent0"));
+    h.app.open_browser(orb_ui::browser::Mode::OpenSong);
+    h.frame(vec![]);
+    h.click(mode_row(0));
+    assert_eq!(h.params.mode(), Mode::Note, "the browser is open");
+}
+
+/// A stand-in host that reports `PluginApi` and does nothing else.
+struct ApiHost(PluginApi);
+
+impl GuiContextInner for ApiHost {
+    fn plugin_api(&self) -> PluginApi {
+        self.0
+    }
+    unsafe fn raw_begin_set_parameter(&self, _param: ParamPtr) {}
+    unsafe fn raw_set_parameter_normalized(&self, _param: ParamPtr, _normalized: f32) {}
+    unsafe fn raw_end_set_parameter(&self, _param: ParamPtr) {}
+    fn get_state(&self) -> PluginState {
+        unimplemented!()
+    }
+    fn set_state(&self, _state: PluginState) {}
+    fn request_restart(&self) {}
+}
+
+/// task-231: the logo's format is the wrapper's: VST3, CLAP, and none in a standalone.
+#[test]
+fn the_format_follows_the_wrappers_plugin_api() {
+    for (api, want) in [
+        (PluginApi::Vst3, Some(PluginFormat::Vst3)),
+        (PluginApi::Clap, Some(PluginFormat::Clap)),
+        (PluginApi::Standalone, None),
+    ] {
+        let gui = GuiContext::new(Arc::new(ApiHost(api)));
+        let e = editor::EditorEmbed::new(Arc::new(OrbParams::new()), gui);
+        assert_eq!(Embed::format(&e), want, "{api:?}");
+    }
 }
