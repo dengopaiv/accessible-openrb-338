@@ -77,8 +77,8 @@ done
 cat > "$pkgwork/resources/welcome.txt" <<EOF
 OpenRB-338 plugins $version
 
-The VST® 3 and CLAP instrument of OpenRB-338, an engine that reimplements Propellerhead ReBirth
-RB-338 2.01. VST is a registered trademark of Steinberg Media Technologies GmbH.
+The VST 3 and CLAP instrument of OpenRB-338, an engine that reimplements Propellerhead ReBirth
+RB-338 2.01.
 
 This installs, for all users (it asks for an admin password once):
   OpenRB-338.vst3 into /Library/Audio/Plug-Ins/VST3

@@ -899,6 +899,8 @@ run (task-134) still has to check the runners and a real desktop.
 
 The VST® 3 and CLAP instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundles
 `OpenRB-338.vst3` and `OpenRB-338.clap`. VST is a registered trademark of Steinberg Media Technologies GmbH.
+The attribution (Steinberg's logo and the trademark line) is in Help > Plugin Usage only, the VST3
+plugin's page (docs/plugin_usage.md, task-239): no README, package text or release note carries it.
 
 **Building.** For everyday work: `cargo xtask bundle orb-plugin --release` (the alias in
 `.cargo/config.toml`; add `--target T` for another target) lays them out in `target/bundled/`.

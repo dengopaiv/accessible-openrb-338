@@ -892,10 +892,11 @@ are pixel-identical):
   in `assets/README.md`). The user's decision of 2026-11-17 (task-232): Steinberg's official
   VST Compatible Logo does not fit the panel, so the text names the format (the guidelines'
   section 2 allow "VST" in a standard font to denote compatibility); the logo and the
-  attribution go to the README and Help > Plugin Usage (task-233). VST® is a registered
-  trademark of Steinberg Media Technologies GmbH. The editor knows its format from the wrapper in use: nice-plug's
-  `GuiContext::plugin_api()` is `Vst3` or `Clap` (`Embed::format`, `EditorEmbed::format`); the
-  stand-in host of `editor_preview` takes `--format vst3|clap`.
+  attribution go to Help > Plugin Usage only (task-233; the README and the package texts dropped
+  them, task-239). VST® is a registered trademark of Steinberg Media Technologies GmbH. The editor
+  knows its format from the wrapper in use: nice-plug's `GuiContext::plugin_api()` is `Vst3` or
+  `Clap` (`Embed::format`, `EditorEmbed::format`); the stand-in host of `editor_preview` takes
+  `--format vst3|clap`.
 - The Sync LED is lit while the snapshot's `host_sync` is; the MIDI LED for 0.1 s after the
   snapshot's `midi_in` count changes (art part `led_transport_on`), in the preview too. The editor redraws at least
   every 50 ms while open so that the LEDs follow.

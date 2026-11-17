@@ -64,7 +64,7 @@ decided by the user on 2026-11-17; the Olivier Clero redraw of the first mockup 
 | Logo | Source | Terms |
 |---|---|---|
 | CLAP | `CLAP - Clever Audio Plugin Logo.svg` on Wikimedia Commons (https://upload.wikimedia.org/wikipedia/commons/a/ae/CLAP_-_Clever_Audio_Plugin_Logo.svg; the CLAP project's `artwork/CLAP Full Logo.svg`), by Alexandre Bique | MIT license (Commons' license field) |
-| VST3 | the text "VST3" (Inter bold, the panel's label font), no artwork | Steinberg's VST3 usage guidelines (https://github.com/steinbergmedia/vst3sdk#trademark-and-logo-usage, `VST3_Usage_Guidelines.pdf`, SDK 3.8 of 16.10.2025): the logo is used "as provided by Steinberg", in unaltered form, in the About box or an equivalent UI element (section 1e); at least 15 x 10 mm "in all digital and printed uses" (section 14; the variant with the trademark line needs 20 x 18.7 mm); the first use of "VST" in product material carries the registered sign and "VST is a registered trademark of Steinberg Media Technologies GmbH." appears in all product credits and documentation (section 15); "VST" in a standard font may denote compatibility (section 2), which still wants the official logo (`artwork/VST_Compatible_Logo_Steinberg*.svg` of https://github.com/steinbergmedia/vst3_doc, unaltered, 15 x 10 mm minimum) in a relevant context near the uses of "VST": the README and Help > Plugin Usage (task-233) |
+| VST3 | the text "VST3" (Inter bold, the panel's label font), no artwork | Steinberg's VST3 usage guidelines (https://github.com/steinbergmedia/vst3sdk#trademark-and-logo-usage, `VST3_Usage_Guidelines.pdf`, SDK 3.8 of 16.10.2025): the logo is used "as provided by Steinberg", in unaltered form, in the About box or an equivalent UI element (section 1e); at least 15 x 10 mm "in all digital and printed uses" (section 14; the variant with the trademark line needs 20 x 18.7 mm); the first use of "VST" in product material carries the registered sign and "VST is a registered trademark of Steinberg Media Technologies GmbH." appears in all product credits and documentation (section 15); "VST" in a standard font may denote compatibility (section 2), which still wants the official logo (`artwork/VST_Compatible_Logo_Steinberg*.svg` of https://github.com/steinbergmedia/vst3_doc, unaltered, 15 x 10 mm minimum) in a relevant context near the uses of "VST": Help > Plugin Usage only (task-233; the README and the package texts do not carry it, task-239) |
 
 VST® is a registered trademark of Steinberg Media Technologies GmbH.
 
@@ -78,7 +78,8 @@ https://github.com/steinbergmedia/vst3_doc/tree/master/artwork (SHA-256
 `7415e9b28f120143d0103bae6511a6e60a6b9d4827c07c54373d56c036e14b1e`; viewBox 116.2 x 74.7). They
 are not under this repository's license: the VST logo is Steinberg's trademark and is used
 unaltered under the VST3 usage guidelines above (the file is not edited, recolored or
-redrawn; only scaled in proportion). The README shows it in a `<picture>` that picks the
-variant by the reader's color scheme, 120 px wide (about 32 x 20 mm at 96 dpi, above the
-15 x 10 mm minimum), with the sentence below it. The variants "with TM" are not used (they
-need 20 x 18.7 mm).
+redrawn; only scaled in proportion). Help > Plugin Usage (`docs/plugin_usage.md`, the VST3
+plugin's page) is the only place that shows it: the file's `<picture>` picks the variant by the
+reader's color scheme, 120 px wide (about 32 x 20 mm at 96 dpi, above the 15 x 10 mm minimum),
+with the sentence below it. The README and the package texts no longer show the logo or the
+sentence (task-239). The variants "with TM" are not used (they need 20 x 18.7 mm).

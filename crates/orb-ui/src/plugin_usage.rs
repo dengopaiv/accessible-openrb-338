@@ -507,7 +507,7 @@ mod tests {
             (LOGO_W / LOGO_H - 116.2 / 74.7).abs() < 1e-3,
             "the aspect ratio"
         );
-        // the file names both of Steinberg's variants, as the README does
+        // the file names both of Steinberg's variants, as the page's picture does
         for f in [
             "VST_Compatible_Logo_Steinberg.svg",
             "VST_Compatible_Logo_Steinberg_negative.svg",

@@ -62,10 +62,9 @@ the developer cannot be verified"). Pick one:
   - Any version, in Terminal:
         xattr -dr com.apple.quarantine /Applications/OpenRB-338.app
 
-The plugin (a VST® 3 and CLAP instrument for a DAW; VST is a registered trademark of
-Steinberg Media Technologies GmbH) is not in this image: it comes as a separate installer,
-OpenRB-338-Plugins-$version-$target.pkg, from the same release. It is unsigned too (open it
-as the app above); it installs OpenRB-338.vst3 and OpenRB-338.clap for all users into
+The plugin (a VST 3 and CLAP instrument for a DAW) is not in this image: it comes as a separate
+installer, OpenRB-338-Plugins-$version-$target.pkg, from the same release. It is unsigned too
+(open it as the app above); it installs OpenRB-338.vst3 and OpenRB-338.clap for all users into
 /Library/Audio/Plug-Ins/VST3 and /CLAP, and its first page says how to open it and how to
 remove the plugins (delete those two bundles).
 
