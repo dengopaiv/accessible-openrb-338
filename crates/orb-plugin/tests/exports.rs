@@ -637,10 +637,10 @@ unsafe fn vst3_first_note(
 
     let frames = case.frames();
     let (mut l, mut r) = (vec![0f32; frames], vec![0f32; frames]);
-    let mode = if case.stopped == 0 {
-        ProcessModes_::kOffline as i32
+    let mode: i32 = if case.stopped == 0 {
+        ProcessModes_::kOffline as _
     } else {
-        ProcessModes_::kRealtime as i32
+        ProcessModes_::kRealtime as _
     };
     unsafe {
         let vt = &*(*f).vtbl;
@@ -655,7 +655,7 @@ unsafe fn vst3_first_note(
         let processor = component.cast::<IAudioProcessor>().unwrap();
         let mut setup = ProcessSetup {
             processMode: mode,
-            symbolicSampleSize: SymbolicSampleSizes_::kSample32 as i32,
+            symbolicSampleSize: SymbolicSampleSizes_::kSample32 as _,
             maxSamplesPerBlock: NOTE_BUF as i32,
             sampleRate: case.rate as f64,
         };
@@ -679,10 +679,9 @@ unsafe fn vst3_first_note(
         let list = events.to_com_ptr::<IEventList>().unwrap();
         let mut context: ProcessContext = std::mem::zeroed();
         // the flags are a c_int on Windows and a c_uint elsewhere
-        #[allow(clippy::unnecessary_cast)]
-        let (playing, stopped) = (
-            (StatesAndFlags_::kPlaying | StatesAndFlags_::kTempoValid) as u32,
-            StatesAndFlags_::kTempoValid as u32,
+        let (playing, stopped): (u32, u32) = (
+            (StatesAndFlags_::kPlaying | StatesAndFlags_::kTempoValid) as _,
+            StatesAndFlags_::kTempoValid as _,
         );
         context.sampleRate = case.rate as f64;
         context.tempo = NOTE_BPM;
@@ -709,7 +708,7 @@ unsafe fn vst3_first_note(
             context.continousTimeSamples = pos as i64;
             let mut data = ProcessData {
                 processMode: mode,
-                symbolicSampleSize: SymbolicSampleSizes_::kSample32 as i32,
+                symbolicSampleSize: SymbolicSampleSizes_::kSample32 as _,
                 numSamples: n as i32,
                 numInputs: 0,
                 numOutputs: 1,
