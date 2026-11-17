@@ -6,14 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-16T12:13:00Z'
-updated_date: '2026-11-17T16:05:00Z'
+updated_date: '2026-11-17T17:43:00Z'
 labels:
   - tools
   - tests
 milestone: m-7
 dependencies:
-  - TASK-204
   - TASK-230
+  - TASK-241
 references:
   - task-204
   - scripts/build.sh
@@ -48,4 +48,6 @@ AC #1 verified by the supervisor: CI run 43865111270 on 5b6b10f (push of task-20
 task-238 supersedes AC 5 (the DMG window layout with the VST3 and CLAP links and icon positions): the DMG no longer has plugin links or loose bundles, it holds the app, the Applications link, Install OpenRB-338 Plugins.pkg and README.txt. A headless icon layout was never built and task-238 adds none.
 
 Update (task-238, user's decision 2026-11-17): the plugin installer is not in the DMG either; it is its own release asset OpenRB-338-Plugins-<version>-<target>.pkg. The DMG holds only the app, the Applications link, LICENSE and README.txt.
+
+2026-11-17: the user asked for the tagged release (v<UTC time>) once task-241 merges; the supervisor tags main, pushes the tag, reruns jobs that no runner picked up, and checks the draft release.
 <!-- SECTION:NOTES:END -->
