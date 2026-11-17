@@ -487,7 +487,7 @@ fn the_leds_follow_the_snapshot_flags() {
 }
 
 #[test]
-fn file_open_loads_the_song_into_the_plugin_in_pattern_mode() {
+fn file_open_and_new_keep_the_mode() {
     let mut h = Harness::new(OrbParams::new());
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("song.rbs");
@@ -502,16 +502,14 @@ fn file_open_loads_the_song_into_the_plugin_in_pattern_mode() {
         Some(&bytes[..]),
         "the state keeps the file"
     );
-    assert_eq!(
-        h.params.mode(),
-        Mode::Latch,
-        "File > Open switches to pattern mode"
-    );
-    // a pattern mode stays (task-218)
-    h.params.set_mode(Mode::Gate);
-    h.app.open_song(&path);
-    h.frame(vec![]);
-    assert_eq!(h.params.mode(), Mode::Gate, "File > Open keeps Gate");
+    assert_eq!(h.params.mode(), Mode::Note, "File > Open keeps Note Mode");
+    // every mode stays (task-228)
+    for m in [Mode::Latch, Mode::Gate, Mode::Note] {
+        h.params.set_mode(m);
+        h.app.open_song(&path);
+        h.frame(vec![]);
+        assert_eq!(h.params.mode(), m, "File > Open keeps {m:?}");
+    }
     // the controls are the song's
     let want = common::with_song("303_accent127");
     assert_eq!(h.value("d1c7"), want.param("d1c7").unwrap().value());
@@ -520,8 +518,12 @@ fn file_open_loads_the_song_into_the_plugin_in_pattern_mode() {
         orb_ui::behavior::knob_from_engine(h.value("d1c7"))
     );
     // File > New: a new song, the mode kept
-    h.app.new_song();
-    h.frame(vec![]);
+    for m in [Mode::Latch, Mode::Gate, Mode::Note] {
+        h.params.set_mode(m);
+        h.app.new_song();
+        h.frame(vec![]);
+        assert_eq!(h.params.mode(), m, "File > New keeps {m:?}");
+    }
     assert_eq!(h.params.song(), None);
     assert!(!h.app.prompting(), "nothing asks to save in a plugin");
 }

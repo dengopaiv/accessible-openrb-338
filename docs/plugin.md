@@ -124,8 +124,8 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   held, and a held note also plays with the host stopped (section 11). In **note mode** the
   song is stopped and host notes play the devices whatever the host's transport does (section
   9). The default is note mode: a plugin just inserted makes no sound of its own, as the old
-  mode parameter's Stop default (the original starts stopped). File > Open turns note mode
-  into Latch Pattern Mode (task-185) and keeps a pattern mode (task-218). The preview (section
+  mode parameter's Stop default (the original starts stopped). File > Open and File > New
+  keep the mode (task-228; File > Open used to turn note mode into Latch Pattern Mode). The preview (section
   4.2) overrides all three while it runs. A song loaded over the playing one waits (pending)
   until the next block, which switches to it (Play) and then plays or stops it as the mode
   says.
@@ -693,8 +693,8 @@ are pixel-identical):
   every 50 ms while open so that the LEDs follow.
 - File has New, Open and Info (no Save, Save As, Export); nothing asks to save (the song lives
   in the host's project). File > Open loads the file into the plugin (`OrbParams::load_song`),
-  sets the song's control values as host parameters and note mode to Latch Pattern Mode
-  (task-185; a pattern mode stays, task-218); File > New keeps the mode. The file browser is orb-ui's own, egui-drawn (task-046),
+  sets the song's control values as host parameters; File > Open and File > New keep the
+  mode (task-228). The file browser is orb-ui's own, egui-drawn (task-046),
   so no native dialog is opened from the plugin window; its folders and the Mods folder are the
   standalone's settings file (`OpenRB-338/ui.toml`), shared; a save merges only its own
   change into the file as it is then, so open instances do not overwrite each other
@@ -832,7 +832,7 @@ and Stop enter and leave the preview, and in it a knob drag and a pattern button
 preview set with no host gesture; the Play light is the preview's, not the host transport's;
 the Options menu's command sets the mode; the hidden
 controls take no clicks; no key acts; the LEDs and the Bar display follow the snapshot (dark
-Sync and Bar in the preview, the MIDI LED still lit by input); File > Open loads the song in Latch Pattern Mode (Gate stays) and New
+Sync and Bar in the preview, the MIDI LED still lit by input); File > Open keeps the mode and New
 asks nothing; a mod from the Mods menu goes into the state; the File menu opens from the bar;
 the corner asks for sizes of the rule, through the host's callbacks after the frame (a host
 that sizes the window inside its request finds the window's state free); a window

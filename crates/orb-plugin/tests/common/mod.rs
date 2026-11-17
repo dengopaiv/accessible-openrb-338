@@ -34,8 +34,8 @@ pub fn set(p: &OrbParams, id: &str, v: i32) {
     assert_eq!(param.value(), v, "{id} takes {v}");
 }
 
-/// An instance with the song `name` loaded (its controls set as the editor would) in pattern
-/// mode, as File > Open leaves it.
+/// An instance with the song `name` loaded (its controls set as the editor would), set to
+/// Latch Pattern Mode.
 pub fn with_song(name: &str) -> OrbParams {
     let p = OrbParams::new();
     for (id, v) in p.load_song(song_bytes(name)).unwrap() {

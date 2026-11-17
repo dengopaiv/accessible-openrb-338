@@ -9,7 +9,7 @@
 //! ```
 //!
 //! A stand-in host runs the plugin's process side in step with the frames (no sound): the
-//! song loaded as File > Open loads it (Latch Pattern Mode), `--host-playing`
+//! song loaded as File > Open loads it (the mode is kept), `--host-playing`
 //! plays the host's transport from bar 1 (the Sync LED), `--midi` sends a host message on
 //! channel 10 (which nothing maps) in every buffer (the MIDI LED stays lit); each `--note
 //! CH,NOTE,VEL` sends that note-on (channel 1..4 the devices, 3 the 808, 4 the 909; for the

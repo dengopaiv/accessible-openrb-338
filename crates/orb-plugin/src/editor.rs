@@ -1165,7 +1165,6 @@ impl Embed for EditorEmbed {
     }
 
     fn load_song(&mut self, file: Option<Vec<u8>>) -> Result<(), String> {
-        let open = file.is_some();
         let changes = match file {
             Some(b) => self.params.load_song(b)?,
             None => self.params.new_song()?,
@@ -1174,11 +1173,6 @@ impl Embed for EditorEmbed {
             if let Some(i) = self.params.ids().iter().position(|x| x == id) {
                 set_param(&self.params, &self.gui, i, *v);
             }
-        }
-        // File > Open switches to pattern mode (task-185): Note Mode becomes Latch Pattern Mode,
-        // a pattern mode stays (task-218)
-        if open && !self.params.mode().patterns() {
-            self.params.set_mode(Mode::Latch);
         }
         self.pending = Some(changes);
         Ok(())

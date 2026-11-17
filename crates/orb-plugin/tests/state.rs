@@ -103,6 +103,28 @@ fn a_restored_state_plays_as_the_saved_one() {
     assert!(saved.1["orb"].contains("\"data\""));
 }
 
+/// A new instance is in Note Mode, and each mode survives a save and a restore (the persisted
+/// fields are what CLAP and VST3 state both carry, through nice-plug).
+#[test]
+fn the_mode_defaults_to_note_and_is_kept_in_the_state() {
+    use orb_plugin::instance::Mode;
+    assert_eq!(OrbParams::new().mode(), Mode::Note);
+    for m in [Mode::Latch, Mode::Gate, Mode::Note] {
+        let a = OrbParams::new();
+        a.set_mode(m);
+        let saved = save(&a);
+        // restored into an instance in another mode
+        let b = OrbParams::new();
+        b.set_mode(if m == Mode::Gate {
+            Mode::Latch
+        } else {
+            Mode::Gate
+        });
+        restore(&b, &saved);
+        assert_eq!(b.mode(), m, "{m:?} survives the state");
+    }
+}
+
 #[test]
 fn a_restore_into_a_running_instance_replaces_its_song() {
     let a = edited();

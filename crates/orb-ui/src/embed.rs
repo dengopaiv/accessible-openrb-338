@@ -60,8 +60,7 @@ pub trait Embed: Send {
     /// The plugin's song now.
     fn view(&mut self) -> SongView;
     /// File > Open (`Some`, the file's bytes) or File > New (`None`): the plugin's song, with the
-    /// plugin's mod; it plays in a pattern mode (task-185: File > Open switches Note Mode to
-    /// Latch Pattern Mode; task-218: a pattern mode stays).
+    /// plugin's mod; File > Open and File > New keep the mode (task-228).
     fn load_song(&mut self, file: Option<Vec<u8>>) -> Result<(), String>;
     /// The Mods menu or a song's mod: a recrypted mod's file, `None` for the built-in kit. The
     /// plugin keeps the mod's bytes in its state; [`SongView::kit`] names this file while the
