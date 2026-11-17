@@ -2,9 +2,10 @@
 //! window, through nice-plug's egui adapter (egui-baseview on wgpu).
 //!
 //! - [`OrbEditor`] is nice-plug's `Editor`: its size is the state's (`editor_size`), the host may
-//!   resize it ([`resize_hint`]) to sizes of the rule height = panel height at the width + the
-//!   unscaled menu bar ([`OrbHandle`]'s `adjust_size`), and each open spawns a new egui window with
-//!   a new [`orb_ui::app::App`].
+//!   resize it to any size ([`resize_hint`], [`adjust_logical`]) and the panel is letterboxed in
+//!   it, the panel's resize corner asks the host for the panel's exact fit (height = panel height
+//!   at the width + the unscaled menu bar), and each open spawns a new egui window with a new
+//!   [`orb_ui::app::App`].
 //! - [`PluginPort`] is the panel's player ([`orb_ui::link::Port`]): a control's message sets its
 //!   host parameter (so the host records and saves it; during the preview it goes to the preview
 //!   set instead), a pattern edit goes to [`OrbParams::edit`], Play and Stop enter and leave the
@@ -35,7 +36,7 @@ use orb_engine::samples::SampleSet;
 use orb_engine::song::Song;
 use orb_player::{Command, Snapshot, Tracks};
 use orb_ui::app::App;
-use orb_ui::embed::{Embed, MENU_H, PluginFormat, PluginMode, SongView, window_height};
+use orb_ui::embed::{Embed, MARGIN_X, MARGIN_Y, MENU_H, PluginFormat, PluginMode, SongView};
 use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::link::{Link, Port};
 use orb_ui::settings::Settings;
@@ -46,18 +47,24 @@ use crate::instance::{self, Kit, Mode, OrbParams, ROWS};
 use crate::params::{self, SPECS, Target};
 
 /// The editor's size before the state has one, in logical points: the panel at its native
-/// size and the menu bar above it.
-pub const DEFAULT_SIZE: (u32, u32) = (PANEL_W as u32, PANEL_H as u32 + MENU_H as u32);
+/// size, the margins of desk beside it (`orb_ui::embed::MARGIN_X`, `MARGIN_Y`) and the menu bar
+/// above: 656 x 532.
+pub const DEFAULT_SIZE: (u32, u32) = (
+    PANEL_W as u32 + 2 * MARGIN_X as u32,
+    PANEL_H as u32 + MENU_H as u32 + 2 * MARGIN_Y as u32,
+);
 
 /// The engine frames after which the panel takes the engine's values again after it set a
 /// parameter: the host passes the change to `process` in its next buffer, so this is longer
 /// than any buffer a host uses (8192 frames, 186 ms).
 pub const FOLLOW_FRAMES: u64 = 8192;
 
-/// How the host may resize the editor: both ways, no smaller than half the panel (the
-/// standalone window's minimum) and its menu bar. No aspect ratio: the menu bar does not scale
-/// with the panel, so the window's shape is a rule, which [`OrbHandle::adjust_size`] applies
-/// (CLAP `gui.adjust_size`, VST3 `IPlugView::checkSizeConstraint`).
+/// How the host may resize the editor, in both formats (CLAP `gui.can_resize` and
+/// `gui.get_resize_hints`, VST3 `IPlugView::canResize`) and for baseview's window: both ways,
+/// to any size of at least half the panel (the standalone window's minimum) and its menu bar,
+/// with no aspect ratio. The editor takes any size the host gives ([`adjust_logical`]) and
+/// letterboxes the panel in it (task-234, the user's decision of 2026-11-17; `docs/plugin.md`
+/// section 10).
 pub fn resize_hint() -> ResizeHint {
     ResizeHint::RESIZABLE.with_min_max_logical_size(
         Some(LogicalSize {
@@ -68,24 +75,22 @@ pub fn resize_hint() -> ResizeHint {
     )
 }
 
-/// The window size (logical points) that keeps the rule height = [`window_height`] of the
-/// width, closest to a size `new` the host proposes while the window is `current`: the side
-/// the host changed more (relatively) decides; at least half the panel.
-pub fn adjust_logical(new: (f64, f64), current: (f64, f64)) -> (f64, f64) {
-    let (pw, ph, m) = (PANEL_W as f64, PANEL_H as f64, MENU_H as f64);
-    let dw = (new.0 - current.0).abs() / current.0.max(1.0);
-    let dh = (new.1 - current.1).abs() / current.1.max(1.0);
-    let w = if dh > dw {
-        (new.1 - m) * pw / ph
-    } else {
-        new.0
-    };
-    let w = w.max(pw / 2.0).round();
-    (w, window_height(w as f32) as f64)
+/// The size (logical points) the editor takes for a size `new` the host proposes (CLAP
+/// `gui.adjust_size`, VST3 `IPlugView::checkSizeConstraint`): the host's size itself, at least
+/// the minimum of [`resize_hint`] (half the panel and the menu bar), with no maximum. The panel
+/// is letterboxed in whatever size the window has (orb-ui `View::fit`). Any answer that changed
+/// the host's size failed somewhere (task-234, `docs/plugin.md` section 10): Live (VST3) and
+/// Bitwig (CLAP) ask on every mouse event of a drag and make the answer the window's size, so
+/// an answer that depended on the window's current size flipped; REAPER (CLAP) sets the
+/// editor to the answer but keeps its own window at the size it asked for, so a larger answer
+/// was cropped.
+pub fn adjust_logical(new: (f64, f64)) -> (f64, f64) {
+    let min = (PANEL_W as f64 / 2.0, PANEL_H as f64 / 2.0 + MENU_H as f64);
+    // NaN (none seen) becomes the minimum
+    (new.0.max(min.0), new.1.max(min.1))
 }
 
-/// The editor window's handle: egui's, with the size rule of [`adjust_logical`] for the host's
-/// resizing.
+/// The editor window's handle: egui's, taking the host's sizes ([`adjust_logical`]).
 pub struct OrbHandle {
     inner: EguiEditorHandle,
     /// The window's way to the host, told of `set_parent` and `set_size` ([`HostProxy`]).
@@ -105,6 +110,7 @@ impl EditorHandle for OrbHandle {
         parent: ParentWindowHandle,
         window: &Self::Window,
     ) -> Result<(), Self::Error> {
+        size_log(format_args!("set_parent"));
         guard_err("set_parent", || {
             let r = self.inner.set_parent(parent, window);
             if r.is_ok()
@@ -129,6 +135,10 @@ impl EditorHandle for OrbHandle {
         new_size: NativeSize<u32>,
         window: &Self::Window,
     ) -> Result<(), Self::Error> {
+        size_log(format_args!(
+            "set_size {}x{}",
+            new_size.width, new_size.height
+        ));
         guard_err("set_size", || match &self.route {
             Some(route) => route.host_sizing(|| self.inner.set_size(new_size, window)),
             None => self.inner.set_size(new_size, window),
@@ -141,7 +151,8 @@ impl EditorHandle for OrbHandle {
         });
     }
 
-    /// The closest size of the rule (CLAP `gui.adjust_size`, VST3 `checkSizeConstraint`).
+    /// A size of the rule for the host's (CLAP `gui.adjust_size`, VST3 `checkSizeConstraint`;
+    /// [`adjust_logical`]).
     fn adjust_size(
         &self,
         new_size: NativeSize<u32>,
@@ -154,12 +165,23 @@ impl EditorHandle for OrbHandle {
             let cur = window.size();
             let scale = cur.scale_factor;
             let l = new_size.cast::<f64>().to_logical(scale);
-            let (w, h) =
-                adjust_logical((l.width, l.height), (cur.logical.width, cur.logical.height));
-            Some(NativeSize::from_size(
-                Size::Logical(LogicalSize::new(w, h)),
-                scale,
-            ))
+            let (w, h) = adjust_logical((l.width, l.height));
+            // the host's size given back as it came (no round trip through logical points)
+            let a = if (w, h) == (l.width, l.height) {
+                new_size
+            } else {
+                NativeSize::from_size(Size::Logical(LogicalSize::new(w, h)), scale)
+            };
+            size_log(format_args!(
+                "adjust_size {}x{} (scale {scale}, window {}x{}) -> {}x{}",
+                new_size.width,
+                new_size.height,
+                cur.logical.width,
+                cur.logical.height,
+                a.width,
+                a.height
+            ));
+            Some(a)
         })
         .unwrap_or(Some(new_size))
     }
@@ -277,12 +299,16 @@ impl Editor for OrbEditor {
         guard("size", || {
             let (w, h) = self.logical_size();
             let scale = *self.scale.lock().unwrap_or_else(|e| e.into_inner());
-            NativeSize::from_size(Size::Logical(LogicalSize::new(w as f64, h as f64)), scale)
+            let s =
+                NativeSize::from_size(Size::Logical(LogicalSize::new(w as f64, h as f64)), scale);
+            size_log(format_args!("size -> {}x{}", s.width, s.height));
+            s
         })
         .unwrap_or_else(|_| NativeSize::new(DEFAULT_SIZE.0, DEFAULT_SIZE.1))
     }
 
     fn resize_hint(&self) -> ResizeHint {
+        size_log(format_args!("resize_hint"));
         guard("resize_hint", resize_hint).unwrap_or_default()
     }
 }
@@ -435,6 +461,10 @@ impl NiceEguiApp for EditorApp {
     fn resized(&mut self, size: WindowSize) {
         // a panic leaves the state's size as it was
         let _ = guard("resized", || {
+            size_log(format_args!(
+                "resized {}x{} (scale {})",
+                size.logical.width, size.logical.height, size.scale_factor
+            ));
             *self.scale.lock().unwrap_or_else(|e| e.into_inner()) = size.scale_factor;
             self.params.set_editor_size((
                 size.logical.width.round() as u32,
@@ -701,13 +731,21 @@ impl HostCallbacks for HostProxy {
             // no route on this thread (X11's window thread): ask
             .unwrap_or(false);
         if quiet {
+            size_log(format_args!(
+                "baseview request {new_size:?}: Ok, the host not asked"
+            ));
             return Ok(());
         }
-        match self.inner.try_borrow_mut() {
+        let r = match self.inner.try_borrow_mut() {
             Ok(mut c) => c.request_resize(new_size, scale_factor),
             // a request in progress
             Err(_) => Ok(()),
-        }
+        };
+        size_log(format_args!(
+            "baseview request {new_size:?} (scale {scale_factor}) -> {}",
+            if r.is_ok() { "Ok" } else { "Err" }
+        ));
+        r
     }
 
     fn destroyed(&mut self) {
@@ -815,7 +853,38 @@ fn flush_route(id: u64) -> Option<bool> {
         Ok(mut c) => c.request_resize(size, scale).is_ok(),
         Err(_) => false,
     };
+    size_log(format_args!(
+        "corner request {w}x{h} (scale {scale}) -> {ok}"
+    ));
     Some(ok)
+}
+
+/// The variable that names the file of the size log ([`size_log`]).
+pub const SIZE_LOG_VAR: &str = "ORB_PLUGIN_SIZE_LOG";
+
+/// Appends a line to the file `ORB_PLUGIN_SIZE_LOG` names, if it is set (read once per
+/// process): the host's size calls and the editor's requests, each with the milliseconds since
+/// the first line, for capturing a host's real sequence (task-234, Ableton Live). Off by
+/// default; a file that cannot be opened turns it off.
+pub fn size_log(line: std::fmt::Arguments) {
+    use std::io::Write;
+    use std::sync::OnceLock;
+    use std::time::Instant;
+    static LOG: OnceLock<Option<Mutex<(std::fs::File, Instant)>>> = OnceLock::new();
+    let log = LOG.get_or_init(|| {
+        let path = std::env::var_os(SIZE_LOG_VAR).filter(|p| !p.is_empty())?;
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()?;
+        Some(Mutex::new((f, Instant::now())))
+    });
+    if let Some(log) = log {
+        let mut g = log.lock().unwrap_or_else(|e| e.into_inner());
+        let ms = g.1.elapsed().as_secs_f64() * 1000.0;
+        let _ = writeln!(g.0, "{ms:10.1} {line}");
+    }
 }
 
 /// Runs [`flush_route`] of route `id` on this thread once the current event (the egui frame)

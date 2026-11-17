@@ -18,8 +18,9 @@
 //! and each `--click X,Y` clicks the window at that point (in points; one click every 6 frames
 //! from frame 10, e.g. to open a menu for a screenshot). The parameters the
 //! panel sets are applied at once, as a host applies them. `--screenshot` saves the window after a
-//! few frames and quits. The window is the editor's (`--size`, default 624x532 points: the menu bar
-//! and the panel at 1:1; a plugin window keeps height = `orb_ui::embed::window_height(width)`).
+//! few frames and quits. The window is the editor's (`--size`, default 656x532 points,
+//! `orb_plugin::editor::DEFAULT_SIZE`: the menu bar and the panel at 1:1 with its desk margins;
+//! any size letterboxes the panel, and `orb_ui::embed::window_height(width)` is its exact fit).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -82,7 +83,10 @@ struct Args {
 fn args() -> Args {
     let mut a = Args {
         song: None,
-        size: [624.0, orb_ui::embed::window_height(624.0)],
+        size: [
+            orb_plugin::editor::DEFAULT_SIZE.0 as f32,
+            orb_plugin::editor::DEFAULT_SIZE.1 as f32,
+        ],
         ppp: None,
         host_playing: false,
         midi: false,

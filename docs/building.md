@@ -239,6 +239,7 @@ and `OPENRB_` names are not read any more and have no deprecated alias.
 | `ORB_GPU_INFO` | OpenRB-338 | `1` prints the graphics adapter wgpu chose (`scripts/appimage-smoke.sh`) | `OPENRB_GPU_INFO` |
 | `ORB_UI_FRAME_STATS` | OpenRB-338 (`FrameStats`, `crates/orb-ui/src/app.rs`, task-153) | `1` prints, every 2 s of frames, the frames drawn per second and eframe's mean CPU time of a frame | none |
 | `ORB_UI_START_STATS` | OpenRB-338 (`start_stats`, `crates/orb-ui/src/app.rs`, task-179) | `1` prints the ms from the process's start to the first complete frame, and to every end of a background rasterizing at full resolution | none |
+| `ORB_PLUGIN_SIZE_LOG` | the plugin (`editor::size_log`, `crates/orb-plugin/src/editor.rs`, task-234) | a file to which the editor appends the host's size calls (`adjust_size`/`checkSizeConstraint`, `set_size`/`onSize`, `size`/`getSize`, `resize_hint`/`canResize`, `set_parent`), egui's `resized` and the size requests, with ms; unset: no log (docs/plugin.md section 10) | none |
 | `ORB_BUILD_BRANCH` | `crates/orb-ui/build.rs`, `scripts/release-env.sh`, `scripts/build.sh` (passed into Docker), `release.yml` | `main` or `other`: makes the About box's hash the main form | `RB_BUILD_BRANCH` |
 | `ORB_UI_VERSION` | set by `crates/orb-ui/build.rs` for rustc (`env!`), never by hand | the version string of the About box | `RB_UI_VERSION` |
 | `ORB_APPIMAGE_EMULATED` | `scripts/package-appimage.sh`, `appimage-pack.sh`, `appimage-smoke.sh` | `1` on an x86_64 AppImage built or checked on a Mac (local only) | `OPENRB_APPIMAGE_EMULATED` |

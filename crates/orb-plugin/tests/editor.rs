@@ -25,8 +25,9 @@ use orb_plugin::editor::{
 use orb_plugin::instance::{self, Kit, Mode, OrbParams};
 use orb_ui::app::App;
 use orb_ui::embed::{
-    CORNER, DRAG_OUT, Embed, MENU_H, MODE_DRAG_STEP, PLUGIN_HIDDEN, PLUGIN_MODE_KNOB,
-    PLUGIN_MODE_LED_X, PLUGIN_MODE_ROWS, PluginFormat, PluginMode, window_height,
+    CORNER, DRAG_OUT, Embed, MARGIN_X, MARGIN_Y, MENU_H, MODE_DRAG_STEP, PLUGIN_HIDDEN,
+    PLUGIN_MODE_KNOB, PLUGIN_MODE_LED_X, PLUGIN_MODE_ROWS, PluginFormat, PluginMode, corner_rect,
+    on_corner, window_height,
 };
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
 use orb_ui::menu::Cmd;
@@ -109,7 +110,7 @@ impl Harness {
             app,
             time: 0.0,
             pos: Pos2::ZERO,
-            size: Vec2::new(PANEL_W, PANEL_H + MENU_H),
+            size: Vec2::new(DEFAULT_SIZE.0 as f32, DEFAULT_SIZE.1 as f32),
             commands: Vec::new(),
             cursor: egui::CursorIcon::Default,
             texts: Vec::new(),
@@ -171,10 +172,11 @@ impl Harness {
             .collect();
     }
 
-    /// The center of a control (the window is the menu bar and the panel at 1:1).
+    /// The center of a control (the window is the menu bar and the panel at 1:1 with its
+    /// margins).
     fn center(id: &str) -> Pos2 {
         let c = layout::controls().into_iter().find(|c| c.id == id).unwrap();
-        Pos2::new(c.x + c.w / 2.0, MENU_H + c.y + c.h / 2.0)
+        at(c.x + c.w / 2.0, c.y + c.h / 2.0)
     }
 
     fn move_to(&mut self, p: Pos2) {
@@ -670,27 +672,127 @@ fn inner_size(h: &Harness) -> Option<Vec2> {
 #[test]
 fn the_corner_scales_the_panel_under_the_menu_bar() {
     let mut h = Harness::new(OrbParams::new());
-    let corner = Pos2::new(PANEL_W - CORNER / 2.0, PANEL_H + MENU_H - CORNER / 2.0);
+    let corner = at(PANEL_W - CORNER / 2.0, PANEL_H - CORNER / 2.0);
     h.move_to(corner);
     h.button(true);
     assert_eq!(h.cursor, egui::CursorIcon::ResizeNwSe);
     h.move_to(corner + Vec2::new(300.0, 20.0));
     let size = inner_size(&h).expect("a resize request");
-    // the larger of the two scales: (624 + 300) / 624; the bar keeps its height
+    // the larger of the two scales: (624 + 300) / 624; the bar and the margins keep their
+    // size: the panel's exact fit
     let w = PANEL_W + 300.0;
-    assert_eq!(size, Vec2::new(w, (w * PANEL_H / PANEL_W).round() + MENU_H));
+    let g = 2.0 * MARGIN_X;
+    assert_eq!(
+        size,
+        Vec2::new(w + g, (w * PANEL_H / PANEL_W).round() + MENU_H)
+    );
+    assert_eq!(size.y, window_height(size.x));
+    h.button(false);
+}
+
+/// task-234: the grip is on the panel's corner, MARGIN_X (16 points) in from the window's
+/// right edge, so the window's corner (where the host's own grip is) does not resize.
+#[test]
+fn the_grip_is_on_the_panels_corner_clear_of_the_windows() {
+    let mut h = Harness::new(OrbParams::new());
+    let win = Pos2::new(DEFAULT_SIZE.0 as f32, DEFAULT_SIZE.1 as f32);
+    let panel = Rect::from_min_size(at(0.0, 0.0), Vec2::new(PANEL_W, PANEL_H));
+    assert_eq!(panel.max, win - Vec2::new(MARGIN_X, MARGIN_Y));
+    // the grip's area ends 16 points left of the window's right edge
+    assert_eq!(win.x - corner_rect(panel).max.x, 16.0);
+    assert!(on_corner(panel, panel.max - Vec2::splat(1.0)));
+    assert!(!on_corner(panel, win - Vec2::splat(1.0)));
+    // the window's corner: no resize
+    h.move_to(win - Vec2::splat(2.0));
+    h.button(true);
+    h.move_to(win + Vec2::new(100.0, 50.0));
+    assert_eq!(inner_size(&h), None, "the window's corner is the host's");
+    h.button(false);
+    // the panel's corner: a resize
+    h.move_to(panel.max - Vec2::splat(3.0));
+    h.button(true);
+    assert_eq!(h.cursor, egui::CursorIcon::ResizeNwSe);
+    h.move_to(panel.max + Vec2::new(100.0, 50.0));
+    assert!(inner_size(&h).is_some(), "the grip resizes");
     h.button(false);
 }
 
 #[test]
 fn the_window_is_the_bar_and_the_panel_at_any_size() {
     let mut h = Harness::new(OrbParams::new());
-    h.size = Vec2::new(PANEL_W * 1.5, window_height(PANEL_W * 1.5));
+    let w = 1.5 * PANEL_W + 2.0 * MARGIN_X;
+    h.size = Vec2::new(w, window_height(w));
     h.frame(vec![]);
     // a click on a pattern button at the larger scale, under the unscaled bar, hits it
-    let c = Harness::center("pattern1.pattern2");
-    h.click(Pos2::new(c.x * 1.5, MENU_H + (c.y - MENU_H) * 1.5));
+    let c = Harness::center("pattern1.pattern2") - at(0.0, 0.0);
+    h.click(at(0.0, 0.0) + c * 1.5);
     assert_eq!(h.value("d1c1"), 1, "A2");
+}
+
+/// task-234 review: a host that calls `set_size` with no `adjust_size` may make the window
+/// shorter than the menu bar; the panel's area is then inverted, and the fit keeps a positive,
+/// finite scale (a tiny panel), so frames and clicks still run.
+#[test]
+fn a_window_shorter_than_the_menu_bar_still_draws() {
+    use orb_ui::app::View;
+    for (w, h) in [(10.0, 10.0), (0.0, 0.0), (300.0, MENU_H), (1.0, 500.0)] {
+        let avail = Rect::from_min_max(Pos2::new(0.0, MENU_H), Pos2::new(w, h));
+        let view = View::fit(avail, 2.0);
+        assert!(
+            view.scale > 0.0 && view.scale.is_finite(),
+            "{w}x{h}: {view:?}"
+        );
+        let p = view.to_panel(Pos2::new(w / 2.0, h / 2.0));
+        assert!(p.x.is_finite() && p.y.is_finite(), "{w}x{h}: {p:?}");
+        let mut hh = Harness::new(OrbParams::new());
+        hh.size = Vec2::new(w, h);
+        hh.frame(vec![]);
+        hh.click(Pos2::new(w / 2.0, h / 2.0));
+        hh.frame(vec![]);
+    }
+}
+
+/// task-234: the host may give the editor any size; the panel is letterboxed under the menu
+/// bar (the largest panel-shaped area within the margins, centered). REAPER (CLAP) keeps its
+/// window at the size it asked for, e.g. 721 x 532: the panel fits inside it whole (no crop),
+/// at least MARGIN_X from the left and right edges. A click on the letterboxed panel hits the
+/// control under it, in a wide and in a tall window.
+#[test]
+fn the_panel_is_letterboxed_in_a_window_of_any_shape() {
+    use orb_ui::app::View;
+    let m = MARGIN_X;
+    for (w, h, dx, dy, scale) in [
+        // wide: the height decides, bands left and right
+        (1100.0, 532.0, (1100.0 - PANEL_W) / 2.0, 0.0, 1.0),
+        // REAPER's own size after a right-edge drag
+        (721.0, 532.0, (721.0 - PANEL_W) / 2.0, 0.0, 1.0),
+        // tall: the width decides, bands above and below
+        (656.0, 800.0, m, (800.0 - MENU_H - PANEL_H) / 2.0, 1.0),
+        // larger and wide: scale 2 by the height
+        (
+            1600.0,
+            1020.0 + MENU_H,
+            (1600.0 - 2.0 * PANEL_W) / 2.0,
+            0.0,
+            2.0,
+        ),
+    ] {
+        let win = Rect::from_min_size(Pos2::ZERO, Vec2::new(w, h));
+        let view = View::fit(orb_ui::embed::panel_area(win), 1.0);
+        let panel = view.rect(0.0, 0.0, PANEL_W, PANEL_H);
+        assert!(
+            win.shrink2(Vec2::new(m - 0.5, -0.5)).contains_rect(panel),
+            "{w}x{h}: the panel {panel:?} is inside the window's margins"
+        );
+        assert_eq!(view.scale, scale, "{w}x{h}");
+        assert_eq!(view.origin, Pos2::new(dx, MENU_H + dy).round(), "{w}x{h}");
+        let mut hh = Harness::new(OrbParams::new());
+        hh.size = Vec2::new(w, h);
+        hh.frame(vec![]);
+        let c = Harness::center("pattern1.pattern2") - at(0.0, 0.0);
+        hh.click(view.origin + c * scale);
+        assert_eq!(hh.value("d1c1"), 1, "{w}x{h}: A2");
+    }
 }
 
 #[test]
@@ -698,23 +800,66 @@ fn the_size_is_kept_in_the_state_and_the_host_gets_sizes_of_the_rule() {
     let p = Arc::new(OrbParams::new());
     let e = OrbEditor::new(p.clone());
     assert_eq!(e.logical_size(), DEFAULT_SIZE);
-    assert_eq!(DEFAULT_SIZE, (624, 510 + MENU_H as u32));
+    assert_eq!(DEFAULT_SIZE, (624 + 32, 510 + MENU_H as u32));
+    assert_eq!(
+        window_height(DEFAULT_SIZE.0 as f32),
+        DEFAULT_SIZE.1 as f32,
+        "the default is the panel's exact fit at 1:1"
+    );
     p.set_editor_size((936, 787));
     assert_eq!(e.logical_size(), (936, 787));
+    // the host may resize the editor both ways, with no aspect ratio, in both formats
+    // (task-234); the editor's hint is the window's
     let hint = editor::resize_hint();
     assert!(hint.can_resize && !hint.preserve_aspect_ratio);
-    // the host widens the window: the height follows; it heightens it: the width follows
-    let cur = (624.0, 532.0);
-    let (w, h) = adjust_logical((1000.0, 540.0), cur);
-    assert_eq!((w, h), (1000.0, window_height(1000.0) as f64));
-    let (w, h) = adjust_logical((630.0, 1042.0), cur);
-    assert_eq!(w, ((1042.0 - MENU_H as f64) * 624.0 / 510.0).round());
-    assert_eq!(h, window_height(w as f32) as f64);
-    // never below half the panel
-    assert_eq!(
-        adjust_logical((10.0, 10.0), cur),
-        (312.0, 255.0 + MENU_H as f64)
+    assert!(hint.can_resize_horizontally && hint.can_resize_vertically);
+    assert!(Editor::resize_hint(&e).can_resize);
+    // the host's size is taken as it is, at least the minimum (half the panel and the bar)
+    for s in [
+        (624.0, 532.0),
+        (721.0, 532.0),
+        (1000.0, 540.0),
+        (630.0, 1042.0),
+        (312.0, 277.0),
+        (2000.5, 900.25),
+    ] {
+        assert_eq!(adjust_logical(s), s, "{s:?}");
+    }
+    assert_eq!(adjust_logical((10.0, 10.0)), (312.0, 255.0 + MENU_H as f64));
+    assert_eq!(adjust_logical((500.0, 100.0)), (500.0, 277.0));
+    assert_eq!(adjust_logical((f64::NAN, -5.0)), (312.0, 277.0));
+    // Live's (VST3) and Bitwig's (CLAP) corner drags: the cursor's size asked on each mouse
+    // event and the answer made the window's size. The answer is the request, so it follows
+    // the cursor; the rule before task-234 (the side that changed more relative to the
+    // window's current size decides) went back on the same drag.
+    let changed = |new: (f64, f64), cur: (f64, f64)| -> (f64, f64) {
+        let (pw, ph, m) = (PANEL_W as f64, PANEL_H as f64, MENU_H as f64);
+        let dw = (new.0 - cur.0).abs() / cur.0.max(1.0);
+        let dh = (new.1 - cur.1).abs() / cur.1.max(1.0);
+        let w = if dh > dw {
+            (new.1 - m) * pw / ph
+        } else {
+            new.0
+        };
+        let w = w.max(pw / 2.0).round();
+        (w, window_height(w as f32) as f64)
+    };
+    let drag: Vec<(f64, f64)> = (1..=47)
+        .map(|i| (624.0 + 8.0 * i as f64, (532.0 + 4.0 * i as f64).min(700.0)))
+        .collect();
+    let mut cur = (624.0, 532.0);
+    let mut old = Vec::new();
+    for &c in &drag {
+        cur = changed(c, cur);
+        old.push(cur.0);
+    }
+    assert!(
+        old.windows(2).any(|p| p[1] < p[0]),
+        "the old rule goes back on a growing drag: {old:?}"
     );
+    for &c in &drag {
+        assert_eq!(adjust_logical(c), c, "the answer is the request");
+    }
     // the state keeps the size
     let json = p.main().doc.to_json();
     assert!(json.contains("\"editor_size\":[936,787]"), "{json}");
@@ -789,7 +934,7 @@ fn the_corner_asks_the_host_after_the_frame_through_its_callbacks() {
         f(state.as_mut().unwrap());
     };
     frame(&|h| h.frame(vec![]));
-    let corner = Pos2::new(PANEL_W - CORNER / 2.0, PANEL_H + MENU_H - CORNER / 2.0);
+    let corner = at(PANEL_W - CORNER / 2.0, PANEL_H - CORNER / 2.0);
     frame(&|h| h.move_to(corner));
     frame(&|h| h.button(true));
     frame(&|h| h.move_to(corner + Vec2::new(100.0, 0.0)));
@@ -806,7 +951,7 @@ fn the_corner_asks_the_host_after_the_frame_through_its_callbacks() {
     });
     // the posted callback, after the frame
     assert_eq!(route.flush(), Some(true));
-    let w = (PANEL_W + 100.0) as f64;
+    let w = (DEFAULT_SIZE.0 + 100) as f64;
     let size = (w, window_height(w as f32) as f64);
     assert_eq!(
         *sizes.borrow(),
@@ -830,6 +975,89 @@ fn the_corner_asks_the_host_after_the_frame_through_its_callbacks() {
     assert_eq!(route.flush(), None);
     assert_eq!(sizes.borrow().len(), 1);
     frame(&|h| h.button(false));
+}
+
+/// The panel's resize corner is the one way to resize (task-234): a drag off the rule's
+/// diagonal, growing then shrinking, through the host that sizes the window from inside the
+/// request (as Reaper does; Live does it with `onSize`). Each size asked for is of the rule,
+/// the host's check of it (`checkSizeConstraint`/`gui.adjust_size`, [`adjust_logical`]) gives
+/// it back, and the widths follow the drag without going back.
+#[test]
+fn the_corner_drag_resizes_steadily_through_the_host() {
+    let mut h = Harness::new(OrbParams::new());
+    let sizes = Rc::new(RefCell::new(Vec::new()));
+    let window: Rc<RefCell<Option<Harness>>> = Rc::new(RefCell::new(None));
+    let set_size_ok = Rc::new(RefCell::new(Vec::new()));
+    let host = Asked {
+        sizes: sizes.clone(),
+        window: window.clone(),
+        set_size_ok: set_size_ok.clone(),
+    };
+    let (route, _proxy) =
+        HostRoute::register_with(Box::new(host), Arc::new(Mutex::new(1.0)), post_nothing);
+    h.app = editor_app_routed(
+        h.params.clone(),
+        GuiContext::new(h.host.clone()),
+        settings(),
+        Some(route.clone()),
+    );
+    *window.borrow_mut() = Some(h);
+    let frame = |f: &dyn Fn(&mut Harness)| {
+        let mut state = window.borrow_mut();
+        f(state.as_mut().unwrap());
+    };
+    frame(&|h| h.frame(vec![]));
+    let corner = at(PANEL_W - CORNER / 2.0, PANEL_H - CORNER / 2.0);
+    frame(&|h| h.move_to(corner));
+    frame(&|h| h.button(true));
+    let mut p = corner;
+    let mut turn = 0;
+    for i in 0..90 {
+        p += if i < 30 {
+            Vec2::new(8.0, 4.0)
+        } else {
+            Vec2::new(-8.0, -3.0)
+        };
+        frame(&|h| h.move_to(p));
+        // the posted callback, after the frame
+        route.flush();
+        if i == 29 {
+            turn = sizes.borrow().len();
+        }
+    }
+    frame(&|h| h.button(false));
+    let sizes = sizes.borrow();
+    assert!(
+        sizes.len() > 40,
+        "the host was asked along the drag: {sizes:?}"
+    );
+    assert!(set_size_ok.borrow().iter().all(|&ok| ok));
+    for &(w, h) in sizes.iter() {
+        assert_eq!(h, window_height(w as f32) as f64, "{w}x{h} is of the rule");
+        assert_eq!(
+            adjust_logical((w, h)),
+            (w, h),
+            "the host's check of {w}x{h}"
+        );
+    }
+    for (i, pair) in sizes.windows(2).enumerate() {
+        let ok = if i + 1 < turn {
+            pair[1].0 > pair[0].0
+        } else if i + 1 > turn {
+            pair[1].0 < pair[0].0
+        } else {
+            true
+        };
+        assert!(ok, "the width went back at {i}: {sizes:?}");
+    }
+    assert_eq!(
+        window.borrow().as_ref().unwrap().size,
+        Vec2::new(
+            sizes.last().unwrap().0 as f32,
+            sizes.last().unwrap().1 as f32
+        ),
+        "the window has the last size"
+    );
 }
 
 /// Where a test host finds the editor's proxy.
@@ -995,11 +1223,17 @@ fn a_click_on_a_pattern_button_still_selects_it() {
 
 /// The center of the mode selector's row `i` (0 Latch, 1 Gate, 2 Note) in the window: its label.
 fn mode_row(i: usize) -> Pos2 {
-    Pos2::new(PLUGIN_MODE_LED_X + 30.0, MENU_H + PLUGIN_MODE_ROWS[i])
+    at(PLUGIN_MODE_LED_X + 30.0, PLUGIN_MODE_ROWS[i])
 }
 
 fn mode_knob() -> Pos2 {
-    Pos2::new(PLUGIN_MODE_KNOB.0, MENU_H + PLUGIN_MODE_KNOB.1)
+    at(PLUGIN_MODE_KNOB.0, PLUGIN_MODE_KNOB.1)
+}
+
+/// The window's point of the panel's point (x, y) at the default size: the panel at 1:1 under
+/// the menu bar, [`MARGIN_X`] in from the window's left edge ([`MARGIN_Y`] below the bar).
+fn at(x: f32, y: f32) -> Pos2 {
+    Pos2::new(MARGIN_X + x, MENU_H + MARGIN_Y + y)
 }
 
 /// task-231 AC 2: a click on a row of the mode selector sets the mode (`Embed::set_mode`, the
@@ -1083,7 +1317,7 @@ fn the_editor_knows_its_plugin_format() {
 #[test]
 fn a_click_on_a_rows_line_selects_it() {
     let mut h = Harness::new(with("303_accent0"));
-    let near = |row: usize| Pos2::new(PLUGIN_MODE_KNOB.0 + 14.0, MENU_H + PLUGIN_MODE_ROWS[row]);
+    let near = |row: usize| at(PLUGIN_MODE_KNOB.0 + 14.0, PLUGIN_MODE_ROWS[row]);
     h.click(near(0));
     assert_eq!(h.params.mode(), Mode::Latch);
     h.click(near(1));

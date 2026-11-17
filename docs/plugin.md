@@ -254,7 +254,7 @@ field, `orb`, a JSON object (version 1):
 | `patterns` | the four pattern arrays as edited (303 #1 and #2: 32 x 98 bytes; 808 and 909: 32 x 194), base64 |
 | `vintage` | the Vintage sound model |
 | `mod` | null for the built-in kit (never embedded); else `{name, sha256, data}`: the mod's INFO name, the SHA-256 of its bytes and the recrypted `.rbm`, base64 (the mods are 2.6 to 9.4 MB, so about 3.5 to 12.5 MB of text) |
-| `editor_size` | the editor window's size in logical points (section 10); absent: 624 x 532 |
+| `editor_size` | the editor window's size in logical points (section 10); absent: 656 x 532 (624 x 532 before task-234's side margins) |
 | `remote_enabled` | whether the Standard Mapping (Remote MIDI) is on; false by default and when absent (section 8) |
 | `remote_channel` | the Standard Mapping's MIDI channel, 0-based (15: channel 16, the default and when absent); a section's channel (0..3, MIDI 1..4) restores as 15 with `last_error` set, the rest of the state kept (section 8) |
 | `mode` | `"latch"`, `"gate"` or `"note"` (section 4; a new instance: note; task-217's `"pattern"` is no longer read) |
@@ -603,21 +603,157 @@ only in its default `app` feature, so the plugin links no eframe and no winit. `
 has the pieces; orb-ui's side is `crates/orb-ui/src/embed.rs`.
 
 **The window.** The standalone app's menu bar (File, Mods, Options, Help; egui-drawn, 22
-points high, `MENU_H`) on top, not scaled, and the panel under it, scaled to the window's width:
-the window is these two and nothing else (no desk around the panel). Its height is therefore
-`round(width * 510 / 624) + 22` points (`embed::window_height`), which no fixed aspect ratio
-expresses. So `Editor::resize_hint()` says resizable both ways with a minimum of half the panel
-(312 x 277) and no aspect ratio, and the editor's handle (`OrbHandle`, egui's handle with its
-own `EditorHandle::adjust_size`) gives the host the closest size of the rule: nice-plug calls
-`adjust_size` from CLAP `gui.adjust_size` and from VST3 `IPlugView::checkSizeConstraint`
-(nice-plug 0.4.2, `wrapper/clap/wrapper.rs` and `wrapper/vst3/view.rs`), so no patch of
-nice-plug is needed. The side the host changed more (relatively) decides the width
-(`editor::adjust_logical`). `EditorHandle::set_size` (egui's) applies the host's size.
+points high, `MENU_H`) on top, not scaled, across the window's whole width, and the panel
+under it, **letterboxed on the standalone's desk**: the rest of the window less a margin of
+16 points left and right and none above and below (`embed::MARGIN_X`, `embed::MARGIN_Y`, not
+scaled; `embed::panel_area`) is the area the panel is fitted in, the largest panel-shaped area
+centered in it (`orb_ui::app::View::fit`, the standalone app's own fit), and the whole area
+under the bar is the standalone's desk (`backdrop::paint`: the dark gradient, the tile, the
+vignette and the panel's shadow). At the exact fit the panel touches the menu bar and the
+window's bottom edge, with a strip of desk on each side (the user's design of 2026-11-17: first
+8 points on all four sides, after the grip on the window's corner was hard to tell from the
+host's own grip; then, after the check of 02eb46e, twice that left and right and none above
+and below). The panel's exact fit, height = `round((width - 32) * 510 / 624) + 22` points
+(`embed::window_height`), leaves only the side strips; the default size is 656 x 532 (the
+panel at 1:1, `editor::DEFAULT_SIZE`). `editor_preview` screenshots of 656 x 532 (exact
+fit), 1100 x 532 (wide) and 656 x 800 (tall) were checked. **Project dirty state:** REAPER and
+Live do not mark the project modified when only the plugin window is resized (the user's
+check of 2026-11-17; AudioRealm ABL3 behaves the same); the size (`editor_size`) is saved with
+the plugin's state at the next save. The menu strip stays out of the scaled area: it keeps its height at every size,
+as in the standalone app. The standalone app is unchanged (its `--screenshot` is byte for byte
+the same before and after task-234).
 
-**The resize corner.** An invisible 14 x 14 point corner at the window's bottom right (the
-right wood's foot, no control there): the cursor turns to the diagonal resize arrow over it, a
-faint grip of three diagonal strokes (`embed::paint_grip`) shows while it is hovered or dragged,
-and a drag asks for the size of the rule at the larger of the two scales the drag gives
+**The host may give the editor any size** (task-234, the user's decision of 2026-11-17),
+in both formats and with no format detection. `Editor::resize_hint()` (`editor::resize_hint`;
+nice-plug 0.4.2 answers CLAP `gui.can_resize` and `gui.get_resize_hints` from it,
+`wrapper/clap/wrapper.rs` 2907-2937, and VST3 `IPlugView::canResize`, `wrapper/vst3/view.rs`
+721-732; no patch of nice-plug) is resizable both ways, with a minimum of half the panel and
+the bar (312 x 277), no maximum and no aspect ratio. CLAP `gui.adjust_size` and VST3
+`checkSizeConstraint` (nice-plug routes both to `OrbHandle`'s `EditorHandle::adjust_size`,
+`view.rs` 734-772) give the host's size back unchanged, raised to the minimum only
+(`editor::adjust_logical`); `EditorHandle::set_size` (egui's) applies it. The editor's own
+baseview window (nice-plug-egui's settings) has the same hint: a non-resizable baseview window
+is fixed (baseview 0.4.2 `utils.rs` `SizingStrategy::Fixed`), and the host's `set_size` must
+take effect. Sizes on macOS are points (nice-plug-core 0.4.2 `editor/dpi.rs`: `NativeSize` is
+logical there), so the backing scale does not enter.
+
+**Host quirks (task-234).** Found with the user's checks of 2026-11-16 and 2026-11-17 and
+the size log (below):
+- **Ableton Live 12 Lite (VST3, macOS).** Live hosts the view in a window of its own and, on
+  each mouse event of a drag of its window's corner, calls `checkSizeConstraint` with the
+  cursor's size (absolute, from the window's top left), sizes its window to the answer and
+  calls `onSize` with it. nice-plug's `onSize` is `set_size`, which makes it the window's size
+  synchronously (baseview's `resize` calls egui's `resized`, `platform/macos/view.rs` 243-273
+  and 371-405), so the answer becomes the current size before the next event.
+- **Bitwig (CLAP).** The same sequence through the CLAP API: `gui.adjust_size` with the
+  cursor's size on each mouse event, then `gui.set_size` with the answer.
+- **REAPER (CLAP, macOS).** On each mouse event REAPER calls `gui.adjust_size` and then
+  `gui.set_size` with the answer, but keeps its own FX window at the size it asked for. The
+  user's log `~/orb-sizes.log` (2026-11-17, with the contain rule below): `adjust_size 721x532
+  (scale 2, window 720x610) -> 721x611`, `set_size 721x611`, and REAPER's window stayed 721 x
+  532, so the editor, 79 points taller than its window, was cropped at the bottom; with the
+  contain rule every edge and corner drag cropped.
+- **REAPER (VST3, macOS).** REAPER's FX window frame and the editor are sized separately:
+  with the host's resizing off (variant 3 below, the panel's corner the one way) a resize
+  took two steps, REAPER's frame first and then the corner (the user's check of
+  2026-11-17).
+- **The host's grip and the panel's (VST3).** With the panel's grip in the window's own
+  bottom right corner (until the margin), a host-frame drag of the VST3 (the user's check of
+  f315da3, 2026-11-17) stuck at one width or height for a while and kept it on release, a
+  snap no host-only drag gives: the editor answers every host size unchanged. The fake VST3
+  host (`a_live_corner_drag_follows_the_cursor`, with an `IPlugFrame` that records
+  `resizeView`) shows that the view asks nothing of the host during a host drag, with the
+  main run loop run after each event and a backing change sent to the editor's view
+  (baseview's own request path, `platform/macos/view.rs` 371-405). The remaining source is
+  the panel's grip: it was the window's bottom right 14 points, the same spot as the host's
+  resize grip, so a press there could start the panel's corner drag, which asks for the
+  panel's exact fit at the larger of the two scales (`corner_size`): moving along the smaller
+  scale's axis leaves the size unchanged, the "sticking" seen. [G] (no VST3 size log of that
+  check.) The grip now sits on the panel's corner, `MARGIN_X` (16 points) in from the
+  window's right edge, and is always drawn. Its bottom is at the window's bottom edge (no
+  margin there), but its 14-point area spans 30 to 16 points from the right edge, clear of the
+  host's corner grip, which on macOS takes only the last few points at the window's corner;
+  the host's corner is the host's alone.
+
+Any answer that depends on the window's current size flips in Live and Bitwig, and any
+answer other than the host's size is cropped in REAPER's CLAP; taking the host's size as it
+is and letterboxing the panel is the one answer that is stable in all four.
+
+**Variants tried (task-234).** Live's recording of 2026-11-17 showed the panel's scale
+jumping back and forth during a corner drag: the rule before task-234 (height =
+`window_height(width)`, the width taken from the side the host changed more relative to the
+window's current size) chose by the current size, and with the cursor off the rule's
+diagonal the width's answer left the height far from the cursor's, so the next event got
+the height's answer, and so on (the recording's widths, 4.23 to 4.50 s, frame pixels: 646,
+636, 688, 601, 577, 629, 535, 513, 561; a replay growing 8 x 4 points per event gave 664,
+653, 680, 663, 696, 673, ...). Then, in turn: (1) a rule of the host's size alone, fitted
+inside it: no flip, but an outward drag of one edge no longer grew the window; (2) the
+smallest size of the rule that contains the host's size: no flip and either edge grows it,
+but REAPER's CLAP crops (above); (3) not resizable by the host (`canResize` false, as
+AudioRealm ABL3), the panel's corner the one way: Live worked, REAPER's VST3 needed two
+resizes, and REAPER's CLAP resizing jumped; (4) per format, (3) for the VST3 and the CLAP
+resizable with the old rule: Bitwig's CLAP jumped as Live's VST3; (5) per format, (3) for the
+VST3 and the CLAP with rule (2): REAPER's CLAP cropped. (6) The decision: any size, both
+formats, letterboxed. CLAP's aspect hints (`preserve_aspect_ratio` with
+`aspect_ratio_width`/`height` in `clap_gui_resize_hints`) were not used: the 22-point bar and
+the 16-point side margins do not scale, so no fixed ratio is the panel's shape (a ratio of
+the default 656 x 532 gives 1012 where the fit, round((1248 - 32) x 510 / 624) + 22, gives
+1016 at width 1248), and VST3 has no such hint.
+
+**Tests.** `tests/editor.rs` `the_size_is_kept_in_the_state_and_the_host_gets_sizes_of_the_rule`
+checks the hint (resizable both ways, no aspect ratio), `adjust_logical` giving the host's
+size back (721 x 532, 630 x 1042, ...; the minimum below it) and, on Live's and Bitwig's
+drag, answer == request, where the rule before task-234 goes back on the same drag;
+`the_panel_is_letterboxed_in_a_window_of_any_shape` fits the panel in wide (1100 x 532,
+721 x 532, 1600 x 1042) and tall (656 x 800) windows, checks that it lies inside the
+window's margins (no crop) and that a click on the letterboxed panel hits the control under
+it (the panel's hit-testing maps the pointer through the fitted `View`, `View::to_panel`; the
+menus, windows and the file browser use the whole window);
+`the_grip_is_on_the_panels_corner_clear_of_the_windows` checks that the panel's corner
+resizes and the window's own corner does not; orb-ui's `embed` unit test checks the exact fit
+(the panel fills the area within the margins and touches the bar and the bottom edge) and the
+grip `MARGIN_X` in from the window's right edge;
+`the_corner_drag_resizes_steadily_through_the_host` drags the panel's corner through
+`HostRoute` with a host that sizes the window inside the request (REAPER's way): every size
+asked for is the panel's exact fit, passes `adjust_logical` unchanged and follows the drag.
+`tests/clap_gui.rs` `a_live_corner_drag_follows_the_cursor` loads the library as a VST3 host
+(`createView`, `attached` to an `NSView`): `canResize` is `kResultOk`; Live's sequence along a
+drag off the diagonal (growing to 1000 x 700, shrinking to 400 x 450) gets the cursor's size
+from `checkSizeConstraint` and the view calls no `resizeView` on the test's `IPlugFrame`
+during that drag, and the corner's sizes (computed by the test with `corner_size`; the test
+cannot drag the egui corner of the loaded library) pass the round trip unchanged.
+`open_editor` checks `gui.can_resize`, `gui.get_resize_hints` and `gui.adjust_size` (1000 x 540,
+721 x 532 and 630 x 1042 unchanged, 10 x 10 to 312 x 277); `the_host_sizes_the_editor` replays
+Bitwig's drag through the CLAP API (`gui.adjust_size`, `gui.set_size`, `gui.get_size`): every
+answer is the host's size.
+
+**The size log.** With `ORB_PLUGIN_SIZE_LOG=FILE` the editor appends each host size call and
+request to `FILE` (`editor::size_log`: `resize_hint` for `canResize`, `adjust_size` for
+`checkSizeConstraint` with the window's size, `set_size` for `onSize`, `size` for `getSize`,
+`set_parent`, egui's `resized`, baseview's and the corner's requests and their answers), each
+line with the ms since the library's first line. To capture a host's real sequence, start it
+from a terminal with the variable, e.g. `ORB_PLUGIN_SIZE_LOG=$HOME/orb-sizes.log
+"/Applications/Ableton Live 12 Lite.app/Contents/MacOS/Live"`, or `open -a "Ableton Live 12
+Lite" --env ORB_PLUGIN_SIZE_LOG=$HOME/orb-sizes.log` with Live not running. The variable is
+read once per loaded copy of the library.
+
+**The panel's own resize.** The corner's request does not depend on `can_resize`: CLAP
+`gui.request_resize` and VST3 `IPlugFrame::resizeView` are the plugin's own resize in both APIs
+(`can_resize` / `canResize` is about the host's user dragging), and nice-plug passes the
+request on without looking at the hint (CLAP `ClapHostCallbacks::request_resize`,
+`wrapper/clap/wrapper.rs` 2713-2737; VST3 `Task::RequestResize` -> `WrapperView::request_resize`
+-> `resizeView`, `wrapper/vst3/inner.rs` 735-747, `view.rs` 248-290). It asks for the panel's
+exact fit, so a host that checks it (`adjust_size`) gets it back unchanged and the window
+snaps to the panel with no band; the task-224 guards (`HostRoute`, below) keep a host that
+sizes the window inside the request from looping.
+
+**The resize corner.** A 14 x 14 point corner at the panel's bottom right (`embed::corner_rect`,
+the right wood's foot, no control there), at least `MARGIN_X` (16 points) in from the
+window's right edge (task-234): a grip of three diagonal strokes (`embed::paint_grip`, 2 points
+in from the wood's right side, down to the wood's foot) is always drawn there, lighter while
+it is hovered or dragged, the cursor turns to the diagonal resize arrow
+over it, and a drag asks for the panel's exact fit (`window_height` of the width, the margins
+included) at the larger of the two scales the drag gives
 (`embed::corner_size`), once per new size. egui's `ViewportCommand::InnerSize` would not do:
 egui-baseview 0.9 turns it into baseview's `Window::resize`, which resizes the plugin's view
 without telling the host (baseview 0.4.2 `src/window.rs`: "does *not* trigger the

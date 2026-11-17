@@ -36,9 +36,14 @@ pub struct View {
 }
 
 impl View {
-    /// The largest panel-shaped area centered in `avail`, snapped to whole pixels.
+    /// The largest panel-shaped area centered in `avail`, snapped to whole pixels. An empty or
+    /// inverted `avail` (a plugin window the host made shorter than the menu bar, task-234)
+    /// gets a panel one point wide, so the scale stays positive and finite (`to_panel`
+    /// divides by it).
     pub fn fit(avail: Rect, ppp: f32) -> Self {
-        let scale = (avail.width() / PANEL_W).min(avail.height() / PANEL_H);
+        let scale = (avail.width() / PANEL_W)
+            .min(avail.height() / PANEL_H)
+            .max(1.0 / PANEL_W);
         let size = Vec2::new(PANEL_W, PANEL_H) * scale;
         Self {
             origin: (avail.center() - size / 2.0).round_to_pixels(ppp),
@@ -828,14 +833,15 @@ impl App {
             avail.min.y += MENU_H;
         }
         let ppp = ui.ctx().pixels_per_point();
-        let view = View::fit(avail, ppp);
+        // a plugin's panel keeps a margin of desk on each side (task-234)
+        let view = if self.is_plugin() {
+            View::fit(crate::embed::panel_area(ui.ctx().content_rect()), ppp)
+        } else {
+            View::fit(avail, ppp)
+        };
         let now = ui.input(|i| i.time);
         self.track_resize(ui.ctx(), view.scale * ppp, now);
-        if self.is_plugin() {
-            crate::embed::paint_surround(ui, avail);
-        } else {
-            crate::backdrop::paint(ui, avail, &view);
-        }
+        crate::backdrop::paint(ui, avail, &view);
         self.panel.held = None;
 
         // While the file browser, the prompt or the error box is open the panel takes no keys

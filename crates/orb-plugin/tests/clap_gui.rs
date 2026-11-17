@@ -5,7 +5,8 @@
 //! main thread, as a host's GUI thread is). Two copies of the library are loaded at once, as
 //! Reaper loads the VST3 and the CLAP bundle: with raw-window-metal's fixed class name the
 //! second copy's `gui.create` aborted the process (`ORB_TEST_CLAP_LIBRARY` points the test at a
-//! bundle's binary, e.g. an old one). macOS only: the editor needs AppKit.
+//! bundle's binary, e.g. an old one). The VST3 view is resized as Ableton Live resizes it
+//! (task-234). macOS only: the editor needs AppKit.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -167,7 +168,224 @@ mod mac {
         drop((first, second));
         the_corner_request_is_posted_to_the_main_queue();
         the_host_sizes_the_editor(&path);
+        a_live_corner_drag_follows_the_cursor(&path);
         println!("clap_gui: ok");
+    }
+
+    /// The cursor's positions of a corner drag (the proposed size, points, relative to the
+    /// window's top left as AppKit's live resize proposes it), off the rule's diagonal: wider
+    /// than the rule's shape while growing (to 1000 x 700, where the rule's height is 839),
+    /// then back down to 400 x 450 (taller than the rule's 349).
+    fn corner_drag() -> Vec<(i32, i32)> {
+        let mut path = Vec::new();
+        let (mut x, mut y) = (624, 532);
+        while x < 1000 {
+            x += 8;
+            y = (y + 4).min(700);
+            path.push((x, y));
+        }
+        while x > 400 {
+            x -= 8;
+            y = (y - 3).max(450);
+            path.push((x, y));
+        }
+        path
+    }
+
+    /// Ableton Live's resizing of the VST3 view (task-234; Live 12 Lite on macOS loads only
+    /// the VST3): Live hosts the view in a window of its own and the view is resizable
+    /// (`canResize`). While the user drags the window's corner Live asks `checkSizeConstraint`
+    /// with the cursor's size, sizes its window to the answer and calls `onSize` (the user's
+    /// recording): the view answers with the size asked (the panel is letterboxed in it), so
+    /// the sizes follow the cursor and an answer asked again comes back unchanged. The panel
+    /// corner's sizes (`corner_size` along the same drag; the test computes them and makes the
+    /// host's calls itself, with no `IPlugFrame`: the request path `resizeView` is not
+    /// exercised, a test cannot drag the egui corner of the loaded library) pass the same round
+    /// trip unchanged.
+    fn a_live_corner_drag_follows_the_cursor(path: &std::path::Path) {
+        use objc2::MainThreadOnly;
+        use objc2::rc::Retained;
+        use objc2_app_kit::{NSBackingStoreType, NSWindow, NSWindowStyleMask};
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+        use orb_ui::embed::corner_size;
+        use vst3::ComPtr;
+        use vst3::Steinberg::Vst::{IComponent, IEditController, IEditControllerTrait};
+        use vst3::Steinberg::{
+            IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewTrait, IPluginBaseTrait,
+            IPluginFactory, IPluginFactory2, IPluginFactory2_iid, PClassInfo2, ViewRect,
+            kPlatformTypeNSView, kResultOk,
+        };
+
+        unsafe extern "C" {
+            static kCFRunLoopDefaultMode: *const c_void;
+            fn CFRunLoopRunInMode(mode: *const c_void, seconds: f64, once: u8) -> i32;
+        }
+        /// The host's `IPlugFrame`: the sizes of the view's `resizeView` calls.
+        struct Frame(std::sync::Arc<std::sync::Mutex<Vec<(i32, i32)>>>);
+        impl vst3::Class for Frame {
+            type Interfaces = (IPlugFrame,);
+        }
+        impl IPlugFrameTrait for Frame {
+            unsafe fn resizeView(&self, _view: *mut IPlugView, size: *mut ViewRect) -> i32 {
+                let s = unsafe { &*size };
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push((s.right - s.left, s.bottom - s.top));
+                kResultOk
+            }
+        }
+        let frame_calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mtm = objc2::MainThreadMarker::new().expect("the main thread");
+        let lib = unsafe { libloading::Library::new(path) }.expect("the plugin library loads");
+        let get: libloading::Symbol<unsafe extern "system" fn() -> *mut IPluginFactory> =
+            unsafe { lib.get(b"GetPluginFactory\0") }.unwrap();
+        // Live's plugin window and its content view, the view's parent
+        let window = unsafe {
+            NSWindow::initWithContentRect_styleMask_backing_defer(
+                NSWindow::alloc(mtm),
+                NSRect::new(NSPoint::new(100.0, 100.0), NSSize::new(624.0, 532.0)),
+                NSWindowStyleMask::Titled | NSWindowStyleMask::Resizable,
+                NSBackingStoreType::Buffered,
+                false,
+            )
+        };
+        unsafe { window.setReleasedWhenClosed(false) };
+        let content = window.contentView().expect("the window's view");
+        let rect = |w: i32, h: i32| ViewRect {
+            left: 0,
+            top: 0,
+            right: w,
+            bottom: h,
+        };
+        let mut sizes = Vec::new();
+        unsafe {
+            let f = get();
+            let vt = &*(*f).vtbl;
+            let mut f2: *mut c_void = null_mut();
+            assert_eq!(
+                (vt.base.queryInterface)(f as *mut _, &IPluginFactory2_iid, &mut f2),
+                kResultOk
+            );
+            let f2 = f2 as *mut IPluginFactory2;
+            let mut ci: PClassInfo2 = std::mem::zeroed();
+            assert_eq!(((*(*f2).vtbl).getClassInfo2)(f2, 0, &mut ci), kResultOk);
+            let mut obj: *mut c_void = null_mut();
+            let iid = vst3::Steinberg::Vst::IComponent_iid;
+            assert_eq!(
+                (vt.createInstance)(f, ci.cid.as_ptr(), iid.as_ptr(), &mut obj),
+                kResultOk
+            );
+            let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
+            assert_eq!(component.initialize(null_mut()), kResultOk);
+            let controller = component
+                .cast::<IEditController>()
+                .expect("the component is its controller");
+            let view = ComPtr::<IPlugView>::from_raw(controller.createView(c"editor".as_ptr()))
+                .expect("the plugin has a view");
+            assert_eq!(view.isPlatformTypeSupported(kPlatformTypeNSView), kResultOk);
+            // the host may resize the view to any size (task-234)
+            assert_eq!(view.canResize(), kResultOk, "canResize");
+            let mut r = rect(0, 0);
+            assert_eq!(view.getSize(&mut r), kResultOk);
+            assert_eq!((r.right, r.bottom), (656, 532), "the view's default size");
+            // the host's frame: records the view's resizeView calls
+            let frame = vst3::ComWrapper::new(Frame(frame_calls.clone()));
+            let frame_ptr = frame.to_com_ptr::<IPlugFrame>().unwrap();
+            assert_eq!(view.setFrame(frame_ptr.as_ptr()), kResultOk);
+            let parent = Retained::as_ptr(&content) as *mut c_void;
+            assert_eq!(view.attached(parent, kPlatformTypeNSView), kResultOk);
+            window.orderFront(None);
+            assert_eq!(view.canResize(), kResultOk, "canResize after attached");
+            // The sizes the panel's corner asks for on the same drag (`corner_size`, sizes of
+            // the rule), given by the test to the host's calls a host makes after a request:
+            // the check, its window, the view.
+            let mut grip = Vec::new();
+            for (x, y) in corner_drag() {
+                let s = corner_size(egui::Vec2::new(x as f32, y as f32));
+                let (w, h) = (s.x as i32, s.y as i32);
+                let mut r = rect(w, h);
+                assert_eq!(view.checkSizeConstraint(&mut r), kResultOk);
+                assert_eq!((r.right, r.bottom), (w, h), "the host's check of {w}x{h}");
+                window.setContentSize(NSSize::new(w as f64, h as f64));
+                assert_eq!(view.onSize(&mut r), kResultOk);
+                let mut g = rect(0, 0);
+                assert_eq!(view.getSize(&mut g), kResultOk);
+                assert_eq!(
+                    (g.right, g.bottom),
+                    (w, h),
+                    "getSize after onSize({w}, {h})"
+                );
+                grip.push(((x, y), (w, h)));
+            }
+            sizes.push(grip);
+            // Live's drag of its window's corner: the cursor's size to checkSizeConstraint,
+            // the answer to its window and onSize. The answer is the cursor's size, and the
+            // view asks nothing of the host while the host drags (task-234: the user saw a
+            // VST3 host-frame drag stick at one size): no resizeView, with the main run loop
+            // run after each event (where the corner's requests would be flushed) and a
+            // backing change sent to the editor's view (baseview's other request path).
+            let mut drag = Vec::new();
+            for (x, y) in corner_drag() {
+                let mut r = rect(x, y);
+                assert_eq!(view.checkSizeConstraint(&mut r), kResultOk);
+                let (w, h) = (r.right, r.bottom);
+                assert_eq!((w, h), (x, y), "checkSizeConstraint gives the host's size");
+                // Live's window takes the answer; the view is told
+                window.setContentSize(NSSize::new(w as f64, h as f64));
+                assert_eq!(view.onSize(&mut r), kResultOk);
+                let mut g = rect(0, 0);
+                assert_eq!(view.getSize(&mut g), kResultOk);
+                assert_eq!(
+                    (g.right, g.bottom),
+                    (w, h),
+                    "getSize after onSize({w}, {h})"
+                );
+                // asked again, the view gives it back
+                let mut again = rect(w, h);
+                assert_eq!(view.checkSizeConstraint(&mut again), kResultOk);
+                assert_eq!(
+                    (again.right, again.bottom),
+                    (w, h),
+                    "checkSizeConstraint of its own answer"
+                );
+                for v in content.subviews().iter() {
+                    let _: () = objc2::msg_send![&*v, viewDidChangeBackingProperties];
+                }
+                // SAFETY: the main thread's run loop, for a moment.
+                CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, 1);
+                drag.push(((x, y), (w, h)));
+            }
+            sizes.push(drag);
+            assert_eq!(
+                *frame_calls.lock().unwrap(),
+                Vec::<(i32, i32)>::new(),
+                "resizeView during the host's drag"
+            );
+            assert_eq!(view.removed(), kResultOk);
+            drop(view);
+            drop(controller);
+            assert_eq!(component.terminate(), kResultOk);
+            drop(component);
+            ((*(*f2).vtbl).base.base.release)(f2 as *mut _);
+            (vt.base.release)(f as *mut _);
+        }
+        window.orderOut(None);
+        window.close();
+        // the widths follow the cursor: up while it grows, down while it shrinks, never back
+        for sizes in &sizes {
+            let turn = sizes.iter().position(|s| s.0.0 == 1000).unwrap();
+            for (i, pair) in sizes.windows(2).enumerate() {
+                let ((c0, s0), (c1, s1)) = (pair[0], pair[1]);
+                let ok = if i < turn { s1.0 >= s0.0 } else { s1.0 <= s0.0 };
+                assert!(
+                    ok,
+                    "the width went back: cursor {c0:?} -> {s0:?}, cursor {c1:?} -> {s1:?}\n\
+                     all: {sizes:?}"
+                );
+            }
+        }
+        drop(lib);
     }
 
     /// Host callbacks that count the requests.
@@ -309,6 +527,39 @@ mod mac {
                 assert!((g.show.unwrap())(plugin));
                 window.orderFront(None);
                 size(800, 650);
+                // Bitwig's drag of its window's corner (task-234, the user's check of
+                // 2026-11-17: the CLAP's scale jumped as Live's VST3 did): gui.adjust_size with
+                // the cursor's size on each mouse event, then gui.set_size with the answer. The
+                // answers are the cursor's sizes and, asked again, come back unchanged. (REAPER
+                // asks the same way but keeps its window at the size it asked for: the answer
+                // being that size, the editor is the window's size and the panel is
+                // letterboxed in it, uncropped.)
+                if round == 0 {
+                    let mut sizes = Vec::new();
+                    for (x, y) in corner_drag() {
+                        let (mut aw, mut ah) = (x as u32, y as u32);
+                        assert!((g.adjust_size.unwrap())(plugin, &mut aw, &mut ah));
+                        assert_eq!((aw, ah), (x as u32, y as u32), "the host's size");
+                        assert!((g.set_size.unwrap())(plugin, aw, ah));
+                        let (mut gw, mut gh) = (0u32, 0u32);
+                        assert!((g.get_size.unwrap())(plugin, &mut gw, &mut gh));
+                        assert_eq!((gw, gh), (aw, ah), "get_size after set_size");
+                        let (mut bw, mut bh) = (aw, ah);
+                        assert!((g.adjust_size.unwrap())(plugin, &mut bw, &mut bh));
+                        assert_eq!((bw, bh), (aw, ah), "gui.adjust_size of its own answer");
+                        sizes.push(((x, y), aw));
+                    }
+                    let turn = sizes.iter().position(|s| s.0.0 == 1000).unwrap();
+                    for (i, p) in sizes.windows(2).enumerate() {
+                        let ok = if i < turn {
+                            p[1].1 >= p[0].1
+                        } else {
+                            p[1].1 <= p[0].1
+                        };
+                        assert!(ok, "CLAP: the width went back at {i}: {sizes:?}");
+                    }
+                    size(800, 650);
+                }
                 // the editor's view (the host view's only subview) gets a backing change
                 let views = content.subviews();
                 assert_eq!(views.len(), 1, "the editor's view in the host's");
@@ -384,8 +635,25 @@ mod mac {
                 );
                 let (mut w, mut h) = (0u32, 0u32);
                 assert!((g.get_size.unwrap())(plugin, &mut w, &mut h));
-                assert_eq!((w, h), (624, 532), "the editor's default size");
-                assert!((g.can_resize.unwrap())(plugin));
+                // the panel at 1:1, its margins (2 x 16 across) and the menu bar
+                assert_eq!((w, h), (656, 532), "the editor's default size");
+                // the host may resize the editor to any size (task-234): gui.adjust_size gives
+                // the host's size back, at least the minimum (the panel is letterboxed)
+                assert!((g.can_resize.unwrap())(plugin), "gui.can_resize");
+                let mut hints: clap_sys::ext::gui::clap_gui_resize_hints = std::mem::zeroed();
+                assert!((g.get_resize_hints.unwrap())(plugin, &mut hints));
+                assert!(hints.can_resize_horizontally && hints.can_resize_vertically);
+                assert!(!hints.preserve_aspect_ratio);
+                for ((w, h), want) in [
+                    ((1000u32, 540u32), (1000u32, 540u32)),
+                    ((721, 532), (721, 532)),
+                    ((630, 1042), (630, 1042)),
+                    ((10, 10), (312, 277)),
+                ] {
+                    let (mut aw, mut ah) = (w, h);
+                    assert!((g.adjust_size.unwrap())(plugin, &mut aw, &mut ah));
+                    assert_eq!((aw, ah), want, "gui.adjust_size({w}, {h})");
+                }
                 let (mut aw, mut ah) = (1000u32, 600u32);
                 assert!((g.adjust_size.unwrap())(plugin, &mut aw, &mut ah));
                 // the instance plays while its editor is open (the Reaper crash report also

@@ -9,17 +9,17 @@
 //! - the menu bar is the standalone's, above the panel and not scaled with it ([`MENU_H`] points);
 //!   File has New, Open and Info (no Save, Save As or Export), and nothing asks to save: the song
 //!   lives in the host's project;
-//! - the window is the menu bar and the panel, nothing else: its height is [`window_height`] of its
-//!   width (a window of another shape, which the plugin's size hooks do not let the host make, is
-//!   filled black around the panel);
+//! - the window is the menu bar and, under it, the panel letterboxed on the standalone's desk with
+//!   at least [`MARGIN_X`] of desk left and right (task-234): the host may give any size, and the
+//!   panel's exact fit is [`window_height`] of the width;
 //! - the Sync and MIDI LEDs light from the snapshot's flags (`host_sync`, `midi_in`);
 //! - the plugin's mode ([`PluginMode`], [`MODE_ITEMS`], task-217, task-218) is set by the mode
 //!   selector of the transport (task-231), not by the Options menu; Play and Stop are the plugin's
 //!   preview, and the Play light shows only whether it runs ([`Embed::previewing`]), not the
 //!   engine's play state;
-//! - an invisible corner at the bottom right (the right wood's foot) resizes the window: the cursor
-//!   changes over it and a faint grip shows while hovered or dragged, and a drag asks the host for
-//!   a size of that rule.
+//! - a grip on the panel's bottom right corner (the right wood's foot, [`corner_rect`]) resizes the
+//!   window: the cursor changes over it, and a drag asks the host for the panel's exact fit
+//!   ([`corner_size`]).
 //!
 //! The song, its mod and the controls are the plugin's ([`Embed`]); the panel's commands go to
 //! the plugin through the link's [`crate::link::Port`].
@@ -216,8 +216,16 @@ pub const MIDI_LED: (f32, f32, f32, f32) = (90.0, 2.0, 11.0, 11.0);
 /// How long the MIDI LED stays lit after a message, in seconds.
 pub const MIDI_FLASH: f64 = 0.1;
 
-/// The side of the invisible resize corner, in points.
+/// The side of the resize corner (the grip on the panel's bottom right), in points.
 pub const CORNER: f32 = 14.0;
+
+/// The desk left and right of a plugin's panel, in points on each side, not scaled (task-234,
+/// the user's choice of 2026-11-17): the grip on the panel's corner stays this far in from the
+/// window's right edge, clear of the host's own resize grip at the window's corner.
+pub const MARGIN_X: f32 = 16.0;
+/// The desk above and below a plugin's panel at its exact fit: none, the panel touches the
+/// menu bar and the window's bottom edge.
+pub const MARGIN_Y: f32 = 0.0;
 
 /// The smallest window the corner asks for: half the panel (as the standalone's minimum).
 pub const MIN_SCALE: f32 = 0.5;
@@ -226,20 +234,36 @@ pub const MIN_SCALE: f32 = 0.5;
 /// the host's MIDI and transport even when nothing else moves.
 pub const POLL: Duration = Duration::from_millis(50);
 
-/// The height of a plugin window `width` points wide: the panel at that width and the menu
-/// bar, which does not scale (task-201).
+/// The height of a plugin window `width` points wide in which the panel fits exactly: the menu
+/// bar, which does not scale (task-201), the [`MARGIN_Y`] above and below, and the panel at the
+/// width less the [`MARGIN_X`] left and right.
 pub fn window_height(width: f32) -> f32 {
-    (width * PANEL_H / PANEL_W).round() + MENU_H
+    ((width - 2.0 * MARGIN_X) * PANEL_H / PANEL_W).round() + MENU_H + 2.0 * MARGIN_Y
+}
+
+/// The area a plugin's panel is fitted in (`View::fit`): the window `win` below the menu bar,
+/// less [`MARGIN_X`] left and right and [`MARGIN_Y`] above and below.
+pub fn panel_area(win: Rect) -> Rect {
+    Rect::from_min_max(
+        Pos2::new(win.min.x + MARGIN_X, win.min.y + MENU_H + MARGIN_Y),
+        win.max - Vec2::new(MARGIN_X, MARGIN_Y),
+    )
+}
+
+/// The resize corner's area: the bottom right [`CORNER`] of the panel `panel` (its wood's
+/// foot, no control there), so [`MARGIN_X`] in from the window's right edge at the exact fit.
+pub fn corner_rect(panel: Rect) -> Rect {
+    Rect::from_min_max(panel.max - Vec2::splat(CORNER), panel.max)
 }
 
 /// The size the corner asks for when a drag reaches `desired` (points): the panel as large as
-/// the larger of the two scales the drag gives, at least [`MIN_SCALE`], in whole points, and
-/// the menu bar above it ([`window_height`]).
+/// the larger of the two scales the drag gives, at least [`MIN_SCALE`], in whole points, with
+/// the margins and the menu bar ([`window_height`]): the panel's exact fit.
 pub fn corner_size(desired: Vec2) -> Vec2 {
-    let k = (desired.x / PANEL_W)
-        .max((desired.y - MENU_H) / PANEL_H)
+    let k = ((desired.x - 2.0 * MARGIN_X) / PANEL_W)
+        .max((desired.y - MENU_H - 2.0 * MARGIN_Y) / PANEL_H)
         .max(MIN_SCALE);
-    let w = (PANEL_W * k).round();
+    let w = (PANEL_W * k).round() + 2.0 * MARGIN_X;
     Vec2::new(w, window_height(w))
 }
 
@@ -514,7 +538,7 @@ impl App {
             crate::app::paint_part(ui, "led_transport_on", view.rect(x, y, w, h));
         }
         ui.ctx().request_repaint_after(POLL);
-        self.resize_corner(ui);
+        self.resize_corner(ui, view);
     }
 
     /// The mode selector of the plugin's transport (task-231) and the plugin format's logo: the
@@ -639,17 +663,18 @@ impl App {
         self.plugin.as_ref().and_then(|p| p.position)
     }
 
-    /// The invisible corner at the window's bottom right: the cursor shows it; a drag asks the
-    /// host for a window of the panel's aspect (egui-baseview turns `InnerSize` into the
-    /// plugin's resize request to the host).
-    fn resize_corner(&mut self, ui: &mut Ui) {
+    /// The resize grip on the panel's bottom right corner ([`corner_rect`], [`MARGIN_X`] in from
+    /// the window's right edge and so clear of the host's own grip, task-234): always drawn, the
+    /// cursor shows it; a drag asks the host for the panel's exact fit ([`corner_size`]).
+    fn resize_corner(&mut self, ui: &mut Ui, view: &View) {
         let win = ui.ctx().content_rect();
-        let r = Rect::from_min_max(win.max - Vec2::splat(CORNER), win.max);
+        let r = corner_rect(view.rect(0.0, 0.0, PANEL_W, PANEL_H));
         let resp = ui.interact(r, Id::unique("orb plugin resize corner"), Sense::drag());
-        if resp.hovered() || resp.dragged() {
+        let active = resp.hovered() || resp.dragged();
+        if active {
             ui.ctx().set_cursor_icon(CursorIcon::ResizeNwSe);
-            paint_grip(ui, r);
         }
+        paint_grip(ui, r, active);
         let Some(p) = &mut self.plugin else {
             return;
         };
@@ -676,30 +701,32 @@ impl App {
 
 /// The color of the resize corner's grip: a light gray, faint on the wood.
 pub const GRIP: Color32 = Color32::from_rgba_premultiplied(150, 150, 150, 150);
+/// The grip's color while the pointer is over it or drags it.
+pub const GRIP_ACTIVE: Color32 = Color32::from_rgba_premultiplied(230, 230, 230, 230);
 
-/// The resize corner's grip, three diagonal strokes in the corner's rectangle `r`, shown while
-/// the pointer is over the corner or drags it. The resize cursor egui asks for does not always
-/// show in a host: baseview sets the cursor only when egui's changes (`CursorManager::
-/// set_cursor`), and a host that sets its own cursor on mouse moves (Reaper on macOS, the
-/// user's check of 2026-11-16) puts its arrow back while egui's stays the same.
-pub(crate) fn paint_grip(ui: &Ui, r: Rect) {
-    let stroke = egui::Stroke::new(1.0, GRIP);
+/// The resize corner's grip, three diagonal strokes in the corner's rectangle `r`, always
+/// shown (task-234), lighter while the pointer is over the corner or drags it (`active`). The
+/// resize cursor egui asks for does not always show in a host: baseview sets the cursor only
+/// when egui's changes (`CursorManager::set_cursor`), and a host that sets its own cursor on
+/// mouse moves (Reaper on macOS, the user's check of 2026-11-16) puts its arrow back while
+/// egui's stays the same.
+pub(crate) fn paint_grip(ui: &Ui, r: Rect, active: bool) {
+    let stroke = egui::Stroke::new(1.0, if active { GRIP_ACTIVE } else { GRIP });
     let p = ui.painter();
+    // 2 points in from the wood's right side; at the bottom, down to the wood's foot (the
+    // window's bottom edge at the exact fit; half the stroke in, so it is not clipped; the
+    // user's check of 2026-11-17)
+    let bottom = r.max.y - 0.5;
     for k in [3.0, 6.5, 10.0] {
-        let a = egui::pos2(r.max.x - 2.0, r.max.y - 2.0 - k);
-        let b = egui::pos2(r.max.x - 2.0 - k, r.max.y - 2.0);
+        let a = egui::pos2(r.max.x - 2.0, bottom - k);
+        let b = egui::pos2(r.max.x - 2.0 - k, bottom);
         p.line_segment([a, b], stroke);
     }
 }
 
-/// The panel of a plugin window fills it; around a panel of another shape the window is black.
-pub(crate) fn paint_surround(ui: &Ui, avail: Rect) {
-    ui.painter().rect_filled(avail, 0.0, Color32::BLACK);
-}
-
-/// The window's point `p` is the corner's (tests).
-pub fn on_corner(win: Rect, p: Pos2) -> bool {
-    Rect::from_min_max(win.max - Vec2::splat(CORNER), win.max).contains(p)
+/// The point `p` is on the resize corner of the panel `panel` (tests).
+pub fn on_corner(panel: Rect, p: Pos2) -> bool {
+    corner_rect(panel).contains(p)
 }
 
 #[cfg(test)]
@@ -708,28 +735,57 @@ mod tests {
 
     #[test]
     fn the_corner_scales_the_panel_and_keeps_the_menu_bar() {
-        let m = MENU_H;
-        assert_eq!(window_height(624.0), 510.0 + m);
+        // the bar and the margins (2 x 16 across, none above and below) do not scale
+        let (m, g) = (MENU_H, 2.0 * MARGIN_X);
+        assert_eq!(MARGIN_Y, 0.0);
+        assert_eq!(window_height(624.0 + g), 510.0 + m);
         assert_eq!(
-            corner_size(Vec2::new(624.0, 510.0 + m)),
-            Vec2::new(624.0, 510.0 + m)
+            corner_size(Vec2::new(624.0 + g, 510.0 + m)),
+            Vec2::new(624.0 + g, 510.0 + m)
         );
         // the larger scale wins
         assert_eq!(
-            corner_size(Vec2::new(1248.0, 600.0)),
-            Vec2::new(1248.0, 1020.0 + m)
+            corner_size(Vec2::new(1248.0 + g, 600.0)),
+            Vec2::new(1248.0 + g, 1020.0 + m)
         );
         assert_eq!(
             corner_size(Vec2::new(700.0, 1020.0 + m)),
-            Vec2::new(1248.0, 1020.0 + m)
+            Vec2::new(1248.0 + g, 1020.0 + m)
         );
         // never below half the panel
         assert_eq!(
             corner_size(Vec2::new(10.0, 10.0)),
-            Vec2::new(312.0, 255.0 + m)
+            Vec2::new(312.0 + g, 255.0 + m)
         );
         // an odd width: the panel's height rounded, the bar added
-        assert_eq!(window_height(700.0), (700.0f32 * 510.0 / 624.0).round() + m);
+        assert_eq!(
+            window_height(700.0),
+            ((700.0 - g) * 510.0 / 624.0).round() + m
+        );
+        // docs/plugin.md section 10: round(1216 x 510 / 624) + 22
+        assert_eq!(window_height(1248.0), 1016.0);
+        // the exact fit: the panel fills the area within the margins, no band
+        for w in [344.0, 656.0, 701.0, 1280.0] {
+            let win = Rect::from_min_size(Pos2::ZERO, Vec2::new(w, window_height(w)));
+            let area = panel_area(win);
+            let v = View::fit(area, 1.0);
+            let panel = v.rect(0.0, 0.0, PANEL_W, PANEL_H);
+            assert!(
+                (panel.width() - area.width()).abs() < 0.01,
+                "{w}: {panel:?} {area:?}"
+            );
+            assert!(
+                (panel.height() - area.height()).abs() < 1.0,
+                "{w}: {panel:?} {area:?}"
+            );
+            // the panel touches the bar and the bottom edge
+            assert!((panel.min.y - m).abs() < 1.0, "{w}: {panel:?}");
+            assert!((win.max.y - panel.max.y).abs() < 1.0, "{w}: {panel:?}");
+            // the grip is on the panel, MARGIN_X in from the window's right edge
+            let c = corner_rect(panel);
+            assert!(panel.contains_rect(c));
+            assert!((win.max.x - c.max.x - MARGIN_X).abs() < 1.0, "{w}: {c:?}");
+        }
     }
 
     #[test]
