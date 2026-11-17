@@ -74,7 +74,10 @@ EOF
 case $target in
     *-linux-*) plugin_dirs='  VST3: ~/.vst3/           CLAP: ~/.clap/        (or /usr/lib/vst3, /usr/lib/clap)' ;;
     *-windows-*) plugin_dirs='  VST3: %COMMONPROGRAMFILES%\VST3\    CLAP: %COMMONPROGRAMFILES%\CLAP\
-  (or %LOCALAPPDATA%\Programs\Common\VST3\ and \CLAP\ for the current user only)' ;;
+  (or %LOCALAPPDATA%\Programs\Common\VST3\ and \CLAP\ for the current user only)
+  The installer (OpenRB-338-*-setup.exe) can do this for you: its "VST3 plugin" and "CLAP plugin"
+  components, on by default, copy the bundles to the %COMMONPROGRAMFILES% folders above (the
+  installer is for all users and asks for administrator rights); the uninstaller removes them.' ;;
     *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/    CLAP: ~/Library/Audio/Plug-Ins/CLAP/
   (or the same under /Library for all users). The bundles are signed ad hoc only; if the host
   refuses them after a download, run in this folder (and again, with sudo, on the copies in

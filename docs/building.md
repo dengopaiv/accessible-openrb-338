@@ -402,7 +402,8 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     build and the `prepare` build time, so the app's version string is theirs.
   - `installer` (task-111), one job per Windows architecture on `ubuntu-latest` after the package
     jobs: installs NSIS (`apt-get install nsis`), downloads `bin-x86_64-pc-windows-msvc` or
-    `bin-aarch64-pc-windows-msvc`, runs `SKIP_BUILD=1 scripts/package-installer.sh <target>` and
+    `bin-aarch64-pc-windows-msvc` and the matching `plugins-<target>` (the optional plugin
+    components, task-237), runs `SKIP_BUILD=1 scripts/package-installer.sh <target>` and
     uploads the artifact `installer-x64` or `installer-arm64`
     (`OpenRB-338-<YYYY.MMDD.HHMM>-<x64|arm64>-setup.exe`). It needs no Windows runner and no
     Rust, and takes the `prepare` build time, so the installer's version is the exe's. Not run
@@ -565,30 +566,72 @@ script builds on this Mac and on a CI runner (Inno Setup needs Windows or Wine).
 itself is a 32-bit x86 program (the NSIS stub), which Windows on Arm runs under emulation; what
 it installs is the native x64 or arm64 build.
 
-**What it installs.** Per user, to `%LOCALAPPDATA%\Programs\OpenRB-338` (`/D=DIR` changes it):
-`OpenRB-338.exe`, `orb.exe`, `LICENSE.txt` (the GPLv3, also the
-installer's license page) and `README.txt`, and `Uninstall.exe`. Per user, not per machine,
-because the program is two executables with no service, driver or shared file; because an
-unsigned installer that also asks for administrator rights shows a second warning for nothing
-(no UAC prompt now); and because a per-user PATH needs no rights either. The cost: other
-accounts of the PC do not get the program (they run the installer themselves). The pages:
-welcome, license, components, folder, install, finish (start the app, show the readme).
+**All users only (task-237; the user's decision, 2026-11-17).** The installer is per machine and
+asks for administrator rights: the manifest says `requireAdministrator` (`RequestExecutionLevel
+admin`), so there is one UAC prompt when the installer or the uninstaller starts ("Unknown
+publisher", the installer is unsigned); a standard account cannot install without an
+administrator's credentials. Why: the plugins belong in the machine-wide plugin folders, which
+need them, and every host scans those; one layout, no per-user or per-machine choice. Before task-237 the installer was
+per user (no UAC prompt, `%LOCALAPPDATA%\Programs\OpenRB-338`, HKCU).
+
+| | Where |
+|---|---|
+| Program | `$PROGRAMFILES64\OpenRB-338` (`C:\Program Files\OpenRB-338`, also on arm64); `/D=DIR` changes it |
+| Registry (64-bit view) | `HKLM\Software\OpenRB-338`, `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338` |
+| Shortcuts | the common Start menu and desktop (`SetShellVarContext all`) |
+| PATH | the machine's: `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\Path` |
+| VST3 | `$COMMONFILES64\VST3\OpenRB-338.vst3` (`C:\Program Files\Common Files\VST3`) |
+| CLAP | `$COMMONFILES64\CLAP\OpenRB-338.clap` |
+
+**What it installs.** `OpenRB-338.exe`, `orb.exe`, `LICENSE.txt` (the GPLv3, also the installer's
+license page) and `README.txt`, `Uninstall.exe`, and what the components below add. The pages:
+welcome, license, components, folder, install, finish (start the app, show the readme). The
+record in `HKLM\Software\OpenRB-338`: `InstallDir`, `Version`, `Vst3Dir` and `ClapDir` (the last
+two only when the component was installed); the uninstaller removes what it names.
 
 | Component | Default | Does |
 |---|---|---|
-| OpenRB-338 and orb | required | the files above; the uninstaller; the entry in Settings > Apps > Installed apps (Add or remove programs) under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338`: `DisplayName`, `DisplayVersion` = `YYYY.MMDD.HHMM`, `Publisher`, `DisplayIcon`, `InstallLocation`, `UninstallString`, `QuietUninstallString`, `EstimatedSize`, no Modify or Repair |
-| Start menu shortcut | on | `OpenRB-338` in the user's Start menu |
-| Desktop shortcut | off | `OpenRB-338` on the desktop |
-| Add orb to the PATH of the current user | off | appends the folder to `HKCU\Environment\Path` |
+| OpenRB-338 and orb | required | the files above; the uninstaller; the entry in Settings > Apps > Installed apps (Add or remove programs) under `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338`: `DisplayName`, `DisplayVersion` = `YYYY.MMDD.HHMM`, `Publisher`, `DisplayIcon`, `InstallLocation`, `UninstallString`, `QuietUninstallString`, `EstimatedSize`, no Modify or Repair |
+| Start menu shortcut | on | `OpenRB-338` in the common Start menu |
+| Desktop shortcut | off | `OpenRB-338` on the common desktop |
+| VST3 plugin | on | the bundle folder `OpenRB-338.vst3` into the VST3 folder above |
+| CLAP plugin | on | the file `OpenRB-338.clap` into the CLAP folder above |
+| Add orb to the PATH | off | appends the folder to the machine's PATH (`path.ps1 ... machine`) |
 
-Silent install: `setup.exe /S [/STARTMENU=0|1] [/DESKTOP=0|1] [/PATH=0|1] [/D=DIR]` (`/D=` must
-be the last argument and unquoted, an NSIS rule). Silent uninstall: `Uninstall.exe /S`, which
+**An earlier per-user install (the choice of task-237).** The installer reads the `HKCU` record of
+the user who runs it; if there is one it says so in a message (the log only under `/S`) naming the
+folder, and that the old copy stays, with its PATH entry and shortcuts, until it is removed in
+Settings > Apps (its entry; the two have the same name, the old one shows the per-user folder).
+It does not migrate, run the old uninstaller or delete anything: the elevated process may run
+as another account, whose `HKCU` is not the user's (then there is no note), and the old files are
+not ours to remove unasked. The cost: until the old copy is removed, its per-user PATH entry and
+shortcut remain beside the new ones.
+
+**The plugins (task-237).** The folders are written to HKLM (`Vst3Dir`, `ClapDir`); a
+reinstall or an upgrade deletes the old `OpenRB-338.vst3` (and an earlier copy in another folder)
+and copies the new one, so no file of an old version stays; if a host holds the VST3 plugin open
+the copy stops with a message (close the host), while the CLAP file gives no message (task-240).
+The uninstaller deletes `OpenRB-338.vst3` (recursively, our own folder) and `OpenRB-338.clap` in
+the recorded folders and nothing else;
+`VST3` and `CLAP` themselves stay, other vendors' plugins live there. Unticking a plugin on a
+later install leaves the earlier copy (and the uninstaller still removes it). The installer job
+gets the bundles from the `plugins-<target>` artifact (the package job uploads it for `dmg` too)
+into `dist/<target>/plugins`, which `package-installer.sh` stages; the listing (`7zz l`) shows
+`$_0_/OpenRB-338.vst3/Contents/<x86_64|arm64>-win/...` and `$_1_/OpenRB-338.clap` (NSIS names the
+output folders by the variable that holds them).
+
+Silent install (from an elevated prompt; the installer needs administrator rights):
+`setup.exe /S [/STARTMENU=0|1] [/DESKTOP=0|1] [/PATH=0|1] [/VST3=0|1] [/CLAP=0|1]
+[/VST3DIR=DIR] [/CLAPDIR=DIR] [/D=DIR]` (`/D=` must be the last argument and unquoted, an NSIS
+rule; `/VST3DIR=` and `/CLAPDIR=` take quotes). Silent uninstall: `Uninstall.exe /S`, which
 returns at once (it copies itself to a temporary folder to delete its own file); add `_?=DIR`
 (`Uninstall.exe /S _?=C:\dir`) to wait for it, which then leaves `Uninstall.exe` behind to
 delete by hand.
 
-**The PATH.** `scripts/installer/path.ps1` does it (the installer runs it with
-`powershell -NoProfile -ExecutionPolicy Bypass -File`): NSIS strings are 1024 characters here
+**The PATH.** `scripts/installer/path.ps1 add|remove DIR [user|machine]` does it (the installer
+runs it with `powershell -NoProfile -ExecutionPolicy Bypass -File` and scope `machine`, the
+machine's PATH in the 64-bit registry view; scope `user`, the default, edits `HKCU\Environment`
+and is what the per-user installs before task-237 used): NSIS strings are 1024 characters here
 (`makensis -HDRINFO`: `NSIS_MAX_STRLEN=1024`), so a long PATH would be cut, and .NET's
 `SetEnvironmentVariable` turns the `REG_EXPAND_SZ` value into `REG_SZ`, so `%USERPROFILE%` in it
 would stop expanding. The script reads the value unexpanded and writes `REG_EXPAND_SZ` back,
@@ -601,7 +644,8 @@ terminals see it (an open one does not). If PowerShell fails (a group policy tha
 scripts even with `Bypass`), the installer says so and goes on. The uninstaller runs `remove`
 whenever `path.ps1` is in the folder.
 
-**The uninstaller** removes the files, the shortcuts, the PATH entry and both registry keys, and
+**The uninstaller** removes the files, the shortcuts, the PATH entry, the two plugin bundles
+(above) and both registry keys, and
 the folder if it is empty. It keeps the user's own files in the folder, and the settings file
 (`%APPDATA%\OpenRB-338\ui.toml`) and songs.
 
@@ -613,11 +657,17 @@ deleted after that (it appeared meanwhile), the uninstaller keeps the entry in A
 registry keys, says so, and exits 6 (not exercised), so the uninstall can be repeated.
 Installing over an
 earlier version into the same folder just overwrites the files and the registry values (the
-folder is remembered in `HKCU\Software\OpenRB-338` and is the default). Installing into another
-folder removes the PATH entry of the earlier folder (a new one is added only if the PATH
-component is ticked), moves the Apps entry to the new folder and leaves the earlier folder's
-files, which can be deleted by hand. The shortcuts are overwritten. Start menu and desktop are
-the current user's (`SetShellVarContext current`).
+folder is remembered in `HKLM\Software\OpenRB-338` and is the default). Installing
+into another folder removes the PATH entry of the earlier folder (a new one is added only if the
+PATH component is ticked), moves the Apps entry to the new folder and leaves the earlier folder's
+files, which can be deleted by hand. The shortcuts are overwritten.
+
+**Checked (task-237).** Built here (macOS, NSIS 3.13, `-WX`, both architectures, `7zz l`, the
+manifest checked for `requireAdministrator`), and built by `release.yml` (run 44130121208, from
+commit d4cc0ef, whose installer code is the one here) for both architectures from the
+`plugins-<target>` artifacts. The user ran that installer on Windows on 2026-11-17 and it passed
+(install, the plugins in a host, uninstall). Not exercised: a plugin held open by a host at
+uninstall, the arm64 installer on Windows on Arm.
 
 **The GUI subsystem.** `crates/orb-ui/src/main.rs` has
 `#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]`: the release
@@ -864,12 +914,15 @@ there is no Developer ID signing or notarization.
 is not given them; `scripts/package-pkg.sh` packs them into
 `OpenRB-338-Plugins-<version>-<target>.pkg`, a release asset of its own (task-238; below). It
 checks the signature (`codesign --verify --strict`) and that the library has the target's
-architecture only. In `release.yml` the package jobs upload `plugins-<target>` (one day) for the `dmg` jobs.
+architecture only. In `release.yml` the package jobs upload `plugins-<target>` (one day) for the
+`dmg` jobs, and for the Windows `installer` jobs, whose optional components copy the bundles to
+the machine-wide plugin folders ("The Windows installer").
 `scripts/build-all.sh` needs no change: it calls `package.sh`, so a skipped target skips its
 plugin too. Built and checked on this Mac (aarch64-apple-darwin) only; the other five are the
 same code path, run first by the release workflow.
 
-**Installing** (copy the bundle, restart or rescan the host):
+**Installing** by hand (copy the bundle, restart or rescan the host; the Windows installer always
+uses the machine-wide folders, the per-user ones below are for a manual install only):
 
 | OS | VST3 | CLAP |
 |---|---|---|
@@ -957,8 +1010,9 @@ Nothing is signed or notarized (decided 2026-10-28). Expect:
   an unrecognized app from starting": the publisher is shown as "Unknown publisher" (an
   Authenticode certificate would name it). Click "More info", then "Run anyway". It applies to a
   file downloaded in a browser (it carries the Mark of the Web), to the installer, and again to
-  `OpenRB-338.exe` and `orb.exe` from the `.zip`. The installer asks for no administrator rights,
-  so there is no UAC prompt with "Unknown publisher" on top of it. The warning fades with
+  `OpenRB-338.exe` and `orb.exe` from the `.zip`. The installer also asks for administrator
+  rights (all users, "The Windows installer"), so Windows shows a UAC prompt with "Unknown
+  publisher" after SmartScreen. The warning fades with
   SmartScreen's reputation for the file's hash, which a new build per version starts again.
   Right-click the file > Properties > Unblock (or `Unblock-File`) removes the mark.
   This was not tried here (no download on the test machine).
