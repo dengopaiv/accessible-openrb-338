@@ -72,7 +72,8 @@ the developer cannot be verified"). Pick one:
   - Any version, in Terminal:
         xattr -dr com.apple.quarantine /Applications/OpenRB-338.app
 
-The plugin (an instrument for a DAW): drag OpenRB-338.vst3 onto the VST3 link and
+The plugin (a VST® 3 and CLAP instrument for a DAW; VST is a registered trademark of
+Steinberg Media Technologies GmbH): drag OpenRB-338.vst3 onto the VST3 link and
 OpenRB-338.clap onto the CLAP link (they are /Library/Audio/Plug-Ins/VST3 and /CLAP, for all
 users, asks for an admin password; ~/Library/Audio/Plug-Ins/ is for you only, and the folders
 may not exist yet: make them in Finder or Terminal first). The bundles are signed ad hoc only;

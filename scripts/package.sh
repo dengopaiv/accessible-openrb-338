@@ -64,8 +64,10 @@ Neither needs any file of the original program: the standard drum kit is built i
 The binaries are not signed (docs/building.md says what the system shows for that).
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE).
 
-Plugin (VST3 and CLAP instrument)
----------------------------------
+Plugin (VST® 3 and CLAP instrument)
+-----------------------------------
+VST is a registered trademark of Steinberg Media Technologies GmbH.
+
 plugins/ holds OpenRB-338.vst3 and OpenRB-338.clap. Copy the one your host loads (or both)
 into a plugin folder, then rescan plugins in the host:
 EOF

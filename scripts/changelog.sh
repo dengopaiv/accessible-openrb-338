@@ -15,6 +15,9 @@
 # --since, the whole history up to NEW is listed and the text says so. The tags are read from
 # the repository the script runs in.
 #
+# The text starts with the VST trademark sentence (the registered sign at the first use of VST,
+# before any commit line that may name it; Steinberg's guidelines, task-233).
+#
 # Areas, in this order: engine, player, cli, ui, tools, tests, docs; a subject with none of them
 # (or no prefix) goes to "other". A prefix may name several areas, comma-separated
 # (`player,cli,ui: ...`, AGENTS.md): the commit is listed once, under its first known area,
@@ -112,6 +115,7 @@ BEGIN {
     listed++
 }
 END {
+    printf "The plugin is a VST\302\256 3 and CLAP instrument. VST is a registered trademark of Steinberg Media Technologies GmbH.\n\n"
     printf "Changes %s up to %s: %d commits, %d listed (backlog commits are left out).\n",
         from, new, total, listed
     for (k = 1; k <= n; k++) {

@@ -48,12 +48,28 @@ and Windows.
 
 ## Not implemented
 
-- MIDI, VST and ReWire. OpenRB-338 is a standalone application only, with no MIDI input or sync.
+- ReWire, and MIDI input or sync in the standalone application (the VST® 3/CLAP plugin below takes
+  the MIDI of its host).
 - Mod themes: a mod changes the drum sounds, not the look of the panel.
 - The original's Edit menu functions on patterns (copy, paste, clear, shift, randomize and the
   like), and undo.
 - The original's preferences and its Windows menu.
 - Export to AIFF (use WAV, FLAC or Ogg).
+
+## The plugin
+
+OpenRB-338 also comes as an instrument plugin in the VST® 3 and CLAP formats (`OpenRB-338.vst3`
+and `OpenRB-338.clap`), with the same engine and panel inside a DAW. Quick start step 2 installs
+it; docs/plugin.md describes it.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/steinberg/VST_Compatible_Logo_Steinberg_negative.svg">
+    <img src="assets/steinberg/VST_Compatible_Logo_Steinberg.svg" alt="VST Compatible" width="120">
+  </picture>
+</p>
+
+VST is a registered trademark of Steinberg Media Technologies GmbH.
 
 ## Quick start
 
@@ -148,6 +164,9 @@ See [docs/building.md](docs/building.md).
 
 OpenRB-338 is free software under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only).
 Copyright (C) 2026 the OpenRB-338 authors.
+
+VST is a registered trademark of Steinberg Media Technologies GmbH. The VST Compatible Logo is
+Steinberg's, unaltered ([assets/README.md](assets/README.md)).
 
 ReBirth RB-338 is a trademark of Propellerhead Software (now Reason Studios). OpenRB-338 is not
 affiliated with or endorsed by them. The built-in standard kit (`assets/Standard.rbm`) holds

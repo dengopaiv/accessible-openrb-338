@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T15:59:00Z'
-updated_date: '2026-11-17T09:30:00Z'
+updated_date: '2026-11-17T09:57:00Z'
 labels:
   - ui
   - docs
@@ -80,4 +80,6 @@ ordinal: 228000
 
 <!-- SECTION:NOTES:BEGIN -->
 The user, 2026-11-16: no remote MIDI channel in the first release (task-208/209 deferred). The page doesn't describe the Standard Mapping or channel 16; it says only that the devices listen on channels 1..4. Dependency on task-209 removed.
+
+From task-233 (Help > Plugin Usage, the About-box equivalent of Steinberg guidelines 1e): show the official VST Compatible Logo unaltered, from assets/steinberg/VST_Compatible_Logo_Steinberg.svg (black box, light UI) or VST_Compatible_Logo_Steinberg_negative.svg (white box, dark UI; both viewBox 116.2 x 74.7, scale in proportion only, never recolor), at least 15 x 10 mm on screen (the README uses 120 px wide at 96 dpi, about 32 x 20 mm; keep at least 57 x 38 px at 1x), near the sentence 'VST is a registered trademark of Steinberg Media Technologies GmbH.', and put the registered sign at the first use of VST on the page (VST® 3). Source and terms: assets/README.md.
 <!-- SECTION:NOTES:END -->

@@ -841,8 +841,8 @@ run (task-134) still has to check the runners and a real desktop.
 
 ## The plugin (task-204)
 
-The VST3 and CLAP instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundles
-`OpenRB-338.vst3` and `OpenRB-338.clap`.
+The VST® 3 and CLAP instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundles
+`OpenRB-338.vst3` and `OpenRB-338.clap`. VST is a registered trademark of Steinberg Media Technologies GmbH.
 
 **Building.** For everyday work: `cargo xtask bundle orb-plugin --release` (the alias in
 `.cargo/config.toml`; add `--target T` for another target) lays them out in `target/bundled/`.
