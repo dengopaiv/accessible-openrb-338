@@ -6,13 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-16T12:13:00Z'
-updated_date: '2026-11-16T12:23:00Z'
+updated_date: '2026-11-17T07:48:00Z'
 labels:
   - tools
   - tests
 milestone: m-7
 dependencies:
   - TASK-204
+  - TASK-230
 references:
   - task-204
   - scripts/build.sh

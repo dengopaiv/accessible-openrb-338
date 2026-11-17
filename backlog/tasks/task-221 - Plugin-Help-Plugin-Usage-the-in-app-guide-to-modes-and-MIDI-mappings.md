@@ -5,16 +5,17 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T15:59:00Z'
-updated_date: '2026-11-16T16:02:00Z'
+updated_date: '2026-11-17T07:48:00Z'
 labels:
   - ui
   - docs
 milestone: m-7
 dependencies:
-  - TASK-218
-  - TASK-219
   - TASK-202
   - TASK-203
+  - TASK-218
+  - TASK-219
+  - TASK-228
 references:
   - docs/plugin.md
   - docs/midi.md
