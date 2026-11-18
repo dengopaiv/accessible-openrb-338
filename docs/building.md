@@ -969,13 +969,18 @@ No framework, no build tool beyond `tools/build_site.py`.
   `site/fonts/Inter-Medium.woff` and `Inter-Bold.woff`, the printable ASCII subset of
   `crates/orb-ui-art/fonts/` (20 KiB each), with the license.
 - **The logo** is the panel's wordmark (`logo.svg` = `assets/ui/logo.svg`) on the top plate,
-  as on the transport, next to the app icon (`favicon.svg` = `assets/ui/app_icon.svg`),
-  without the animation.
+  as on the transport, next to the full app icon (`icon.svg` = `assets/ui/app_icon.svg`, a
+  plain copy: the 64 px canvas with the tile's 6 px margin), without the animation.
+- **The favicon** fills its canvas with the tile: `favicon.svg` is the same drawing as
+  `app_icon.svg` with `viewBox="6 6 52 52"` and `width`/`height` 52 (made from it, the corners
+  outside the rounded tile stay transparent), and `favicon-32.png` is the tile cropped from the
+  1024 px iconset PNG and resized to 32x32 (LANCZOS, RGBA) by `tools/site_images.py --iconset DIR`,
+  the same crop as `apple-touch-icon.png`. The header logo uses `icon.svg`, not the favicon.
 - **Screenshots and favicons:** `tools/site_images.py` (Pillow) makes `site/img/standalone*.webp`
   and `plugin*.webp` (a page copy 1200 px wide at quality 75 and the full-size copy of the zoom at quality 92; sRGB, no
   metadata) from the user's window screenshots, laying the plugin window over the REAPER window
   at the offset that matches the intended layout, and `favicon-32.png` and `apple-touch-icon.png`
-  from `orb-ui-art iconset DIR`; its docstring has the command. A click on a screenshot opens
+  from `orb-ui-art iconset DIR` (`--iconset DIR` alone makes just the two icons); its docstring has the command. A click on a screenshot opens
   the full-size file in an overlay (Esc or a click closes it); without JavaScript the link
   opens the file.
 - **The workflow** `.github/workflows/pages.yml` runs when a release is published (a tag push

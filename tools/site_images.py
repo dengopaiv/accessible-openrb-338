@@ -3,14 +3,17 @@
 
     tools/site_images.py --standalone WINDOW.png --reaper WINDOW.png --plugin WINDOW.png \
         [--iconset DIR]
+    tools/site_images.py --iconset DIR        (only the two icons)
 
 The inputs are macOS window screenshots (Retina, with the window's shadow in the alpha
 channel). Writes to site/img/:
   standalone.webp, standalone-full.webp   the app (page copy 1200 px wide, full size for the zoom)
   plugin.webp, plugin-full.webp           the plugin window laid over the REAPER window
   og.jpg                                  the link preview's picture, 1200 x 630, of the app
-  favicon-32.png, apple-touch-icon.png    from the app icon's PNGs (`orb-ui-art iconset DIR`),
-                                          with --iconset
+  favicon-32.png, apple-touch-icon.png    the icon's tile (the 52 px rounded square of the
+                                          64 px icon, no margin) cropped from the 1024 px PNG
+                                          of `orb-ui-art iconset DIR`, with --iconset; the
+                                          screenshots are not needed for these alone
 Metadata (EXIF, XMP, ICC) is dropped after converting the colors to sRGB. The plugin window's
 place on the REAPER window, PLUGIN_AT, was found by matching the two shots against a full-screen
 shot of the intended layout (the plugin's interior matched pixel for pixel).
@@ -74,26 +77,31 @@ def save_og(im):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--standalone", required=True)
-    ap.add_argument("--reaper", required=True)
-    ap.add_argument("--plugin", required=True)
+    ap.add_argument("--standalone")
+    ap.add_argument("--reaper")
+    ap.add_argument("--plugin")
     ap.add_argument("--iconset")
     a = ap.parse_args()
+    shots = (a.standalone, a.reaper, a.plugin)
+    if any(shots) and not all(shots):
+        ap.error("--standalone, --reaper and --plugin go together")
+    if not all(shots) and not a.iconset:
+        ap.error("give the three screenshots, --iconset, or both")
     os.makedirs(OUT, exist_ok=True)
-    standalone = load_srgb(a.standalone)
-    save(standalone, "standalone")
-    save_og(standalone)
-    reaper = load_srgb(a.reaper)
-    plugin = load_srgb(a.plugin)
-    canvas = Image.new("RGBA", reaper.size, (0, 0, 0, 0))
-    canvas.alpha_composite(reaper)
-    canvas.alpha_composite(plugin, PLUGIN_AT)  # the shadows of both windows stay
-    save(canvas, "plugin")
+    if all(shots):
+        standalone = load_srgb(a.standalone)
+        save(standalone, "standalone")
+        save_og(standalone)
+        reaper = load_srgb(a.reaper)
+        plugin = load_srgb(a.plugin)
+        canvas = Image.new("RGBA", reaper.size, (0, 0, 0, 0))
+        canvas.alpha_composite(reaper)
+        canvas.alpha_composite(plugin, PLUGIN_AT)  # the shadows of both windows stay
+        save(canvas, "plugin")
     if a.iconset:
-        Image.open(os.path.join(a.iconset, "icon_32x32.png")).save(
-            os.path.join(OUT, "favicon-32.png"))
         big = Image.open(os.path.join(a.iconset, "icon_512x512@2x.png")).convert("RGBA")
         tile = big.crop((96, 96, 928, 928))  # the 52 px tile of the 64 px icon, full bleed
+        tile.resize((32, 32), Image.LANCZOS).save(os.path.join(OUT, "favicon-32.png"))
         tile.resize((180, 180), Image.LANCZOS).convert("RGB").save(
             os.path.join(OUT, "apple-touch-icon.png"))
 
