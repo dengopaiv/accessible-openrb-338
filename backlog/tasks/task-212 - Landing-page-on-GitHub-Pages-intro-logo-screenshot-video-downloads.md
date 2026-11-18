@@ -3,11 +3,11 @@ id: TASK-212
 title: >-
   Landing page on GitHub Pages: intro, logo, screenshots, app and plugin
   downloads
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-16T11:06:00Z'
-updated_date: '2026-11-18T09:46:00Z'
+updated_date: '2026-11-18T09:49:00Z'
 labels:
   - docs
   - tools
@@ -77,7 +77,7 @@ Build and deploy:
 - [x] #2 The OS/arch detection is tested on at least macOS, Windows and Linux user agents (a small test or a documented manual check), and the page works without JavaScript
 - [x] #3 The download links are generated from the release being deployed and every link resolves (checked with HTTP HEAD in the build or a documented check)
 - [x] #4 The Pages workflow deploys on a release/v* tag and by hand, actions pinned by SHA, Pages permissions only on the deploy job; the site layout leaves /web/ for task-175
-- [ ] #5 The site builds locally into one folder (the command is in docs/building.md) and the agent serves it locally for the user's review; the by-hand deploy and the check that https://pingw33n.github.io/OpenRB-338/ serves the page (and the lowercase path) are done by the supervisor after the merge and push (agents never push), recorded in a follow-up backlog commit
+- [x] #5 The site builds locally into one folder (the command is in docs/building.md) and the agent serves it locally for the user's review; the by-hand deploy and the check that https://pingw33n.github.io/OpenRB-338/ serves the page (and the lowercase path) are done by the supervisor after the merge and push (agents never push), recorded in a follow-up backlog commit
 - [x] #6 docs/building.md describes the page, the workflow and the user's one-time Pages setting; README.md links to the page
 - [x] #7 The user reviewed the page and approved it BEFORE the agent reviewer runs and before merge (the user's order, 2026-11-18)
 <!-- AC:END -->
@@ -118,4 +118,37 @@ Handoff (2026-11-18): the user said 'looks good' on the page after rounds 3 to 8
 Review round 10 (agent review): (1) template injection in pages.yml: the tag now goes through env TAG ("$TAG") in the build step, and the 'Choose the release' step validates it against ^v[0-9]{4}\.[0-9]{4}\.[0-9]{4}$ before writing $GITHUB_OUTPUT and fails with an ::error:: otherwise; no ${{ }} of a user-controlled value is left in a run script; actionlint clean. (2) icon credits: the Octicons symbols carry a comment with Copyright GitHub, Inc. and the MIT permission notice; the Font Awesome credit links https://creativecommons.org/licenses/by/4.0/. (3) lightbox moves focus to a visible close button (aria-label Close) on open and returns it to the opening link on close; tabs have aria-controls=os-<os> (the panel ids); build_site.py docstring rewrapped. Checks after rebase on 79e0033: build_site_test 4 pass, detect_test ok, actionlint clean. Local copy: --release-sizes failed ('release v2026.1118.0919 not found' by gh, the draft is not visible yet), so _site was built without it: python3 tools/build_site.py --tag v2026.1118.0919 --out _site. Not run in a browser.
 
 Supervisor, 2026-11-18: AC 3: python3 tools/build_site.py --tag v2026.1118.0919 --out _site --release-sizes --check-urls after the user published v2026.1118.0919: HEAD 200 for the 15 release files and both collection zips; 15 release assets linked. AC 7: the user approved the page ("looks good", the REAPER screenshot kept); agent review round 10 verdict merge (c91a869). AC 5 (the by-hand deploy and the live URL statuses) follows the merge in a backlog commit.
+
+Supervisor, 2026-11-18, AC 5:
+- Merged as 8520b8b and pushed.
+- The Pages workflow ran by hand with tag v2026.1118.0919: https://github.com/pingw33n/OpenRB-338/actions/runs/44279171437 (build the site: success, deploy to Pages: success).
+- https://pingw33n.github.io/OpenRB-338/ returns HTTP 200, with the title "OpenRB-338: open-source ReBirth RB-338 for macOS, Windows, Linux".
+- The lowercase https://pingw33n.github.io/openrb-338/ returns 404: project-site paths on GitHub Pages are case-sensitive, so only the repository's own spelling serves.
+- From the next release on, publishing a release deploys the site automatically (pages.yml is in the tagged tree).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The landing page is live at https://pingw33n.github.io/OpenRB-338/.
+
+What it has:
+- the logo, as in the About window;
+- the standalone and plugin screenshots, which zoom in on click;
+- the Features list;
+- the Download section: OS tabs; for macOS, Standalone and Plugins buttons with the unsigned-binary instructions for each file; the Windows installer, which includes the plugins; the Linux AppImage and tar.gz; the song and mod collections;
+- a GitHub footer, SEO tags and a favicon.
+
+How it is built and deployed:
+- `tools/build_site.py` builds `site/` into `_site/`. The download links are derived from the release tag. `--release-sizes` adds the file sizes, and `--check-urls` sends a HEAD request to every link.
+- `.github/workflows/pages.yml` deploys on a published release and by hand. Actions are pinned by SHA, Pages permissions are on the deploy job only, and the tag is validated and passed through env.
+- `/web/` is left for task-175.
+
+History:
+- The user reviewed it in rounds 1-9; an agent review followed in round 10.
+- Branch worktree-agent-a1d2ac3183a195ea2, merged as 8520b8b.
+- Links checked against the published v2026.1118.0919: 17 return HEAD 200.
+- First deploy: run 44279171437. The site returns 200; the lowercase path returns 404, because Pages paths are case-sensitive.
+
+Tests: build_site_test.py 4 pass, detect_test.js ok, actionlint clean.
+<!-- SECTION:FINAL_SUMMARY:END -->
