@@ -1,5 +1,5 @@
-; The Windows installer of OpenRB-338 (task-111). Built by scripts/package-installer.sh, which
-; passes the defines below; docs/building.md ("The Windows installer") describes it.
+; The Windows installer of OpenRB-338 (task-111, task-237). Built by scripts/package-installer.sh,
+; which passes the defines below; docs/building.md ("The Windows installer") describes it.
 ;
 ;   VERSION   YYYY.MMDD.HHMM, the build time (scripts/version.sh)
 ;   ARCH      x64 or arm64 (names the file, the title and the registry entry; the binaries
@@ -7,36 +7,53 @@
 ;   BINDIR    the folder with OpenRB-338.exe and orb.exe (dist/<target>/bin)
 ;   STAGEDIR  the folder with LICENSE.txt and README.txt (CRLF)
 ;   PATHPS1   scripts/installer/path.ps1
+;   PLUGINDIR the folder with OpenRB-338.vst3 (a folder) and OpenRB-338.clap (a file)
 ;   ICON      assets/app_icon.ico (the icon of the installer and the uninstaller)
 ;   OUTFILE   the installer to write
 ;
-; Per-user install (no administrator rights, no UAC prompt): the files go to
-; %LOCALAPPDATA%\Programs\OpenRB-338, the shortcuts to the user's Start menu and desktop, the
-; uninstall entry to HKCU, and the optional PATH change to the user's PATH. Why: the program is
-; two executables with no service, driver or shared file; an unsigned installer that also asks
-; for administrator rights is a second warning for nothing; and a per-user PATH needs no rights
-; either. /D=DIR installs somewhere else, /S runs silently.
+; All users only (the user's decision, 2026-11-17: the plugins belong in the machine-wide plugin
+; folders, which need administrator rights, so the whole install is per machine): the manifest
+; says requireAdministrator, so there is one UAC prompt when the installer or the uninstaller
+; starts, and none of the per-user layout of the versions before task-237 is used. The program
+; goes to $PROGRAMFILES64\OpenRB-338, the shortcuts to the common Start menu and desktop, the
+; uninstall entry and the install record to HKLM (64-bit view), the optional PATH change to the
+; machine's PATH, OpenRB-338.vst3 to $COMMONFILES64\VST3 and OpenRB-338.clap to
+; $COMMONFILES64\CLAP (both optional components, on by default). The uninstaller removes what
+; the record in HKLM names (InstallDir, Vst3Dir, ClapDir): the two bundles only, never the shared
+; plugin folders. A reinstall replaces the bundles.
 ;
-; Silent options (the checkboxes, for /S): /STARTMENU=0|1 (default 1), /DESKTOP=0|1 (default 0),
-; /PATH=0|1 (default 0). Example:  setup.exe /S /PATH=1 /D=C:\Tools\OpenRB-338
+; An earlier per-user install (HKCU, %LOCALAPPDATA%\Programs\OpenRB-338) is left as it is: the
+; installer tells the user it is there and how to remove it (Settings > Apps).
+;
+; /D=DIR installs the program elsewhere, /S runs silently. Silent options (the checkboxes, for
+; /S): /STARTMENU=0|1 (default 1), /DESKTOP=0|1 (default 0), /PATH=0|1 (default 0), /VST3=0|1 and
+; /CLAP=0|1 (default 1); /VST3DIR=DIR and /CLAPDIR=DIR (quoted when they hold a space) choose
+; another plugin folder. Example:
+;   setup.exe /S /PATH=1 /CLAP=0 /D=C:\Tools\OpenRB-338
 
 Unicode true
 SetCompressor /SOLID lzma
-RequestExecutionLevel user
+RequestExecutionLevel admin
 ManifestDPIAware true
 
-!ifndef VERSION | ARCH | BINDIR | STAGEDIR | PATHPS1 | ICON | OUTFILE
-  !error "VERSION, ARCH, BINDIR, STAGEDIR, PATHPS1, ICON and OUTFILE must be defined (-D)"
+!ifndef VERSION | ARCH | BINDIR | STAGEDIR | PATHPS1 | PLUGINDIR | ICON | OUTFILE
+  !error "VERSION, ARCH, BINDIR, STAGEDIR, PATHPS1, PLUGINDIR, ICON and OUTFILE must be defined (-D)"
 !endif
 
 !define NAME "OpenRB-338"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}"
 !define APP_KEY "Software\${NAME}"
+!define VST3_NAME "${NAME}.vst3"
+!define CLAP_NAME "${NAME}.clap"
+
+; the plugin folders (set by .onInit; /VST3DIR= and /CLAPDIR= change them)
+Var Vst3Dir
+Var ClapDir
 
 Name "${NAME}"
 OutFile "${OUTFILE}"
-InstallDir "$LOCALAPPDATA\Programs\${NAME}"
-InstallDirRegKey HKCU "${APP_KEY}" "InstallDir"
+InstallDir "$PROGRAMFILES64\${NAME}"
+InstallDirRegKey HKLM "${APP_KEY}" "InstallDir"
 BrandingText "${NAME} ${VERSION} (${ARCH})"
 
 VIProductVersion "${VERSION}.0"
@@ -59,7 +76,7 @@ VIAddVersionKey "LegalCopyright" "GPL-3.0-only"
 !define MUI_UNICON "${ICON}"
 !define MUI_ABORTWARNING
 
-!define MUI_WELCOMEPAGE_TEXT "This installs ${NAME} ${VERSION} (${ARCH}), a reimplementation of the audio engine of Propellerhead ReBirth RB-338 2.01, and its command line tool orb.$\r$\n$\r$\nIt needs no file of the original program: the standard drum kit is built in.$\r$\n$\r$\nThe installer is not signed, which is why Windows asks whether to run it. It needs no administrator rights."
+!define MUI_WELCOMEPAGE_TEXT "This installs ${NAME} ${VERSION} (${ARCH}), a reimplementation of the audio engine of Propellerhead ReBirth RB-338 2.01, and its command line tool orb, for all users of this computer, with the optional VST3 and CLAP plugins.$\r$\n$\r$\nIt needs no file of the original program: the standard drum kit is built in.$\r$\n$\r$\nThe installer is not signed, which is why Windows asks whether to run it. It needs administrator rights (the plugin folders are shared by all users), so Windows asks for your permission when it starts."
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_LICENSEPAGE_TEXT_TOP "${NAME} is free software under the GNU General Public License, version 3 only."
 !insertmacro MUI_PAGE_LICENSE "${STAGEDIR}\LICENSE.txt"
@@ -121,15 +138,23 @@ VIAddVersionKey "LegalCopyright" "GPL-3.0-only"
 Section "${NAME} and orb" SecApp
   SectionIn RO
   Call EnsureClosed
+  ; An install before task-237 was per user (HKCU, %LOCALAPPDATA%\Programs\OpenRB-338). It is
+  ; not touched (the HKCU of an elevated process is not always the user's, and its files are not
+  ; ours to delete unasked): the user is told, and how to remove it.
+  ReadRegStr $2 HKCU "${APP_KEY}" "InstallDir"
+  ${If} $2 != ""
+    DetailPrint "An earlier per-user install of ${NAME} is in $2. It is left as it is."
+    MessageBox MB_OK|MB_ICONINFORMATION "An earlier per-user install of ${NAME} is in $2.$\r$\nIt stays, and so do its PATH entry and shortcuts, until you remove it: Settings > Apps > Installed apps > ${NAME} (the entry of that install) > Uninstall. This install is for all users." /SD IDOK
+  ${EndIf}
   ; An install over an earlier one keeps its folder, unless /D= or the folder page chose
   ; another: then the PATH entry of the earlier folder (if there is one) would point nowhere,
   ; so it goes. The files of the earlier folder stay.
-  ReadRegStr $2 HKCU "${APP_KEY}" "InstallDir"
+  ReadRegStr $2 HKLM "${APP_KEY}" "InstallDir"
   ${If} $2 != ""
   ${AndIf} $2 != "$INSTDIR"
     InitPluginsDir
     File "/oname=$PLUGINSDIR\path.ps1" "${PATHPS1}"
-    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\path.ps1" remove "$2"'
+    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\path.ps1" remove "$2" machine'
     Pop $0
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
   ${EndIf}
@@ -140,21 +165,21 @@ Section "${NAME} and orb" SecApp
   File "${STAGEDIR}\README.txt"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  WriteRegStr HKCU "${APP_KEY}" "InstallDir" "$INSTDIR"
-  WriteRegStr HKCU "${APP_KEY}" "Version" "${VERSION}"
+  WriteRegStr HKLM "${APP_KEY}" "InstallDir" "$INSTDIR"
+  WriteRegStr HKLM "${APP_KEY}" "Version" "${VERSION}"
 
   ; Settings > Apps > Installed apps (Add or remove programs)
-  WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${NAME}"
-  WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "${NAME}"
-  WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\${NAME}.exe"
-  WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKCU "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
-  WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
-  WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
+  WriteRegStr HKLM "${UNINST_KEY}" "DisplayName" "${NAME}"
+  WriteRegStr HKLM "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKLM "${UNINST_KEY}" "Publisher" "${NAME}"
+  WriteRegStr HKLM "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\${NAME}.exe"
+  WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "${UNINST_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+  WriteRegStr HKLM "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegDWORD HKLM "${UNINST_KEY}" "NoModify" 1
+  WriteRegDWORD HKLM "${UNINST_KEY}" "NoRepair" 1
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
-  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" $0
+  WriteRegDWORD HKLM "${UNINST_KEY}" "EstimatedSize" $0
 SectionEnd
 
 Section "Start menu shortcut" SecStartMenu
@@ -165,10 +190,44 @@ Section /o "Desktop shortcut" SecDesktop
   CreateShortcut "$DESKTOP\${NAME}.lnk" "$INSTDIR\${NAME}.exe"
 SectionEnd
 
-Section /o "Add orb to the PATH of the current user" SecPath
+; The bundles are the program's own names: an earlier copy goes first (a folder that is not
+; ours is never touched), so a reinstall or an upgrade leaves no stale file. VST3: a host that
+; holds the old folder open keeps it, and the installer says so (a message, then it aborts). CLAP:
+; the file is just overwritten (NSIS reports a copy that fails); there is no check of its own.
+Section "VST3 plugin" SecVst3
+  ; the folder of an earlier install is not ours any more when another one was chosen
+  ReadRegStr $2 HKLM "${APP_KEY}" "Vst3Dir"
+  ${If} $2 != ""
+  ${AndIf} $2 != $Vst3Dir
+    RMDir /r "$2\${VST3_NAME}"
+  ${EndIf}
+  CreateDirectory "$Vst3Dir"
+  RMDir /r "$Vst3Dir\${VST3_NAME}"
+  ${If} ${FileExists} "$Vst3Dir\${VST3_NAME}"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "The old $Vst3Dir\${VST3_NAME} could not be removed: a host may have it open. Close the host and install again." /SD IDOK
+    Abort "The old ${VST3_NAME} could not be removed."
+  ${EndIf}
+  SetOutPath "$Vst3Dir\${VST3_NAME}"
+  File /r "${PLUGINDIR}\${VST3_NAME}\*.*"
+  WriteRegStr HKLM "${APP_KEY}" "Vst3Dir" "$Vst3Dir"
+SectionEnd
+
+Section "CLAP plugin" SecClap
+  ReadRegStr $2 HKLM "${APP_KEY}" "ClapDir"
+  ${If} $2 != ""
+  ${AndIf} $2 != $ClapDir
+    Delete "$2\${CLAP_NAME}"
+  ${EndIf}
+  CreateDirectory "$ClapDir"
+  SetOutPath "$ClapDir"
+  File "${PLUGINDIR}\${CLAP_NAME}"
+  WriteRegStr HKLM "${APP_KEY}" "ClapDir" "$ClapDir"
+SectionEnd
+
+Section /o "Add orb to the PATH" SecPath
   SetOutPath "$INSTDIR"
   File "/oname=$INSTDIR\path.ps1" "${PATHPS1}"
-  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\path.ps1" add "$INSTDIR"'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\path.ps1" add "$INSTDIR" machine'
   Pop $0
   ${If} $0 == 0
     ; tell running programs (Explorer, so new terminals) that the environment changed
@@ -181,12 +240,14 @@ SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecApp} "The app ${NAME}.exe and the command line tool orb.exe."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} "A shortcut to ${NAME} in the Start menu."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "A shortcut to ${NAME} on the desktop."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Adds the install folder to the PATH of your user account, so orb works in any new terminal."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} "A shortcut to ${NAME} in the Start menu of all users."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "A shortcut to ${NAME} on the desktop of all users."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecVst3} "The VST3 instrument ${VST3_NAME}, in the common VST3 folder (Program Files\Common Files\VST3). Rescan plugins in your host."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecClap} "The CLAP instrument ${CLAP_NAME}, in the common CLAP folder (Program Files\Common Files\CLAP). Rescan plugins in your host."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Adds the install folder to the PATH of all users, so orb works in any new terminal."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
-; /STARTMENU=, /DESKTOP= and /PATH= set the checkboxes (for /S too)
+; /STARTMENU=, /DESKTOP=, /PATH=, /VST3= and /CLAP= set the checkboxes (for /S too)
 !macro OptionSection NAME SEC
   ClearErrors
   ${GetOptions} $0 "/${NAME}=" $1
@@ -200,18 +261,38 @@ SectionEnd
 !macroend
 
 Function .onInit
-  ; the Start menu and desktop of this user, not of all users
-  SetShellVarContext current
+  ; the 64-bit registry view and folders, also for the 32-bit installer stub on Windows on Arm
+  SetRegView 64
+  ; the Start menu and desktop of all users
+  SetShellVarContext all
   ${GetParameters} $0
   !insertmacro OptionSection "STARTMENU" ${SecStartMenu}
   !insertmacro OptionSection "DESKTOP" ${SecDesktop}
   !insertmacro OptionSection "PATH" ${SecPath}
+  !insertmacro OptionSection "VST3" ${SecVst3}
+  !insertmacro OptionSection "CLAP" ${SecClap}
+  StrCpy $Vst3Dir "$COMMONFILES64\VST3"
+  StrCpy $ClapDir "$COMMONFILES64\CLAP"
+  ClearErrors
+  ${GetOptions} $0 "/VST3DIR=" $1
+  ${IfNot} ${Errors}
+  ${AndIf} $1 != ""
+    StrCpy $Vst3Dir $1
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $0 "/CLAPDIR=" $1
+  ${IfNot} ${Errors}
+  ${AndIf} $1 != ""
+    StrCpy $ClapDir $1
+  ${EndIf}
+  ClearErrors
 FunctionEnd
 
 ; ---------------------------------------------------------------------------------------------
 
 Function un.onInit
-  SetShellVarContext current
+  SetRegView 64
+  SetShellVarContext all
 FunctionEnd
 
 Section "Uninstall"
@@ -219,9 +300,26 @@ Section "Uninstall"
   Call un.EnsureClosed
   ; the PATH entry goes first, while path.ps1 is still there (nothing happens without an entry)
   ${If} ${FileExists} "$INSTDIR\path.ps1"
-    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\path.ps1" remove "$INSTDIR"'
+    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\path.ps1" remove "$INSTDIR" machine'
     Pop $0
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
+  ${EndIf}
+
+  ; the plugins, from the folders the installer wrote down in HKLM; only our two names (the
+  ; shared folders stay)
+  ReadRegStr $2 HKLM "${APP_KEY}" "Vst3Dir"
+  ${If} $2 != ""
+    RMDir /r "$2\${VST3_NAME}"
+    ${If} ${FileExists} "$2\${VST3_NAME}"
+      DetailPrint "$2\${VST3_NAME} could not be removed (a host has it open?). Delete it by hand."
+    ${EndIf}
+  ${EndIf}
+  ReadRegStr $2 HKLM "${APP_KEY}" "ClapDir"
+  ${If} $2 != ""
+    Delete "$2\${CLAP_NAME}"
+    ${If} ${FileExists} "$2\${CLAP_NAME}"
+      DetailPrint "$2\${CLAP_NAME} could not be removed (a host has it open?). Delete it by hand."
+    ${EndIf}
   ${EndIf}
 
   Delete "$SMPROGRAMS\${NAME}.lnk"
@@ -241,6 +339,6 @@ Section "Uninstall"
     MessageBox MB_OK|MB_ICONEXCLAMATION "Some files in $INSTDIR could not be deleted. The uninstall entry stays: close what uses them and uninstall again." /SD IDOK
     Abort "Files could not be deleted (exit code 6)."
   ${EndIf}
-  DeleteRegKey HKCU "${UNINST_KEY}"
-  DeleteRegKey HKCU "${APP_KEY}"
+  DeleteRegKey HKLM "${UNINST_KEY}"
+  DeleteRegKey HKLM "${APP_KEY}"
 SectionEnd

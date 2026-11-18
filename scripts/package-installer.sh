@@ -6,7 +6,8 @@
 #   scripts/package-installer.sh x86_64-pc-windows-msvc|aarch64-pc-windows-msvc
 #
 # Builds the target with scripts/build.sh first; SKIP_BUILD=1 uses the binaries already in
-# dist/<target>/bin/ (release.yml downloads them from the package jobs). makensis runs on any
+# dist/<target>/bin/ and the plugin bundles in dist/<target>/plugins/ (release.yml downloads
+# them from the package jobs; the plugins are the installer's two optional components). makensis runs on any
 # host (macOS: brew install makensis; Ubuntu: apt install nsis; Windows runners: choco install
 # nsis), so one script serves this Mac and CI. The installer itself is scripts/installer/
 # openrb.nsi; docs/building.md ("The Windows installer") describes it.
@@ -47,6 +48,10 @@ bin=$dist/$target/bin
 for f in OpenRB-338.exe orb.exe; do
     [ -f "$bin/$f" ] || { echo "missing $bin/$f (run scripts/build.sh $target)" >&2; exit 1; }
 done
+plugins=$dist/$target/plugins
+for p in OpenRB-338.vst3 OpenRB-338.clap; do
+    [ -e "$plugins/$p" ] || { echo "missing $plugins/$p (run scripts/build.sh $target)" >&2; exit 1; }
+done
 
 # The license page and the readme are shown by Windows programs: CRLF line ends.
 stage=$dist/$target/installer-stage
@@ -68,9 +73,17 @@ OpenRB-338.exe is the desktop app (Start menu: OpenRB-338). orb.exe is the comma
 $(cat "$root/scripts/fork-readme.txt")
 
 To run orb from any folder, add this folder to your PATH: run the installer again with "Add orb to
-the PATH of the current user" ticked, or add it in Settings > System > About > Advanced system
-settings > Environment Variables. The uninstaller (Settings > Apps) removes what the installer
-added; your songs and the settings file (%APPDATA%\OpenRB-338) are kept.
+the PATH" ticked, or add it in Settings > System > About > Advanced system settings > Environment
+Variables. The uninstaller (Settings > Apps) removes what the installer added; your songs and the
+settings file (%APPDATA%\OpenRB-338) are kept.
+
+The installer is for all users and asks for administrator rights: the program goes to Program
+Files, the optional PATH entry to the machine's PATH. The VST3 and CLAP plugins (components
+"VST3 plugin" and "CLAP plugin", on by default) go to the plugin folders every host scans:
+OpenRB-338.vst3 to %COMMONPROGRAMFILES%\VST3 and OpenRB-338.clap to %COMMONPROGRAMFILES%\CLAP.
+Rescan plugins in your host. The uninstaller removes the two plugin files and nothing else in
+these folders. An earlier per-user install (versions before the plugins) is not removed: take it
+out in Settings > Apps.
 
 The installer and the programs are not signed, so Windows SmartScreen may say "Windows protected
 your PC": choose "More info", then "Run anyway".
@@ -81,9 +94,14 @@ rm "$stage/readme.in"
 # NSIS stores the time of every file it packs: copy all of them here and give them the build
 # time, so two runs of one build make the same installer (BSD date -r, GNU date -d)
 cp "$bin/OpenRB-338.exe" "$bin/orb.exe" "$root/scripts/installer/path.ps1" "$stage/"
+# the plugin bundles (task-237): a .vst3 folder and a .clap file on Windows
+mkdir "$stage/plugins"
+cp -R "$plugins/OpenRB-338.vst3" "$plugins/OpenRB-338.clap" "$stage/plugins/"
+[ -d "$stage/plugins/OpenRB-338.vst3" ] && [ -f "$stage/plugins/OpenRB-338.clap" ] \
+    || { echo "OpenRB-338.vst3 must be a folder and OpenRB-338.clap a file" >&2; exit 1; }
 stamp=$(TZ=UTC date -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S 2>/dev/null \
     || TZ=UTC date -d "@$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)
-touch -t "$stamp" "$stage"/*
+find "$stage" -exec touch -t "$stamp" {} +
 
 out=$dist/$target/OpenRB-338-$version-$arch-setup.exe
 rm -f "$out"
@@ -92,6 +110,7 @@ rm -f "$out"
 "$makensis" -V2 ${MAKENSIS_FLAGS--WX} "-DICON=$(nsis_path "$root/assets/app_icon.ico")" \
     "-DVERSION=$version" "-DARCH=$arch" "-DBINDIR=$(nsis_path "$stage")" \
     "-DSTAGEDIR=$(nsis_path "$stage")" "-DPATHPS1=$(nsis_path "$stage/path.ps1")" \
-    "-DOUTFILE=$(nsis_path "$out")" "$(nsis_path "$root/scripts/installer/openrb.nsi")"
+    "-DPLUGINDIR=$(nsis_path "$stage/plugins")" "-DOUTFILE=$(nsis_path "$out")" \
+    "$(nsis_path "$root/scripts/installer/openrb.nsi")"
 rm -rf "$stage"
 ls -l "$out"

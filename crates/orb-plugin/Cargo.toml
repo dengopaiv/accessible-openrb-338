@@ -1,0 +1,77 @@
+[package]
+name = "orb-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "OpenRB-338 as a VST3 and CLAP instrument plugin (nice-plug)"
+
+[lib]
+name = "orb_plugin"
+# The plugin library the bundles hold (cdylib), and a lib for the tests.
+crate-type = ["cdylib", "lib"]
+
+# The CLAP editor in a minimal host on the main thread (AppKit needs it): no test harness.
+[[test]]
+name = "clap_gui"
+harness = false
+
+[dependencies]
+orb-engine = { path = "../orb-engine" }
+# The lock-free Player/Audio split, run in 64-frame calls (task-197).
+orb-player = { path = "../orb-player" }
+# Song files (RBS 4.x and ReBirth 1.x) and mods (the built-in kit, recrypted mods).
+rbs = { path = "../rbs" }
+rbm = { path = "../rbm" }
+# The plugin framework (ISC), the community fork of nih-plug; its VST3 bindings are the `vst3`
+# crate (MIT OR Apache-2.0). No logger.
+nice-plug = { version = "0.4.2", default-features = false, features = ["vst3", "editor"] }
+# The editor (task-201): orb-ui's panel in the host's window through nice-plug's egui adapter
+# (ISC; egui 0.37 as orb-ui, on egui-baseview with wgpu 30 as eframe). orb-ui without its
+# standalone window (no eframe, no winit).
+nice-plug-egui = { version = "0.6.0", default-features = false, features = ["wgpu"] }
+orb-ui = { path = "../orb-ui", default-features = false }
+orb-cli = { path = "../orb-cli" }
+egui = "0.37.0"
+# The system fonts as a fallback for the glyphs egui's fonts lack, as eframe's `system_fonts`
+# gives the standalone app (the same crate eframe uses).
+egui_system_font_provider = "0.37.0"
+egui_extras = { version = "0.37.0", features = ["svg"] }
+# The state's document (JSON, bytes as base64) and the embedded mod's SHA-256.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22.1"
+sha2 = "0.10"
+# The pattern drag-out's native drag (task-203, src/drag.rs): the editor window's handle (the
+# version baseview implements), and per platform the Objective-C runtime (AppKit's dragging
+# session) or an X connection of the drag's own (XDND); Windows' OLE calls are declared by hand.
+# All three crates are in the tree already through baseview.
+raw-window-handle = "0.6.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb = { version = "0.13.2", default-features = false }
+
+[dev-dependencies]
+# tests/exports.rs loads the built plugin library as a host does: the CLAP and VST3 C APIs (the
+# versions nice-plug uses; MIT OR Apache-2.0) and the dynamic loader (ISC).
+clap-sys = "0.5.0"
+vst3 = "0.3.0"
+libloading = "0.8.9"
+# examples/editor_preview.rs: the editor's panel in a window of its own, for screenshots.
+eframe = "0.37.0"
+# tests/editor.rs: a song and a mod file for File > Open and the Mods menu.
+tempfile = "3.27.0"
+
+# tests/clap_gui.rs: the host's window (NSWindow, NSView) the editor is parented to (task-224;
+# MIT; the versions baseview uses).
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std", "NSGraphics", "NSResponder", "NSView", "NSWindow",
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std", "NSArray", "NSGeometry",
+] }

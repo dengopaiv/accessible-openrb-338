@@ -24,6 +24,9 @@ Every OS has an amd64 and an arm64 variant:
 A package is `OpenRB-338-<YYYY.MMDD.HHMM>-<target>.tar.gz|zip` holding a folder of the same
 name with `orb` (`orb.exe`), `OpenRB-338` (`OpenRB-338.exe`), `LICENSE` and `README.txt`. The
 binaries are built with `--locked` and the `dist` profile (below).
+The Linux `.tar.gz` also holds `OpenRB-338.svg` (`assets/ui/app_icon.svg`) and `OpenRB-338.desktop`
+(task-178: the AppImage's entry, from `scripts/OpenRB-338.desktop.in`, with `@DIR@` in `Exec` and
+`Icon`); its `README.txt` has the one-line `sed` that installs the menu entry.
 
 ### The dist profile (task-132)
 
@@ -114,9 +117,14 @@ ReBirth" drum samples), embedded in both binaries, may ship in the public releas
 the `.tar.gz`, the `.zip`, the `.dmg`, and the later installer and AppImages.
 
 On Linux, both `orb` and OpenRB-338 link `libasound.so.2` (ALSA, package `libasound2`), so even
-`orb --help` fails without it. OpenRB-338 also loads X11 or Wayland and the GL or Vulkan driver at
-run time (dlopen): on a bare Ubuntu 22.04 it needed `libxcursor1`, `libxrandr2`, `libxi6`,
-`libegl1` and a driver (`mesa-vulkan-drivers` for software Vulkan, or
+`orb --help` fails without it. Crackling with `A buffer underrun or overrun occurred` many times a
+second (issue #7, pipewire-alsa) means the device buffer is too small for the sound server's
+cycle; the output asks for 2048 frames (`BUFFER_FRAMES`, crates/orb-player/src/output.rs). Report
+the two lines `orb play SONG.rbs --seconds 10` prints (the start line with `buffer ... requested,
+first callback ... frames` and the exit line with the callback sizes; Ctrl+C prints it too), and
+the sound server's quantum (`pw-top`). OpenRB-338 also loads X11 or Wayland and the GL or Vulkan
+driver at run time (dlopen): on a bare Ubuntu 22.04 it needed `libxcursor1`, `libxrandr2`,
+`libxi6`, `libegl1` and a driver (`mesa-vulkan-drivers` for software Vulkan, or
 Mesa's OpenGL and EGL drivers, `libgl1-mesa-dri` and `libegl-mesa0`; see "The AppImage"; the
 `.tar.gz` also needs `libxkbcommon-x11-0`, which the AppImage bundles). The most
 recent glibc symbol the binaries use is `GLIBC_2.35` (OpenRB-338) and `GLIBC_2.34` (orb), on both
@@ -132,6 +140,7 @@ The Windows build of OpenRB-338 is a GUI-subsystem exe (task-111), see "The Wind
 |---|---|
 | `scripts/build.sh TARGET` | builds `orb` and `OpenRB-338` (profile `dist`) for the target into `dist/<target>/bin/` |
 | `scripts/package.sh TARGET` | `build.sh`, then packs `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<target>.tar.gz|zip` (`SKIP_BUILD=1` packs the existing `bin/`) |
+| `scripts/validate-plugin.sh [DIR]` | downloads the pinned clap-validator and pluginval and runs them on `OpenRB-338.clap` and `OpenRB-338.vst3` in `DIR` (default `target/bundled`); exit 1 on any failure (below, "The plugin") |
 | `scripts/build-all.sh [TARGET...]` | packages every target practical from this machine, and lists the skipped and failed ones |
 | `scripts/package-dmg.sh` | `scripts/package-dmg.sh TARGET` (a macOS target) builds it, then `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg` (`SKIP_BUILD=1` uses the existing `bin/` folder) |
 | `scripts/package-installer.sh TARGET` | `build.sh` for a Windows target, then `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<x64\|arm64>-setup.exe` with NSIS (`SKIP_BUILD=1` uses the existing `bin/`; `MAKENSIS` names makensis) |
@@ -230,6 +239,8 @@ and `OPENRB_` names are not read any more and have no deprecated alias.
 | `ORB_LOGO_T` | OpenRB-338 | seconds: freezes the logo's startup animation at that time (pictures; task-114, `crates/orb-ui/src/logo_anim.rs`) | none |
 | `ORB_GPU_INFO` | OpenRB-338 | `1` prints the graphics adapter wgpu chose (`scripts/appimage-smoke.sh`) | `OPENRB_GPU_INFO` |
 | `ORB_UI_FRAME_STATS` | OpenRB-338 (`FrameStats`, `crates/orb-ui/src/app.rs`, task-153) | `1` prints, every 2 s of frames, the frames drawn per second and eframe's mean CPU time of a frame | none |
+| `ORB_UI_START_STATS` | OpenRB-338 (`start_stats`, `crates/orb-ui/src/app.rs`, task-179) | `1` prints the ms from the process's start to the first complete frame, and to every end of a background rasterizing at full resolution | none |
+| `ORB_PLUGIN_SIZE_LOG` | the plugin (`editor::size_log`, `crates/orb-plugin/src/editor.rs`, task-234) | a file to which the editor appends the host's size calls (`adjust_size`/`checkSizeConstraint`, `set_size`/`onSize`, `size`/`getSize`, `resize_hint`/`canResize`, `set_parent`), egui's `resized` and the size requests, with ms; unset: no log (docs/plugin.md section 10) | none |
 | `ORB_BUILD_BRANCH` | `crates/orb-ui/build.rs`, `scripts/release-env.sh`, `scripts/build.sh` (passed into Docker), `release.yml` | `main` or `other`: makes the About box's hash the main form | `RB_BUILD_BRANCH` |
 | `ORB_UI_VERSION` | set by `crates/orb-ui/build.rs` for rustc (`env!`), never by hand | the version string of the About box | `RB_UI_VERSION` |
 | `ORB_APPIMAGE_EMULATED` | `scripts/package-appimage.sh`, `appimage-pack.sh`, `appimage-smoke.sh` | `1` on an x86_64 AppImage built or checked on a Mac (local only) | `OPENRB_APPIMAGE_EMULATED` |
@@ -270,6 +281,7 @@ work as ever.
 | | `--play` | presses Play once the song is open (CPU measurements of the playing panel, task-153) |
 | | `ORB_LOGO_T=SECONDS` (variable) | freezes the logo's startup animation (task-114) at that time, on the panel and in About, for pictures of a moment |
 | | `ORB_UI_FRAME_STATS=1` (variable) | prints the frame rate and the CPU time per frame every 2 s (task-153) |
+| | `ORB_UI_START_STATS=1` (variable) | prints when the first complete frame was drawn and when the parts reached their full resolution, in ms since the start (task-179) |
 
 `OpenRB-338 --help` (also `-h`) prints `usage: OpenRB-338 [SONG]` and exits 0; a bad option or
 value prints the same and exits 2. `SONG` (one, a path with spaces is one argument) is an RBS 4.x
@@ -569,6 +581,43 @@ builds six platforms and the fork does not use it (GitHub Actions has not run on
 8. `gh release create $TAG --draft --target <commit> --title ... --notes-file ... ZIP
    SHA256SUMS.txt`. The user publishes the draft, or says to; publishing creates the tag.
 
+## The test profile (task-205)
+
+`cargo test` builds with `[profile.test]` of the workspace `Cargo.toml`: `opt-level = 3` and
+`debug = "line-tables-only"`. The profile inherits `debug-assertions` and `overflow-checks` from
+`dev`, so both stay on (a test sees `cfg!(debug_assertions)` true; `cargo test -v` shows
+`-C debug-assertions=on` next to `-C opt-level=3`, and no `-C overflow-checks` flag, because
+rustc's default for overflow checks follows debug assertions). The output stays
+in `target/debug`, so `crates/orb-plugin/tests/exports.rs` (it builds the plugin with a nested
+`cargo build`, the dev profile, and loads `target/debug/...`) is unchanged and correct; under
+`cargo test --release` the same test builds and loads the release library.
+
+- Units: in a clean `cargo test -v --workspace` 401 of the 495 rustc runs are at opt-level 3: every
+  workspace crate, every test binary and every runtime dependency (sha2, the engine's and the
+  UI's libraries). The rest are the host-side units (build scripts, proc macros and their
+  dependencies: syn, quote, ...), which cargo builds with the `build-override` settings
+  (opt-level 0); they are small and optimizing them would only lengthen the clean build, so no
+  `[profile.dev.package."*"]` entry is needed. (`[profile.dev.package.sha2]` stays for `cargo
+  build`, `cargo run` and `cargo check`, which keep the dev profile.)
+- Bit-exactness: the engine's floats do not depend on opt-level (Rust does not contract or
+  reorder float operations); the corpus tests (corpus_golden, corpus_mods, export_equal) pass in
+  this profile, with `ORB_CD_ISO` set and unset.
+- No test branches on `debug_assertions` any more. The workloads that were reduced or ignored in
+  an unoptimized build (the 3 shipped-song tests of corpus_mods, the shipped songs of
+  corpus_golden, 164 instead of 10 export_equal entries, 400 instead of 40 merge cases, 200
+  instead of 2 frame_cost runs) always run in full: 2, 2, 3.4, 4 and 0.3 s. No `ORB_FULL_TESTS`
+  variable is needed.
+- Times (this Mac, 10 cores, with other agents' builds running, so only the ratios mean much;
+  `cargo test --workspace --no-fail-fast`, `ORB_CD_ISO` unset): clean 7m32s before, 3m14s after;
+  after a change in orb-engine 5m17s before, 1m56s after; nothing changed 4m37s before, 1m17s
+  after (the test run itself: menu.rs 85 s before, 10 s after). With `ORB_CD_ISO` set, the
+  corpus tests included: 1m27s after. With `ORB_CD_ISO` unset the corpus tests that need the
+  image (corpus_mods, ...) report `ok` after a message on stderr, not `ignored`, as they skip
+  themselves. The third-party run (`cargo test -p orb-cli --test thirdparty`) needs no
+  `--release` any more: the test profile is optimized.
+- The timing measurements marked `#[ignore]` (`merge_timing`, `part_cost`, ...) still say
+  `cargo test --release`: their numbers are for the release profile.
+
 ## GitHub Actions (`.github/workflows/`)
 
 Decisions of the user (2026-10-28): the cost of six release package jobs and the three-OS CI
@@ -607,6 +656,8 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     synthetic recrypt tests (`crates/rbm/tests/recrypt_python.rs`, which run `tools/rbm.py`)
     need none of them.
     Linux installs `libasound2-dev` first.
+  - `plugin validators` (task-204) on `ubuntu-22.04` and `macos-latest`: bundles the plugin and
+    runs `scripts/validate-plugin.sh` (clap-validator, pluginval; see "The plugin").
 - `release.yml`, on a tag `v*` and by hand:
   - `prepare` computes one `SOURCE_DATE_EPOCH` and one `ORB_BUILD_BRANCH` (`scripts/release-env.sh`)
     so all packages agree. On a tag the build time is the tag's and a tag that is not
@@ -615,19 +666,24 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     `ubuntu-22.04-arm` (aarch64) for Linux (the oldest LTS image: glibc 2.35); `windows-latest`
     and `windows-11-arm`; `macos-15-intel` (amd64) and `macos-15` (arm64). Each runs
     `scripts/package.sh <target>` and uploads the package (`package-<target>`) and the binaries
-    (`bin-<target>`, one day) as workflow artifacts.
+    (`bin-<target>`, one day) as workflow artifacts, and the plugin bundles
+    (`plugins-<target>`, one day; the package holds them too, task-204).
   - The runner images change: GitHub retires old ones (macos-13 is gone, which is why amd64
     macOS uses `macos-15-intel`). Fix a label here when a run reports one as missing.
   - The Windows arm64 job installs rustup if the image has none.
   - `dmg` (task-110, task-136), one job per macOS target after the package jobs, on the runner
     of its target (`macos-15-intel`, `macos-15`; not one runner for both, so each job needs only
     its own `bin-<target>` and the target's own tools check the image): downloads that
-    `bin-<target>` artifact, runs `SKIP_BUILD=1 scripts/package-dmg.sh <target>` and uploads the
-    artifact `dmg-<target>` (`OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg`). It reuses the package
+    `bin-<target>` and `plugins-<target>` artifacts (the bundles go into the plugin pkg,
+    task-204, task-238), runs `SKIP_BUILD=1 scripts/package-dmg.sh <target>` and uploads the
+    artifact `dmg-<target>` (`OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg`), then runs
+    `scripts/package-pkg.sh <target>` and uploads `pkg-<target>`
+    (`OpenRB-338-Plugins-<YYYY.MMDD.HHMM>-<target>.pkg`, task-238). It reuses the package
     build and the `prepare` build time, so the app's version string is theirs.
   - `installer` (task-111), one job per Windows architecture on `ubuntu-latest` after the package
     jobs: installs NSIS (`apt-get install nsis`), downloads `bin-x86_64-pc-windows-msvc` or
-    `bin-aarch64-pc-windows-msvc`, runs `SKIP_BUILD=1 scripts/package-installer.sh <target>` and
+    `bin-aarch64-pc-windows-msvc` and the matching `plugins-<target>` (the optional plugin
+    components, task-237), runs `SKIP_BUILD=1 scripts/package-installer.sh <target>` and
     uploads the artifact `installer-x64` or `installer-arm64`
     (`OpenRB-338-<YYYY.MMDD.HHMM>-<x64|arm64>-setup.exe`). It needs no Windows runner and no
     Rust, and takes the `prepare` build time, so the installer's version is the exe's. Not run
@@ -666,14 +722,14 @@ git push origin v2026.1028.1930
   `^v[0-9]{4}\.[0-9]{4}\.[0-9]{4}$` (and that the date exists); another tag (`v1`, `vfoo`) fails
   there with a message, the other jobs are skipped and no release is created.
 - When `package`, `dmg`, `installer` and `appimage` all pass, the `release` job:
-  1. downloads `package-*`, `dmg-*`, `installer-*` and `appimage-*`;
-  2. `scripts/release-assets.sh` checks that exactly the 12 files of a release are there (four
-     `.tar.gz`, two `.zip`, the two `.dmg`, the two `-setup.exe`, the two `.AppImage`, all named with
-     the tag's version) and writes `SHA256SUMS.txt` over them (`sha256sum -c` form, sorted);
+  1. downloads `package-*`, `dmg-*`, `pkg-*`, `installer-*` and `appimage-*`;
+  2. `scripts/release-assets.sh` checks that exactly the 14 files of a release are there (four
+     `.tar.gz`, two `.zip`, the two `.dmg`, the two plugin `.pkg`, the two `-setup.exe`, the two
+     `.AppImage`, all named with the tag's version) and writes `SHA256SUMS.txt` over them (`sha256sum -c` form, sorted);
      a missing or foreign file fails the job, so a release never ships without a package;
   3. `scripts/changelog.sh` writes the release body;
   4. creates a draft release with `gh release create --draft --verify-tag`, titled
-     `OpenRB-338 <version>`, with the 12 files and `SHA256SUMS.txt` attached (13 assets).
+     `OpenRB-338 <version>`, with the 14 files and `SHA256SUMS.txt` attached (15 assets).
 - It never publishes. The release is a draft that only the user can see: read the body and the
   assets on the Releases page, then press "Publish release" (or `gh release edit TAG --draft=false`).
   Nothing is signed (Gatekeeper and SmartScreen: "What the system shows for an unsigned
@@ -685,13 +741,27 @@ git push origin v2026.1028.1930
   (`ORB_BUILD_BRANCH=main`, `scripts/release-env.sh`); a tag on another branch shows `dev-`.
 - `workflow_dispatch` ("Run workflow" on a branch) builds all the artifacts (on the run's page) with the build time now, and creates no release:
   the `release` job runs only when the ref is a tag. Run on a tag it does what the tag push does.
+- **A pull request's packages.** Add the label `build-release` to the PR (the Labels menu of the
+  PR page): the workflow builds all the artifacts from the PR's head commit
+  (`refs/pull/N/head`, a fork's too), shown in the PR's Checks with the artifacts on the run's
+  page, and creates no release. "Re-run jobs" there, or removing and adding the label, runs it
+  again; any other label skips every job. A labeled run takes `release.yml` from the PR merged
+  with main, so a PR whose branch predates the label trigger (or that edits `release.yml`) runs
+  that version. GitHub runs no pull_request workflow on a PR with a merge conflict. For those
+  (or any PR) use "Run workflow" on main with the `pr` input set to the PR's number: main's
+  `release.yml` builds the PR's head, and no release is created even when started on a tag.
+  A PR run has the read-only token and no secret; for a first-time contributor GitHub asks to
+  approve the run ("Approve and run"), so read the PR's changes first: the run builds and runs
+  them. The binaries show `dev-` (the PR head is not on `origin/main`).
 
 `scripts/changelog.sh [--since REV] [PREV] NEW` writes the body: the commits of `PREV..NEW`,
-without merge commits and without `backlog:` ones, grouped under `engine`, `cli`, `tools`,
-`tests`, `docs` (then `other` for a subject with no such prefix), each as the subject without its
-prefix and the task ids of its `Task:` lines in parentheses. Without `PREV` it is the greatest
-earlier tag of the release form (text order is version order; `vfoo` and `v2026.1028.1500x` are
-ignored). The first release has no earlier tag: the whole history is listed, and the first line
+without merge commits and without `backlog:` ones, grouped under `engine`, `player`, `cli`, `ui`,
+`tools`, `tests`, `docs` (then `other` for a subject with no such prefix), each as the subject
+without its prefix and the task ids of its `Task:` lines in parentheses. A subject with several
+areas (`player,cli,ui: ...`) is listed once, under its first known area, with the others noted
+(`(task-176; also cli, ui)`). Without `PREV` it is the greatest tag of the release form in NEW's
+history other than NEW itself, so `HEAD` previews the next release (text order is version order;
+`vfoo` and `v2026.1028.1500x` are ignored). The first release has no earlier tag: the whole history is listed, and the first line
 says so; `--since REV` lists the commits after REV instead. Example (a scratch clone with fake
 tags):
 
@@ -737,9 +807,11 @@ Mac can run it under Rosetta but should take the aarch64 one.
   and nothing is left behind, the bundle's seal covers both, and an update replaces both.
   The cost is a longer path; `README.txt` in the image gives
   `sudo ln -s /Applications/OpenRB-338.app/Contents/MacOS/orb /usr/local/bin/orb`.
-- An `Applications` link, `LICENSE` and `README.txt` (install, Gatekeeper, the `orb` link). There
-  is no background picture or icon layout (that needs Finder scripting, which is not
-  reproducible on a runner).
+- An `Applications` link, `LICENSE` and `README.txt` (install, Gatekeeper, a note that the
+  plugins come as the separate `OpenRB-338-Plugins-<version>-<target>.pkg` of the same release,
+  the `orb` link). The plugins are not in the image (task-238; "The macOS pkg" in the plugin
+  section). There is no background picture or icon layout (that needs Finder scripting, which
+  is not reproducible on a runner).
 - Signing is ad hoc only (Apple silicon refuses an unsigned bundle; no Developer ID, no
   notarization): `orb` is signed explicitly (`codesign --force -s -`; before, only the linker had
   signed it on its own), then the bundle without `--deep`, whose seal covers both executables,
@@ -778,30 +850,72 @@ through `cygpath -aw`: with a `C:/...` path its `File "/oname=..."` finds no fil
 first built on Windows 2026-11-09, NSIS 3.13). The README.txt of the zip and of the installer
 carries the fork's paragraph, `scripts/fork-readme.txt` (task-221).
 
-**What it installs.** Per user, to `%LOCALAPPDATA%\Programs\OpenRB-338` (`/D=DIR` changes it):
-`OpenRB-338.exe`, `orb.exe`, `LICENSE.txt` (the GPLv3, also the
-installer's license page) and `README.txt`, and `Uninstall.exe`. Per user, not per machine,
-because the program is two executables with no service, driver or shared file; because an
-unsigned installer that also asks for administrator rights shows a second warning for nothing
-(no UAC prompt now); and because a per-user PATH needs no rights either. The cost: other
-accounts of the PC do not get the program (they run the installer themselves). The pages:
-welcome, license, components, folder, install, finish (start the app, show the readme).
+**All users only (task-237; the user's decision, 2026-11-17).** The installer is per machine and
+asks for administrator rights: the manifest says `requireAdministrator` (`RequestExecutionLevel
+admin`), so there is one UAC prompt when the installer or the uninstaller starts ("Unknown
+publisher", the installer is unsigned); a standard account cannot install without an
+administrator's credentials. Why: the plugins belong in the machine-wide plugin folders, which
+need them, and every host scans those; one layout, no per-user or per-machine choice. Before task-237 the installer was
+per user (no UAC prompt, `%LOCALAPPDATA%\Programs\OpenRB-338`, HKCU).
+
+| | Where |
+|---|---|
+| Program | `$PROGRAMFILES64\OpenRB-338` (`C:\Program Files\OpenRB-338`, also on arm64); `/D=DIR` changes it |
+| Registry (64-bit view) | `HKLM\Software\OpenRB-338`, `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338` |
+| Shortcuts | the common Start menu and desktop (`SetShellVarContext all`) |
+| PATH | the machine's: `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\Path` |
+| VST3 | `$COMMONFILES64\VST3\OpenRB-338.vst3` (`C:\Program Files\Common Files\VST3`) |
+| CLAP | `$COMMONFILES64\CLAP\OpenRB-338.clap` |
+
+**What it installs.** `OpenRB-338.exe`, `orb.exe`, `LICENSE.txt` (the GPLv3, also the installer's
+license page) and `README.txt`, `Uninstall.exe`, and what the components below add. The pages:
+welcome, license, components, folder, install, finish (start the app, show the readme). The
+record in `HKLM\Software\OpenRB-338`: `InstallDir`, `Version`, `Vst3Dir` and `ClapDir` (the last
+two only when the component was installed); the uninstaller removes what it names.
 
 | Component | Default | Does |
 |---|---|---|
-| OpenRB-338 and orb | required | the files above; the uninstaller; the entry in Settings > Apps > Installed apps (Add or remove programs) under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338`: `DisplayName`, `DisplayVersion` = `YYYY.MMDD.HHMM`, `Publisher`, `DisplayIcon`, `InstallLocation`, `UninstallString`, `QuietUninstallString`, `EstimatedSize`, no Modify or Repair |
-| Start menu shortcut | on | `OpenRB-338` in the user's Start menu |
-| Desktop shortcut | off | `OpenRB-338` on the desktop |
-| Add orb to the PATH of the current user | off | appends the folder to `HKCU\Environment\Path` |
+| OpenRB-338 and orb | required | the files above; the uninstaller; the entry in Settings > Apps > Installed apps (Add or remove programs) under `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338`: `DisplayName`, `DisplayVersion` = `YYYY.MMDD.HHMM`, `Publisher`, `DisplayIcon`, `InstallLocation`, `UninstallString`, `QuietUninstallString`, `EstimatedSize`, no Modify or Repair |
+| Start menu shortcut | on | `OpenRB-338` in the common Start menu |
+| Desktop shortcut | off | `OpenRB-338` on the common desktop |
+| VST3 plugin | on | the bundle folder `OpenRB-338.vst3` into the VST3 folder above |
+| CLAP plugin | on | the file `OpenRB-338.clap` into the CLAP folder above |
+| Add orb to the PATH | off | appends the folder to the machine's PATH (`path.ps1 ... machine`) |
 
-Silent install: `setup.exe /S [/STARTMENU=0|1] [/DESKTOP=0|1] [/PATH=0|1] [/D=DIR]` (`/D=` must
-be the last argument and unquoted, an NSIS rule). Silent uninstall: `Uninstall.exe /S`, which
+**An earlier per-user install (the choice of task-237).** The installer reads the `HKCU` record of
+the user who runs it; if there is one it says so in a message (the log only under `/S`) naming the
+folder, and that the old copy stays, with its PATH entry and shortcuts, until it is removed in
+Settings > Apps (its entry; the two have the same name, the old one shows the per-user folder).
+It does not migrate, run the old uninstaller or delete anything: the elevated process may run
+as another account, whose `HKCU` is not the user's (then there is no note), and the old files are
+not ours to remove unasked. The cost: until the old copy is removed, its per-user PATH entry and
+shortcut remain beside the new ones.
+
+**The plugins (task-237).** The folders are written to HKLM (`Vst3Dir`, `ClapDir`); a
+reinstall or an upgrade deletes the old `OpenRB-338.vst3` (and an earlier copy in another folder)
+and copies the new one, so no file of an old version stays; if a host holds the VST3 plugin open
+the copy stops with a message (close the host), while the CLAP file gives no message (task-240).
+The uninstaller deletes `OpenRB-338.vst3` (recursively, our own folder) and `OpenRB-338.clap` in
+the recorded folders and nothing else;
+`VST3` and `CLAP` themselves stay, other vendors' plugins live there. Unticking a plugin on a
+later install leaves the earlier copy (and the uninstaller still removes it). The installer job
+gets the bundles from the `plugins-<target>` artifact (the package job uploads it for `dmg` too)
+into `dist/<target>/plugins`, which `package-installer.sh` stages; the listing (`7zz l`) shows
+`$_0_/OpenRB-338.vst3/Contents/<x86_64|arm64>-win/...` and `$_1_/OpenRB-338.clap` (NSIS names the
+output folders by the variable that holds them).
+
+Silent install (from an elevated prompt; the installer needs administrator rights):
+`setup.exe /S [/STARTMENU=0|1] [/DESKTOP=0|1] [/PATH=0|1] [/VST3=0|1] [/CLAP=0|1]
+[/VST3DIR=DIR] [/CLAPDIR=DIR] [/D=DIR]` (`/D=` must be the last argument and unquoted, an NSIS
+rule; `/VST3DIR=` and `/CLAPDIR=` take quotes). Silent uninstall: `Uninstall.exe /S`, which
 returns at once (it copies itself to a temporary folder to delete its own file); add `_?=DIR`
 (`Uninstall.exe /S _?=C:\dir`) to wait for it, which then leaves `Uninstall.exe` behind to
 delete by hand.
 
-**The PATH.** `scripts/installer/path.ps1` does it (the installer runs it with
-`powershell -NoProfile -ExecutionPolicy Bypass -File`): NSIS strings are 1024 characters here
+**The PATH.** `scripts/installer/path.ps1 add|remove DIR [user|machine]` does it (the installer
+runs it with `powershell -NoProfile -ExecutionPolicy Bypass -File` and scope `machine`, the
+machine's PATH in the 64-bit registry view; scope `user`, the default, edits `HKCU\Environment`
+and is what the per-user installs before task-237 used): NSIS strings are 1024 characters here
 (`makensis -HDRINFO`: `NSIS_MAX_STRLEN=1024`), so a long PATH would be cut, and .NET's
 `SetEnvironmentVariable` turns the `REG_EXPAND_SZ` value into `REG_SZ`, so `%USERPROFILE%` in it
 would stop expanding. The script reads the value unexpanded and writes `REG_EXPAND_SZ` back,
@@ -814,7 +928,8 @@ terminals see it (an open one does not). If PowerShell fails (a group policy tha
 scripts even with `Bypass`), the installer says so and goes on. The uninstaller runs `remove`
 whenever `path.ps1` is in the folder.
 
-**The uninstaller** removes the files, the shortcuts, the PATH entry and both registry keys, and
+**The uninstaller** removes the files, the shortcuts, the PATH entry, the two plugin bundles
+(above) and both registry keys, and
 the folder if it is empty. It keeps the user's own files in the folder, and the settings file
 (`%APPDATA%\OpenRB-338\ui.toml`) and songs.
 
@@ -826,11 +941,17 @@ deleted after that (it appeared meanwhile), the uninstaller keeps the entry in A
 registry keys, says so, and exits 6 (not exercised), so the uninstall can be repeated.
 Installing over an
 earlier version into the same folder just overwrites the files and the registry values (the
-folder is remembered in `HKCU\Software\OpenRB-338` and is the default). Installing into another
-folder removes the PATH entry of the earlier folder (a new one is added only if the PATH
-component is ticked), moves the Apps entry to the new folder and leaves the earlier folder's
-files, which can be deleted by hand. The shortcuts are overwritten. Start menu and desktop are
-the current user's (`SetShellVarContext current`).
+folder is remembered in `HKLM\Software\OpenRB-338` and is the default). Installing
+into another folder removes the PATH entry of the earlier folder (a new one is added only if the
+PATH component is ticked), moves the Apps entry to the new folder and leaves the earlier folder's
+files, which can be deleted by hand. The shortcuts are overwritten.
+
+**Checked (task-237).** Built here (macOS, NSIS 3.13, `-WX`, both architectures, `7zz l`, the
+manifest checked for `requireAdministrator`), and built by `release.yml` (run 44130121208, from
+commit d4cc0ef, whose installer code is the one here) for both architectures from the
+`plugins-<target>` artifacts. The user ran that installer on Windows on 2026-11-17 and it passed
+(install, the plugins in a host, uninstall). Not exercised: a plugin held open by a host at
+uninstall, the arm64 installer on Windows on Arm.
 
 **The GUI subsystem.** `crates/orb-ui/src/main.rs` has
 `#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]`: the release
@@ -1010,6 +1131,16 @@ or `libdl`, and its container does not install the three libraries (it fails whe
   `libEGL.so.1` and without a Vulkan ICD the program stops with
   "FailedToCreateSurfaceForAnyBackend"; that was the error of the first task-112 smoke run,
   whose OpenGL run only lacked `libegl1` (task-135: the fallback needed no wgpu setting).
+  **Windows (task-177)** asks for DX12 only when `WGPU_BACKEND` is unset (`main.rs`
+  `wgpu_backends`; macOS and Linux keep egui-wgpu's `PRIMARY | GL`), and there is no fallback
+  probe: `WGPU_BACKEND=vulkan` or `gl` overrides it, and a machine with no DX12 adapter stops
+  with a box (and a stderr line) that names `WGPU_BACKEND`. Why: with the default, wgpu loaded
+  and enumerated every Vulkan driver, and Intel's (`igvk64.dll` 31.0.101.2140) crashes there
+  with an access violation, so v2026.1103.0917 exited silently before the window appeared
+  (GitHub issue #10; the same crash is reported for another egui/wgpu app, storytold/wordcraft
+  #170). The crash itself could not be reproduced (no such driver on the test machine); the
+  test machine (AMD Radeon) printed `gpu: Dx12 IntegratedGpu ...` with nothing set,
+  `gpu: Vulkan ...` with `WGPU_BACKEND=vulkan` and `gpu: Gl ...` with `WGPU_BACKEND=gl`.
   `ORB_GPU_INFO=1` makes OpenRB-338 print the adapter it chose (`gpu: Vulkan Cpu
   llvmpipe ...`). The smoke test (xvfb, `ubuntu:22.04`, aarch64) takes a `--screenshot` with
   `WGPU_BACKEND=vulkan`, with `WGPU_BACKEND=gl`, with nothing forced and a Vulkan ICD present
@@ -1048,6 +1179,112 @@ symlink test). This emulated run is local only: everything but the x86_64 runtim
 exercised, and the x86_64 runtime itself (and so `--screenshot` through it) was not. A real x86_64 Linux host or the CI runner runs it. The first release
 run (task-134) still has to check the runners and a real desktop.
 
+## The landing page (not in this fork)
+
+Upstream has a GitHub Pages landing page (its task-212): `site/`, `tools/build_site.py` and the
+other `tools/site_*` scripts, and `.github/workflows/pages.yml`, which deploys it when a release
+is published, with GoatCounter counting the visitors. The fork does not build anything that
+goes online (AGENTS.md, "This fork"), so the user decided on 2026-11-18 (task-229) to leave it
+out: the merge of upstream's 6858253 (task-230) removed those files and this section's text. A
+later upstream merge drops them again.
+
+## The plugin (task-204)
+
+The VST® 3 and CLAP instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundles
+`OpenRB-338.vst3` and `OpenRB-338.clap`. VST is a registered trademark of Steinberg Media Technologies GmbH.
+The attribution (Steinberg's logo and the trademark line) is in Help > Plugin Usage only, the VST3
+plugin's page (docs/plugin_usage.md, task-239): no README, package text or release note carries it.
+
+**Building.** For everyday work: `cargo xtask bundle orb-plugin --release` (the alias in
+`.cargo/config.toml`; add `--target T` for another target) lays them out in `target/bundled/`.
+The release scripts build the library together with the apps: `scripts/build.sh TARGET` adds
+`-p orb-plugin` to its `cargo build` (profile `dist`, so also with `cargo-xwin` and in Docker),
+then runs `cargo xtask bundle orb-plugin --no-build --profile dist --target TARGET` and copies the
+two bundles to `dist/<target>/plugins/`. `--no-build` is the xtask's own flag (it only lays out
+the bundles). On macOS the bundler signs each bundle ad hoc (`codesign -f -s -`), like the app;
+there is no Developer ID signing or notarization.
+
+**Where they go.** `scripts/package.sh` puts `plugins/` (both bundles) into every package archive
+(all six targets, with the plugin folders of the OS in its `README.txt`); `scripts/package-dmg.sh`
+is not given them; `scripts/package-pkg.sh` packs them into
+`OpenRB-338-Plugins-<version>-<target>.pkg`, a release asset of its own (task-238; below). It
+checks the signature (`codesign --verify --strict`) and that the library has the target's
+architecture only. In `release.yml` the package jobs upload `plugins-<target>` (one day) for the
+`dmg` jobs, and for the Windows `installer` jobs, whose optional components copy the bundles to
+the machine-wide plugin folders ("The Windows installer").
+`scripts/build-all.sh` needs no change: it calls `package.sh`, so a skipped target skips its
+plugin too. Built and checked on this Mac (aarch64-apple-darwin) only; the other five are the
+same code path, run first by the release workflow.
+
+**Installing** by hand (copy the bundle, restart or rescan the host; the Windows installer always
+uses the machine-wide folders, the per-user ones below are for a manual install only):
+
+| OS | VST3 | CLAP |
+|---|---|---|
+| macOS | `~/Library/Audio/Plug-Ins/VST3/` (all users: `/Library/Audio/Plug-Ins/VST3/`) | `~/Library/Audio/Plug-Ins/CLAP/` (or `/Library/...`) |
+| Windows | `%COMMONPROGRAMFILES%\VST3\` (current user only: `%LOCALAPPDATA%\Programs\Common\VST3\`) | `%COMMONPROGRAMFILES%\CLAP\` (or `%LOCALAPPDATA%\Programs\Common\CLAP\`) |
+| Linux | `~/.vst3/` (or `/usr/lib/vst3/`) | `~/.clap/` (or `/usr/lib/clap/`) |
+
+**The macOS pkg** (task-238). The `.dmg` held links to the two system folders to drag the
+bundles onto; macOS creates neither folder (only plugin installers do), so a link was broken on
+a fresh Mac and a drop did not work. Now `scripts/package-pkg.sh TARGET` builds
+`dist/<target>/OpenRB-338-Plugins-<YYYY.MMDD.HHMM>-<target>.pkg` (`pkgbuild` and `productbuild`,
+which ship with the Xcode command line tools, so the macOS jobs need nothing more) from
+`dist/<target>/plugins/`. The pkg is a release asset of its own, not part of the `.dmg` (the
+user's decision, 2026-11-17: the image holds only the app, the `Applications` link, `LICENSE`
+and `README.txt`, which names the pkg). The `dmg` job of `release.yml` runs the script after
+`package-dmg.sh` and uploads `pkg-<target>`; `release-assets.sh` requires both pkgs. No icon
+layout: none was ever made, see task-215.
+- The Installer's welcome page (`productbuild --resources`, `welcome.txt`) carries what the
+  `.dmg` README cannot: how to open the unsigned pkg, what is installed where, the quarantine
+  note and the removal (the README repeats it in short).
+- Two component packages, `net.emphased.openrb338.plugin.vst3` and `.clap`, each with
+  `--install-location /Library/Audio/Plug-Ins/VST3` or `/CLAP` (the Installer creates the
+  folder), owner root:wheel (`--ownership recommended`), version = the build time.
+- A Distribution with two choices, "VST3 plugin" and "CLAP plugin", both `start_selected` and
+  enabled, so Customize can drop one. Machine-wide only (`enable_localSystem`; the Installer asks
+  for the admin password once). `hostArchitectures` is `arm64` in the aarch64 pkg, `x86_64,arm64`
+  in the x86_64 one.
+- Upgrade: the component plist is an empty array, so `pkgbuild` records no bundle (the default
+  would write `<bundle>`, `<upgrade-bundle>` and `<relocate/>` entries keyed by the bundle
+  identifier, and both plugins have the same `CFBundleIdentifier`, `com.nice-plug.orb-plugin`; a
+  relocatable bundle is also updated wherever the Installer finds it, say a build in a project
+  folder). The package is plain files at the fixed install path, and a `preinstall` script
+  (`rm -rf "$3/Library/Audio/Plug-Ins/<VST3|CLAP>/OpenRB-338.<ext>"`, `$3` the target volume)
+  removes the old bundle first, so a file the new version no longer has is not left inside it.
+  Checked on the package (`pkgutil --expand`: `relocatable="false"`, no bundle entries, the
+  scripts); the user then ran the Installer on macOS 15 (2026-11-17) and it worked (below).
+- Unsigned (no Developer ID), like the app: macOS blocks the downloaded pkg the first time;
+  right-click > Open (macOS 14 and older) or Open Anyway in System Settings > Privacy & Security
+  (15 and newer). The files an Installer package writes are not quarantined (only the pkg is), so
+  the bundles need no `xattr` command; they are signed ad hoc only. Verified on macOS 15 after
+  the user's install of the pkg (2026-11-17): `xattr -lr` on the installed `OpenRB-338.vst3`
+  and `.clap` shows only `com.apple.provenance`, no `com.apple.quarantine`; `find -name '._*'`
+  finds nothing in either; `pkgutil --pkgs` lists `net.emphased.openrb338.plugin.vst3` and
+  `.clap`. Local builds on a Mac whose sandbox adds `com.apple.provenance` to every file show
+  `._` entries in the pkg's Bom, but they did not land as files. The Destination page offers
+  only the whole disk (machine-wide, as built); "for me only" and "specific disk" are greyed
+  out, which is accepted.
+- No uninstaller: delete the two bundles from the two folders (`README.txt` says so).
+
+For a manual copy from a `.tar.gz` (which is quarantined when downloaded in a browser; with the
+ad hoc signature only, a host can refuse it), remove the flag from the copied bundles:
+`sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap`
+(the bundles copied into `/Library` with an admin password are owned by root), or without
+`sudo` for the ones in `~/Library/Audio/Plug-Ins/VST3/` and `/CLAP/`. Windows may show SmartScreen for the unsigned DLL the first
+time a host loads it. The dev tasks do not install into the user's plugin folders.
+
+**Validating.** `scripts/validate-plugin.sh` (after the bundling command above) runs, with
+downloaded release assets pinned by version and SHA-256:
+- clap-validator 0.3.2 (the release page of free-audio/clap-validator names it 0.4.1) on the
+  `.clap`;
+- pluginval 1.0.4 at strictness level 5, no GUI tests, on the `.vst3` (it runs VST3 plugins; it
+  is used instead of Steinberg's validator, which has to be built from the SDK with CMake).
+It runs on macOS and Linux x86_64 (xvfb for pluginval there). `ci.yml`'s job `plugin validators`
+runs it on `ubuntu-22.04` and `macos-latest` on every push and pull request that is not
+docs-only, and fails on a validator error. The Windows bundles are not validated (neither tool
+has a script here; run `clap-validator.exe validate` and `pluginval.exe --validate` by hand).
+
 ## What the system shows for an unsigned download
 
 Nothing is signed or notarized (decided 2026-10-28). Expect:
@@ -1068,8 +1305,9 @@ Nothing is signed or notarized (decided 2026-10-28). Expect:
   an unrecognized app from starting": the publisher is shown as "Unknown publisher" (an
   Authenticode certificate would name it). Click "More info", then "Run anyway". It applies to a
   file downloaded in a browser (it carries the Mark of the Web), to the installer, and again to
-  `OpenRB-338.exe` and `orb.exe` from the `.zip`. The installer asks for no administrator rights,
-  so there is no UAC prompt with "Unknown publisher" on top of it. The warning fades with
+  `OpenRB-338.exe` and `orb.exe` from the `.zip`. The installer also asks for administrator
+  rights (all users, "The Windows installer"), so Windows shows a UAC prompt with "Unknown
+  publisher" after SmartScreen. The warning fades with
   SmartScreen's reputation for the file's hash, which a new build per version starts again.
   Right-click the file > Properties > Unblock (or `Unblock-File`) removes the mark.
   This was not tried here (no download on the test machine).

@@ -7,7 +7,7 @@
 //! `arrow`, `press`), so the events the engine hears, a song-mode recording included, are the
 //! mouse's.
 
-use eframe::egui::{self, accesskit};
+use egui::{self, accesskit};
 
 use super::names::{self, Speech};
 use crate::behavior;
@@ -76,8 +76,9 @@ pub const SPIN_DISPLAYS: [&str; 10] = [
 
 /// The size of a row's pattern selector (panel pixels): the area of its 8 pattern buttons and
 /// 4 bank buttons, from the top left of the button `pattern1` (a unit test checks it against
-/// `layout.tsv`).
-pub const SELECTOR_SIZE: (f32, f32) = (62.0, 54.0);
+/// `layout.tsv`). The keycaps of upstream's redesign (task-179, merged by task-230): 8 keys on
+/// a 15.6 pitch, 14.6 wide, from y 30.9 to the banks' 72.9 + 14.6.
+pub const SELECTOR_SIZE: (f32, f32) = (61.4, 56.6);
 
 /// Whether a display is a spin button.
 pub fn is_spin(display_id: &str) -> bool {
@@ -341,7 +342,12 @@ mod tests {
             let x1 = grid.iter().map(|c| c.x + c.w).fold(0.0, f32::max);
             let y1 = grid.iter().map(|c| c.y + c.h).fold(0.0, f32::max);
             assert!(grid.iter().all(|c| c.x >= first.x && c.y >= first.y));
-            assert_eq!((x1 - first.x, y1 - first.y), SELECTOR_SIZE, "{section}");
+            let (w, h) = SELECTOR_SIZE;
+            assert!(
+                (x1 - first.x - w).abs() < 0.01 && (y1 - first.y - h).abs() < 0.01,
+                "{section}: {:?}",
+                (x1 - first.x, y1 - first.y)
+            );
             assert_eq!(row_of(&section), Some(r));
         }
     }

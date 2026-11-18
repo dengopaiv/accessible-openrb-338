@@ -28,6 +28,10 @@
 //! device's own buffer size does not change the engine's output. The original drains with a
 //! time budget (at least one message per call); the player drains every queued command.
 //!
+//! A player made with [`Player::with_call_frames`] runs calls of another size: the plugin
+//! (`orb-plugin`, task-197) runs 64-frame calls, one engine block each, through
+//! [`Audio::drain`], [`Audio::apply_now`] and [`Audio::render_call`].
+//!
 //! # Songs
 //!
 //! A song is built on the UI thread ([`Player::build`]: the song constructor, then the load's
@@ -79,14 +83,20 @@
 //! [`Player::tracks`] gives the UI the current song's tracks ([`Tracks`], copied by the callback
 //! into a second triple buffer whenever they change), which is what a save of a recorded song
 //! writes.
+//!
+//! # MIDI
+//!
+//! [`midi`] turns timed MIDI bytes into these commands with the original's Standard Mapping
+//! (task-182, `docs/standard_midi_mapping.md`), whatever the source of the bytes.
 
+pub mod midi;
 pub mod output;
 
 use std::sync::Arc;
 
 use orb_engine::frame::edit::PatternShape;
 use orb_engine::frame::export::REALTIME_FRAMES;
-use orb_engine::frame::{Devices, Engine, LoadRefused, MixerParams};
+use orb_engine::frame::{Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, Sounding};
 use orb_engine::process::ProcessState;
 use orb_engine::samples::{Retired, STARTUP_ID, Sample, SampleSet};
 use orb_engine::seq::Pool;
@@ -100,8 +110,10 @@ pub const CALL_FRAMES: usize = REALTIME_FRAMES;
 /// The command queue's capacity.
 pub const COMMANDS: usize = 1024;
 /// The garbage queue's capacity. Each command lets go of at most [`GARBAGE_PER_COMMAND`]
-/// boxes, and the callback takes a command only when that many slots are free, so nothing is
-/// ever dropped in the callback; a UI that does not collect stalls its commands, not the audio.
+/// boxes, and the callback takes a command only when the queue has room for what it lets go
+/// of ([`Audio::room_for`]), so nothing is ever dropped in the callback; a UI that does not
+/// collect stalls its commands that carry a box (and the ones queued after them), not the
+/// audio, and not the commands that let go of nothing (task-225).
 pub const GARBAGE: usize = 64;
 /// The boxes one command can hand back: a load replaces the pending song and the current one.
 pub const GARBAGE_PER_COMMAND: usize = 2;
@@ -141,6 +153,29 @@ pub enum Command {
     Stop,
     /// Song msg 35 `{8,tick}`: locate.
     Locate(u32),
+    /// The position alone, in ticks (`sub_1001F8B0`, as the TopHat host sync sets it each
+    /// audio call; [`Engine::set_position`]): no chase, no relocate, the last tick kept. The
+    /// plugin's host sync (`orb-plugin`, task-198).
+    Position(f64),
+    /// The note-mode clock ([`Engine::set_note_clock`]): the tick the inserts (the PCF) see
+    /// while the song is stopped, at the host's position or free-running. The plugin's note
+    /// mode (task-242); not a message of the original's.
+    NoteClock(NoteClock),
+    /// Slot 2 (relocate) on one device at the current tick ([`Engine::relocate_device`]): its
+    /// pending pattern and on/off switch take effect at once. The plugin's pattern selection by
+    /// notes (task-198); not a message of the original's.
+    Relocate(Device),
+    /// A MIDI note for a 303, the 808 or the 909, `velocity` 0 a note-off: the plugin's note
+    /// mode (task-200; [`Engine::live_note`], ignored while the song plays). Not a message of
+    /// the original's.
+    Note {
+        device: Device,
+        note: u8,
+        velocity: u8,
+    },
+    /// The pattern gate of a 303, the 808 or the 909 at the current tick: the plugin's Gate
+    /// Pattern Mode (task-218; [`Engine::set_gate`]). Not a message of the original's.
+    Gate { device: Device, gate: Gate },
     /// Song msg 35 `{0,m}`: song mode (`true`) or pattern mode.
     SongMode(bool),
     /// Song msg 35 `{2,v}`: record on or off ([`Engine::set_record`]; off merges the recording).
@@ -325,7 +360,8 @@ impl LiveBlock {
 /// What the UI reads back: the current song's state after the last engine call.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Snapshot {
-    /// The frames the engine has rendered (44.1 kHz), a multiple of [`CALL_FRAMES`].
+    /// The frames the engine has rendered (44.1 kHz), a multiple of the call size
+    /// ([`CALL_FRAMES`] unless the player was made with [`Player::with_call_frames`]).
     pub frames: u64,
     /// The songs made current so far (0: the initial empty song).
     pub generation: u32,
@@ -352,6 +388,14 @@ pub struct Snapshot {
     pub master_meters: [u8; 2],
     /// The pattern each channel device plays (303 #1, 303 #2, 808, 909).
     pub patterns: [Option<u8>; 4],
+    /// Each channel device's sounding sounds and their last hit's accent after the last block
+    /// (303 #1, 303 #2, 808, 909; the 303s' are empty): the plugin's note-mode lights
+    /// (task-202; [`orb_engine::frame::ChannelDevice::sounding`]).
+    pub sounding: [Sounding; 4],
+    /// Each channel device's pattern gate is closed (303 #1, 303 #2, 808, 909; the plugin's
+    /// Gate Pattern Mode, task-218): the section is silent and does not step, and the panel
+    /// shows no step light for it.
+    pub gate_closed: [bool; 4],
     /// Every device's live block, by device id (index 0, the mixer, is empty: see `mixer`).
     /// The playing step of the 303s, the 808 and the 909 is their byte 9, 29 and 30.
     pub live: [LiveBlock; 9],
@@ -367,6 +411,12 @@ pub struct Snapshot {
     /// The device callbacks whose resampler failed and that output silence instead
     /// ([`output::Output`]); counted up to the last engine call.
     pub output_errors: u64,
+    /// The song follows a host's position (the plugin's Sync LED: pattern mode, orb and the
+    /// host playing), as the callback's owner last set it ([`Audio::set_host_sync`]).
+    pub host_sync: bool,
+    /// The MIDI messages received so far ([`Audio::midi_received`]): the MIDI LED lights when
+    /// it changes.
+    pub midi_in: u64,
 }
 
 /// The current song's track events (task-057), as the callback last copied them: after a song
@@ -409,8 +459,10 @@ pub struct Audio {
     tracks: triple_buffer::Input<Tracks>,
     /// The generation and revision of the last tracks published.
     tracks_published: Option<(u32, u64)>,
-    /// The int16 output of the last engine call.
-    buf: Box<[i16; 2 * CALL_FRAMES]>,
+    /// The frames of one engine call ([`CALL_FRAMES`] by default).
+    call_frames: usize,
+    /// The int16 output of the last engine call, `2 * call_frames` samples.
+    buf: Box<[i16]>,
     /// The frames of `buf` already handed out.
     pos: usize,
     frames: u64,
@@ -423,6 +475,14 @@ pub struct Audio {
     preview_pos: usize,
     /// It plays (engine `+0x428` not null).
     preview_on: bool,
+    /// The songs [`Command::Load`] brought (current or pending): [`Audio::loads`].
+    loads: u64,
+    /// [`Snapshot::host_sync`].
+    host_sync: bool,
+    /// [`Snapshot::midi_in`].
+    midi_in: u64,
+    /// A copy of the snapshot last published, for the callback's owner.
+    last: Snapshot,
 }
 
 impl Player {
@@ -430,6 +490,17 @@ impl Player {
     /// "Untitled song" before a song is opened), with the drum samples `samples` (`None`: silent
     /// drum machines).
     pub fn new(tables: Arc<Tables>, samples: Option<Arc<SampleSet>>) -> (Player, Audio) {
+        Self::with_call_frames(tables, samples, CALL_FRAMES)
+    }
+
+    /// [`Player::new`] with engine calls of `call_frames` frames (at least 1) instead of
+    /// [`CALL_FRAMES`]: the queued commands apply at the start of each call.
+    pub fn with_call_frames(
+        tables: Arc<Tables>,
+        samples: Option<Arc<SampleSet>>,
+        call_frames: usize,
+    ) -> (Player, Audio) {
+        let call_frames = call_frames.max(1);
         let process = ProcessState::new();
         let current = Box::new(Engine::new(
             tables.clone(),
@@ -447,14 +518,19 @@ impl Player {
             snapshot: si,
             tracks: ti,
             tracks_published: None,
-            buf: Box::new([0; 2 * CALL_FRAMES]),
-            pos: CALL_FRAMES,
+            call_frames,
+            buf: vec![0; 2 * call_frames].into_boxed_slice(),
+            pos: call_frames,
             frames: 0,
             generation: 0,
             output_errors: 0,
             preview: None,
             preview_pos: 0,
             preview_on: false,
+            loads: 0,
+            host_sync: false,
+            midi_in: 0,
+            last: Snapshot::default(),
         };
         audio.publish();
         let player = Player {
@@ -589,10 +665,10 @@ impl Audio {
     fn pull(&mut self, frames: usize, mut put: impl FnMut(usize, i16, i16)) {
         let mut i = 0;
         while i < frames {
-            if self.pos == CALL_FRAMES {
+            if self.pos == self.call_frames {
                 self.call();
             }
-            let n = (CALL_FRAMES - self.pos).min(frames - i);
+            let n = (self.call_frames - self.pos).min(frames - i);
             for k in 0..n {
                 let s = 2 * (self.pos + k);
                 put(i + k, self.buf[s], self.buf[s + 1]);
@@ -602,16 +678,81 @@ impl Audio {
         }
     }
 
-    /// One engine call: the queued commands, then 1024 frames, then the snapshot.
+    /// One engine call: the queued commands, then the call's frames, then the snapshot.
     fn call(&mut self) {
-        while self.garbage.slots() >= GARBAGE_PER_COMMAND {
+        self.drain();
+        self.render_call();
+    }
+
+    /// The first step of an engine call: applies the commands queued by the UI side, in order,
+    /// while the next one fits the garbage queue ([`Audio::room_for`]): one that does not waits,
+    /// with the ones queued after it, for the UI side to collect.
+    pub fn drain(&mut self) {
+        while let Ok(c) = self.commands.peek() {
+            if !self.room_for(c) {
+                break;
+            }
             let Ok(c) = self.commands.pop() else { break };
             self.apply(c);
         }
+    }
+
+    /// Applies a command at once, from the callback's own thread (a plugin's host events),
+    /// as a queued one would be applied at the start of a call. Refused (given back) only when
+    /// it does not fit the garbage queue ([`Audio::room_for`]): never a command that carries
+    /// no box (task-225).
+    pub fn apply_now(&mut self, c: Command) -> Result<(), Command> {
+        if !self.room_for(&c) {
+            return Err(c);
+        }
+        self.apply(c);
+        Ok(())
+    }
+
+    /// Whether the garbage queue has room for what applying `c` now lets go of (task-225):
+    ///
+    /// - a command that carries no box and replaces none lets go of nothing: it always fits;
+    /// - [`Command::Play`] while a song is pending switches to it and lets go of the current song:
+    ///   one slot;
+    /// - a command that carries a box ([`Command::DeviceData`], [`Command::Pattern`],
+    ///   [`Command::Mod`], [`Command::Preview`], [`Command::Load`]) lets go of at most
+    ///   [`GARBAGE_PER_COMMAND`]; it takes that many free slots, and one more while a song is
+    ///   pending, kept for that song's Play.
+    ///
+    /// So while a song is pending one slot is always free: a load that makes a song pending
+    /// (the current one plays, none was pending) lets go of nothing, a box command applied
+    /// while one is pending lets go of at most [`GARBAGE_PER_COMMAND`] of the
+    /// `GARBAGE_PER_COMMAND + 1` free slots it took, and only `Play` ends the wait. Every
+    /// command that carries no box, `Play` included, fits whatever the UI side has collected.
+    pub fn room_for(&self, c: &Command) -> bool {
+        let pending = self.pending.is_some() as usize;
+        let need = match c {
+            Command::Play => pending,
+            Command::DeviceData { .. }
+            | Command::Pattern { .. }
+            | Command::Mod(_)
+            | Command::Preview(_)
+            | Command::Load(_) => GARBAGE_PER_COMMAND + pending,
+            _ => 0,
+        };
+        self.garbage.slots() >= need
+    }
+
+    /// The garbage queue's free slots: what the callback can still hand back before the UI
+    /// side collects.
+    pub fn garbage_room(&self) -> usize {
+        self.garbage.slots()
+    }
+
+    /// The rest of an engine call, after [`Audio::drain`]: renders the call's frames, mixes the
+    /// preview player and publishes the snapshot. Returns the call's output (interleaved stereo
+    /// int16, `2 * call_frames` samples). A caller that renders this way does not also use
+    /// [`Audio::render_i16`] or [`Audio::render_f32`], which would hand the call out again.
+    pub fn render_call(&mut self) -> &[i16] {
         // a faulting call writes nothing (`Engine::fault`): silence rather than the last call
         self.buf.fill(0);
         let faults = self.faults();
-        self.current.render(&mut self.buf[..], CALL_FRAMES);
+        self.current.render(&mut self.buf[..], self.call_frames);
         if self.faults() != faults {
             self.buf.fill(0);
         }
@@ -626,8 +767,9 @@ impl Audio {
             }
         }
         self.pos = 0;
-        self.frames += CALL_FRAMES as u64;
+        self.frames += self.call_frames as u64;
         self.publish();
+        &self.buf
     }
 
     fn faults(&self) -> u64 {
@@ -635,7 +777,8 @@ impl Audio {
     }
 
     fn throw(&mut self, g: Garbage) {
-        // `call` keeps GARBAGE_PER_COMMAND slots free for every command it applies
+        // `drain` and `apply_now` apply a command only when `room_for` finds a slot for each
+        // box it lets go of (a Play while a song is pending takes the slot kept for it)
         if let Err(rtrb::PushError::Full(g)) = self.garbage.push(g) {
             // unreachable; leak rather than free memory in the callback
             std::mem::forget(g);
@@ -661,6 +804,15 @@ impl Audio {
             }
             Command::Stop => self.target().stop(),
             Command::Locate(t) => self.target().locate(t),
+            Command::Position(p) => self.target().set_position(p),
+            Command::NoteClock(c) => self.target().set_note_clock(c),
+            Command::Relocate(d) => self.target().relocate_device(d),
+            Command::Note {
+                device,
+                note,
+                velocity,
+            } => self.target().live_note(device, note, velocity),
+            Command::Gate { device, gate } => self.target().set_gate(device, gate),
             Command::SongMode(on) => self.target().set_song_mode(on as u8),
             Command::Record(on) => self.target().set_record(on as u8),
             Command::LoopOn(on) => self.target().set_loop_on(on as u8),
@@ -736,7 +888,10 @@ impl Audio {
                     self.target().step(device, pattern, step, &bytes[..s.step]);
                 }
             }
-            Command::Load(new) => self.activate(new),
+            Command::Load(new) => {
+                self.loads += 1;
+                self.activate(new);
+            }
             Command::Mod(mut m) => {
                 let ModSwap { samples, retired } = &mut *m;
                 self.target().set_samples(samples, retired);
@@ -813,6 +968,12 @@ impl Audio {
         for (p, d) in s.patterns.iter_mut().zip(&f.devices.channels) {
             *p = d.playing_pattern();
         }
+        for (v, d) in s.sounding.iter_mut().zip(&f.devices.channels) {
+            *v = d.sounding();
+        }
+        for (v, d) in s.gate_closed.iter_mut().zip(&f.devices.channels) {
+            *v = d.gate().closed();
+        }
         let d = &f.devices;
         s.live[0] = LiveBlock::default();
         for (c, dev) in d.channels.iter().enumerate() {
@@ -834,6 +995,9 @@ impl Audio {
         s.saved_mixer = d.mixer.saved(sm);
         s.faulted_calls = e.fault().map_or(0, |f| f.calls);
         s.output_errors = self.output_errors;
+        s.host_sync = self.host_sync;
+        s.midi_in = self.midi_in;
+        self.last = *s;
         self.snapshot.publish();
         // the tracks, when they changed: copied into lists that have the room
         let now = (self.generation, f.seq.revision);
@@ -853,6 +1017,21 @@ impl Audio {
         &self.current
     }
 
+    /// The song the commands address: the pending one, else the current one.
+    pub fn newest(&self) -> &Engine {
+        self.pending.as_deref().unwrap_or(&self.current)
+    }
+
+    /// A loaded song waits for Play (the current one plays).
+    pub fn has_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// The frames of one engine call.
+    pub fn call_frames(&self) -> usize {
+        self.call_frames
+    }
+
     /// The current song, mutable (for tests, and for reading the empty song `Player::new`
     /// builds, e.g. its pattern arrays, before the callback runs; the callback is the only
     /// other user).
@@ -864,6 +1043,32 @@ impl Audio {
     /// not (for tests and diagnostics).
     pub fn preview_position(&self) -> Option<usize> {
         self.preview_on.then_some(self.preview_pos)
+    }
+
+    /// The songs loaded so far ([`Command::Load`] applied, whether the song became current or
+    /// pending): a change means [`Audio::newest`] is another song.
+    pub fn loads(&self) -> u64 {
+        self.loads
+    }
+
+    /// The output of the last engine call, as [`Audio::render_call`] returned it.
+    pub fn output(&self) -> &[i16] {
+        &self.buf
+    }
+
+    /// The snapshot the last engine call published (the callback's own copy).
+    pub fn last_snapshot(&self) -> &Snapshot {
+        &self.last
+    }
+
+    /// Sets [`Snapshot::host_sync`] for the next snapshots.
+    pub fn set_host_sync(&mut self, on: bool) {
+        self.host_sync = on;
+    }
+
+    /// Counts `n` MIDI messages received into [`Snapshot::midi_in`].
+    pub fn midi_received(&mut self, n: u64) {
+        self.midi_in = self.midi_in.wrapping_add(n);
     }
 
     /// A device callback output silence because the resampler failed.

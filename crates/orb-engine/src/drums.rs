@@ -18,7 +18,7 @@ mod tests;
 
 use std::sync::Arc;
 
-use crate::frame::Block;
+use crate::frame::{AUDIBLE, Block};
 use crate::samples::{Retired, Sample};
 
 /// `dbl_10153640`: 2^-15, the int16 scale folded into the gain (0x1001E2CD).
@@ -108,6 +108,12 @@ impl Voice {
         self.advance();
     }
 
+    /// Not in the original (task-200): the voice's output peak for a full-scale sample,
+    /// `g * 2^15` (the gain with the int16 scale taken out again).
+    pub fn peak(&self) -> f64 {
+        self.g as f64 / SCALE
+    }
+
     fn advance(&mut self) {
         self.pos += 64;
         self.left -= 64;
@@ -152,6 +158,11 @@ impl Simple {
 
     pub fn silence(&mut self) {
         self.v.silence();
+    }
+
+    /// Not in the original (task-200): active, with a peak at or above [`AUDIBLE`].
+    pub fn audible(&self) -> bool {
+        self.v.active && self.v.peak() >= AUDIBLE
     }
 
     /// [`Voice::retire`] on the voice's sample.
@@ -205,6 +216,18 @@ impl Filter {
 
     pub fn silence(&mut self) {
         self.v.silence();
+    }
+
+    /// Not in the original (task-200): active, with a peak at or above [`AUDIBLE`]; the peak is
+    /// the gain's over the one-pole's DC gain `1 / (1 - c)` (the gain itself when `c >= 1`).
+    pub fn audible(&self) -> bool {
+        let c = self.c as f64;
+        let peak = if c < 1.0 {
+            self.v.peak() / (1.0 - c)
+        } else {
+            self.v.peak()
+        };
+        self.v.active && peak >= AUDIBLE
     }
 
     /// [`Voice::retire`] on the voice's sample.
@@ -283,6 +306,12 @@ impl Dual {
         self.v.silence();
     }
 
+    /// Not in the original (task-200): active, with a peak `g1 * (1 + g2)` at or above
+    /// [`AUDIBLE`].
+    pub fn audible(&self) -> bool {
+        self.v.active && self.v.peak() * (1.0 + self.g2 as f64) >= AUDIBLE
+    }
+
     /// [`Voice::retire`] on both samples.
     pub fn retire(&mut self, r: &mut Retired) {
         Voice::retire(&mut self.v.sample, r);
@@ -350,6 +379,11 @@ impl Pitched {
 
     pub fn silence(&mut self) {
         self.v.silence();
+    }
+
+    /// Not in the original (task-200): active, with a peak at or above [`AUDIBLE`].
+    pub fn audible(&self) -> bool {
+        self.v.active && self.v.peak() >= AUDIBLE
     }
 
     /// [`Voice::retire`] on the voice's sample.

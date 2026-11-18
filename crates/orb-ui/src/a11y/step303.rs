@@ -16,7 +16,7 @@
 //! task-209). Off (Options > Step Editor Follows Playback, the default), the pin moves only
 //! when the user chooses a pattern; on, it moves to the playing pattern at the next input.
 
-use eframe::egui::{self, Key, accesskit};
+use egui::{self, Key, accesskit};
 
 use super::{hit_id_of, names};
 use crate::model::{Panel, Step303};

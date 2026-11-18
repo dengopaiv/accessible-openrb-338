@@ -6,11 +6,22 @@
   `crates/orb-ui/build.rs` (task-111).
 - `Standard.rbm`: the standard mod, orb's built-in kit (task-067, docs/rbm.md section 13).
 - `readme/`: the README's pictures (CI ignores this folder, `.github/workflows/ci.yml`):
-  - `logo.gif`: the README's logo, the About window's icon and wordmark with the startup animation
-    (task-114), played once. Composed from the `app_icon` and `logo_*` parts of `ui/` with the
-    timing of `crates/orb-ui/src/logo_anim.rs`: 756 x 228 px (2x), 30 fps, on egui's dark window
-    fill with rounded corners.
-  - `screenshot.png`: the README's screenshot of OpenRB-338 on macOS (2026-10-29).
+  - `logo.webp`: the README's logo, the About window's icon and wordmark on its gray plate with
+    the startup animation (task-114), played once (loop count 1). An animated WebP, lossy q50
+    (task-181; the panel's speckle and the plate's drop shadow made the GIF 2.04 MB, the WebP is
+    0.48 MB). Since task-179 made from the app itself: 56 `--about --screenshot` captures at
+    `ORB_LOGO_T` = 0, 1/30, ... s (the last one the final state), cropped to the icon and the
+    plate: 740 x 215 px (2x), 30 fps. Row 215 of the 216-row capture holds the tops of the
+    subtitle's letters in every frame, so the last row is cropped (task-180). The generator
+    script is not in the repository; after the 56 captures are joined into a full-quality
+    740 x 216 GIF (not a lossy one), run `gifsicle --crop 0,0+740x215 IN.gif -o crop.gif` and
+    `gif2webp -lossy -q 50 -m 6 crop.gif -o logo.webp` (libwebp's gif2webp).
+  - `screenshot.png`: the README's screenshot of OpenRB-338 on macOS (2026-11-13, task-179's
+    redesign; `OpenRB-338 --demo --size 1100x700 --ppp 2 --screenshot`), then
+    `pngquant --quality=80-95 --strip --speed 1` and `oxipng -o max --strip all` (task-180: 4.6
+    MB to 1.1 MB).
+  - The art's previews (`assets/ui/preview/`) and `docs/ui_app/` stay lossless: after a
+    regeneration run `oxipng -o max --strip all` on them (pixels identical).
 
 ## Standard.rbm
 
@@ -41,3 +52,34 @@ The CD's exe gives the splash without the Steinberg logo that the installed `Reb
 DLL and the exe from it (`orb-testkit`, task-121), rebuilds the file and checks it byte for byte.
 `orb mod pack-standard --iso CD.iso -o FILE` (task-065, docs/rbm.md 16) reads both files straight
 from the CD image and gives the same bytes.
+
+## Plugin format logos (task-231)
+
+The plugin's transport shows the mark of its format, engraved: the CLAP logo (data in
+`crates/orb-ui-art/src/plugin_logos.rs`, part `plugin_logo_clap`) in the CLAP plugin, and in the
+VST® 3 plugin the plain text "VST3" in the panel's label font (part `plugin_logo_vst3`). Steinberg's
+official VST Compatible Logo was considered and not used: it does not fit the panel (task-232,
+decided by the user on 2026-11-17; the Olivier Clero redraw of the first mockup is gone too).
+
+| Logo | Source | Terms |
+|---|---|---|
+| CLAP | `CLAP - Clever Audio Plugin Logo.svg` on Wikimedia Commons (https://upload.wikimedia.org/wikipedia/commons/a/ae/CLAP_-_Clever_Audio_Plugin_Logo.svg; the CLAP project's `artwork/CLAP Full Logo.svg`), by Alexandre Bique | MIT license (Commons' license field) |
+| VST3 | the text "VST3" (Inter bold, the panel's label font), no artwork | Steinberg's VST3 usage guidelines (https://github.com/steinbergmedia/vst3sdk#trademark-and-logo-usage, `VST3_Usage_Guidelines.pdf`, SDK 3.8 of 16.10.2025): the logo is used "as provided by Steinberg", in unaltered form, in the About box or an equivalent UI element (section 1e); at least 15 x 10 mm "in all digital and printed uses" (section 14; the variant with the trademark line needs 20 x 18.7 mm); the first use of "VST" in product material carries the registered sign and "VST is a registered trademark of Steinberg Media Technologies GmbH." appears in all product credits and documentation (section 15); "VST" in a standard font may denote compatibility (section 2), which still wants the official logo (`artwork/VST_Compatible_Logo_Steinberg*.svg` of https://github.com/steinbergmedia/vst3_doc, unaltered, 15 x 10 mm minimum) in a relevant context near the uses of "VST": Help > Plugin Usage only (task-233; the README and the package texts do not carry it, task-239) |
+
+VST® is a registered trademark of Steinberg Media Technologies GmbH.
+
+### Steinberg's VST Compatible Logo (task-233)
+
+`assets/steinberg/VST_Compatible_Logo_Steinberg.svg` (black box, for light backgrounds) and
+`VST_Compatible_Logo_Steinberg_negative.svg` (white box, for dark ones) are Steinberg's official
+artwork, committed byte for byte as downloaded on 2026-11-17 from
+https://github.com/steinbergmedia/vst3_doc/tree/master/artwork (SHA-256
+`cec8e0fa7f350e1124ce16bf6c1953965930fd67a5c082798350381217ccfbb0` and
+`7415e9b28f120143d0103bae6511a6e60a6b9d4827c07c54373d56c036e14b1e`; viewBox 116.2 x 74.7). They
+are not under this repository's license: the VST logo is Steinberg's trademark and is used
+unaltered under the VST3 usage guidelines above (the file is not edited, recolored or
+redrawn; only scaled in proportion). Help > Plugin Usage (`docs/plugin_usage.md`, the VST3
+plugin's page) is the only place that shows it: the file's `<picture>` picks the variant by the
+reader's color scheme, 120 px wide (about 32 x 20 mm at 96 dpi, above the 15 x 10 mm minimum),
+with the sentence below it. The README and the package texts no longer show the logo or the
+sentence (task-239). The variants "with TM" are not used (they need 20 x 18.7 mm).

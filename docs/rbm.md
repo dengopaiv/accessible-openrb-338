@@ -370,7 +370,7 @@ duplicate INFO names in the original's folder order) and the env-gated cargo tes
 `crates/orb-cli/tests/thirdparty.rs` (`ORB_THIRDPARTY_MODS_DIR`, the folder of the recrypted mods, and
 `ORB_THIRDPARTY_SONGS_DIR`, the folder of songs; since task-121 the test needs no `Mods.orig/` and
 no DAT; run it with
-`cargo test --release -p orb-cli --test thirdparty -- --nocapture --test-threads 1`), whose `mods`
+`cargo test -p orb-cli --test thirdparty -- --nocapture --test-threads 1`), whose `mods`
 test compares `crates/rbm` with the committed manifest `tests/refs/thirdparty_mods.json` (the
 output of `check-dir --json` reduced to hashes and names, plus the SHA-256 of each recrypted file:
 the SHA-256 of every embedded file, the channel-0 PCM of every slot) and whose `songs` test reads,

@@ -126,9 +126,14 @@ column. Values passed to the engine are 0..127 unless stated.
   the 18 x 19 knobs, 54 for the 303's 30 x 30, 36 for the 808's 13 x 13, 41 for the 909's
   12 x 12, 12 for the 808 instrument selector).
 - No detents: every knob is continuous over 0..127 (the 808 selector is quantized by its user,
-  section 6). No double-click, wheel or keyboard behavior exists.
+  section 6). The original's knob has no double-click, wheel or keyboard behavior; orb adds a
+  double-click reset of its own (the **orb** item below).
 - Measured in the app (2026-10-27): CUTOFF dragged to 0, then 31 px up, saved as 64
   (`1000*31/62 = 500`, value 64); RESO with Shift, 31 px up from 0, saved as 13 [C].
+- **orb** (an extension; the original has no reset gesture): a double click sets a knob to its
+  value in a new empty song (File > New), whatever song is open (`Link::knob_default`): a pan
+  knob to the center (64), a mixer delay send to 0. The value is sent and recorded as a drag's.
+  The faders and the demo panel have no reset.
 
 **Fader** (`CBitmapFaderView`, ctor 0x469240, mouse-down 0x469708, drag 0x46965F) [C].
 - Handle 15 x 11 (resource 12031) on a 15 x 54 track (12032); position p in 0..999.
@@ -207,8 +212,8 @@ Section (16, 0, 592, 50). Layout `sub_4298B9`, ctor `sub_4291E9`, poll `sub_42A0
 | Control | x | y | w | h | x/W | y/H | w/W | h/H | Kind | Drives |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Shuffle knob | 11 | 13 | 18 | 19 | 0.0433 | 0.0255 | 0.0288 | 0.0373 | knob | msg 35 id 20 (GLOB shuffle 0..127) |
-| Sync LED | 39 | 2 | 11 | 11 | 0.0881 | 0.0039 | 0.0176 | 0.0216 | led | MIDI sync (out of scope) |
-| MIDI LED | 74 | 2 | 11 | 11 | 0.1442 | 0.0039 | 0.0176 | 0.0216 | led | MIDI input (out of scope) |
+| Sync LED | 39 | 2 | 11 | 11 | 0.0881 | 0.0039 | 0.0176 | 0.0216 | led | MIDI sync (task-184) |
+| MIDI LED | 74 | 2 | 11 | 11 | 0.1442 | 0.0039 | 0.0176 | 0.0216 | led | MIDI input (task-188) |
 | Tempo display (3 digits) | 44 | 27 | 27 | 16 | 0.0962 | 0.0529 | 0.0433 | 0.0314 | display | tempo / 1000 |
 | Tempo up | 73 | 26 | 11 | 9 | 0.1426 | 0.0510 | 0.0176 | 0.0176 | repeat | msg 35 id 4, +1000 |
 | Tempo down | 73 | 35 | 11 | 9 | 0.1426 | 0.0686 | 0.0176 | 0.0176 | repeat | msg 35 id 4, -1000 |
@@ -275,8 +280,8 @@ Behavior (all [C], `sub_42A058` and its callees, ticks: 768 per bar):
   transport's own right edge (592 in transport coordinates), so the effective area is clipped to
   x 458..591, y 1..48 in transport coordinates, i.e. panel x 474..607 (the table row: x 458,
   w 134, h 48).
-- The Sync and MIDI LEDs (three frames: off, green, red) belong to MIDI, which is out of scope;
-  draw them dark.
+- The Sync and MIDI LEDs (three frames: off, green, red) belong to MIDI, in scope since m-7
+  (`docs/midi.md`); until task-184 (sync) and task-188 (the MIDI LED) light them, draw them dark.
 
 ![transport in song mode](ui_spec/transport_song_mode.png)
 
@@ -318,6 +323,9 @@ Behavior [C]:
 - Both are sent as the pattern-header message `{pattern, field, v}`, field 0 shuffle, 1 length
   (msg 41 sub 42 / 59 / 76, senders `sub_43ECCA`, `sub_441CC9`, `sub_445C88`;
   `docs/song_load.md` section 4.10, which lists every device message of the panel).
+- **orb** (orb's own commands; what the original's Edit menu items do was not read): Edit >
+  Cut, Copy, Paste and Duplicate Pattern act on the selected pattern of the focused row, and
+  Edit > Undo takes back the last Cut, Paste or Duplicate (section 18).
 
 ## 5. TB-303 (two)
 
@@ -422,7 +430,7 @@ mouse `sub_4432F9` [C]. The level knobs are red, the others white (art).
 | BD tone knob | 36 | 31 | 13 | 13 | 0.2019 | 0.6098 | 0.0208 | 0.0255 | knob | ctrl 4 |
 | BD decay knob | 36 | 54 | 13 | 13 | 0.2019 | 0.6549 | 0.0208 | 0.0255 | knob | ctrl 5 |
 | SD level knob | 58 | 9 | 13 | 13 | 0.2372 | 0.5667 | 0.0208 | 0.0255 | knob | ctrl 6 |
-| SD tone knob | 58 | 31 | 13 | 13 | 0.2372 | 0.6098 | 0.0208 | 0.0255 | knob | ctrl 7 |
+| SD tone knob (labeled TUNE, section 19) | 58 | 31 | 13 | 13 | 0.2372 | 0.6098 | 0.0208 | 0.0255 | knob | ctrl 7 |
 | SD snappy knob | 58 | 54 | 13 | 13 | 0.2372 | 0.6549 | 0.0208 | 0.0255 | knob | ctrl 8 |
 | LT level knob | 80 | 9 | 13 | 13 | 0.2724 | 0.5667 | 0.0208 | 0.0255 | knob | ctrl 9 |
 | LT tuning knob | 80 | 31 | 13 | 13 | 0.2724 | 0.6098 | 0.0208 | 0.0255 | knob | ctrl 10 |
@@ -918,8 +926,9 @@ From the menu resource `SMNU` 128 (item id after `=`, string id after `?`) [C]:
 
 The Mac menu variant has "Export Loop as AIFF File..." (106) and "... as Wave File..." (107);
 the PC build uses 108. Closing a modified song asks "Save changes before close?" with Save,
-Cancel and Don't Save (observed). The other menu items (Edit's pattern functions, Options, MIDI,
-Windows, Help) are out of scope.
+Cancel and Don't Save (observed). The other menu items (Options, MIDI, Windows, Help) are out of
+scope. Of Edit's pattern functions, orb has its own Cut, Copy, Paste and Duplicate Pattern and a
+one-level Undo (section 18); what the original's items do was not read.
 
 ## 13. Where the manual and the program differ
 
@@ -1048,6 +1057,21 @@ read, and what it leaves out.
     frames without a draw, the sizes a resize left behind (`tests/part_textures.rs`).
   - Each knob arc (three quarters of the panel's vertices) is tessellated once per look and
     drawn as that mesh (`ArcMeshes`, `paint_arc`).
+- **The Edit menu's pattern commands** (section 18). A paste, a cut, a Duplicate and an Undo
+  write one pattern whole, as Clear does: msg 41 sub 44, 61 or 78 `{p, bytes}`
+  (`Link::set_pattern`, after the panel's pending events); a Duplicate's selection follows it
+  with the panel's events. Undo of a pattern the row does not select (after a Duplicate)
+  sends the selection first and holds the pattern back until the engine leaves it
+  (`Link::set_pattern_unplayed`, sent from `Link::follow`). The pattern bytes stay in the app (`App::clip`): Copy and Cut put
+  only a marker text on the system clipboard ("OpenRB-338 pattern: TR-909 A1 [process.count]"),
+  and a paste takes the pattern only when the clipboard brings that text back, so no bytes are
+  read from the clipboard and text copied elsewhere since pastes nothing. egui-winit turns
+  Ctrl/Cmd+X, C and V into egui's Cut, Copy and Paste events without a key event;
+  `App::pattern_keys` takes them, and Ctrl/Cmd+D and Z, only where the panel takes keys (no text
+  field focused, no browser, prompt or error box open), and leaves Cut and Copy to a window's
+  selected text. Edit > Paste Pattern asks for the system clipboard
+  (`ViewportCommand::RequestPaste`), so it takes the path of Ctrl/Cmd+V. A press on an open menu
+  or a window over the panel does not move the row focus (`App::focus_click`).
 - **Not done.** The logo click (msg 58), and the mod's panel art (not drawn by decision, section 18). The song's own mod
   is applied (section 18). The computer keyboard is done (task-070, section 10) except PgUp/PgDn (no scrolling rack)
   and the drums' Shift+Tab.
@@ -1103,8 +1127,23 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   `~/.config`, macOS `~/Library/Application Support`, Windows `%APPDATA%`). In portable mode
   the folders that lie inside the program's folder are stored relative to it and read back
   inside it, so they follow a USB stick to another drive letter (`crates/orb-ui/src/portable.rs`;
-  folders elsewhere stay full paths). The file is rewritten
-  whole, through a temporary file and a rename, when a path is chosen or a folder set. A
+  folders elsewhere stay full paths; the file's folders are read inside the portable folder
+  before the merge below, so a relative and a full path to the same folder are one value). It
+  is written through a temporary file and a rename, when a path is chosen or a folder set. The
+  file is shared by the standalone and every plugin instance, so a save (task-229) reads it
+  again first and applies only what this instance changed since it last read or wrote it: a
+  key set overwrites that key, a folder noted is pushed onto the file's `recent` list (dedupe,
+  8), a preferred mod sets or clears its entry; the in-memory settings then take the merged
+  result. A key is "changed" when its setter (`set_songs_dir`, `set_mods_dir`,
+  `set_last_song_dir`, `set_last_mod_dir`, `set_startup_sound`, `set_preferred_mod`) was
+  called, even to the value last seen, so it wins over another instance's change; `recent`
+  changes only through `note_recent`. When the file is missing or damaged at save time the
+  whole in-memory copy is written (an unrelated save never resets this instance's values to
+  the defaults); any other read error fails the save and leaves the file and the settings
+  alone. The temporary file name is unique per process and call. Saves in the same instant
+  can still race (no lock). The fork's keys (`screen_reader`, `speak_raw_values`,
+  `step_editor_follows`, `pitch_keys_make_notes`, `export_format`) have no setters: each counts
+  as changed when it differs from what was last read or written. A
   missing or damaged file means the defaults (a damaged one stays until the next save), a key
   of the wrong type is skipped, unknown keys are ignored. A path that is not valid UTF-8 is
   left out of the file on save (a `recent` entry is dropped; `songs_dir`, `mods_dir`,
@@ -1118,7 +1157,7 @@ starts with it open. The panel takes no key or click while a browser is open. Th
 the window, `App::menu`; the headless panel tests run without it) and the commands behind it
 (`App::command(Cmd)`). It is the user's reduced menu (2026-10-26): of the original's menu
 (section 12) only the song files, the mod and the Vintage flag, plus the keyboard mode of section
-10.
+10 and orb's own pattern commands in the Edit menu (below).
 
 | Menu | Item | What it does |
 |---|---|---|
@@ -1127,6 +1166,11 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | File | Save (Ctrl+S, Cmd+S on macOS) | writes the song's file; a song with none goes to Save As |
 | File | Save As... | the browser for a `.rbs`; the file becomes the song's file |
 | File | Export Loop as Audio File... | the browser for `.wav`, `.flac` or `.ogg`; enabled in song mode only (the original disables it in pattern mode, section 12). In screen reader mode the system's dialog, with one filter per format, the format of the last export through it first (the string `export_format` of `ui.toml`: `wav` by default, `flac` or `ogg`; task-204): that filter is the default extension of a name typed without one, and the extension of the saved path becomes the new `export_format`. The in-app browser does not use it |
+| Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
+| Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with the 303's Clear |
+| Edit | Copy Pattern (Ctrl+C, Cmd+C) | the focused row's selected pattern (steps, length, shuffle flag) to orb's clipboard; the song is not modified |
+| Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a TB-303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
+| Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard stays |
 | Mods | Choose Mod... (Ctrl+M, Cmd+M on macOS; shown in screen reader mode only, first item, a separator after it) | the mod chooser dialog: a filter and the list as a tree (section 20.7, task-195) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
@@ -1140,10 +1184,40 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Step Editor Follows Playback (shown in screen reader mode only) | `Settings::step_editor_follows` (false by default; the bool `step_editor_follows` of `ui.toml`), saved at once (task-190, decision task-209): on, a 303's step editor and a drum grid (task-191) move to the pattern playback selects, silently, at the next input; off, they stay on the pattern the user chose; sections 20.5 and 20.6 |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
-| Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/openrb-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; below) |
+| Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
 
 The Help menu is last in the bar. Its items are the list `HELP_ITEMS` in `menu.rs`, so a new item
 is one more entry.
+
+- **The Edit menu** (orb's own commands). The items act on the selected pattern of the row with
+  the focus (the lit focus bar, section 1) and are disabled without a song (the demo panel). The
+  names and shortcuts of Cut, Copy and Paste Pattern are those the original's Edit menu shows
+  (the screenshot in `docs/test_machine.md` section 3); what the original's items do was not
+  read.
+  - A pattern is **empty** when none of its 16 steps is set, whatever its length and shuffle
+    flag: every 808 and 909 step byte 0, every 303 step the Clear state (note 0, no flags, rest
+    on), which a new song holds. A 303 pattern of sixteen low C notes with rest off plays and is
+    not empty: the shipped "ReBirth 1.0 Default Song" holds one in each of its 64 303 slots, so
+    there a Duplicate on a 303 row finds no empty pattern.
+  - There are no dialogs: a paste onto a used pattern overwrites it, and Undo brings it back.
+    Undo is forgotten by any other pattern edit (a step, the length, the shuffle flag, the
+    303's Clear), an open and File > New.
+  - A Duplicate's selection is a click on the pattern button: the bank follows, in pattern mode
+    the row changes at the next bar line, in song mode with record on the change is recorded.
+    The pattern goes to the engine first, so it never plays the new pattern before it holds it.
+  - Undo of a Duplicate does the reverse: the source's selection goes first (a click's, so in
+    song mode with record on it is recorded too, after the Duplicate's; the recording keeps
+    both), and the copy's former bytes reach the engine only once it no longer plays the copy
+    (from the first snapshot that ran the selection and is stopped or plays another pattern of
+    the row, `Link::set_pattern_unplayed`): a playing row plays the whole copy up to the bar
+    line, never an emptied one. The panel and Save have the undone pattern at once. Any Undo
+    of a pattern the row no longer selects waits the same way; a selection or a step edit of
+    that pattern sends it at once, before the event.
+  - A pattern selected after a Duplicate (a click, in any row) makes its Undo leave the
+    selection alone: it puts back only the copy's bytes.
+  - The status line reports each command with the row and the pattern names: "TR-909: A1
+    duplicated to A2", "TR-909: pasted into A2", "TR-909: no empty pattern left", "The
+    clipboard holds a TB-303 pattern", "The clipboard holds no pattern".
 
 - **Help > Keyboard Shortcuts** (task-105; `crates/orb-ui/src/key_help.rs`). Centered as About is
   (`App::key_help_serial`); Escape is consumed after the other windows. The text is one table,
@@ -1393,7 +1467,8 @@ OpenRB-338-specific (a UI decision of the user, not a fact about the original).
 
 - **The status line** is the 22-point bar at the bottom of the window, for information and for
   repeating notifications: "Saved PATH", "Exporting PATH ...", "Exported PATH", "Mod list
-  refreshed: N mods in FOLDER (+a, -b)", and the notifications of errors that repeat (below).
+  refreshed: N mods in FOLDER (+a, -b)", the Edit menu's results (section 18), and the
+  notifications of errors that repeat (below).
   A click (outside any box, prompt or browser) dismisses it, except while an export runs. It
   never shows the error of a one-time action: that is the box.
 - **The error message box** (`orb-ui/src/error_box.rs`, `App::fail`) shows every error, one at a
@@ -1619,52 +1694,158 @@ What OpenRB-338 adds (`menu.rs`, `menu_bar_key`, `open_on_down`, `menu_has_keys`
   for the playing kit only, in both modes (`menu.rs` `checked_item`, task-201): NVDA reads
   "menu item, checked". They look and act as before (selectable labels). The button of a merged
   name's submenu stays a Button, with the Toggled state when one of its files plays.
+- Since the merge of upstream's 6858253 (task-230) the bar has five titles: upstream's Edit
+  menu (Undo and the pattern commands, section 18) sits between File and Mods, and is walked
+  like the others (`menu_items` notes each title for `menu_has_keys` and the focus back).
 
-## 19. OpenRB-338's own panel art and placement (task-115)
+## 19. OpenRB-338's panel art and placement (task-179)
 
-Sections 3 to 9 give the original's rectangles; OpenRB-338 draws its own art and places a control
-inside its section as it likes (`assets/ui/layout.tsv`, written by `crates/orb-ui-art`). The
-mockup session of 2026-10-29 (six review rounds with the user) set the following; all numbers are
-panel pixels, relative to the section unless said otherwise. Control ids, kinds and behavior are
-unchanged.
+The user asked on 2026-11-13 for the panel to follow the original ReBirth RB-338 2.01 panel as
+closely as possible, as scalable SVG. A mockup was drawn and reviewed with the user in many
+rounds and approved the same day; task-179 ported it into `crates/orb-ui-art` and the app. The
+approved render (the mockup at 2x) is ![the approved mockup](ui_spec/redesign_mockup_2x.png)
+(`docs/ui_spec/redesign_mockup_2x.png`); `assets/ui/preview/panel_2x.png` is the generator's
+panel in the same demo state. The look and the part list are in `assets/ui/README.md`. This
+section replaces task-115's own placement (orb's own control places of task-085 and task-115 are
+gone). All numbers are panel pixels, relative to the section unless said otherwise.
 
-- **303** (both). "WAVEFORM" (cap 3.6) centered at (35, 5.5) labels one 40 x 14 switch at
-  (15, 20) that has the saw and the square printed on its black frame, an 18 x 12 track between
-  them and a steel thumb (8 x 11) at x 12 (saw) or 20 (square); the bare glyphs on the paper are
-  gone. The six knobs are centered in the paper: first knob at x 95, 40 apart (labels at the
-  centers). The key band is three blocks of one height (y 46..112, radius 4): pitch and clear
-  (black, x 12, 34 wide), the keys (gray, x 52, 184 wide), the flags (black, x 242, 112 wide).
-  Pitch and clear: "PITCH" at (29, 51.5), the LED at (25, 56), the pill (now 22 x 10) at (18, 66);
-  "CLEAR" at (29, 88.5), its pill at (18, 95). White keys at x 66 + 21 i (y 89, LEDs at y 78),
-  black keys 11 px right of the white key to their left (y 60, LEDs y 49). The edit step display
-  (19 x 16) is the flags block's top row at (296, 50), its arrows at (316, 49) and (316, 58),
-  "EDIT STEP" (cap 3.2) centered at (279.5, 58). The flags at x 250.5 + 22 j: LED y 78, key y 89,
-  label y 109. The pills, white keys and flag keys have a discreet 3D (a darker base, the face
-  0.5 px in at the sides and 1.5 px short); the black keys are unchanged.
-- **Pattern sections.** Header color rust `#bf4a2b`. The pattern and bank buttons are 14 x 15
-  keycaps on a 16 px grid (x 4 + 16 i; rows y 25 and 43; bank row y 64): a face over a 1.8 px
-  darker lip with a 0.5 px outline. Pattern: light (`#dde1e6`) with a black digit, selected
-  `#e8503f` with a white digit. Bank: slate with a dim letter, selected orange with a black
-  letter. SHUFFLE (30 x 12) is the same keycap; its place and the steps display are unchanged.
-- **Mixer channels.** Header color sea `#3b8a8f`. Pan at (8, 26) and the delay send at (40, 26)
-  side by side (labels at y 52.5), the fader at (11.5, 58), and the three routing keys
-  (`mixsw_*`, now 28 x 13: a key with an amber 3D LED and a left-aligned label, ink when on and
-  dim when off) stacked at x 38, y 62 + 16 i. The master's COMP is the same key at section
-  (27, 82).
-- **Headers** (pattern, mix, master and the four effects) are 3D: a lip in the header color
-  darkened to 0.62, a face 1.3 px shorter with a light-to-dark gradient and a faint white line
-  below its top edge. Sizes and label places are unchanged.
-- **The on/off buttons** (`power_13x13`, `power_14x14`) are round 3D LEDs (radius 2.6, no
-  bezel) in a translucent socket that takes the header's color; lit, they glow green.
-- **The wordmark** (`logo`) has a four-segment underline in the 808's step colors (red, orange,
-  yellow, white), each 28.4 x 1.5 at (8 + 29.9 i, 28). Its pieces (`LOGO_PIECES`: `logo_open`,
-  `logo_rb338`, `logo_line_0` .. `logo_line_3`, `logo_sub`) are separate parts, for the startup
-  animation (task-114).
-- **The app icon** is the 303's saw running into a square wave in orange over four step keys in
-  the 808's colors, on the same slate tile as before.
-- **Help > About** is laid out as section 18 says.
+**The user's decisions (2026-11-13).** SVG stays the foundation (no pre-rendered art). The
+layout is the original's sections and control places (sections 3 to 9). Kept: the mod's splash
+and name where the original has the 808's selector, and the animated wordmark at the top right.
+Knobs are flat-topped, seen from above, a static body and a turning pointer with short cast
+shadows, no value arc. A pressed push button is "variant F, dimmed" (the bevel and the cast
+shadow go, the face turns flat and a little lighter with a faint gradient). The routing keys
+(DIST, PCF, COMP, the master's COMP) show pressed (variant F) only while the mouse button is
+held on them, like the 303's BACK and CLEAR, and never stay down: their lamp alone shows the
+state (the user's request, 2026-11-13). The effects' on/off lamps (PCF, DELAY, DIST, COMP) are
+as big as the mixer channels' (9.6 panel pixels square, in their 16 x 16 control; the user's
+request, 2026-11-13).
+The labels are Inter 4.1 (SIL OFL 1.1), as outlines made when the art is generated. Help >
+About: only the wordmark sits on a gray speckled plate. Wide and tall windows: a dark desk with
+the unit's cast shadow around the panel. The Sync and MIDI LEDs and labels are drawn, dark.
+Texts stay generic (PATTERN, MIX, MASTER, PCF, DELAY, DIST, COMP; no product name, no Roland or
+Propellerhead mark).
 
-The art part list, sizes and generator functions are in `assets/ui/README.md`.
+**Where the panel leaves the tables of sections 3 to 9** (the mockup's places win):
+
+- 303 waveform switch: 16 x 12 at (24.65, 18.5), not (24, 10): centered between the plate's left
+  edge and the divider, and vertically in the plate.
+- Pattern and bank keys: white keycaps of 14.6 x 14.6 on a 15.6 pitch, centers at
+  x 11.6 + 15.6 i, y 30.9 and 46.5 (patterns) and 72.9 (banks), not the 17 x 20 cells of the
+  original's grid; the hit rectangles are the keys. SHUFFLE is a keycap of 15 at (4.5, 94.7).
+- PCF faders at y 50, not 55 (their captions under them need the room).
+- Comp knobs at y 57, not 56 (level with the mixer's DELAY knob beside them).
+- Effect header meters 14 x 14 at (63, header y + 0.5), not 13 x 16 at (64, 2 or 3); the
+  mixer's at (51, 4).
+- No 808 instrument selector knob (unchanged): the mod window, 84.4 x 106 at (277.2, 4.2), with
+  the picture 76 x 76 at (281.4, 7.9) and the mod's name under the line at y 89.4.
+- The LEDs' and the round controls' rectangles are their drawn size, not the original's 8 x 8
+  sprites: the 303's LEDs are 6 x 6 around the lamp (the white keys' and the flags' at
+  (x + 1.5, 82) of their key, the black keys' at (key center - 3, 56)), the Note and Rest LEDs at
+  (247, 60) and (285, 60); the compressor's nine LEDs 7 x 7 at (8 + 7 i, 26.5); the transport's
+  loop toggle 15 x 18 at (317, 3) (the bat toggle and its LED).
+- The 909's step keys are 16.4 x 16.8 at (29 + 21 i, 85.4) and the 808's 12.6 x 19 at
+  (16 + 16 i, 90.2); the step strips' cells (16 px from x 14, 21 px from x 26) are unchanged,
+  their rows are y 90..110 (808) and 85..103 (909), and the 909's name row selects in
+  y 74..84 (the step keys start below it).
+- The 303 has the original's Rest LED again (control `tb303_N.rest_led`, lit when the edit step
+  rests), beside the Note LED.
+
+**The header meters** (the mixer channels' and the effects') have four segments, green,
+yellow-green, amber and red from the bottom; the engine's meter has 11 states (0 to 10, the
+meter byte mapped as section 16 says). The app shows state s as `[0, 1, 1, 1, 2, 2, 2, 3, 3, 4,
+4][s]` lit segments (`model::header_meter_segments`): any signal lights the first segment, the
+amber one lights from state 7 and the red one from 9, the states at which the master's 10-segment
+meters light their amber and red segments. The master's meters keep 10 segments and 11 states.
+The compressor's gain-reduction LEDs light in the colors section 16 gives (the center green,
+the reduction amber then red to its left); unlit, each shows its place's color, dark (the
+center green, the two beside it amber, the outer two red, the right side mirrored).
+
+**The knobs' TUNE and TONE labels** (the user's decision, 2026-11-13). On the 808 every tune or
+tone knob is labeled TUNE, except BD's and CY's, which are TONE (so the SD knob that drives the
+SD tone, section 6, reads TUNE, as on the mockup). On the 909 every one is labeled TUNE, except
+SD's knob in the second row (left of SNAP), which is TONE.
+
+**Selection marks.** The selected 808 instrument's chip turns lighter with an orange ring (the
+upper label's chip when its shared slot's switch is up); the selected 909 instrument's label on
+the chips at the top glows and its LED lights (in the AC box for AC, in the name row for the
+others). They are parts drawn over the backgrounds (`sel808_*`, `sel909_*`, `led909*_on`).
+
+**States the mockup does not show**, derived in the same style (on `assets/ui/preview/parts_2x.png`):
+the transport keys pressed (variant F on the key's face), Play at rest (no halo, a darker
+green), Record lit (red with a halo like Play's green), the arrows pressed (variant F), every
+303 button pressed (variant F), the routing keys pressed with their lamp off and on
+(`mixsw_off_pressed`, `mixsw_on_pressed`, variant F), the loop switch off (lever up, LED dark), the mode switch in
+pattern mode (lever up, the green Pattern LED lit, the yellow Song LED dark), the slide switches
+in both positions, the master meters' 11 states, the header meters' 5, the gain-reduction LEDs
+lit in green, amber and red and unlit in each color, every LED lit and unlit, every 808 and 909
+selection mark, the 909's step values 0 to 3 (the running light shows a set step as 0 and an
+empty one as 2, as before), the flam button off. In pattern mode the song displays are all
+`seg_blank` (unlit segments).
+
+**Help > About.** The window keeps the app's dark window colors, text colors and the flat icon;
+only the wordmark (the `logo` part at 2x, at (92, 14) of the content) sits on a gray plate
+(`about_plate`, 268 x 92 at (92, 14), with the plate's bevel, speckle and a soft shadow). The
+icon is at (18, 28), centered on the plate; the text rows start at y 110 (6 lower than
+task-138's, so the version line clears the plate) and the content is 450 x 206. The animation
+(task-114) is unchanged and plays over the plate.
+
+**The desk.** In a window whose shape is not the panel's, the free space around the unit is a
+dark matte desk (`crates/orb-ui/src/backdrop.rs`): a vertical gradient from `#1d2023` to
+`#131517`, darker toward the window's edges (a radial vignette), the speckle and a faint
+horizontal brushing from the 256-point tile `desk_tile` repeated over the window (drawn only
+where the desk shows), and the unit's soft cast shadow, stronger on the right and below (bands
+of 12 and 20 panel pixels blurred with a deviation of 5, at 55 % and 85 %). The gradients and
+the shadows are meshes with colored vertices and the tile is rasterized once, at one pixel per
+point, so a resize rasterizes nothing of the desk. Under the panel the app paints the panel's
+seam color `#14181b`.
+
+**What the panel differs in from the approved mockup** (`preview/panel_2x.png` against the
+mockup's render, the mod window left out: with the mockup's speckle laid in panel coordinates
+0.28 % of the pixels differed by more than 8 of 255, mean 0.09; with the fine speckle as a
+repeating tile, below, 18.4 % differ by more than 8 and 1.9 % by more than 32, mean 4.4, all of
+it the speckle's specks; every control, label and section is in the mockup's place):
+
+- the fine speckle of the plates (`grD`, `grL`) is a stitched tile of 64 x 64 panel pixels
+  repeated in panel coordinates, not one noise over the whole plate, for the cost (below); the
+  specks are the same kind, at other places;
+- the effects' on/off lamps are 9.6 square like the mixer's (the mockup's were 11.6; the user's
+  request after trying the app, 2026-11-13), and the routing keys show pressed while held (the
+  mockup drew them only at rest);
+- the mod window's picture and name: the app paints them, `panel.svg` has none;
+- the gain-reduction LEDs: the mockup lit LEDs 1 to 5 in fixed colors by place (green, green,
+  green, amber, amber); the app lights them in the link's colors (section 16: the center green,
+  then amber and red to its left), so the demo shows red, red, amber, amber, green;
+- the PCF and delay lamps' halo tints the display frame below them a little (the mockup drew
+  the frame after the lamp; here the frame is background);
+- the labels are outlines of the same Inter glyphs, so their antialiasing differs by a few
+  levels from the mockup's text rendering.
+
+**Cost (task-179).** The blurs and the noise filters make the parts slower to rasterize than the
+flat art (all parts once at 2x: about 0.9 s on one core of an M-series Mac, the backgrounds most
+of it). What keeps the start and a resize as quick as before, in `crates/orb-ui/src/app.rs`:
+
+- The parts a frame misses are rasterized together at the end of the frame on all the CPU's
+  cores (`flush_part_textures`; the frame drew placeholder textures whose images are set
+  before the frame goes to the GPU).
+- The window's very first frame rasterizes nothing: eframe draws it before the window has its
+  size (a content area of 20000 x 20000 points was seen), which with the filters took seconds.
+- When a frame misses more than 8 parts, a part denser than 1.25 pixels per panel pixel is
+  first rasterized at 1 pixel per panel pixel and then at its full size on a background thread
+  (`PREVIEW_DENSITY`): the panel shows at once, a little soft, and sharp a moment later. Not
+  with `--screenshot`, and not where there are no threads (the web build).
+- During a resize each part is drawn from its texture at the old size until the size has not
+  changed for 0.3 s (`RESIZE_SETTLE_S`), then the new size is rasterized (with the preview).
+- The fine speckle is a repeating tile; the desk's tile is rasterized once at 1x and only when
+  the desk shows.
+
+Measured on 2026-11-13 (release build, this M-series Mac; main 080f0a8 against task-179):
+the first complete frame after the start, `ORB_UI_START_STATS=1`, maximized window 0.37 to
+0.45 s before, 0.43 to 0.51 s after (all parts sharp at 0.74 to 0.99 s); 624 x 510 at ppp 2
+0.37 to 0.57 s before, 0.40 to 0.62 s after; at `--ppp 1` 0.88 to 1.32 s before, 0.43 to 0.61 s
+after. A resize drag of 40 frames, headless (`crates/orb-ui/tests/startup_resize_cost.rs`):
+284 ms (1x) and 611 ms (2x) before, every frame rasterizing everything; 52 and 86 ms after,
+plus one rasterizing of 63 and 128 ms when the size settles.
 
 ## 20. What a screen reader reads of the panel (task-186)
 
@@ -2159,3 +2340,27 @@ is no menu item and Ctrl+M does nothing; the dialog closes if the mode goes off 
   costs 1.6 ms in release, opening 4.9 ms at most (`a11y_mod_chooser.rs`, measured with
   `ORB_THIRDPARTY_MODS_DIR`); reading the folder (at start and Refresh List) is the existing
   scan, about 2.8 s for the collection.
+
+## 21. The panel as the plugin's editor (task-201)
+
+The VST3/CLAP plugin (`docs/plugin.md` section 10) shows this panel, drawn by the same code
+(`crates/orb-ui/src/embed.rs`), with these differences; the standalone app is unchanged.
+
+- **The window** is the menu bar of section 18 (22 points, not scaled) and the panel under it,
+  scaled to the window's width; no desk around it (section 19's backdrop is the standalone's).
+  Its height is `round(width * 510 / 624) + 22`; an invisible 14-point corner at the bottom
+  right resizes it (the resize cursor and a faint grip of three diagonal strokes while it is
+  hovered or dragged).
+- **The transport** has no Pattern/Song switch, Rewind, Fast forward, Record, bar display, loop
+  or tempo arrows (section 3; Fast forward and the bar display are task-213's decision). The
+  tempo display is read-only (the tempo the plugin plays at). Play and Stop are the plugin's
+  mode (pattern mode / note mode). Where the bar and loop displays were, a Bar display shows
+  the host position's bar while the plugin follows it, dark otherwise (no Beat display, the
+  user's decision of 2026-11-16). The Sync LED
+  lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
+- **The menus**: File has New, Open and Info only; nothing asks to save. There is no Edit menu
+  (section 18's pattern commands paste through the system clipboard's keys). Options has no
+  keyboard modes; Help no Keyboard Shortcuts.
+- **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
+  shortcut; every key goes on to the host (decided by the user, 2026-11-16). The mouse
+  gestures of section 2 are the same.

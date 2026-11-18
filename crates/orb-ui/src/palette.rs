@@ -2,13 +2,14 @@
 //! slate of the boxes and the amber of the lamps. A color that one window alone uses stays in
 //! that window's module.
 
-use eframe::egui::Color32;
+use egui::Color32;
 
 /// The text ink: the main texts of the windows.
 pub const INK: Color32 = Color32::from_rgb(0xe9, 0xed, 0xf2);
 /// The dimmed ink: the labels and the secondary texts.
 pub const INK_DIM: Color32 = Color32::from_rgb(0x9a, 0xa7, 0xb8);
-/// The panel's background and the letterbox color.
+/// The background of the windows' boxes (the file browser); the panel's letterbox color until
+/// task-179 put the desk of `backdrop` around the panel.
 pub const BG: Color32 = Color32::from_rgb(0x1d, 0x21, 0x27);
 /// The dark slate of the boxes' fills.
 pub const SLATE_DARK: Color32 = Color32::from_rgb(0x2c, 0x35, 0x42);

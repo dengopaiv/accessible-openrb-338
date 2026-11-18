@@ -8,7 +8,7 @@
 //! Tab and Shift+Tab go through the controls of the whole panel in this order, wrapping at its
 //! ends ([`order`]).
 
-use eframe::egui::{self, accesskit};
+use egui::{self, accesskit};
 
 use super::{drive, grid, hit_id, names};
 use crate::layout::Ctl;

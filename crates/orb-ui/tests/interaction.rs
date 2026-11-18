@@ -7,6 +7,7 @@ use eframe::egui::{self, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, 
 use orb_ui::app::App;
 use orb_ui::art;
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
+use orb_ui::menu::Cmd;
 use orb_ui::model::{BAR, Event as Out, Panel};
 
 struct Harness {
@@ -395,7 +396,21 @@ fn every_part_loads_and_rasterizes_at_1x_2x_3x() {
                         .unwrap_or_else(|| panic!("{}: pending", part.name));
                     let meta = ui.ctx().tex_manager().read().meta(id).map(|m| m.size);
                     let want = [(w * ppp).round() as usize, (h * ppp).round() as usize];
-                    assert_eq!(meta, Some(want), "{} at {ppp}x", part.name);
+                    // a canvas of a fractional size (a 13.6 x 14.6 control and its bleed,
+                    // task-179) is fitted by the loader keeping its aspect ratio: a side may
+                    // be a pixel short
+                    let [mw, mh] = meta.unwrap_or_else(|| panic!("{}: no texture", part.name));
+                    let near = |a: usize, b: usize| a.abs_diff(b) <= 1;
+                    let exact = w.fract() == 0.0 && h.fract() == 0.0;
+                    if exact {
+                        assert_eq!([mw, mh], want, "{} at {ppp}x", part.name);
+                    } else {
+                        assert!(
+                            near(mw, want[0]) && near(mh, want[1]),
+                            "{} at {ppp}x",
+                            part.name
+                        );
+                    }
                     count += 1;
                 }
             });
@@ -463,4 +478,36 @@ fn view_keeps_the_aspect_ratio_and_letterboxes() {
     assert_eq!(tall.origin.y, ((600.0_f32 - 255.0) / 2.0).round());
     let p = wide.to_panel(wide.origin + Vec2::new(100.0, 50.0));
     assert_eq!(p, Pos2::new(100.0, 50.0));
+}
+
+#[test]
+fn a_double_click_on_a_knob_of_the_panel_without_a_song_does_nothing() {
+    // the reset is to the knob's value in a new empty song (tests/wired.rs); a panel without a
+    // link (the demo) has no song
+    let mut h = Harness::new();
+    h.app.panel.set_knob("tb303_1.cutoff", 300);
+    h.click("tb303_1.cutoff");
+    h.click("tb303_1.cutoff");
+    assert_eq!(h.app.panel.knob("tb303_1.cutoff"), 300);
+}
+
+#[test]
+fn the_pattern_commands_do_nothing_on_the_panel_without_a_song() {
+    let mut h = Harness::new();
+    h.app.panel = Panel::demo();
+    let steps = h.app.panel.synth[0].patterns.clone();
+    for cmd in [
+        Cmd::CopyPattern,
+        Cmd::CutPattern,
+        Cmd::PastePattern,
+        Cmd::DuplicatePattern,
+    ] {
+        h.app.command(cmd);
+        h.frame(vec![]);
+    }
+    assert_eq!(h.app.panel.synth[0].patterns, steps);
+    assert_eq!(h.app.panel.rows[0].pattern, 0);
+    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.status, None);
+    assert!(!h.app.doc.modified);
 }

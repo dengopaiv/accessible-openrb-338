@@ -10,7 +10,7 @@
 //! The main keyboard's keys that the original keeps on the same codes are resolved by the mode
 //! and the focus, see [`map`].
 
-use eframe::egui::Key;
+use egui::Key;
 
 /// The Options menu's keyboard mode (docs/ui_spec.md section 10): one setting, two values.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

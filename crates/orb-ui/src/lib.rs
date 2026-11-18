@@ -9,11 +9,16 @@ pub mod a11y;
 pub mod about;
 pub mod app;
 pub mod art;
+pub mod backdrop;
 pub mod behavior;
 pub mod browser;
 pub mod crash;
 pub mod document;
+pub mod embed;
 pub mod error_box;
+/// The standalone window's graphics adapter rule (task-217): eframe's wgpu setup, so only with
+/// the `app` feature.
+#[cfg(feature = "app")]
 pub mod graphics;
 pub mod info;
 pub mod key_help;
@@ -27,6 +32,7 @@ pub mod mod_info;
 pub mod model;
 pub mod numpad;
 pub mod palette;
+pub mod plugin_usage;
 pub mod portable;
 pub mod runlog;
 pub mod screen_reader;

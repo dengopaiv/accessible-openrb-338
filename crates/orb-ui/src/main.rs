@@ -45,6 +45,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use eframe::egui;
+use eframe::egui_wgpu::WgpuError;
+#[cfg(test)]
+use eframe::egui_wgpu::wgpu::Backends;
 use orb_engine::tables::Tables;
 use orb_ui::app::{App, Shot};
 use orb_ui::browser::Mode;
@@ -226,7 +229,8 @@ fn attach_parent_console() {
 /// A start that failed without a panic (an error of `eframe::run_native`, task-214): the error
 /// goes to stderr, the run log and the native box (unless `ORB_UI_NO_CRASH_DIALOG`), and the
 /// exit code is 1. Started from Explorer or the Start menu the release build has no visible
-/// stderr, so before this such a start showed nothing at all.
+/// stderr, so before this such a start showed nothing at all. `error` is
+/// [`start_error_text`]'s.
 fn start_failed(error: &str) -> ExitCode {
     let _ = writeln!(std::io::stderr(), "OpenRB-338: {error}");
     runlog::end(&format!("start error: {error}"));
@@ -246,6 +250,8 @@ fn start_failed(error: &str) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // `ORB_UI_START_STATS` counts from here (task-179)
+    let _ = orb_ui::app::PROCESS_START.set(std::time::Instant::now());
     #[cfg(all(windows, not(debug_assertions)))]
     attach_parent_console();
     // before anything that can panic: a panic writes a crash log and shows a box (task-157)
@@ -340,12 +346,17 @@ fn main() -> ExitCode {
         match orb_player::output::start(audio) {
             Ok(s) => {
                 runlog::stage(&format!(
-                    "audio output: \"{}\", {} Hz, {} channels, {}{}",
+                    "audio output: \"{}\", {} Hz, {} channels, {}{}, {}",
                     s.device,
                     s.config.sample_rate,
                     s.config.channels,
                     s.format,
-                    if s.resampled { ", resampled" } else { "" }
+                    if s.resampled {
+                        ", resampled from 44100"
+                    } else {
+                        ""
+                    },
+                    s.buffer_text()
                 ));
                 audio_health = Some(s.health());
                 _stream = Some(s);
@@ -467,13 +478,51 @@ fn main() -> ExitCode {
             runlog::end("the window was closed");
             ExitCode::SUCCESS
         }
-        Err(e) => start_failed(&e.to_string()),
+        Err(e) => start_failed(&start_error_text(&e)),
     }
+}
+
+/// What the user is told when the window cannot be made: eframe's error, and for a wgpu
+/// error (no adapter for the backends asked for) how to pick another backend. Upstream's text
+/// (its issue #10); the backends themselves are the fork's rule, `orb_ui::graphics` (task-217),
+/// not upstream's `wgpu_backends`.
+fn start_error_text(e: &eframe::Error) -> String {
+    let mut text = format!("OpenRB-338 could not open its window: {e}");
+    if matches!(
+        e,
+        eframe::Error::Wgpu(WgpuError::RequestAdapterError(_) | WgpuError::CreateSurfaceError(_))
+    ) {
+        text.push_str(concat!(
+            "\n\nNo graphics adapter was found for the backends tried. The WGPU_BACKEND ",
+            "environment variable picks the graphics backend: vulkan, gl or dx12 (Windows ",
+            "tries dx12 first, then gl)."
+        ));
+    }
+    text
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_no_adapter_error_names_wgpu_backend() {
+        let e = eframe::Error::Wgpu(WgpuError::CustomNativeAdapterSelectionError("x".into()));
+        let t = start_error_text(&e);
+        assert!(t.contains("could not open its window"), "{t}");
+        assert!(!t.contains("WGPU_BACKEND"), "{t}");
+        let e = eframe::Error::Wgpu(WgpuError::RequestAdapterError(
+            eframe::wgpu::RequestAdapterError::NotFound {
+                active_backends: Backends::DX12,
+                requested_backends: Backends::DX12,
+                supported_backends: Backends::DX12,
+                no_fallback_backends: Backends::empty(),
+                no_adapter_backends: Backends::DX12,
+                incompatible_surface_backends: Backends::empty(),
+            },
+        ));
+        assert!(start_error_text(&e).contains("WGPU_BACKEND"));
+    }
 
     fn parse(a: &[&str]) -> Result<Args, Exit> {
         parse_args(a.iter().map(|s| s.to_string()))

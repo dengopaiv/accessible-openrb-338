@@ -16,8 +16,8 @@
 //! recrypted file, checks the original against the sha256 the entry records, and renders the
 //! songs with the result.
 //!
-//! The renders are long (41 minutes of audio for the 8), so the tests are ignored in debug
-//! builds: `cargo test --release` runs them.
+//! The renders are long (41 minutes of audio for the 8) but take about 2 s in the optimized
+//! test profile (`[profile.test]`, docs/building.md), so plain `cargo test` runs them all.
 //!
 //! This test lives in orb-cli because it needs both the engine and the `rbm` crate (the engine's
 //! tests cannot depend on `rbm`, which depends on the engine).
@@ -138,10 +138,6 @@ fn check_set(set: &str, expect: usize, with_orig: bool) {
 /// The 8 shipped mod songs, rbhost references at 9088 idle blocks, with the recrypted mods and
 /// no RB20FUL.DAT.
 #[test]
-#[cfg_attr(
-    debug_assertions,
-    ignore = "41 minutes of audio; runs in cargo test --release"
-)]
 fn mod_songs_match_their_references() {
     check_set("mod", 8, false);
 }
@@ -149,10 +145,6 @@ fn mod_songs_match_their_references() {
 /// The 3 exports of the original app with a mod, each at its own fitted N, with the recrypted
 /// mods and no RB20FUL.DAT.
 #[test]
-#[cfg_attr(
-    debug_assertions,
-    ignore = "22 million frames; runs in cargo test --release"
-)]
 fn modapp_exports_match_at_their_fitted_n() {
     check_set("modapp", 3, false);
 }
@@ -160,10 +152,6 @@ fn modapp_exports_match_at_their_fitted_n() {
 /// `rbm::recrypt` of the original mods (from the CD image) gives the recrypted files, and the 8
 /// mod songs render equal with them.
 #[test]
-#[cfg_attr(
-    debug_assertions,
-    ignore = "41 minutes of audio; runs in cargo test --release"
-)]
 fn recrypt_of_the_originals_matches_the_references() {
     check_set("mod", 8, true);
 }

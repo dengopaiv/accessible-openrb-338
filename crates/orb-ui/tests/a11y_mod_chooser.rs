@@ -534,10 +534,7 @@ fn ctrl_i_shows_mod_info_of_the_selection() {
 fn the_menu_item_opens_the_dialog() {
     let dir = folder(&FILES);
     let mut h = H::new(true, Some(dir.path()));
-    h.press(Key::F10);
-    h.press(Key::ArrowRight);
-    h.press(Key::ArrowDown);
-    assert!(Popup::is_any_open(&h.f.ctx));
+    h.open_mods_menu();
     assert_eq!(
         h.focused(),
         (Role::Button, "Choose Mod... Ctrl+M".to_string())
@@ -557,10 +554,7 @@ fn with_the_mode_off_there_is_no_chooser() {
     h.app.command(Cmd::ChooseMod);
     h.settle(3);
     assert!(!h.app.chooser_is_open());
-    h.press(Key::F10);
-    h.press(Key::ArrowRight);
-    h.press(Key::ArrowDown);
-    assert!(Popup::is_any_open(&h.f.ctx));
+    h.open_mods_menu();
     // (a checked menu item since task-201)
     assert_eq!(
         h.focused(),
@@ -664,6 +658,8 @@ impl H {
     /// F10, Right, Down: the Mods menu open with the focus on its first entry.
     fn open_mods_menu(&mut self) {
         self.press(Key::F10);
+        // past File and upstream's Edit (task-230)
+        self.press(Key::ArrowRight);
         self.press(Key::ArrowRight);
         self.press(Key::ArrowDown);
         assert!(Popup::is_any_open(&self.f.ctx));

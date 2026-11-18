@@ -103,6 +103,29 @@ fn the_callback_does_not_allocate() {
     let (mut p, mut a) = Player::new(tables(), Some(samples()));
     let mut buf = vec![0i16; 2 * CALL_FRAMES];
     let mut events = render(&mut a, &mut buf, 4);
+    // note mode's notes on the stopped song (task-200): 303 legato and release, drum hits
+    for (device, note, velocity) in [
+        (Device::Tb303_1, 36, 100),
+        (Device::Tb303_1, 43, 64),
+        (Device::Tb303_2, 48, 127),
+        (Device::Tr808, 36, 127),
+        (Device::Tr808, 64, 64),
+        (Device::Tr909, 42, 120),
+        (Device::Tr909, 46, 30),
+        (Device::Tb303_1, 43, 0),
+        (Device::Tb303_1, 36, 0),
+    ] {
+        send(
+            &mut p,
+            Command::Note {
+                device,
+                note,
+                velocity,
+            },
+        );
+        events += render(&mut a, &mut buf, 1);
+    }
+    assert_ne!(p.snapshot().sounding[2].mask, 0);
     // a song over the stopped empty song: it becomes current at once
     assert!(p.load(&mix, Some(samples())).is_ok());
     send(&mut p, Command::Play);

@@ -17,7 +17,7 @@
 //! When the physical size does not fit the window, the splash is scaled down to fit and the
 //! window says so ([`splash_width`]).
 
-use eframe::egui::{self, Color32, Context, Key, Modifiers, RichText};
+use egui::{self, Color32, Context, Key, Modifiers, RichText};
 use orb_cli::mods::{Kit, STANDARD};
 
 use crate::a11y::window as win;

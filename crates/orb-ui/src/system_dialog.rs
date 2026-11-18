@@ -16,7 +16,7 @@ use raw_window_handle::{
     RawWindowHandle, WindowHandle,
 };
 
-use eframe::egui::{
+use egui::{
     self, Align, Color32, Context, Frame, Id, Key, Layout, Margin, Modal, Modifiers, RichText,
     Stroke,
 };
@@ -64,6 +64,7 @@ pub struct Parent {
 
 impl Parent {
     /// The handles of `frame`'s window (None when it has none, or not yet).
+    #[cfg(feature = "app")]
     pub fn of(frame: &eframe::Frame) -> Option<Self> {
         Some(Self {
             window: frame.window_handle().ok()?.as_raw(),
@@ -71,6 +72,11 @@ impl Parent {
         })
     }
 }
+
+// SAFETY: the raw handles are identifiers of the app's own window, used only on the UI thread
+// that owns it (the dialog is modal over it). `Send` lets an `App` move to the thread that runs
+// it, as upstream's plugin editor does (task-230); the handles are refreshed every frame there.
+unsafe impl Send for Parent {}
 
 impl HasWindowHandle for Parent {
     fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
@@ -88,8 +94,9 @@ impl HasDisplayHandle for Parent {
 }
 
 /// Shows a dialog for the request, starting in the folder, owned by the window `parent` (None:
-/// no owner), and returns the chosen path (None: cancelled).
-pub type Picker = Box<dyn FnMut(Request, &Path, Option<&Parent>) -> Option<PathBuf>>;
+/// no owner), and returns the chosen path (None: cancelled). `Send`, so an `App` can move to the
+/// thread that runs it (task-230).
+pub type Picker = Box<dyn FnMut(Request, &Path, Option<&Parent>) -> Option<PathBuf> + Send>;
 
 /// The dialog of an app that has none to show (`App::new`): cancels every request, so only
 /// the real program (`App::use_system_services`) opens a dialog.

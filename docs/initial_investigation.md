@@ -3,7 +3,8 @@
 Goal: a Rust engine that renders `.rbs` (+ optional `.rbm`) to a WAV that matches ReBirth 2.01's
 "Export Loop as Audio File" output sample for sample, allowing small floating-point tolerances.
 Reference WAVs are produced by the original app on a Windows test machine. The UI comes later and
-only needs a similar look and feel. MIDI, ReWire and the realtime audio drivers are out of scope.
+only needs a similar look and feel. ReWire and the realtime audio drivers are out of scope; MIDI
+came into scope in m-7 (2026-11-13, `docs/midi.md`).
 
 Sources:
 - `/Volumes/downloads/rebirth_2.01_manual.pdf`, the user manual. It describes behaviour but has no DSP numbers.
@@ -383,7 +384,12 @@ recording (§5.3); its quantisation stays 1 (`sub_10021560` sets only `+0x108`'s
   relocates every device to 0 and saves `trunc(pos)`.
 - Ids 3, 4, 12, 16, 20 store loop on, tempo, loop start, loop end and shuffle (`sub_10021110`,
   `sub_1001FCD0`, `sub_10021130`, `sub_10021150`, `sub_10021170`); with `transport+0x15C == 46`
-  (a ctor argument, [G] the ReWire mode) the transport keeps them instead. Id 2 is record
+  (a ctor argument, [G] the ReWire mode) the transport keeps them instead. [C] (task-198) A host
+  can also own the transport: the TopHat sync (`TopHatDriveAudioProc` → `sub_1001C0F4`) stores
+  the host's tempo, plays or halts on the host's play state, locates on a host reposition and
+  otherwise sets `pos = (double)hostTick` each audio call (`sub_1001C2F4`, 0x1001C38F, the store
+  of `sub_1001F8B0`; no relocate), holding off near the loop points; MIDI Song Position locates
+  to `16ths * 48` (`sub_1001C5C4`). `docs/plugin.md` section 8.1. Id 2 is record
   (`sub_10021194`, msg 35 case at 0x100125A7 → `sub_10021190`; [C] task-057, §5.3).
 - **Msg 36** (0x100126B2) applies the 23 bytes in this order: song mode, play or stop, record, loop
   on, tempo, locate, loop start, loop end, shuffle, then stores bytes 21 and 22. The global struct's
@@ -440,7 +446,9 @@ and before the moves of Rewind, Fast forward, Bar down and Stop (`sub_42A058`, 0
 controller messages call it after their store with the message's own controller and value (303
 sub 40 controllers 0..8, 808 57 0..28, 909 74 0..29 raw, delay 84, distortion 92, compressor 102
 and PCF 114 every controller, mixer 145 ids 1 and 2, mixer 147 fields 1..4 as `5 + 6c + k`;
-`docs/song_load.md` §4.10). The 303's MIDI input `sub_100261F0` calls it too (out of scope).
+`docs/song_load.md` §4.10). `sub_100261F0` calls it too: once called "the 303's MIDI input", it
+is a DLL-side copy of the 303's remote control (vtable slot 12; [G] no caller found), not live
+play; the original plays no device from MIDI notes (`docs/midi.md` §4, task-183).
 ```
 if !songMode or !record: return                         // 0x10021352, 0x10021367
 [pool free count 99, 50 or < 10: top-level msg 79 to the host, sub_1001D440 (a warning only)]
@@ -486,8 +494,12 @@ applied pointer `+0x228` is not adjusted; when its own node is freed it dangles
   the song end): every track at `T = trunc(pos)` (0x10021206), then in song mode every track is
   chased to `T` (0x10021294, as the locate's chase) and applied; then byte 2 = `v` (0x10021327).
   In pattern mode there is no chase.
-- Msgs 30 and 31 (§5.2), and `sub_1001FD10` from `sub_1001C3C4` (the MIDI song position, out of
-  scope).
+- Msgs 30 and 31 (§5.2), and `sub_1001FD10` from `sub_1001C3C4`, out of scope: [C] (task-198)
+  `sub_1001C3C4` is not the MIDI song position (that is `sub_1001C5C4`, which locates with no
+  merge, 0x1001C5EA, then stores the tick in `transport+0x18` through `sub_10007DF0`,
+  0x1001C5F5: `mov eax, [esp+4]; mov [ecx+18h], eax`) but
+  the TopHat host sync's reposition (`TopHatDriveAudioProc` → `sub_1001C0F4`, 0x1001C1DA), which
+  merges when the host's bar changed and then locates (`docs/plugin.md` section 8.1).
 - With record on, a locate while stopped to a later tick applies the events forward (respecting
   the hold mask) instead of chasing (§5.2, `sub_1001F984`).
 
@@ -561,6 +573,14 @@ The phase runs from -1 to 1, so frequency = tab·22050; index 3072 is 65.4 Hz.
 0x10153A80); `p = pow(2, 1/768)` (f64 `0x3F55555555555555`); `k = (v*(1/44100)) / pow(p, 3072)`
 (1/44100 at 0x10153AB0); `tab[i] = f32(pow(p, i)*k)`, all with the CRT pow 0x1002DDF0. The
 tune table at 0x10033F90 is i16[32].
+
+[C] task-199 (the note-on 0x10023E61..0x10023EBF, the 2.0 glide 0x100248EB..0x1002499E): the
+frequency is `65.406 Hz * 2^((i - 3072)/768)`, index `i = 64*(tuneTab + note + 12*up - 12*down)
++ 3072`, so pattern note 0 (C) at Tune 52..75 is 65.406 Hz = `55 * 2^(3/12)`: C two octaves
+below middle C at concert pitch (A = 440 Hz), MIDI note 36. The load `flt_10125364[p >> 4]`
+checks no bound: the table's 6144 entries cover -48..+47 semitones from that C; the pattern
+reaches -12..+24 at Tune center (MIDI 24..60) and -24..+36 over the Tune range. A rising glide stops 1..11 units of `p` short (index one below, 1.56 cents
+flat; `docs/original_bugs.md` Q-5), a falling one reaches the target. `docs/midi.md` 5.3.
 
 ### 6.2 DSP (Vintage engine, inline in 0x10023F10; per 64 samples, control values every 4 samples) [C]
 
@@ -817,6 +837,11 @@ after each pair.
   - Instruments trigger in **descending** order.
   - [C] RBS 909 values 0..3 reach the step function unchanged (no shift to 1..4): 1 = ×0.8, 2 = ×2.0,
     3 = ×0.8 with flam; 4 never occurs. The AC column holds 0 or 2 (`docs/song_load.md` §4.8).
+  - [C] task-199: with the panel's AC value 2 the accent is `1 + knob/16`, so an accented low
+    step (`0.8*(1 + knob/16)`) is louder than an unaccented high one (2.0) only from Accent knob
+    25 up (equal at 24). The snare's snappy level is not scaled by the gain (`sub_1002DC54`:
+    `snappy * flt_10154648` at 0x1002DC77; only the tone part takes `+0x191C`, 0x1002DCDB).
+    `docs/midi.md` 5.5.
   - [C] task-025 (Rust: `crates/orb-engine/src/tr909.rs`; the 33 909 corpus songs match byte for
     byte): the step function is the 808's position logic (§6.4) with the 909's offsets: pattern
     `+0x18D3`, latch `+0x18D4` (1 from the ctor), wrap `+0x18D5`, last position `+0x18D8`, last

@@ -8,7 +8,7 @@
 //! action fails the first, a new or removed binding the second. The menu shortcuts come from
 //! [`crate::shortcuts`], the one definition of them.
 
-use eframe::egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
+use egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
 
 use crate::a11y::window as a11y;
 use crate::app::App;
@@ -594,6 +594,11 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
                 menu_row(is_mac, &shortcuts::NEW, "File > New"),
                 menu_row(is_mac, &shortcuts::OPEN, "File > Open..."),
                 menu_row(is_mac, &shortcuts::SAVE, "File > Save"),
+                menu_row(is_mac, &shortcuts::UNDO, "Edit > Undo"),
+                menu_row(is_mac, &shortcuts::CUT, "Edit > Cut Pattern"),
+                menu_row(is_mac, &shortcuts::COPY, "Edit > Copy Pattern"),
+                menu_row(is_mac, &shortcuts::PASTE, "Edit > Paste Pattern"),
+                menu_row(is_mac, &shortcuts::DUPLICATE, "Edit > Duplicate Pattern"),
                 menu_row(
                     is_mac,
                     &shortcuts::KEYS_SYNTH,
@@ -1287,11 +1292,9 @@ mod tests {
                 .map(|r| r.keys.clone())
                 .collect()
         };
-        assert_eq!(text(true), ["Cmd+N", "Cmd+O", "Cmd+S", "Cmd+F", "Cmd+G"]);
-        assert_eq!(
-            text(false),
-            ["Ctrl+N", "Ctrl+O", "Ctrl+S", "Ctrl+F", "Ctrl+G"]
-        );
+        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "F", "G"];
+        assert_eq!(text(true), keys.map(|k| format!("Cmd+{k}")));
+        assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
     }
 
     /// The current-mode mark: Synth marks exactly the two Program Synth groups, Patterns only

@@ -15,7 +15,7 @@ pub mod step303;
 pub mod units;
 pub mod window;
 
-use eframe::egui::{self, Rect, accesskit};
+use egui::{self, Rect, accesskit};
 
 use crate::layout::Ctl;
 use crate::model::Panel;

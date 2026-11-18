@@ -20,7 +20,7 @@
 
 use std::collections::BTreeSet;
 
-use eframe::egui::{
+use egui::{
     self, Align2, Color32, Context, FontId, Id, Key, Modifiers, Rect, RichText, Sense, Stroke, Ui,
     UiBuilder, accesskit, vec2,
 };

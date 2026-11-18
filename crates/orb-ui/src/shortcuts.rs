@@ -3,11 +3,20 @@
 //! the two cannot drift. The command modifier is Cmd on macOS and Ctrl elsewhere (egui's
 //! `Modifiers::COMMAND`).
 
-use eframe::egui::{Context, Key, KeyboardShortcut, ModifierNames, Modifiers, Ui};
+use egui::{Context, Key, KeyboardShortcut, ModifierNames, Modifiers, Ui};
 
 pub const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
 pub const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 pub const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
+/// Edit > Undo.
+pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
+/// Edit > Cut, Copy and Paste Pattern, for their text only: the keys arrive as egui's Cut, Copy
+/// and Paste events (docs/ui_spec.md section 16).
+pub const CUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::X);
+pub const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::C);
+pub const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
+/// Edit > Duplicate Pattern.
+pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
 /// "Program Synth from Keyboard".
 pub const KEYS_SYNTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);
 /// "Select Patterns from Keyboard".
@@ -45,13 +54,20 @@ mod tests {
             NEW,
             OPEN,
             SAVE,
+            UNDO,
+            CUT,
+            COPY,
+            PASTE,
+            DUPLICATE,
             KEYS_SYNTH,
             KEYS_PATTERNS,
             CHOOSE_MOD,
             CHOOSER_INFO,
             EDIT_PATH,
         ];
-        let keys = ["N", "O", "S", "F", "G", "M", "I", "L"];
+        let keys = [
+            "N", "O", "S", "Z", "X", "C", "V", "D", "F", "G", "M", "I", "L",
+        ];
         for (sc, k) in all.iter().zip(keys) {
             assert_eq!(text_for(sc, true), format!("Cmd+{k}"));
             assert_eq!(text_for(sc, false), format!("Ctrl+{k}"));

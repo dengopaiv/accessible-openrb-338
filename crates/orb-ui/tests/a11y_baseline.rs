@@ -31,13 +31,16 @@ use std::collections::BTreeMap;
 use a11y::AppTree;
 use eframe::egui::accesskit::{Action, Role};
 
-const BASELINE_NODES: usize = 203;
-const BASELINE_NAMED: usize = 196;
+// one more each since task-230: the menu bar's Edit title (upstream's Edit menu), a focusable
+// named button (BASELINE_FOCUSABLE too)
+const BASELINE_NODES: usize = 204;
+const BASELINE_NAMED: usize = 197;
 const BASELINE_UNKNOWN_ROLE: usize = 0;
 const BASELINE_VALUED: usize = 112;
-const BASELINE_FOCUSABLE: usize = 194;
-const BASELINE_NAMES: [&str; 9] = [
+const BASELINE_FOCUSABLE: usize = 195;
+const BASELINE_NAMES: [&str; 10] = [
     "File",
+    "Edit",
     "Mods",
     "Options",
     "Help",

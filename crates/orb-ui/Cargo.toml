@@ -13,6 +13,14 @@ path = "src/lib.rs"
 [[bin]]
 name = "OpenRB-338"
 path = "src/main.rs"
+required-features = ["app"]
+
+# `app`: the standalone window on eframe (the binary, `impl eframe::App for App`). The panel
+# itself needs only egui, so the plugin's editor (orb-plugin, task-201) takes the library
+# without it and links no eframe or winit.
+[features]
+default = ["app"]
+app = ["dep:eframe"]
 
 [dependencies]
 orb-engine = { path = "../orb-engine" }
@@ -26,7 +34,11 @@ orb-cli = { path = "../orb-cli" }
 # The settings file (task-107).
 serde = { version = "1", features = ["derive"] }
 toml = "=0.9.12"
-eframe = "0.37.0"
+eframe = { version = "0.37.0", optional = true }
+# egui 0.37 has no default features: its fonts (`default_fonts`) come with eframe's defaults
+# in the standalone app only, so the panel asks for them itself (the plugin links no eframe;
+# without them every egui text is drawn as boxes, found in Reaper, task-201).
+egui = { version = "0.37.0", features = ["default_fonts"] }
 # The run log (task-214) takes the libraries' messages (wgpu, winit, eframe, cpal, AccessKit);
 # the version they use.
 log = "0.4"

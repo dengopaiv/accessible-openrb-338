@@ -1,0 +1,12 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The plugin bundler: `cargo xtask bundle orb-plugin --release` (nice-plug-xtask)"
+
+[dependencies]
+# nice-plug's bundler as a library (ISC): builds the cdylib and lays out the .vst3 and .clap
+# bundles under target/bundled/ by bundler.toml.
+nice-plug-xtask = "0.1.1"

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/logo.gif" alt="OpenRB-338" width="378">
+  <img src="assets/readme/logo.webp" alt="OpenRB-338" width="378">
 </p>
 
 <div align="center">
@@ -27,7 +27,8 @@ and Windows.
   175-render reference corpus.
 - **The whole machine on screen:** the two 303s, the 808 and the 909, the mixer, the delay,
   distortion, PCF and compressor, with pattern and song mode, the loop, shuffle and recording.
-- **A scalable vector-graphics panel** that stays sharp at any window size and pixel density.
+- **A scalable vector-graphics panel** in the original's layout and look, drawn from scratch,
+  that stays sharp at any window size and pixel density.
 - **Songs:** opens ReBirth 2.x songs (`.rbs`, RBS 4.0 to 4.2) and ReBirth 1.x songs, and saves
   RBS 4.2 files that the original opens. File > Info shows and edits the song's title, text, web
   page and copyright.
@@ -36,6 +37,8 @@ and Windows.
 - **Audio export** of the loop to WAV, FLAC or Ogg Vorbis.
 - **Plays from the computer keyboard:** program the synths and select patterns without a mouse
   (Help > Keyboard Shortcuts).
+- **Pattern commands:** cut, copy, paste and duplicate a pattern, with one level of undo (the
+  Edit menu).
 - **`orb`, a command-line tool,** to work with songs and mods from the terminal:
   - `orb render`: render a song's loop to WAV, FLAC or Ogg, far faster than real time (a
     five-minute song takes about a second and a half);
@@ -47,10 +50,10 @@ and Windows.
 
 ## Not implemented
 
-- MIDI, VST and ReWire. OpenRB-338 is a standalone application only, with no MIDI input or sync.
+- ReWire, and MIDI input or sync in the standalone application (the VST 3/CLAP plugin below takes
+  the MIDI of its host).
 - Mod themes: a mod changes the drum sounds, not the look of the panel.
-- The original's Edit menu functions on patterns (copy, paste, clear, shift, randomize and the
-  like), and undo.
+- The original's other Edit menu functions on patterns (clear, shift, randomize and the like).
 - The original's preferences and its Windows menu.
 - Export to AIFF (use WAV, FLAC or Ogg).
 
@@ -164,6 +167,14 @@ without loading it, and Escape closes the dialog.
 - [docs/accessibility_plan.md](docs/accessibility_plan.md): the plan, as decisions and tasks,
   with the NVDA checklist that ends it.
 
+## The plugin
+
+OpenRB-338 upstream also comes as an instrument plugin in the VST 3 and CLAP formats
+(`OpenRB-338.vst3` and `OpenRB-338.clap`), with the same engine and panel inside a DAW;
+[docs/plugin_usage.md](docs/plugin_usage.md) is the guide to its modes and MIDI mappings. This
+fork leaves the plugin out (the user's decision of 2026-11-18): it is being removed, and this
+section with it.
+
 ## Quick start
 
 1. **Download** from this fork's
@@ -195,6 +206,8 @@ without loading it, and Escape closes the dialog.
      to it, so they work under any drive letter. Delete `portable.txt` to use AppData instead.
    - Windows, OpenRB-338's installer: run it. It can add `orb` to the PATH.
    - Linux: make the AppImage executable (`chmod +x OpenRB-338-*.AppImage`).
+     It holds its own icon and menu entry: for a menu item, open it with an AppImage tool such
+     as Gear Lever or AppImageLauncher.
 
 3. **Optionally, get songs and mods:** download the
    [song collection](https://github.com/pingw33n/rb-songs) and the
@@ -206,7 +219,10 @@ without loading it, and Escape closes the dialog.
      Open > Open works too. Or, in Terminal: `xattr -dr com.apple.quarantine
      /Applications/OpenRB-338.app`.
    - **Windows:** SmartScreen says "Windows protected your PC". Click "More info", then
-     "Run anyway".
+     "Run anyway". If v2026.1103.0917 exits silently at start on a PC with an Intel GPU (a
+     crash in Intel's Vulkan driver), set the environment variable `WGPU_BACKEND=dx12` (for
+     example `set WGPU_BACKEND=dx12` in `cmd`, then start `OpenRB-338.exe`); newer releases
+     use DX12 on Windows by default.
    - **Linux:** nothing more. If the AppImage does not start because FUSE is missing, install
      `libfuse2` or run it with `--appimage-extract-and-run`.
 
@@ -257,4 +273,6 @@ Copyright (C) 2026 the OpenRB-338 authors.
 
 ReBirth RB-338 is a trademark of Propellerhead Software (now Reason Studios). OpenRB-338 is not
 affiliated with or endorsed by them. The built-in standard kit (`assets/Standard.rbm`) holds
-ReBirth's own drum samples and panel pictures. See [assets/README.md](assets/README.md).
+ReBirth's own drum samples and panel pictures. See [assets/README.md](assets/README.md). The
+panel's labels are outlines of the Inter typeface (SIL Open Font License 1.1,
+[crates/orb-ui-art/fonts/LICENSE.txt](crates/orb-ui-art/fonts/LICENSE.txt)).

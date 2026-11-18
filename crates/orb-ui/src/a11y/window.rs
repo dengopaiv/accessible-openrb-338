@@ -2,7 +2,7 @@
 //! the role and the name of a window or a modal, and text lines that take the focus so that
 //! they can be read one by one. Everything here acts only with `on` (screen reader mode).
 
-use eframe::egui::{self, Label, Response, RichText, Sense, Ui, UiKind, accesskit};
+use egui::{self, Label, Response, RichText, Sense, Ui, UiKind, accesskit};
 
 /// Gives the modal whose contents `ui` is in the role `role` and the name `name`;
 /// `description` (the text of an alert) is what the screen reader reads with it. egui's node

@@ -15,7 +15,7 @@
 //! Developer option: `ORB_LOGO_T=SECONDS` freezes the animation at that time (for screenshots
 //! of a moment); it applies to the panel and to the About window alike.
 
-use eframe::egui::{self, Color32, Rect, Ui};
+use egui::{self, Color32, Rect, Ui};
 
 use crate::app;
 

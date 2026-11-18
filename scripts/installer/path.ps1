@@ -1,7 +1,9 @@
-# Adds or removes one folder in the user's PATH (HKCU\Environment\Path) for the OpenRB-338
-# installer and uninstaller (task-111).
+# Adds or removes one folder in the PATH for the OpenRB-338 installer and uninstaller (task-111,
+# task-237): the user's (HKCU\Environment\Path, scope user, the default) or the machine's
+# (HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\Path, scope machine, for
+# the All users install, which runs elevated).
 #
-#   powershell -NoProfile -ExecutionPolicy Bypass -File path.ps1 add|remove DIR
+#   powershell -NoProfile -ExecutionPolicy Bypass -File path.ps1 add|remove DIR [user|machine]
 #
 # Why a script and not NSIS code: NSIS strings are 1024 characters (a longer PATH would be cut
 # and corrupted), and .NET's SetEnvironmentVariable turns the REG_EXPAND_SZ value into REG_SZ
@@ -16,13 +18,21 @@
 # Exit code 0: done (or nothing to do); 1: failed.
 param(
     [Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action,
-    [Parameter(Mandatory = $true)][string]$Dir
+    [Parameter(Mandatory = $true)][string]$Dir,
+    [ValidateSet('user', 'machine')][string]$Scope = 'user'
 )
 $ErrorActionPreference = 'Stop'
 $key = $null
 try {
     $dir = $Dir.TrimEnd('\')
-    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    if ($Scope -eq 'machine') {
+        # All users install (needs an elevated process): the machine's PATH, in the 64-bit view
+        $hive = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+        $key = $hive.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment', $true)
+    } else {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    }
     $old = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
     $entries = @($old.Split(';'))
     $isOurs = { param($e) $e -ne '' -and $e.TrimEnd('\') -ieq $dir }

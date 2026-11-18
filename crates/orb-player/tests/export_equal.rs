@@ -17,9 +17,8 @@
 //! faulting call; the player's snapshot must report the faulted calls
 //! ([`orb_player::Snapshot::faulted_calls`]).
 //!
-//! A release build checks every `diag`, `app` and `shipped` entry (the 8 shipped songs of the
-//! built-in kit; the corpus' modded songs need the user's mods); a debug build a sample of the
-//! `diag` and `app` entries.
+//! Every `diag`, `app` and `shipped` entry is checked (the 8 shipped songs of the built-in kit;
+//! the corpus' modded songs need the user's mods), in the optimized test profile in 3 s.
 
 mod common;
 
@@ -92,33 +91,12 @@ fn check(name: &str, entry: &serde_json::Value) -> Outcome {
 fn the_player_outputs_the_export_after_the_same_idle_count() {
     let m = manifest();
     let mut entries: Vec<(String, serde_json::Value)> = Vec::new();
-    let sets: &[&str] = if cfg!(debug_assertions) {
-        &["diag", "app"]
-    } else {
-        // the shipped songs: 41 minutes of audio, sha256 references only
-        &["diag", "app", "shipped"]
-    };
-    for &set in sets {
+    // the shipped songs: 41 minutes of audio, sha256 references only
+    let sets = ["diag", "app", "shipped"];
+    for set in sets {
         for (k, v) in m[set].as_object().unwrap() {
             entries.push((format!("{set}/{k}"), v.clone()));
         }
-    }
-    if cfg!(debug_assertions) {
-        // one of every kind of song, plus the app exports at their own N
-        let keep = [
-            "diag/303_slide_accent",
-            "diag/303_vintage_saw",
-            "diag/808_snare",
-            "diag/909_flam_interval64",
-            "diag/delay_automated",
-            "diag/loop_chase",
-            "diag/pcf_on_909",
-            "diag/pcf_lp_wave127",
-            "app/full_mix",
-            "app/shuffle_303_g64",
-        ];
-        entries.retain(|(n, _)| keep.contains(&n.as_str()));
-        assert_eq!(entries.len(), keep.len());
     }
     let entries = Arc::new(entries);
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
@@ -164,10 +142,9 @@ fn the_player_outputs_the_export_after_the_same_idle_count() {
         );
         checked += 1;
     }
-    // release: 145 diag + 11 app + 8 shipped
-    let want = if cfg!(debug_assertions) { 10 } else { 164 };
-    assert_eq!(checked, want);
-    assert_eq!(faulted.len(), if cfg!(debug_assertions) { 1 } else { 2 });
+    // 145 diag + 11 app + 8 shipped
+    assert_eq!(checked, 164);
+    assert_eq!(faulted.len(), 2);
     eprintln!(
         "{checked} songs equal to the export and the reference, of them faulting: {faulted:?}"
     );

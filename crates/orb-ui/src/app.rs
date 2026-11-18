@@ -1,10 +1,10 @@
 //! The window: draws the panel from the SVG parts at the displayed size and runs the
 //! original's interaction (docs/ui_spec.md section 2) on the [`Panel`] model.
 //!
-//! Rendering follows decision task-040: every part is an `egui::Image` of its SVG, loaded by
-//! egui_extras' SVG loader (usvg + resvg) with a size hint of the displayed size in physical
-//! pixels; a scale change gives a new hint and so a new, crisp raster. The panel keeps its
-//! 624 x 510 aspect ratio and is letterboxed.
+//! Rendering follows decision task-040: every part is an `egui::Image` of its SVG, rasterized as
+//! egui_extras' SVG loader does it (usvg + resvg) at the displayed size in physical pixels; a
+//! scale change gives a new, crisp raster. The panel keeps its 624 x 510 aspect ratio; the
+//! space around it is the desk of `backdrop` (task-179).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,24 +12,24 @@ use std::time::Duration;
 
 use orb_engine::samples::SampleSet;
 
-use eframe::egui::{
-    self, Color32, Image, Key, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2,
-    emath::GuiRounding, epaint,
+use egui::{
+    self, Color32, Image, Key, Pos2, Rect, Response, Sense, Ui, Vec2, emath::GuiRounding,
+    text_selection::LabelSelectionState,
 };
 
 use crate::a11y::{announce, drive, grid, nav, step303};
-use crate::art::{self, KnobDesign};
+use crate::art;
 use crate::behavior::{self, Mods};
 use crate::browser::{self, Browser, Mode, Poll};
 use crate::document::Document;
+use crate::embed::{LIT_808, LIT_909, Lit};
 use crate::keys::{self, Action, KeyMode, SrAction};
 use crate::layout::{self, Ctl, PANEL_H, PANEL_W};
 use crate::link::Link;
 use crate::logo_anim;
-use crate::menu::{Job, MENU_H, ModEntry, Then};
+use crate::menu::{Cmd, Job, MENU_H, ModEntry, Then};
 use crate::model::Panel;
 use crate::numpad;
-use crate::palette::BG;
 use crate::settings::Settings;
 use crate::shortcuts;
 
@@ -41,9 +41,14 @@ pub struct View {
 }
 
 impl View {
-    /// The largest panel-shaped area centered in `avail`, snapped to whole pixels.
+    /// The largest panel-shaped area centered in `avail`, snapped to whole pixels. An empty or
+    /// inverted `avail` (a plugin window the host made shorter than the menu bar, task-234)
+    /// gets a panel one point wide, so the scale stays positive and finite (`to_panel`
+    /// divides by it).
     pub fn fit(avail: Rect, ppp: f32) -> Self {
-        let scale = (avail.width() / PANEL_W).min(avail.height() / PANEL_H);
+        let scale = (avail.width() / PANEL_W)
+            .min(avail.height() / PANEL_H)
+            .max(1.0 / PANEL_W);
         let size = Vec2::new(PANEL_W, PANEL_H) * scale;
         Self {
             origin: (avail.center() - size / 2.0).round_to_pixels(ppp),
@@ -212,6 +217,17 @@ pub struct App {
     pub announcer: announce::Announcer,
     /// egui's focus when this frame's keys were read (what `App::act` does not announce).
     pub(crate) key_focus: Option<egui::Id>,
+    /// The pattern Edit > Copy Pattern or Cut Pattern took last.
+    pub clip: Option<crate::menu::Clip>,
+    /// Its marker, for the system clipboard at the end of the frame.
+    pub(crate) clip_text: Option<String>,
+    /// The copies made so far (the marker's count).
+    pub(crate) clip_count: u32,
+    /// What Edit > Undo puts back (`App::undo`).
+    pub(crate) undo: Option<crate::menu::Undo>,
+    /// Where the Edit menu drew its items last, and whether each was enabled
+    /// (`App::edit_item`).
+    pub(crate) edit_items: Vec<(&'static str, Rect, bool)>,
     /// The Options menu's keyboard mode (Ctrl/Cmd+F / +G).
     pub key_mode: KeyMode,
     /// Whether the window draws the menu bar (the window of OpenRB-338 does; the headless tests
@@ -259,6 +275,9 @@ pub struct App {
     /// The same for the Help > Keyboard Shortcuts window (`App::key_help_ui`).
     pub(crate) key_help_open: bool,
     pub(crate) key_help_serial: u32,
+    /// The same for the plugin's Help > Plugin Usage window (`App::plugin_usage_ui`, task-221).
+    pub(crate) plugin_usage_open: bool,
+    pub(crate) plugin_usage_serial: u32,
     /// What the info window drew last (`App::info_shown`).
     pub(crate) info_shown: Option<crate::info::SongInfo>,
     pub(crate) events_seen: usize,
@@ -304,6 +323,14 @@ pub struct App {
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
     pub frame_stats: Option<FrameStats>,
+    /// The panel's pixels per panel pixel in the last frame, and the egui time until which a
+    /// change of it counts as a resize in progress (`RESIZE_SETTLE_S`, task-179).
+    last_px_scale: Option<f32>,
+    resize_until: f64,
+    /// The frames `show` has drawn.
+    shown: u64,
+    /// The plugin, when this is a plugin's editor (`App::embedded`, task-201).
+    pub(crate) plugin: Option<crate::embed::Plugin>,
 }
 
 impl App {
@@ -334,6 +361,11 @@ impl App {
             status: None,
             announcer: Default::default(),
             key_focus: None,
+            clip: None,
+            clip_text: None,
+            clip_count: 0,
+            undo: None,
+            edit_items: Vec::new(),
             key_mode: KeyMode::default(),
             menu: false,
             prompt: None,
@@ -360,6 +392,8 @@ impl App {
             chooser_serial: 0,
             key_help_open: false,
             key_help_serial: 0,
+            plugin_usage_open: false,
+            plugin_usage_serial: 0,
             info_shown: None,
             events_seen: 0,
             allow_close: false,
@@ -382,6 +416,10 @@ impl App {
             error_focused: false,
             shot,
             frame_stats: FrameStats::from_env(),
+            last_px_scale: None,
+            resize_until: f64::NEG_INFINITY,
+            shown: 0,
+            plugin: None,
         }
     }
 
@@ -519,9 +557,10 @@ impl App {
         let Some(dir) = (self.picker)(Request::Folder(which), &start, self.parent.as_ref()) else {
             return;
         };
+        // the setters: the choice wins over another instance's change to the file (task-230)
         match which {
-            Folder::Songs => self.settings.songs_dir = Some(dir),
-            Folder::Mods => self.settings.mods_dir = Some(dir),
+            Folder::Songs => self.settings.set_songs_dir(Some(dir)),
+            Folder::Mods => self.settings.set_mods_dir(Some(dir)),
         }
         let failure = self.settings.save().err();
         self.fail_many(failure);
@@ -592,7 +631,14 @@ impl App {
             || self.prompt.is_some()
             || self.replace.is_some()
             || self.error_open();
-        if !blocked && self.export.is_none() && ui.input(|i| i.pointer.any_click()) {
+        // nor does a click on a window or menu over the bar (task-235): the click's layer
+        // must be the panel's
+        let clicked = ui.input(|i| i.pointer.any_click().then(|| i.pointer.interact_pos()));
+        if !blocked
+            && self.export.is_none()
+            && let Some(p) = clicked
+            && p.is_none_or(|p| ui.ctx().layer_id_at(p).is_none_or(|l| l == ui.layer_id()))
+        {
             self.status = None;
         }
     }
@@ -611,6 +657,7 @@ impl App {
     }
 }
 
+#[cfg(feature = "app")]
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         // the run log's "first frame drawn" (task-214); an atomic load after the first
@@ -727,12 +774,112 @@ fn missing_part(name: &str) {
 /// context's memory (`paint_part_with`, task-153). The map owns each texture (its handle:
 /// egui frees a texture when its last handle drops) and drops the ones not drawn for
 /// [`PART_TEXTURE_FRAMES`] frames, the sizes of a window size left behind.
+///
+/// A texture missing in a frame is not rasterized where it is drawn: the frame draws a
+/// placeholder handle, and `flush_part_textures` rasterizes every missing part of the frame
+/// at once, on all the CPU's cores, and sets the handles before the frame goes to the GPU
+/// (task-179: the redesign's filters made the one-by-one rasterizing too slow). During a
+/// resize a part is drawn from the texture of its last size, scaled, until the size settles.
 #[derive(Clone, Default)]
 pub struct PartTextures {
     map: std::collections::HashMap<(usize, u32, u32), PartTexture>,
+    /// The size each part (by URI) was last rasterized at: the texture a resize draws.
+    latest: std::collections::HashMap<usize, (u32, u32)>,
     /// The pass of the last sweep.
     swept: u64,
+    /// The textures drawn as placeholders in this frame, to rasterize (`flush_part_textures`).
+    pending: Vec<PendingTexture>,
 }
+
+#[derive(Clone)]
+struct PendingTexture {
+    svg: &'static [u8],
+    size: [u32; 2],
+    /// A smaller size to rasterize first, when the full size is dense (`PREVIEW_DENSITY`): the
+    /// full size follows on a background thread.
+    preview: Option<[u32; 2]>,
+    handle: egui::TextureHandle,
+    options: egui::TextureOptions,
+}
+
+/// When a frame misses more than `PREVIEW_MIN_PARTS` parts and a part is denser than 1.25
+/// times this many pixels per panel pixel, the part is first rasterized at this density and
+/// then, on a background thread, at its full size (task-179): the window shows the whole panel
+/// at once, a little soft, and sharp a moment later, instead of waiting for the filters at the
+/// full size.
+pub const PREVIEW_DENSITY: f32 = 1.0;
+pub const PREVIEW_MIN_PARTS: usize = 8;
+
+/// The process's start, for `ORB_UI_START_STATS` (set by `main`).
+pub static PROCESS_START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// `ORB_UI_START_STATS=1` (task-179): prints when the first complete frame was drawn and when
+/// the last part reached its full resolution, in ms since the process started.
+fn start_stats(what: &str) {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *ON.get_or_init(|| std::env::var_os("ORB_UI_START_STATS").is_some_and(|v| v == "1"))
+        && let Some(t0) = PROCESS_START.get()
+    {
+        eprintln!(
+            "start stats: {what} at {:.0} ms",
+            t0.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+}
+
+/// The id under which a frame notes that its parts must be rasterized at their full size at
+/// once (`--screenshot` takes no preview).
+fn no_preview_id() -> egui::Id {
+    egui::Id::unique("orb-ui no preview")
+}
+
+/// Rasterizes `svg` at `size` pixels as egui_extras' SVG loader does.
+fn raster(svg: &[u8], size: [u32; 2]) -> Option<egui::ColorImage> {
+    let hint = egui::load::SizeHint::Size {
+        width: size[0],
+        height: size[1],
+        maintain_aspect_ratio: false,
+    };
+    let options = resvg::usvg::Options::default();
+    egui_extras::image::load_svg_bytes_with_size(svg, hint, &options).ok()
+}
+
+/// Rasterizes the jobs (svg, size) on `threads` threads, the biggest first.
+fn raster_all(jobs: &[(&'static [u8], [u32; 2])], threads: usize) -> Vec<Option<egui::ColorImage>> {
+    let mut order: Vec<usize> = (0..jobs.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(jobs[i].1[0] * jobs[i].1[1]));
+    let images: Vec<std::sync::Mutex<Option<egui::ColorImage>>> =
+        jobs.iter().map(|_| Default::default()).collect();
+    if threads <= 1 {
+        for &i in &order {
+            *images[i].lock().unwrap() = raster(jobs[i].0, jobs[i].1);
+        }
+    } else {
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|s| {
+            for _ in 0..threads.min(jobs.len()) {
+                s.spawn(|| {
+                    loop {
+                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(&i) = order.get(k) else {
+                            break;
+                        };
+                        let image = raster(jobs[i].0, jobs[i].1);
+                        *images[i].lock().unwrap() = image;
+                    }
+                });
+            }
+        });
+    }
+    images
+        .into_iter()
+        .map(|m| m.into_inner().unwrap())
+        .collect()
+}
+
+/// How long after the last change of the panel's pixel size a resize counts as going on: the
+/// parts are drawn from the textures of their old size until then (task-179).
+pub const RESIZE_SETTLE_S: f64 = 0.3;
 
 #[derive(Clone)]
 struct PartTexture {
@@ -770,10 +917,146 @@ impl PartTextures {
         t.used = pass;
         Some(egui::load::SizedTexture::new(t.handle.id(), t.source_size))
     }
+
+    /// The texture of the part `uri` at the size it was last rasterized at, if it is kept.
+    fn last_size(&mut self, uri: usize, pass: u64) -> Option<egui::load::SizedTexture> {
+        let &(w, h) = self.latest.get(&uri)?;
+        self.get(&(uri, w, h), pass)
+    }
 }
 
-fn paint_part_rotated(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>) {
+/// Rasterizes the part textures the frame drew as placeholders, on all the CPU's cores (one
+/// thread where there are no threads, as in a browser), and sets their images. `App::show`
+/// calls it at the end of every frame; a frame drawn outside it calls it before its next part.
+pub fn flush_part_textures(ctx: &egui::Context) {
+    let pending = ctx.data_mut(|d| {
+        std::mem::take(
+            &mut d
+                .get_temp_mut_or_default::<PartTextures>(PartTextures::id())
+                .pending,
+        )
+    });
+    if pending.is_empty() {
+        return;
+    }
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    // Previews when many parts are missing at once (the start, the end of a resize), not for
+    // a part or two (a piece of the logo fading in). Where there are no threads (a browser)
+    // there is no background refinement either.
+    let preview = threads > 1
+        && pending.len() > PREVIEW_MIN_PARTS
+        && !ctx.data(|d| d.get_temp(no_preview_id()).unwrap_or(false));
+    let now: Vec<_> = pending
+        .iter()
+        .map(|p| (p.svg, p.preview.filter(|_| preview).unwrap_or(p.size)))
+        .collect();
+    let images = raster_all(&now, threads);
+    let mut later = Vec::new();
+    for (mut p, image) in pending.into_iter().zip(images) {
+        if let Some(image) = image {
+            p.handle.set(image, p.options);
+        }
+        if preview && p.preview.is_some() {
+            later.push(p);
+        }
+    }
+    if later.is_empty() {
+        return;
+    }
+    // the full sizes, on a background thread; a texture dropped meanwhile is set for nothing
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        let jobs: Vec<_> = later.iter().map(|p| (p.svg, p.size)).collect();
+        let images = raster_all(&jobs, threads);
+        for (mut p, image) in later.into_iter().zip(images) {
+            if let Some(image) = image {
+                p.handle.set(image, p.options);
+            }
+        }
+        start_stats("all parts at full resolution");
+        ctx.request_repaint();
+    });
+}
+
+pub(crate) fn paint_part_rotated(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>) {
     paint_part_with(ui, name, rect, rot, Color32::WHITE);
+}
+
+/// The texture of `svg` (whose URI is `uri`) at `pixels`, from the context's map, or a new
+/// placeholder whose image `flush_part_textures` rasterizes at the end of the frame. While the
+/// window is being resized a missing size is drawn from the part's last texture instead.
+pub(crate) fn part_texture(
+    ctx: &egui::Context,
+    uri: &'static str,
+    svg: &'static [u8],
+    pixels: Vec2,
+    units: Vec2,
+    options: egui::TextureOptions,
+) -> Option<egui::load::SizedTexture> {
+    let pass = ctx.cumulative_pass_nr();
+    let (now, max) = ctx.input(|i| (i.time, i.max_texture_side));
+    let (until, first) = ctx.data(|d| {
+        (
+            d.get_temp(resize_id()).unwrap_or(f64::NEG_INFINITY),
+            d.get_temp(first_frame_id()).unwrap_or(false),
+        )
+    });
+    let resizing = now < until;
+    let key = (uri.as_ptr() as usize, pixels.x as u32, pixels.y as u32);
+    let found = ctx.data_mut(|d| {
+        let t = d.get_temp_mut_or_default::<PartTextures>(PartTextures::id());
+        t.get(&key, pass)
+            .or_else(|| resizing.then(|| t.last_size(key.0, pass)).flatten())
+    });
+    if found.is_some() || first {
+        return found;
+    }
+    // A rect too big (a frame drawn before the window settles, a huge window, a high density)
+    // would make a texture wider than the GPU allows, which wgpu refuses with a panic.
+    // Rasterize it smaller then and let egui scale the texture up: a part this big is mostly
+    // plain fill.
+    let size = match capped_hint(pixels, max) {
+        Some(egui::load::SizeHint::Size { width, height, .. }) => [width, height],
+        _ => [pixels.x.max(1.0) as u32, pixels.y.max(1.0) as u32],
+    };
+    // dense: a preview at PREVIEW_DENSITY first (`flush_part_textures`)
+    let preview = (size[0] as f32 > 1.25 * PREVIEW_DENSITY * units.x).then(|| {
+        let p = (units * PREVIEW_DENSITY).round();
+        [p.x.max(1.0) as u32, p.y.max(1.0) as u32]
+    });
+    let blank = egui::ColorImage::filled([1, 1], Color32::TRANSPARENT);
+    let handle = ctx.load_texture(uri, blank, options);
+    let texture = egui::load::SizedTexture::new(handle.id(), pixels);
+    ctx.data_mut(|d| {
+        let t = d.get_temp_mut_or_default::<PartTextures>(PartTextures::id());
+        t.pending.push(PendingTexture {
+            svg,
+            size,
+            preview,
+            handle: handle.clone(),
+            options,
+        });
+        t.map.insert(
+            key,
+            PartTexture {
+                handle,
+                source_size: pixels,
+                used: pass,
+            },
+        );
+        t.latest.insert(key.0, (key.1, key.2));
+    });
+    Some(texture)
+}
+
+/// The id under which `App::show` keeps the egui time a resize counts as going on until.
+fn resize_id() -> egui::Id {
+    egui::Id::unique("orb-ui resize until")
+}
+
+/// The id under which `App::show` notes that this is the window's first frame.
+fn first_frame_id() -> egui::Id {
+    egui::Id::unique("orb-ui first frame")
 }
 
 fn paint_part_with(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>, tint: Color32) {
@@ -783,62 +1066,34 @@ fn paint_part_with(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>, ti
         missing_part(name);
         return;
     };
-    // The SVG is rasterized at the rect's size in pixels (what `Image::paint_at` asks of the
-    // loader), once per size, as egui_extras' SVG loader does it (`load_svg_bytes_with_size`
-    // with the default options, then `load_texture` with the URI as the name); the texture is
+    // `rect` is the control's rectangle; the art reaches `bleed` panel pixels beyond it.
+    let k = rect.width() / part.w.max(f32::EPSILON);
+    let art = rect.expand(part.bleed * k);
+    // The SVG is rasterized at the art's size in pixels, once per size, as egui_extras' SVG
+    // loader does it (`load_svg_bytes_with_size` with the default options); the texture is
     // then found here, not through the loaders (task-153: their lookup and `include_bytes`
     // were most of a part's cost per frame).
     let ctx = ui.ctx();
     let ppp = ui.pixels_per_point();
-    let pixels = (rect.round_to_pixels(ppp).size() * ppp).round();
-    let key = (part.uri.as_ptr() as usize, pixels.x as u32, pixels.y as u32);
-    let pass = ctx.cumulative_pass_nr();
-    let cached = ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<PartTextures>(PartTextures::id())
-            .get(&key, pass)
-    });
-    let texture = match cached {
-        Some(t) => t,
-        None => {
-            // A rect too big (a frame drawn before the window settles, a huge window, a high
-            // density) would make a texture wider than the GPU allows, which wgpu refuses with
-            // a panic. Rasterize it smaller then and let egui scale the texture up: a part
-            // this big is mostly plain fill.
-            let max = ctx.input(|i| i.max_texture_side);
-            let hint = capped_hint(pixels, max).unwrap_or(egui::load::SizeHint::Size {
-                width: pixels.x as _,
-                height: pixels.y as _,
-                maintain_aspect_ratio: false,
-            });
-            let options = resvg::usvg::Options::default();
-            let Ok(image) = egui_extras::image::load_svg_bytes_with_size(part.svg, hint, &options)
-            else {
-                missing_part(name);
-                return;
-            };
-            let source_size = image.source_size;
-            let handle = ctx.load_texture(part.uri, image, egui::TextureOptions::LINEAR);
-            let texture = egui::load::SizedTexture::new(handle.id(), source_size);
-            ctx.data_mut(|d| {
-                let t = PartTexture {
-                    handle,
-                    source_size,
-                    used: pass,
-                };
-                d.get_temp_mut_or_default::<PartTextures>(PartTextures::id())
-                    .map
-                    .insert(key, t)
-            });
-            texture
-        }
+    let pixels = (art.round_to_pixels(ppp).size() * ppp).round();
+    let units = Vec2::new(part.w, part.h) + Vec2::splat(2.0 * part.bleed);
+    let linear = egui::TextureOptions::LINEAR;
+    let Some(texture) = part_texture(ctx, part.uri, part.svg, pixels, units, linear) else {
+        return;
     };
     let mut image = Image::from_texture(texture)
-        .fit_to_exact_size(rect.size())
+        .fit_to_exact_size(art.size())
         .tint(tint);
     if let Some((angle, origin)) = rot {
-        image = image.rotate(angle, origin);
+        // the pivot is given in the control's rectangle; the image is the art's
+        let b = part.bleed;
+        let pivot = Vec2::new(
+            (origin.x * part.w + b) / (part.w + 2.0 * b),
+            (origin.y * part.h + b) / (part.h + 2.0 * b),
+        );
+        image = image.rotate(angle, pivot);
     }
-    image.paint_at(ui, rect);
+    image.paint_at(ui, art);
 }
 
 impl App {
@@ -865,14 +1120,25 @@ impl App {
             ui.ctx().set_theme(egui::ThemePreference::Dark);
         }
         crate::a11y::set_speech(ui.ctx(), self.speech());
+        // a frame drawn outside `show` may have left part textures to rasterize
+        flush_part_textures(ui.ctx());
+        // a plugin's editor: the plugin's song when it changed (task-201)
+        self.embed_refresh();
         let mut avail = ui.ctx().content_rect();
-        ui.painter().rect_filled(avail, 0.0, BG);
         if self.menu {
             // the panel takes the window below the menu bar
             avail.min.y += MENU_H;
         }
-        let view = View::fit(avail, ui.ctx().pixels_per_point());
+        let ppp = ui.ctx().pixels_per_point();
+        // a plugin's panel keeps a margin of desk on each side (task-234)
+        let view = if self.is_plugin() {
+            View::fit(crate::embed::panel_area(ui.ctx().content_rect()), ppp)
+        } else {
+            View::fit(avail, ppp)
+        };
         let now = ui.input(|i| i.time);
+        self.track_resize(ui.ctx(), view.scale * ppp, now);
+        crate::backdrop::paint(ui, avail, &view);
         self.panel.held = None;
         let screen_reader = self.screen_reader_mode();
         // the patterns the 303 step editors (task-190) and the drum grids (task-191) edit,
@@ -894,7 +1160,13 @@ impl App {
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
         // and no clicks of its own.
-        if self.browser.is_none()
+        if self.is_plugin() {
+            // a plugin's editor has no keyboard at all (task-201): the host keeps its keys
+            self.holds.clear();
+            if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
+                self.focus_click(ui, &view);
+            }
+        } else if self.browser.is_none()
             && self.prompt.is_none()
             && self.replace.is_none()
             && !self.error_open()
@@ -903,7 +1175,7 @@ impl App {
                 self.new_song();
             } else if shortcuts::consume(ui, &shortcuts::OPEN) {
                 self.open_browser(Mode::OpenSong);
-            } else if shortcuts::consume(ui, &shortcuts::SAVE) {
+            } else if !self.is_plugin() && shortcuts::consume(ui, &shortcuts::SAVE) {
                 self.save();
             } else if screen_reader && shortcuts::consume(ui, &shortcuts::CHOOSE_MOD) {
                 // Ctrl/Cmd+M: Mods > Choose Mod..., screen reader mode only (task-195)
@@ -921,6 +1193,7 @@ impl App {
                     // (task-184): the other keys are the field's or the menu's, not the panel's
                     self.holds.clear();
                 } else {
+                    self.pattern_keys(ui);
                     self.keyboard(ui);
                 }
                 self.focus_click(ui, &view);
@@ -934,6 +1207,12 @@ impl App {
         numpad::end_frame();
 
         for (name, x, y) in layout::backgrounds() {
+            // the plugin's transport has its own background (task-201)
+            let name = if name == "bg_transport" && self.is_plugin() {
+                "bg_transport_plugin"
+            } else {
+                name
+            };
             let (w, h) = part_size(name);
             if name == logo_anim::LOGO_PART {
                 // once per app start, from the first frame the logo is drawn
@@ -968,6 +1247,9 @@ impl App {
             Vec::new()
         };
         for c in &ctls {
+            if self.hidden(&c.id) {
+                continue;
+            }
             let section = nav::section_index(&c.section);
             let target = match section.and_then(|s| groups.get_mut(s)) {
                 Some(g) => g,
@@ -983,20 +1265,33 @@ impl App {
         }
         drop(groups);
         self.ctls = ctls;
+        for (name, x, y, w, h) in layout::foregrounds() {
+            paint_part(ui, name, view.rect(x, y, w, h));
+        }
         self.drum_strips(ui, &view);
-        self.instrument_selection(ui, &view);
+        let lit = self.note_lights(ui, now);
+        self.instrument_selection(ui, &view, &lit);
+        // a plugin's LEDs, menus and resize corner (task-201)
+        self.plugin_ui(ui, &view, now);
 
         // Send what was done, take what the engine did (the panel follows playback).
         self.note_edits();
         if let Some(link) = &mut self.link {
             let before = link.recorded_revision();
             link.sync(&mut self.panel);
+            // a plugin's Play light is its preview, not the engine's play state: the host's
+            // transport does not light it (task-217)
+            if let Some(on) = self.plugin.as_ref().and_then(|p| p.embed.previewing()) {
+                self.panel.transport.playing = on;
+            }
             // a merge of the recording changed the song's tracks: an edit
             self.doc.modified |= link.recorded_revision() != before;
             // The repaint rule (task-153, docs/ui_spec.md section 16): at the meter rate while
             // the engine's side of the panel moves, else not at all (input repaints). Without
             // a working audio stream the snapshot never moves.
-            let sound = self.audio_health.is_some() && !self.audio_reported;
+            // (a plugin's engine runs in the host)
+            let sound =
+                (self.audio_health.is_some() && !self.audio_reported) || self.plugin.is_some();
             if sound && link.moving(&self.panel) {
                 ui.ctx().request_repaint_after(METER_FRAME);
             }
@@ -1019,13 +1314,80 @@ impl App {
         self.info_ui(&ctx);
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);
+        self.plugin_usage_ui(&ctx);
         self.mod_info_ui(&ctx);
         self.chooser_ui(&ctx);
         self.poll_export(&ctx);
+        if let Some(marker) = self.clip_text.take() {
+            ctx.copy_text(marker);
+        }
         self.update_title(&ctx);
         // last: every message of this frame is in
         announce::show(&ctx, &self.announcer);
         self.close_if_allowed(&ctx);
+        // the part textures this frame drew as placeholders, rasterized together
+        flush_part_textures(&ctx);
+        self.shown += 1;
+        if self.shown == 2 {
+            // the first frame draws no part (`track_resize`): the second is the first complete
+            start_stats("first complete frame");
+        }
+    }
+
+    /// Notes a change of the panel's pixel scale (a resize, a move to another display): until
+    /// it has not changed for `RESIZE_SETTLE_S`, a part missing at the new size is drawn from
+    /// its texture at the old size, and the frame after the settling rasterizes the new size.
+    ///
+    /// The window's first frame rasterizes nothing: eframe draws it before the window has its
+    /// size (a content area of 20000 x 20000 points was seen on macOS, task-179), and the
+    /// filtered parts at that size took seconds. It draws the desk only and asks for the next
+    /// frame at once.
+    fn track_resize(&mut self, ctx: &egui::Context, px_scale: f32, now: f64) {
+        let first = self.last_px_scale.is_none();
+        if self
+            .last_px_scale
+            .is_some_and(|s| (s - px_scale).abs() > 1e-4)
+        {
+            self.resize_until = now + RESIZE_SETTLE_S;
+        }
+        self.last_px_scale = Some(px_scale);
+        let until = self.resize_until;
+        let shot = self.shot.is_some();
+        ctx.data_mut(|d| {
+            d.insert_temp(resize_id(), until);
+            d.insert_temp(first_frame_id(), first);
+            // a screenshot takes the parts at their full size, no preview
+            d.insert_temp(no_preview_id(), shot);
+        });
+        if first {
+            ctx.request_repaint();
+        } else if now < until {
+            ctx.request_repaint_after(Duration::from_secs_f64(until - now));
+        }
+    }
+
+    /// The Edit menu's keys: Ctrl/Cmd+Z and +D, and egui's Cut, Copy and Paste events
+    /// (docs/ui_spec.md section 16). A Cut or Copy while a window's text is selected is the
+    /// text's.
+    fn pattern_keys(&mut self, ui: &Ui) {
+        if shortcuts::consume(ui, &shortcuts::UNDO) {
+            self.command(Cmd::Undo);
+        }
+        if shortcuts::consume(ui, &shortcuts::DUPLICATE) {
+            self.command(Cmd::DuplicatePattern);
+        }
+        let text_selected = ui
+            .ctx()
+            .plugin_opt::<LabelSelectionState>()
+            .is_some_and(|s| s.lock().has_selection());
+        for e in ui.input(|i| i.events.clone()) {
+            match e {
+                egui::Event::Cut if !text_selected => self.command(Cmd::CutPattern),
+                egui::Event::Copy if !text_selected => self.command(Cmd::CopyPattern),
+                egui::Event::Paste(text) => self.paste_text(&text),
+                _ => {}
+            }
+        }
     }
 
     /// The Options menu's keyboard mode (Ctrl/Cmd+F / +G and the menu), announced (task-189).
@@ -1594,6 +1956,12 @@ impl App {
                 .flatten()
         });
         if let Some(p) = pressed {
+            // A press on a window, a menu or any other layer over the panel is not the
+            // panel's (task-235): a window's close button over the logo played the startup
+            // sound, and a click on an Edit menu item moved the focus to the row under it.
+            if ui.ctx().layer_id_at(p).is_some_and(|l| l != ui.layer_id()) {
+                return;
+            }
             let p = view.to_panel(p);
             if let Some(r) = layout::row_at(p.x, p.y) {
                 self.panel.focus = r;
@@ -1635,10 +2003,12 @@ impl App {
                     }
                     crate::a11y::describe_display(ui.ctx(), rect, &self.panel, c);
                 }
+                // n cells of 9 x 16, centered in the display's well
                 let n = (c.w / 9.0) as usize;
                 let frames = behavior::digit_frames(self.panel.display(&c.id), n);
+                let x0 = c.x + (c.w - 9.0 * n as f32) / 2.0;
                 for (i, f) in frames.into_iter().enumerate() {
-                    let x = c.x + c.w - 9.0 * (n - i) as f32;
+                    let x = x0 + 9.0 * i as f32;
                     paint_part(ui, f, view.rect(x, c.y, 9.0, 16.0));
                 }
             }
@@ -1665,6 +2035,10 @@ impl App {
                     "switch" | "toggle" | "radio" | "trigger" | "grid" => {
                         if self.first_press(ui, c, &r) {
                             self.panel.press(&c.id, now);
+                        }
+                        // a plugin's pattern drag-out (task-203); nothing in the standalone app
+                        if kind == "grid" {
+                            self.drag_out(ui, c, &r);
                         }
                     }
                     // A click anywhere on a two-position switch flips the position it shows.
@@ -1695,20 +2069,21 @@ impl App {
     }
 
     /// The 808's mod window: the current kit's `splash.jpg` (the embedded standard mod's for the
-    /// built-in kit) in a square at the top, the song's mod name under it.
+    /// built-in kit) in the 76 x 76 square at the top under the window's glass, the song's mod
+    /// name under it.
     fn mod_view(&mut self, ui: &Ui, view: &View, c: &Ctl) {
-        const PAD: f32 = 4.0;
-        let side = c.w - 2.0 * PAD;
+        let (px, py, side) = MOD_PICTURE;
+        let r = view.rect(c.x + px, c.y + py, side, side);
         if let Some(tex) = self.splash_texture(ui.ctx()) {
-            let r = view.rect(c.x + PAD, c.y + PAD, side, side);
             Image::new((tex.id(), r.size())).paint_at(ui, r);
         }
-        let top = c.y + 2.0 * PAD + side;
+        paint_part(ui, "mod_view_glass", r);
+        let top = c.y + MOD_NAME_TOP;
         let r = view.rect(c.x + 2.0, top, c.w - 4.0, c.y + c.h - top - 1.0);
         let galley = ui.painter().layout(
             self.doc.mod_name.clone(),
-            egui::FontId::proportional(7.0 * view.scale),
-            Color32::from_rgb(0xd8, 0xd8, 0xd0),
+            egui::FontId::proportional(6.6 * view.scale),
+            Color32::from_rgb(0xe8, 0xe2, 0xc2),
             r.width(),
         );
         let pos = centered_in(r, galley.size());
@@ -1871,6 +2246,14 @@ impl App {
         }
         g.down = down;
         ui.data_mut(|d| d.insert_temp(id, g));
+        // A double click sets the knob to its value in a new empty song (docs/ui_spec.md
+        // section 2); the demo panel has no link and no such song.
+        if r.double_clicked()
+            && let Some(v) = self.link.as_ref().and_then(|l| l.knob_default(&c.id))
+        {
+            self.panel
+                .set_knob(&c.id, behavior::knob_from_engine(v as i32));
+        }
         // a screen reader's request in a frame where the mouse drags this knob is dropped: the
         // drag sets the position from its own start on every frame and would undo it anyway
         if !down && let Some(t) = drive::target(c) {
@@ -1878,14 +2261,10 @@ impl App {
         }
         crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
 
+        // the static body and the pointer turned to the value (no value arc since task-179)
         let k = art::knob_design(&c.part);
         let p = self.panel.knob(&c.id);
         paint_part(ui, &format!("{}_body", k.name), rect);
-        if k.ring_r > 0.0 {
-            let bipolar = c.name() == "pan";
-            let a0 = if bipolar { 0.0 } else { -135.0 };
-            paint_arc(ui, view, c, k, a0, behavior::knob_angle(p));
-        }
         let angle = behavior::knob_angle(p).to_radians();
         let pivot = Vec2::new(k.cx / k.w, k.cy / k.h);
         paint_part_rotated(
@@ -1932,10 +2311,11 @@ impl App {
     /// or the cycled value (909) and a drag paints every crossed step with that value.
     fn drum_strips(&mut self, ui: &mut Ui, view: &View) {
         for is808 in [true, false] {
+            // the keys' row: 16 cells of 16 px from x 14 (808) and of 21 px from x 26 (909)
             let (origin, x0, y0, w, h) = if is808 {
-                (layout::TR808_ORIGIN, 14.0, 91.0, 256.0, 17.0)
+                (layout::TR808_ORIGIN, 14.0, 90.0, 256.0, 20.0)
             } else {
-                (layout::TR909_ORIGIN, 26.0, 94.0, 336.0, 16.0)
+                (layout::TR909_ORIGIN, 26.0, 85.0, 336.0, 18.0)
             };
             let rect = view.rect(origin.0 + x0, origin.1 + y0, w, h);
             let name = if is808 { "strip808" } else { "strip909" };
@@ -2003,7 +2383,13 @@ impl App {
 
     /// The legends and name rows select the instrument; dragging keeps selecting.
     /// Also draws the selection frames.
-    fn instrument_selection(&mut self, ui: &mut Ui, view: &View) {
+    ///
+    /// `lit` are the voices lit in the plugin's note mode (task-202): a green ring on the
+    /// 808's chip of the sound played (the lower legend or the upper chip, by the voice and not
+    /// by the switch), replacing the orange one when it is the selected chip, and a green LED
+    /// on the 909's name row, replacing the red one on the selected instrument. AC is lit
+    /// the same way. Nothing is lit in the standalone app.
+    fn instrument_selection(&mut self, ui: &mut Ui, view: &View, lit: &Lit) {
         let (o8, o9) = (layout::TR808_ORIGIN, layout::TR909_ORIGIN);
         /// (is the 808, section origin, [x y w h] in the section, name)
         type Area = (bool, (f32, f32), [f32; 4], &'static str);
@@ -2011,7 +2397,7 @@ impl App {
             (true, o8, [10.0, 71.0, 264.0, 14.0], "legend808"),
             (true, o8, [78.0, 43.0, 106.0, 12.0], "upper808"),
             (false, o9, [4.0, 4.0, 358.0, 14.0], "legend909"),
-            (false, o9, [26.0, 74.0, 336.0, 15.0], "names909"),
+            (false, o9, [26.0, 74.0, 336.0, 10.0], "names909"),
         ];
         for (is808, o, [x, y, w, h], name) in areas {
             let rect = view.rect(o.0 + x, o.1 + y, w, h);
@@ -2037,23 +2423,76 @@ impl App {
                 self.panel.select_instrument(is808, i);
             }
         }
-        // The selection frames.
-        let i = self.panel.inst808;
+        // The marks of the selected instruments (task-179): the 808's chip, lighter with an
+        // orange ring (the upper label's chip when the shared slot's switch is up), and the
+        // 909's chip label lit with its LED in the AC box or the name row.
+        let i = self.panel.inst808.min(11);
         let upper = (3..=7).contains(&i)
             && self.panel.switch_position(&format!("tr808.slot{i}_switch")) == 0;
-        let (fx, fy) = if upper {
-            (o8.0 + 78.0 + 22.0 * (i - 3) as f32, o8.1 + 42.0)
-        } else {
-            (o8.0 + 10.0 + 22.0 * i as f32, o8.1 + 71.0)
+        let selected = (upper, if upper { i - 3 } else { i });
+        // the 808's chips lit in note mode, as (upper label, index): AC, then the sounds
+        let mut lit808 = Vec::new();
+        if lit.ac[LIT_808] {
+            lit808.push((false, 0));
+        }
+        for bit in (0..16).filter(|b| lit.mask[LIT_808] & 1 << b != 0) {
+            // the sounds are the legend's chips 1..=11, then the upper labels (LC..MA)
+            lit808.push(if bit <= 10 {
+                (false, bit + 1)
+            } else {
+                (true, bit - 11)
+            });
+        }
+        let chip = |(upper, k): (bool, usize)| {
+            let (names, (x, y, w, h)) = if upper {
+                (&UPPER_808[..], UPPER_CHIP_808)
+            } else {
+                (&NAMES_808[..], LEGEND_808)
+            };
+            let x = x + 22.0 * k as f32;
+            (names[k], view.rect(o8.0 + x, o8.1 + y, w, h))
         };
-        paint_part(ui, "sel_22x14", view.rect(fx, fy, 22.0, 14.0));
-        let i = self.panel.inst909;
-        let (name, x, y, w, h) = match i {
-            0 => ("sel_22x14", 4.0, 4.0, 22.0, 14.0),
-            1..=5 => ("sel_42x14", 26.0 + 42.0 * (i - 1) as f32, 4.0, 42.0, 14.0),
-            _ => ("sel_21x14", 236.0 + 21.0 * (i - 6) as f32, 4.0, 21.0, 14.0),
+        let (name, r) = chip(selected);
+        if !lit808.contains(&selected) {
+            paint_part(ui, &format!("sel808_{name}"), r);
+        }
+        for c in lit808 {
+            let (name, r) = chip(c);
+            // the selected chip stays lighter; its green ring replaces the orange one
+            let prefix = if c == selected {
+                "litsel808_"
+            } else {
+                "lit808_"
+            };
+            paint_part(ui, &format!("{prefix}{name}"), r);
+        }
+        let i = self.panel.inst909.min(11);
+        let (x, w) = chip_909(i);
+        let r = view.rect(o9.0 + x, o9.1 + 4.6, w, 9.2);
+        paint_part(ui, &format!("sel909_{}", NAMES_909[i]), r);
+        // the 909's LEDs lit in note mode: the sounds are the name row's 1..=11, and AC's
+        let mut lit909 = Vec::new();
+        if lit.ac[LIT_909] {
+            lit909.push(0);
+        }
+        lit909.extend(
+            (0..11)
+                .filter(|b| lit.mask[LIT_909] & 1 << b != 0)
+                .map(|b| b + 1),
+        );
+        let led_rect = |i: usize| {
+            let (cx, cy) = led_909(i);
+            view.rect(o9.0 + cx - 2.5, o9.1 + cy - 2.5, 5.0, 5.0)
         };
-        paint_part(ui, name, view.rect(o9.0 + x, o9.1 + y, w, h));
+        // the selection LED, unless the instrument is lit: the green LED replaces the red one
+        if !lit909.contains(&i) {
+            let led = if i == 0 { "led909ac_on" } else { "led909_on" };
+            paint_part(ui, led, led_rect(i));
+        }
+        for i in lit909 {
+            let led = if i == 0 { "led909ac_lit" } else { "led909_lit" };
+            paint_part(ui, led, led_rect(i));
+        }
     }
 
     /// Screen reader mode: a drum machine's grid (task-191, `a11y::grid`) in its section's
@@ -2122,8 +2561,8 @@ impl App {
     }
 
     /// With `--screenshot`: after a few frames (the SVGs are loaded and rasterized) save the
-    /// window to the file and quit.
-    fn screenshot(&mut self, ctx: &egui::Context) {
+    /// window to the file and quit. Each frame of the window calls it after [`App::show`].
+    pub fn screenshot(&mut self, ctx: &egui::Context) {
         let Some(shot) = &mut self.shot else {
             return;
         };
@@ -2141,95 +2580,81 @@ impl App {
     }
 }
 
+/// The size of a background part: its rectangle (a missing part has none and draws nothing).
 fn part_size(name: &str) -> (f32, f32) {
-    match name {
-        "wood" => (16.0, 510.0),
-        "bg_transport" => (592.0, 50.0),
-        logo_anim::LOGO_PART => (logo_anim::LOGO_W, logo_anim::LOGO_H),
-        "bg_pattern" | "bg_mixer" => (70.0, 115.0),
-        "bg_tb303" | "bg_tr808" | "bg_tr909" => (366.0, 115.0),
-        "bg_master" => (82.0, 98.0),
-        "bg_pcf" => (82.0, 111.0),
-        "bg_delay" | "bg_comp" => (82.0, 93.0),
-        "bg_dist" => (82.0, 65.0),
-        _ => panic!("no size for background {name}"),
+    art::part(name).map_or((0.0, 0.0), |p| (p.w, p.h))
+}
+
+/// The 808's legend chips (the first's x, y, w, h; 22 px apart), its upper labels' chips, and
+/// its instruments' and upper labels' names: the parts `sel808_<name>` (task-179).
+const LEGEND_808: (f32, f32, f32, f32) = (11.6, 72.6, 17.8, 9.2);
+const UPPER_CHIP_808: (f32, f32, f32, f32) = (78.6, 44.4, 17.8, 8.8);
+const NAMES_808: [&str; 12] = [
+    "AC", "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CB", "CY", "OH", "CH",
+];
+const UPPER_808: [&str; 5] = ["LC", "MC", "HC", "CL", "MA"];
+/// The 909's instruments: the parts `sel909_<name>`.
+const NAMES_909: [&str; 12] = [
+    "AC", "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CH", "OH", "CC", "RC",
+];
+/// The mod window's picture square (x, y, side) and the top of its name, in the window.
+const MOD_PICTURE: (f32, f32, f32) = (4.2, 3.7, 76.0);
+const MOD_NAME_TOP: f32 = 86.0;
+
+/// A 909 instrument's label on the chips at the top (y 4.6, 9.2 high): (x, w) in the section.
+fn chip_909(i: usize) -> (f32, f32) {
+    match i {
+        0 => (6.4, 18.4),
+        1..=5 => (26.8 + 42.0 * (i - 1) as f32, 39.6),
+        _ => (
+            236.8 + 42.0 * ((i - 6) / 2) as f32 + 19.8 * (i % 2) as f32,
+            19.8,
+        ),
     }
 }
 
-/// The value arc of a knob from angle `a0` to `a` degrees, painted over the ring track.
-fn paint_arc(ui: &Ui, view: &View, c: &Ctl, k: &KnobDesign, a0: f32, a: f32) {
-    if (a - a0).abs() < 0.5 {
-        return;
+/// A 909 instrument's selection LED: its center in the section (the AC box's for AC, the name
+/// row's for the others).
+fn led_909(i: usize) -> (f32, f32) {
+    match i {
+        0 => (10.0, 53.8),
+        1..=5 => (32.0 + 42.0 * (i - 1) as f32, 78.3),
+        _ => (
+            238.4 + 42.0 * ((i - 6) / 2) as f32 + if i.is_multiple_of(2) { 3.6 } else { 32.8 },
+            78.3,
+        ),
     }
-    let center = view.origin + Vec2::new(c.x + k.cx, c.y + k.cy) * view.scale;
-    let r = k.ring_r * view.scale;
-    let color = Color32::from_rgb(k.arc[0], k.arc[1], k.arc[2]);
-    // The arcs are three quarters of the panel's vertices: each is tessellated once per look
-    // (place, angles, width, color, density, clip) and then drawn as that mesh, which egui
-    // passes through unchanged (task-153).
-    let ctx = ui.ctx();
-    let ppp = ctx.pixels_per_point();
-    let clip = ui.clip_rect();
-    let key = [
-        center.x,
-        center.y,
-        r,
-        a0,
-        a,
-        k.ring_w * view.scale,
-        ppp,
-        clip.min.x,
-        clip.min.y,
-        clip.max.x,
-        clip.max.y,
-    ]
-    .map(f32::to_bits);
-    let key = (key, color);
-    let id = egui::Id::unique("orb-ui knob arcs");
-    let cached = ctx.data_mut(|d| {
-        d.get_temp_mut_or_default::<ArcMeshes>(id)
-            .0
-            .get(&key)
-            .cloned()
-    });
-    let mesh = match cached {
-        Some(m) => m,
-        None => {
-            let n = (((a - a0).abs() / 3.0).ceil() as usize).max(2);
-            let points: Vec<Pos2> = (0..=n)
-                .map(|i| {
-                    let t = (a0 + (a - a0) * i as f32 / n as f32).to_radians();
-                    center + Vec2::new(t.sin(), -t.cos()) * r
-                })
-                .collect();
-            let line = Shape::line(points, Stroke::new(k.ring_w * view.scale, color));
-            let prims = ctx.tessellate(vec![epaint::ClippedShape::new(clip, line)], ppp);
-            let [p] = &prims[..] else {
-                return;
-            };
-            let epaint::Primitive::Mesh(m) = &p.primitive else {
-                return;
-            };
-            let m = Arc::new(m.clone());
-            ctx.data_mut(|d| {
-                let cache = &mut d.get_temp_mut_or_default::<ArcMeshes>(id).0;
-                // automation sweeping a knob makes new looks: keep the cache bounded
-                if cache.len() >= 4096 {
-                    cache.clear();
-                }
-                cache.insert(key, m.clone());
-            });
-            m
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+
+    /// The selection marks' places are the art generator's.
+    #[test]
+    fn the_selection_marks_match_the_art() {
+        use orb_ui_art::parts as art;
+        assert_eq!(LEGEND_808, art::LEGEND_808);
+        assert_eq!(UPPER_CHIP_808, art::UPPER_CHIP_808);
+        assert_eq!(NAMES_808, art::NAMES_808);
+        assert_eq!(UPPER_808, art::UPPER_808);
+        assert_eq!(NAMES_909, art::NAMES_909);
+        assert_eq!(MOD_PICTURE, art::MOD_PICTURE);
+        for (i, name) in NAMES_909.into_iter().enumerate() {
+            let (x, w, _) = art::chip_909(i);
+            let close =
+                |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3;
+            assert!(close(chip_909(i), (x, w)), "chip {i}");
+            assert!(close(led_909(i), art::led_909(i)), "led {i}");
+            let sel = crate::art::part(&format!("sel909_{name}")).unwrap();
+            assert!((sel.w - w).abs() < 1e-3, "sel909 {i}");
         }
-    };
-    ui.painter().add(Shape::Mesh(mesh));
+        assert_eq!(crate::model::GR_OFF, art::GR_OFF);
+    }
 }
 
-/// The knob arcs, tessellated (`paint_arc`), by look.
-#[derive(Clone, Default)]
-struct ArcMeshes(std::collections::HashMap<([u32; 11], Color32), Arc<epaint::Mesh>>);
-
-fn save_png(path: &PathBuf, image: &egui::ColorImage) -> Result<(), image::ImageError> {
+/// Saves an egui screenshot as a PNG (`--screenshot`).
+pub fn save_png(path: &PathBuf, image: &egui::ColorImage) -> Result<(), image::ImageError> {
     let [w, h] = image.size;
     let mut raw = Vec::with_capacity(w * h * 4);
     for p in &image.pixels {

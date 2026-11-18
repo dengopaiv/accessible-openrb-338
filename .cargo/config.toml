@@ -1,0 +1,3 @@
+# `cargo xtask bundle orb-plugin --release` builds the plugin bundles (xtask/, docs/plugin.md).
+[alias]
+xtask = "run --package xtask --release --"

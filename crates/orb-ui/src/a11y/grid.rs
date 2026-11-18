@@ -9,7 +9,7 @@
 //! with Ctrl and Alt as on the mouse and the flam button's effect), so the engine hears the same
 //! events, a song-mode recording included.
 
-use eframe::egui::{self, Rect, accesskit};
+use egui::{self, Rect, accesskit};
 
 use super::names;
 use crate::behavior::Mods;

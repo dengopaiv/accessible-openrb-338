@@ -14,7 +14,7 @@
 //! `App::act`). Nothing else: the engine's side of the panel (position, meters, LEDs, running
 //! lights) never sets the announcer.
 
-use eframe::egui::{self, Key, Rect, accesskit};
+use egui::{self, Key, Rect, accesskit};
 
 use super::{drive, grid, hit_id_of, names};
 use crate::app::App;

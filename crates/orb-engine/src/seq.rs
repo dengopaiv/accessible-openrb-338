@@ -899,6 +899,23 @@ impl Sequencer {
         self.last_tick = p;
     }
 
+    /// `sub_1001F8B0`, the position alone (`fild [esp+arg_0]; fstp qword ptr [ecx]`): no chase,
+    /// no relocate, the last tick kept. The TopHat host sync (`sub_1001C2F4`, 0x1001C38F) sets
+    /// the position so to the host's tick in each audio call while the host does not jump
+    /// (`docs/plugin.md` section 8). The original stores an integer tick; orb's plugin passes
+    /// the host's fractional tick.
+    pub fn set_pos(&mut self, pos: f64) {
+        self.pos = pos;
+    }
+
+    /// Slot 2 (relocate) on one device, at the current tick, as a locate does to every device
+    /// (`sub_1001F984`): the device's pending pattern and on/off switch take effect at once.
+    /// Not a path of the original's: the plugin's pattern selection by notes (task-198).
+    pub fn relocate_device(&self, d: Device, devices: &mut Devices) {
+        let p = self.tick_pos();
+        devices.device_mut(d).relocate(p, p);
+    }
+
     /// `sub_100218A0`: when playing, clear the play flag and stop every device (slot 4); prune
     /// every track; in song mode chase every track to the current tick.
     pub fn halt(&mut self, devices: &mut Devices) {

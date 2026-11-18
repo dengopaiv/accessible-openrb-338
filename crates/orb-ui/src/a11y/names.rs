@@ -9,7 +9,7 @@
 //! decision A11Y-D5, [`units`]; [`Speech`]), and the 0..127 value the original stores with the
 //! mode off.
 
-use eframe::egui::accesskit::Role;
+use egui::accesskit::Role;
 
 use super::units;
 use crate::layout::Ctl;
@@ -113,6 +113,9 @@ const NAMES: &[(&str, &str)] = &[
     ("tb303.accent_led", "Step accent light"),
     ("tb303.slide_led", "Slide light"),
     ("tb303.note_led", "Note light"),
+    // the step's Rest LED of upstream's redesign (task-179; merged by task-230); like every
+    // LED it has no node in the tree, the name keeps the table complete
+    ("tb303.rest_led", "Rest light"),
     // TR-808
     ("tr808.ac_level", "Accent level"),
     ("tr808.bd_level", "Bass drum level"),

@@ -1,8 +1,8 @@
 # AGENTS.md: the OpenRB-338 repository
 
 OpenRB-338 (the command line tool is `orb`, the crates are `orb-*`, the environment variables
-`ORB_*`; the GitHub repository and the local checkout folder are both `openrb-338`) is a
-reimplementation in Rust of the audio engine of Propellerhead ReBirth RB-338 2.01. It renders an `.rbs` song, optionally with an `.rbm` mod, to audio. The rendered audio must match the original's "Export Loop as Audio File" output sample for sample, within a tolerance set by a `Decide:` task. A UI with a similar look and feel comes after the engine; it does not have to match the original exactly. MIDI and ReWire are out of scope for now.
+`ORB_*`; the GitHub repository is `OpenRB-338`, renamed from `openrb-338` on 2026-11-12, and the local checkout folder is `openrb-338`) is a
+reimplementation in Rust of the audio engine of Propellerhead ReBirth RB-338 2.01. It renders an `.rbs` song, optionally with an `.rbm` mod, to audio. The rendered audio must match the original's "Export Loop as Audio File" output sample for sample, within a tolerance set by a `Decide:` task. A UI with a similar look and feel comes after the engine; it does not have to match the original exactly. MIDI is in scope in milestone m-7 (decided 2026-11-13; `docs/midi.md`, `docs/standard_midi_mapping.md`), together with the VST3/CLAP plugin; ReWire is out of scope for now.
 
 The original program (`Rebirth.exe`, `ReBirth.dll`) is not in git: it is copyrighted, so it lives only on the user's machine, in their ReBirth installation, and in the test machine's setup. The user's local IDA databases of it (`Rebirth.exe.i64`, `ReBirth.dll.i64`) are not part of the repository either; agents open a copy through the idalib MCP tools (IDA needs no exe or dll next to the `.i64`). OpenRB-338 needs the program only for the reverse engineering; the tests take the same files from the CD image (`ORB_CD_ISO`, orb-testkit) and skip when it is not set. What is known about the engine is in `docs/initial_investigation.md`, and the official song format is in `docs/RBS42.txt`.
 
@@ -63,6 +63,16 @@ rebasing on upstream stays simple.
   building the tools, not for making the music, so nothing that lets an AI write songs belongs
   here. A later upstream merge of PR #6 drops orb-mcp, docs/mcp.md, `.mcp.json` and the PR's
   scripts, and renumbers the incoming task-176 and task-177, whose ids the fork already uses.
+- **Upstream's backlog after task-175.** The user, 2026-11-18 (task-229): upstream's own tasks
+  from task-176 on, and its milestones from m-7 on, are not brought into this backlog; the two
+  numberings collide (the fork's task-176 and up and its m-7 are its own). An upstream merge
+  drops their files (task-230 did for task-176..task-249 and upstream's m-7). So a task number
+  from 176 up, or m-7 and up, in upstream's docs, code comments and commit messages means
+  upstream's task (github.com/pingw33n/openrb-338, `backlog/`), not the fork's. Upstream's edits
+  to the tasks both share (below 176) come in as usual.
+- **Not taken from upstream (task-229).** The GitHub Pages landing page (`site/`, its workflow
+  and tools; nothing that goes online) was removed in the merge, task-230. The VST3/CLAP plugin
+  (`crates/orb-plugin` and its packaging) is removed by task-231.
 
 ## Where things are
 
@@ -148,12 +158,12 @@ rebasing on upstream stays simple.
   - why it exists, and the context not recoverable from the code;
   - testable acceptance criteria;
   - `--ref`;
-  - labels, from: `re`, `engine`, `cli`, `tools`, `tests`, `testmachine`, `rbm`, `ui`, `docs`, `decision`;
+  - labels, from: `re`, `engine`, `player`, `cli`, `tools`, `tests`, `testmachine`, `rbm`, `ui`, `docs`, `decision`;
   - a type (`bug`, `feature`, `enhancement`, `task`, `chore`, `docs`, `spike`);
   - a priority, a milestone and its dependencies.
 
   `--ordinal` is the queue order. `Draft` holds ideas.
-- **Task ownership.** While a task is assigned to an agent, only that agent edits its file. The supervisor adds the merge comment in the task's squashed commit, pushes main to `origin` (github.com/pingw33n/openrb-338, private; renamed from `rb` on 2026-10-29) after each merge, and runs `backlog doctor` after the push. Agents never push.
+- **Task ownership.** While a task is assigned to an agent, only that agent edits its file. The supervisor adds the merge comment in the task's squashed commit, pushes main to `origin` (github.com/pingw33n/OpenRB-338, public; renamed from `rb` on 2026-10-29 and from `openrb-338` on 2026-11-12) after each merge, and runs `backlog doctor` after the push. Agents never push.
 - **Standing rules.**
   - Never save or modify the user's IDA databases, and never edit a committed reference render by hand. Never commit an IDA database or its working files, and no test or tool may need the original's exe or dll: use `ORB_CD_ISO` and skip with a message when it is not set.
   - Facts about the original carry addresses and are checked against the disassembly, not only Hex-Rays.
@@ -165,7 +175,11 @@ rebasing on upstream stays simple.
 
 ## Commit messages
 
-Subject: `<area>: <what>`, at most 72 characters. The area is one of `engine`, `cli`, `tools`, `tests`, `docs` or `backlog`.
+Subject: `<area>: <what>`, at most 72 characters. The area is one of `engine`, `player`, `cli`, `ui`, `tools`, `tests`, `docs` or `backlog`; `player` is the real-time player and audio output (`orb-player`), `ui` the desktop UI (`orb-ui`, `orb-ui-art`), `tools` the Python tools and scripts. A change to several areas names them comma-separated, without spaces, the main one first: `player,cli,ui: <what>` (`scripts/changelog.sh` lists it under the first).
+
+**Which areas the subject names.** Name the areas of the change itself, not every area it touches. Most commits also update docs (a knowledge document, the task's notes, a comment), and that does not make them `docs` commits: leave `docs` out unless the docs change is a main part of the commit (`engine: ...`, not `engine,docs: ...`, for an engine fix that also updates `docs/`). Likewise leave out `tests` when the tests only cover the change. A commit that changes only documentation (`docs/`, `README.md`, `AGENTS.md`, doc comments or text in scripts) is `docs: <what>`. A commit that changes only `backlog/` is `backlog: <what>`.
+
+**No `#<number>` in a subject or body** unless it names a GitHub issue or pull request: GitHub links every `#N` in a pushed commit to issue or PR N. Write `303 1` or `the first 303`, `AC 1` or `criterion 1`, `step 3`, not `303 #1` or `AC #1`.
 
 Body, in this order:
 1. **Change**: what and where.
@@ -178,15 +192,15 @@ Everything else goes into the task's notes or a knowledge document.
 
 ## Build and test
 
-The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crates/orb-engine`, `crates/orb-cli`, whose binary is `orb`, `orb-player`, `orb-ui`, `orb-ui-art` and `orb-testkit`; `rbs` and `rbm` keep their names because they are ReBirth's file formats). The toolchain is pinned in `rust-toolchain.toml`.
+The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crates/orb-engine`, `crates/orb-cli`, whose binary is `orb`, `orb-player`, `orb-ui`, `orb-ui-art`, `orb-testkit` and `orb-plugin`, the VST3/CLAP plugin, plus `xtask`, its bundler: `cargo xtask bundle orb-plugin --release`, docs/plugin.md; `rbs` and `rbm` keep their names because they are ReBirth's file formats). The toolchain is pinned in `rust-toolchain.toml`.
 
 - Build: `cargo build --release`
-- Test: `cargo test`. Tests that run `tools/*.py` find Python 3 through `tests/common/python.rs`: `ORB_PYTHON` (a program path, or a command split on whitespace such as `py -3`) if set, else `python3`, `python` or `py -3` on PATH; none is a failure naming `ORB_PYTHON`, not a skip.
+- Test: `cargo test`. It builds with `[profile.test]` of the workspace `Cargo.toml`: opt-level 3 with debug assertions and overflow checks kept (inherited from dev; `debug = "line-tables-only"`), for the workspace crates, the test binaries and the dependencies, so the corpus tests run their full workloads (the 41-minute shipped songs, all 164 export_equal entries, 400 merge cases; whole workspace about 1.5 minutes on this Mac, a clean build 3 minutes, against 4.5 and 7.5 minutes unoptimized, docs/building.md) and `cargo test --release` is only for the timing measurements marked `--ignored`. Nothing in a test branches on `debug_assertions`; there is no reduced workload. Tests that run `tools/*.py` find Python 3 through `tests/common/python.rs`: `ORB_PYTHON` (a program path, or a command split on whitespace such as `py -3`) if set, else `python3`, `python` or `py -3` on PATH; none is a failure naming `ORB_PYTHON`, not a skip.
 - Lint: `cargo clippy --all-targets -- -D warnings`
 - Format: `cargo +nightly fmt --all`; check: `cargo +nightly fmt --all --check`. `rustfmt.toml` uses unstable options (the 100-column limit, comment wrapping), so formatting needs nightly rustfmt. CI pins `nightly-2026-10-18` (`rustup toolchain install nightly-2026-10-18 --profile minimal --component rustfmt`, then `cargo +nightly-2026-10-18 fmt --all --check`); any recent nightly with rustfmt gives the same result locally. Plain `cargo fmt` (stable) still formats, but does not enforce the limit and warns about the unstable options. Only formatting uses nightly; the build and clippy use the pinned stable toolchain.
 - Packages: `scripts/package.sh TARGET` builds `orb` and `OpenRB-338` for one of the six targets (x86_64/aarch64 for `unknown-linux-gnu`, `pc-windows-msvc`, `apple-darwin`) into `dist/<target>/` as `.tar.gz` (`.zip` on Windows); `scripts/build-all.sh` does all the targets this machine can build and lists the skipped ones. Linux targets need a running Docker off Linux, Windows targets need `cargo-xwin` off Windows. CI: `.github/workflows/ci.yml` (nightly fmt, clippy, tests on Linux, Windows and macOS) and `release.yml` (the six packages on native runners, on a `v*` tag or by hand). No signing (the macOS app is ad-hoc signed only). `scripts/package-dmg.sh` TARGET makes `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg`, one single-architecture image per macOS target (package names carry the UTC build time, not the Cargo version; docs/building.md) (`scripts/macos-dev-app.sh` wraps the dev build into `target/OpenRB-338.app`). docs/building.md has the tools to install, the limits and the environment (`SOURCE_DATE_EPOCH`, `ORB_BUILD_BRANCH`) and the table of every `ORB_*` variable (the old `RB_*` names are gone, with no alias).
 - Run: `cargo run --release -p orb-cli -- <args>`
-- Golden test: `cargo test --release -p orb-engine --test corpus_golden` renders every corpus entry (diag, app at its fitted N, shipped) and prints each failing song's first difference. A debug `cargo test` skips the shipped songs (24 s in debug).
+- Golden test: `cargo test -p orb-engine --test corpus_golden` renders every corpus entry (diag, app at its fitted N, shipped) and prints each failing song's first difference. Plain `cargo test` runs it with the shipped songs too (about 2 s).
 - Mods: orb loads only recrypted mods (`orb mod recrypt --rb20ful RB20FUL.DAT IN.rbm -o OUT.rbm`, the one command that reads `RB20FUL.DAT`; docs/rbm.md 12.4). `render`, `compare`, `play` and the mod tests take a folder of recrypted mods (`--mod-dir` / `ORB_MOD_DIR`) and no `--rb20ful`.
 - The built-in kit: orb embeds the standard mod `assets/Standard.rbm` ("Standard ReBirth",
   the 46 drum samples of ReBirth.dll and the panel of the CD's Rebirth.exe; assets/README.md),
@@ -202,7 +216,7 @@ The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crate
   mods recrypted (pinned too), so no test needs the original's files, `RB20FUL.DAT` or a mod folder.
   `ORB_THIRDPARTY_MODS_DIR` is the user's folder of RECRYPTED third-party mods and
   `ORB_THIRDPARTY_SONGS_DIR` the user's folder of songs, both read in place (docs/rbm.md 11):
-  `cargo test --release -p orb-cli --test thirdparty -- --nocapture`. The mods test checks the
+  `cargo test -p orb-cli --test thirdparty -- --nocapture`. The mods test checks the
   folder against the committed hash manifest `tests/refs/thirdparty_mods.json` and fails on a
   `.rbm` the manifest does not list, so regenerate it when the collection changes with
   `tools/thirdparty_mods_manifest.py --orig MODS.ORIG --mods MODS --dat RB20FUL.DAT` (it first

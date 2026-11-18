@@ -3,9 +3,8 @@
 //! the path (system dialog or in-app browser), and a chosen file goes through `App::chosen`, as
 //! the browser's does.
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 #[path = "common/a11y.rs"]
 mod a11y;
@@ -21,14 +20,14 @@ use orb_ui::screen_reader::ScreenReaderSetting;
 use orb_ui::settings::Settings;
 use orb_ui::system_dialog::{Folder, Picker, Request, with_extension};
 
-type Asked = Rc<RefCell<Vec<(Request, PathBuf)>>>;
+type Asked = Arc<Mutex<Vec<(Request, PathBuf)>>>;
 
 /// A fake dialog: records each request with its start folder, answers `answer`.
 fn fake(answer: Option<PathBuf>) -> (Picker, Asked) {
-    let asked: Asked = Rc::default();
+    let asked: Asked = Arc::default();
     let log = asked.clone();
     let picker: Picker = Box::new(move |request, start, _parent| {
-        log.borrow_mut().push((request, start.to_path_buf()));
+        log.lock().unwrap().push((request, start.to_path_buf()));
         answer.clone()
     });
     (picker, asked)
@@ -57,8 +56,8 @@ fn with_the_mode_on_open_uses_the_system_dialog_and_opens_the_file() {
     app.set_picker(picker);
     app.command(Cmd::Open);
     assert!(!app.browsing(), "no in-app browser");
-    assert_eq!(asked.borrow().len(), 1);
-    assert_eq!(asked.borrow()[0].0, Request::File(Mode::OpenSong));
+    assert_eq!(asked.lock().unwrap().len(), 1);
+    assert_eq!(asked.lock().unwrap()[0].0, Request::File(Mode::OpenSong));
     // the path reached `open_song`; this app has no player, which is what it reports
     assert_eq!(app.error(), Some("There is no player to open the song in."));
     // the browser's bookkeeping: the folder is the last one and a recent one, in ui.toml
@@ -88,7 +87,7 @@ fn the_dialog_starts_in_the_folder_the_browser_starts_in() {
     ] {
         app.open_browser(mode);
     }
-    let asked = asked.borrow();
+    let asked = asked.lock().unwrap();
     let want = [
         (Request::File(Mode::OpenSong), &songs),
         (Request::File(Mode::SaveSong), &songs),
@@ -177,32 +176,32 @@ fn typed_names_get_the_browsers_extensions() {
 fn the_export_dialog_keeps_the_format_the_user_picked() {
     let d = tempfile::tempdir().unwrap();
     let mut app = app(d.path(), ScreenReaderSetting::On);
-    let asked: Rc<RefCell<Vec<Request>>> = Rc::default();
-    let answers: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
+    let asked: Arc<Mutex<Vec<Request>>> = Arc::default();
+    let answers: Arc<Mutex<Vec<PathBuf>>> = Arc::default();
     let (log, ans) = (asked.clone(), answers.clone());
     app.set_picker(Box::new(move |request, _, _| {
-        log.borrow_mut().push(request);
-        Some(ans.borrow_mut().remove(0))
+        log.lock().unwrap().push(request);
+        Some(ans.lock().unwrap().remove(0))
     }));
     assert_eq!(app.settings.export_format, Wav);
-    answers.borrow_mut().push(d.path().join("a.flac"));
+    answers.lock().unwrap().push(d.path().join("a.flac"));
     app.open_browser(Mode::Export);
-    assert_eq!(asked.borrow()[0], Request::Export(Wav));
+    assert_eq!(asked.lock().unwrap()[0], Request::Export(Wav));
     assert_eq!(app.settings.export_format, Flac);
     // the next dialog offers FLAC first; a bare name gets .flac (the export itself fails here
     // for lack of a song, which is not the point; b.flac exists, so the app asks to replace)
     std::fs::write(d.path().join("b.flac"), b"x").unwrap();
-    answers.borrow_mut().push(d.path().join("b"));
+    answers.lock().unwrap().push(d.path().join("b"));
     app.open_browser(Mode::Export);
-    assert_eq!(asked.borrow()[1], Request::Export(Flac));
+    assert_eq!(asked.lock().unwrap()[1], Request::Export(Flac));
     assert!(
         app.replacing(),
         "b became b.flac, which exists: the app asks"
     );
     // other dialogs are asked as before
-    answers.borrow_mut().push(d.path().join("c.rbs"));
+    answers.lock().unwrap().push(d.path().join("c.rbs"));
     app.open_browser(Mode::SaveSong);
-    assert_eq!(asked.borrow()[2], Request::File(Mode::SaveSong));
+    assert_eq!(asked.lock().unwrap()[2], Request::File(Mode::SaveSong));
     // remembered across a restart, and a later OGG replaces it
     let mut again = self::app(d.path(), ScreenReaderSetting::On);
     assert_eq!(again.settings.export_format, Flac);
@@ -377,7 +376,7 @@ fn with_the_mode_off_the_in_app_browser_opens_and_the_dialog_is_not_asked() {
         app.open_browser(mode);
         assert!(app.browsing(), "{mode:?}");
     }
-    assert!(asked.borrow().is_empty());
+    assert!(asked.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -391,13 +390,13 @@ fn the_folder_items_set_the_folders_as_the_browsers_buttons_do() {
     let (picker, asked) = fake(Some(songs.clone()));
     app.set_picker(picker);
     app.command(Cmd::SetFolder(Folder::Songs));
-    assert_eq!(asked.borrow()[0].0, Request::Folder(Folder::Songs));
+    assert_eq!(asked.lock().unwrap()[0].0, Request::Folder(Folder::Songs));
     assert_eq!(app.settings.songs_dir, Some(songs.clone()));
     assert_eq!(app.settings.mods_dir, None);
     let (picker, asked) = fake(Some(mods.clone()));
     app.set_picker(picker);
     app.command(Cmd::SetFolder(Folder::Mods));
-    assert_eq!(asked.borrow()[0].0, Request::Folder(Folder::Mods));
+    assert_eq!(asked.lock().unwrap()[0].0, Request::Folder(Folder::Mods));
     assert_eq!(app.settings.mods_dir, Some(mods.clone()));
     let saved = Settings::load_from(&d.path().join("ui.toml"));
     assert_eq!(saved.songs_dir, Some(songs.clone()));
@@ -406,7 +405,7 @@ fn the_folder_items_set_the_folders_as_the_browsers_buttons_do() {
     let (picker, asked) = fake(None);
     app.set_picker(picker);
     app.command(Cmd::SetFolder(Folder::Songs));
-    assert_eq!(asked.borrow()[0].1, songs);
+    assert_eq!(asked.lock().unwrap()[0].1, songs);
     // a cancelled dialog changes nothing
     assert_eq!(Settings::load_from(&d.path().join("ui.toml")), saved);
     assert_eq!(app.error(), None);

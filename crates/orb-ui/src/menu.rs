@@ -1,5 +1,5 @@
 //! The menu (task-047): load, save and export the song, choose its mod, the Vintage sound flag
-//! and the keyboard mode, with the unsaved-changes prompt. Nothing else of the original's menu.
+//! and the keyboard mode, with the unsaved-changes prompt, and orb's own pattern commands.
 //!
 //! What each item does (docs/ui_spec.md section 18):
 //! - **File**: New (Ctrl/Cmd+N: the state of the app's start), Open (Ctrl/Cmd+O), Save (Ctrl/Cmd+S;
@@ -7,6 +7,9 @@
 //!   As, Info ([`crate::info`]), Export loop as audio file. The browser (task-046) returns paths
 //!   only; the writes happen here and their errors are shown in the message box
 //!   ([`crate::error_box`]).
+//! - **Edit**: Undo (one level), Cut, Copy, Paste and Duplicate Pattern on the focused row's
+//!   selected pattern ([`App::undo`], [`App::copy_pattern`], [`App::paste_pattern`],
+//!   [`App::duplicate_pattern`]), orb's own commands.
 //! - **Mods**: "Standard ReBirth", the mods of the Mods folder (one entry per INFO menu name, as
 //!   the original's Mods menu: `sub_40C163`, docs/rbm.md section 14), and a file picked in the
 //!   browser. A choice is the original's `sub_42D80D` -> `sub_426FB3`: the song is marked modified,
@@ -22,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use eframe::egui::{
+use egui::{
     self, Align, Color32, Context, Frame, Id, Key, Layout, Margin, Modal, Modifiers, RichText,
     Stroke, Ui,
 };
@@ -33,13 +36,14 @@ use orb_cli::render::{DEFAULT_IDLE_BLOCKS, DEFAULT_QUALITY, Renderer, load_mod};
 use orb_engine::frame::LoadRefused;
 use orb_engine::samples::SampleSet;
 
-use eframe::egui::accesskit::Role;
+use egui::accesskit::Role;
 
 use crate::a11y;
 use crate::app::App;
 use crate::browser::{ExportFormat, Mode};
 use crate::document::{self, Document};
 use crate::keys::KeyMode;
+use crate::link::{emptied_pattern, next_empty_pattern};
 use crate::palette::{INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 use crate::screen_reader::ScreenReaderSetting;
 use crate::session;
@@ -82,6 +86,8 @@ pub enum Cmd {
     Info,
     /// Help > Keyboard Shortcuts.
     KeyHelp,
+    /// Help > Plugin Usage (a plugin's editor only, task-221).
+    PluginUsage,
     /// Help > About.
     About,
     /// "Choose file..." of the Mods menu: the browser for a mod.
@@ -115,6 +121,51 @@ pub enum Cmd {
     ToggleStepEditorFollows,
     TogglePitchKeysMakeNotes,
     SetKeyMode(KeyMode),
+    /// The plugin's pattern or note mode (the panel's mode selector, a plugin's editor only;
+    /// task-217, task-231: the Options menu has no mode items).
+    SetPluginMode(crate::embed::PluginMode),
+    /// Edit > Undo ([`App::undo`]).
+    Undo,
+    /// Edit > Cut Pattern ([`App::copy_pattern`]).
+    CutPattern,
+    CopyPattern,
+    /// Edit > Paste Pattern from the app's clipboard ([`App::paste_pattern`]).
+    PastePattern,
+    DuplicatePattern,
+}
+
+/// A pattern on the app's clipboard (Edit > Copy Pattern and Cut Pattern).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Clip {
+    /// The row it came from (0..=3): it pastes into a row of the same kind.
+    pub row: usize,
+    /// The whole pattern (98 or 194 bytes).
+    pub bytes: Vec<u8>,
+    /// The text the copy put on the system clipboard: a paste of that text pastes this
+    /// pattern (docs/ui_spec.md section 16).
+    pub marker: String,
+}
+
+/// What Edit > Undo puts back: pattern `pattern` of row `row` held `bytes` before the command
+/// `what`; after a Duplicate, `select` is the pattern it came from, until the user selects a
+/// pattern ([`App::note_edits`]).
+#[derive(Clone, Debug)]
+pub struct Undo {
+    what: &'static str,
+    row: usize,
+    pattern: u8,
+    bytes: Vec<u8>,
+    select: Option<u8>,
+}
+
+/// The names of the four rows on the status line.
+const ROW_NAMES: [&str; 4] = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"];
+/// The kind of each row's patterns: a pattern pastes into a row of its kind.
+const ROW_KINDS: [&str; 4] = ["TB-303", "TB-303", "TR-808", "TR-909"];
+
+/// The name of pattern `p` (0..=31): bank and button, A1 to D8.
+fn pattern_name(p: u8) -> String {
+    format!("{}{}", (b'A' + p / 8) as char, p % 8 + 1)
 }
 
 /// One entry of the Mods menu: a mod of the Mods folder, or the several mods that share an
@@ -419,7 +470,7 @@ impl App {
     }
 
     /// The drum samples of a kit: the built-in ones, or a mod's on top of them.
-    fn kit_samples(&self, kit: &Kit) -> Result<Option<Arc<SampleSet>>, String> {
+    pub(crate) fn kit_samples(&self, kit: &Kit) -> Result<Option<Arc<SampleSet>>, String> {
         match kit {
             Kit::Standard => Ok(self.samples.clone()),
             Kit::Mod(path) => {
@@ -437,9 +488,16 @@ impl App {
 
     // ---- opening ------------------------------------------------------------------------
 
+    /// Whether replacing the song asks first: unsaved changes, with a player. Never in a
+    /// plugin's editor, whose song is kept in the host's project and which has no Save
+    /// (task-201).
+    fn asks_to_save(&self) -> bool {
+        self.doc.modified && self.link.is_some() && !self.is_plugin()
+    }
+
     /// Opens the song at `path`: with unsaved changes first asks what to do with them.
     pub fn open_song(&mut self, path: &Path) {
-        if self.doc.modified && self.link.is_some() {
+        if self.asks_to_save() {
             self.prompt = Some(Then::Open(path.to_path_buf()));
         } else {
             self.open_now(path);
@@ -493,6 +551,26 @@ impl App {
                 (Kit::Standard, self.samples.clone())
             }
         };
+        if self.is_plugin() {
+            // the plugin's song (task-201): the mod first (the song is built with it), then
+            // the song; the panel shows it at the next refresh, now
+            let before = self.doc.kit.clone();
+            if let Err(e) = self.embed_mod(&kit) {
+                self.fail(e);
+            }
+            let file = opened.file.clone();
+            match self.embed().map(|e| e.load_song(Some(file))) {
+                Some(Ok(())) => {
+                    self.embed_refresh();
+                    if self.doc.kit != before {
+                        self.mod_opened();
+                    }
+                }
+                Some(Err(e)) => self.fail(e),
+                None => {}
+            }
+            return;
+        }
         let Some(link) = &mut self.link else {
             return;
         };
@@ -536,7 +614,7 @@ impl App {
         let Kit::Mod(p) = self.doc.kit.clone() else {
             return;
         };
-        if self.doc.modified && self.link.is_some() {
+        if self.asks_to_save() {
             self.prompt = Some(Then::Demo(p));
         } else {
             self.open_demo_now(&p);
@@ -600,6 +678,7 @@ impl App {
             mod_name,
             kit,
         };
+        self.undo = None;
         self.events_seen = 0;
     }
 
@@ -623,6 +702,15 @@ impl App {
     /// ([`App::new_now`]) both come here. Without a player there is nothing to load: the
     /// panel and the document are made new.
     fn fresh(&mut self) {
+        if self.is_plugin() {
+            // the plugin's new song, on the plugin's mod (task-201)
+            match self.embed().map(|e| e.load_song(None)) {
+                Some(Ok(())) => self.embed_refresh(),
+                Some(Err(e)) => self.fail(e),
+                None => {}
+            }
+            return;
+        }
         if self.link.is_none() {
             self.panel = crate::model::Panel::new();
             self.settle(
@@ -649,7 +737,7 @@ impl App {
 
     /// File > New: with unsaved changes first asks what to do with them.
     pub fn new_song(&mut self) {
-        if self.doc.modified && self.link.is_some() {
+        if self.asks_to_save() {
             self.prompt = Some(Then::New);
         } else {
             self.new_now();
@@ -873,6 +961,11 @@ impl App {
                 return;
             }
         };
+        // a plugin's editor: the plugin takes the mod into its state (task-201)
+        if let Err(e) = self.embed_mod(&kit) {
+            self.fail(e);
+            return;
+        }
         let Some(link) = &mut self.link else {
             self.fail("There is no player to change the mod of.");
             return;
@@ -920,6 +1013,15 @@ impl App {
 
     /// Runs a menu command.
     pub fn command(&mut self, cmd: Cmd) {
+        // a plugin's editor has no Save, Save As, Export or keyboard (task-201)
+        if self.is_plugin()
+            && matches!(
+                cmd,
+                Cmd::Save | Cmd::SaveAs | Cmd::Export | Cmd::KeyHelp | Cmd::SetKeyMode(_)
+            )
+        {
+            return;
+        }
         match cmd {
             Cmd::New => self.new_song(),
             Cmd::Open => self.open_browser(Mode::OpenSong),
@@ -937,6 +1039,11 @@ impl App {
             }
             Cmd::Info => self.show_info(),
             Cmd::KeyHelp => self.show_key_help(),
+            Cmd::PluginUsage => {
+                if self.is_plugin() {
+                    self.show_plugin_usage();
+                }
+            }
             Cmd::About => self.show_about(),
             Cmd::ChooseModFile => self.open_browser(Mode::ChooseMod),
             Cmd::ChooseMod => self.show_chooser(),
@@ -950,7 +1057,8 @@ impl App {
                 self.panel.set_vintage(on);
             }
             Cmd::ToggleStartupSound => {
-                self.settings.startup_sound = !self.settings.startup_sound;
+                let on = !self.settings.startup_sound;
+                self.settings.set_startup_sound(on);
                 if let Err(e) = self.settings.save() {
                     self.fail(e);
                 }
@@ -983,7 +1091,215 @@ impl App {
                 }
             }
             Cmd::SetKeyMode(m) => self.set_key_mode(m),
+            Cmd::SetPluginMode(m) => {
+                if let Some(e) = self.embed() {
+                    e.set_mode(m);
+                }
+            }
+            Cmd::Undo => self.undo(),
+            Cmd::CutPattern => self.copy_pattern(true),
+            Cmd::CopyPattern => self.copy_pattern(false),
+            Cmd::PastePattern => self.paste_pattern(),
+            Cmd::DuplicatePattern => self.duplicate_pattern(),
         }
+    }
+
+    // ---- patterns -----------------------------------------------------------------------
+
+    /// The row with the focus and its selected pattern, after the panel's pending events were
+    /// noted and sent; `None` without a link (the demo panel).
+    fn pattern_target(&mut self) -> Option<(usize, u8)> {
+        self.link.as_ref()?;
+        self.note_edits();
+        self.link.as_mut()?.forward(&mut self.panel);
+        let r = self.panel.focus;
+        Some((r, self.panel.rows[r].pattern))
+    }
+
+    /// Writes `bytes` into pattern `p` of row `r` ([`crate::link::Link::set_pattern`]) for the
+    /// command `what`: when the pattern changes the song is modified and Undo puts its former
+    /// bytes back. False when it held `bytes` already.
+    fn write_pattern(&mut self, r: usize, p: u8, bytes: &[u8], what: &'static str) -> bool {
+        let Some(link) = &mut self.link else {
+            return false;
+        };
+        let before = link.pattern(r, p).to_vec();
+        let changed = link.set_pattern(r, p, bytes, &mut self.panel);
+        if changed {
+            self.doc.modified = true;
+            self.undo = Some(Undo {
+                what,
+                row: r,
+                pattern: p,
+                bytes: before,
+                select: None,
+            });
+        }
+        changed
+    }
+
+    /// The command Edit > Undo undoes ("Paste Pattern"); `None` when there is none.
+    pub fn undo_name(&self) -> Option<&'static str> {
+        self.undo.as_ref().map(|u| u.what)
+    }
+
+    /// Edit > Undo, one level: the pattern the last Cut, Paste or Duplicate Pattern wrote gets
+    /// its former bytes back, and after a Duplicate the pattern it came from is selected again
+    /// (unless a pattern was selected since). The selection goes first: a pattern the row does
+    /// not select then reaches the engine only once the engine no longer plays it
+    /// ([`crate::link::Link::set_pattern_unplayed`]), so a playing row never plays the emptied
+    /// copy for the rest of the bar.
+    pub fn undo(&mut self) {
+        // the panel's pending edits go first, and may forget the undo
+        if self.pattern_target().is_none() {
+            return;
+        }
+        let Some(u) = self.undo.take() else {
+            return;
+        };
+        if let Some(p) = u.select {
+            // a click's selection: an edit, recorded in song mode with record on
+            self.select_pattern(u.row, p);
+            self.note_edits();
+        }
+        let Some(link) = &mut self.link else {
+            return;
+        };
+        let changed = if self.panel.rows[u.row].pattern == u.pattern {
+            link.set_pattern(u.row, u.pattern, &u.bytes, &mut self.panel)
+        } else {
+            link.set_pattern_unplayed(u.row, u.pattern, &u.bytes, &mut self.panel)
+        };
+        self.doc.modified |= changed;
+        self.set_status(format!("{}: {} undone", ROW_NAMES[u.row], u.what));
+    }
+
+    /// Edit > Copy Pattern, and with `cut` Cut Pattern: the focused row's selected pattern goes
+    /// to the app's clipboard ([`Clip`]) and its marker to the system clipboard; Cut then
+    /// empties its steps, the length and the shuffle flag stay.
+    pub fn copy_pattern(&mut self, cut: bool) {
+        let Some((r, p)) = self.pattern_target() else {
+            return;
+        };
+        let Some(link) = &self.link else {
+            return;
+        };
+        let bytes = link.pattern(r, p).to_vec();
+        let (row, name) = (ROW_NAMES[r], pattern_name(p));
+        // the process id and the count tell this copy from another instance's
+        self.clip_count += 1;
+        let marker = format!(
+            "OpenRB-338 pattern: {row} {name} [{}.{}]",
+            std::process::id(),
+            self.clip_count
+        );
+        self.clip_text = Some(marker.clone());
+        let empty = emptied_pattern(r, &bytes);
+        self.clip = Some(Clip {
+            row: r,
+            bytes,
+            marker,
+        });
+        if cut {
+            self.write_pattern(r, p, &empty, "Cut Pattern");
+            self.set_status(format!("{row}: {name} cut"));
+        } else {
+            self.set_status(format!("{row}: {name} copied"));
+        }
+    }
+
+    /// Edit > Paste Pattern: the app's clipboard into the focused row's selected pattern, when
+    /// the row is of its kind (a TB-303 pattern pastes into either 303).
+    pub fn paste_pattern(&mut self) {
+        let Some((r, p)) = self.pattern_target() else {
+            return;
+        };
+        let Some(clip) = &self.clip else {
+            self.set_status("The clipboard holds no pattern");
+            return;
+        };
+        let kind = ROW_KINDS[clip.row];
+        if kind != ROW_KINDS[r] {
+            self.set_status(format!("The clipboard holds a {kind} pattern"));
+            return;
+        }
+        let bytes = clip.bytes.clone();
+        let (row, name) = (ROW_NAMES[r], pattern_name(p));
+        let text = if self.write_pattern(r, p, &bytes, "Paste Pattern") {
+            format!("{row}: pasted into {name}")
+        } else {
+            format!("{row}: {name} holds the pattern already")
+        };
+        // through set_status: announced in screen reader mode (task-189, task-230)
+        self.set_status(text);
+    }
+
+    /// Edit > Duplicate Pattern: the focused row's selected pattern goes into the row's next
+    /// empty pattern ([`next_empty_pattern`]), which is then selected as a click on its button
+    /// selects it. The clipboard stays as it is.
+    pub fn duplicate_pattern(&mut self) {
+        let Some((r, p)) = self.pattern_target() else {
+            return;
+        };
+        let Some(link) = &self.link else {
+            return;
+        };
+        let row = ROW_NAMES[r];
+        let Some(to) = next_empty_pattern(r, &link.patterns()[r], p) else {
+            self.set_status(format!("{row}: no empty pattern left"));
+            return;
+        };
+        let bytes = link.pattern(r, p).to_vec();
+        let before = link.pattern(r, to).to_vec();
+        // the pattern first, then the selection: the engine never plays `to` before it holds it
+        self.write_pattern(r, to, &bytes, "Duplicate Pattern");
+        self.select_pattern(r, to);
+        // the selection goes now, so the next frame's selections are the user's (which make
+        // Undo leave the selection alone)
+        self.note_edits();
+        if let Some(link) = &mut self.link {
+            link.forward(&mut self.panel);
+        }
+        // Undo selects `p` again, also when `to` held the bytes already
+        self.undo = Some(Undo {
+            what: "Duplicate Pattern",
+            row: r,
+            pattern: to,
+            bytes: before,
+            select: Some(p),
+        });
+        let (from, to) = (pattern_name(p), pattern_name(to));
+        self.set_status(format!("{row}: {from} duplicated to {to}"));
+    }
+
+    /// A paste of the system clipboard's `text` (Ctrl/Cmd+V, Edit > Paste Pattern): the app's
+    /// clipboard when `text` is its marker, else nothing. Nothing without a link.
+    pub fn paste_text(&mut self, text: &str) {
+        if self.link.is_none() {
+            return;
+        }
+        if self.clip.as_ref().is_some_and(|c| c.marker == text) {
+            self.paste_pattern();
+        } else {
+            self.set_status("The clipboard holds no pattern");
+        }
+    }
+
+    /// Where the Edit menu drew its items last, by text, and whether each was enabled (for
+    /// tests).
+    pub fn edit_item(&self, text: &str) -> Option<(egui::Rect, bool)> {
+        self.edit_items
+            .iter()
+            .find(|(t, ..)| *t == text)
+            .map(|&(_, r, on)| (r, on))
+    }
+
+    /// Selects pattern `p` of row `r` as a click on its button does (`Panel::press`): the bank
+    /// shows it, the row takes the focus, the selection is sent with the panel's events.
+    fn select_pattern(&mut self, r: usize, p: u8) {
+        self.panel.rows[r].bank = p / 8;
+        let button = format!("pattern{}.pattern{}", r + 1, p % 8 + 1);
+        self.panel.press(&button, 0.0);
     }
 
     /// What a browser chose, by its mode (not an open: `open_song`).
@@ -1011,6 +1327,29 @@ impl App {
                 _ => true,
             }
         });
+        // any other edit of a pattern forgets what Undo would put back
+        let pattern_edited = events.iter().any(|e| {
+            use crate::model::Event;
+            match e {
+                Event::Set { id, .. } => {
+                    id.starts_with("pattern")
+                        && (id.ends_with(".shuffle") || id.ends_with(".steps"))
+                }
+                Event::Press { .. } | Event::Pattern { .. } => false,
+                _ => true,
+            }
+        });
+        if pattern_edited {
+            self.undo = None;
+        }
+        // after the user selects a pattern, Undo of a Duplicate leaves the selection alone
+        if events
+            .iter()
+            .any(|e| matches!(e, crate::model::Event::Pattern { .. }))
+            && let Some(u) = &mut self.undo
+        {
+            u.select = None;
+        }
         self.doc.modified |= edited;
         // with a player the events are drained at the sync that follows
         self.events_seen = if self.link.is_some() {
@@ -1191,215 +1530,7 @@ impl App {
             .show(ui, |ui| {
                 ui.add_enabled_ui(enabled, |ui| {
                     egui::MenuBar::new().ui(ui, |ui| {
-                        let file = ui.menu_button("File", |ui| {
-                            if item(ui, "New", Some(&shortcuts::NEW)) {
-                                cmd = Some(Cmd::New);
-                            }
-                            if item(ui, "Open...", Some(&shortcuts::OPEN)) {
-                                cmd = Some(Cmd::Open);
-                            }
-                            if item(ui, "Save", Some(&shortcuts::SAVE)) {
-                                cmd = Some(Cmd::Save);
-                            }
-                            if item(ui, "Save As...", None) {
-                                cmd = Some(Cmd::SaveAs);
-                            }
-                            if item(ui, "Info...", None) {
-                                cmd = Some(Cmd::Info);
-                            }
-                            ui.separator();
-                            let ok = self.panel.transport.song_mode && !self.exporting();
-                            let r = ui
-                                .add_enabled(ok, egui::Button::new("Export Loop as Audio File..."));
-                            let r = if self.panel.transport.song_mode {
-                                r
-                            } else {
-                                r.on_disabled_hover_text("Export needs song mode.")
-                            };
-                            if r.clicked() {
-                                cmd = Some(Cmd::Export);
-                                ui.close();
-                            }
-                        });
-                        if focus_file {
-                            file.response.request_focus();
-                        }
-                        note_button(&mut bar, &file.response);
-                        let mods = ui.menu_button("Mods", |ui| {
-                            // task-195: only in screen reader mode
-                            if self.screen_reader_mode() {
-                                if item(ui, "Choose Mod...", Some(&shortcuts::CHOOSE_MOD)) {
-                                    cmd = Some(Cmd::ChooseMod);
-                                }
-                                ui.separator();
-                            }
-                            let (std_on, checked) = match &self.mod_list {
-                                Some(Ok(l)) => self.mod_checks(l),
-                                _ => self.mod_checks(&[]),
-                            };
-                            if checked_item(ui, std_on, STANDARD).clicked() {
-                                cmd = Some(Cmd::UseKit(Kit::Standard));
-                                ui.close();
-                            }
-                            match &self.mod_list {
-                                None => {}
-                                Some(Ok(list)) => {
-                                    egui::ScrollArea::vertical()
-                                        .max_height(300.0)
-                                        .show(ui, |ui| {
-                                            for (i, e) in list.iter().enumerate() {
-                                                let on = checked == Some(i);
-                                                if !e.variants.is_empty() {
-                                                    // mods that share a name: a submenu of files
-                                                    let mut b =
-                                                        egui::containers::menu::SubMenuButton::new(
-                                                            &e.name,
-                                                        );
-                                                    b.button = b.button.selected(on);
-                                                    let active = match &self.doc.kit {
-                                                        Kit::Mod(p) => Some(p),
-                                                        Kit::Standard => None,
-                                                    };
-                                                    let pref = self.preferred_variant(e);
-                                                    b.ui(ui, |ui| {
-                                                        for v in &e.variants {
-                                                            let mut t = v.label();
-                                                            if pref.is_some_and(|p| p == v) {
-                                                                t.push_str("  (preferred)");
-                                                            }
-                                                            let me = active == Some(&v.path);
-                                                            if checked_item(ui, me, t).clicked() {
-                                                                cmd = Some(Cmd::ChooseVariant(
-                                                                    v.path.clone(),
-                                                                ));
-                                                                ui.close();
-                                                            }
-                                                        }
-                                                    });
-                                                    continue;
-                                                }
-                                                if checked_item(ui, on, &e.name).clicked() {
-                                                    cmd =
-                                                        Some(Cmd::UseKit(Kit::Mod(e.path.clone())));
-                                                    ui.close();
-                                                }
-                                            }
-                                        });
-                                }
-                                Some(Err(e)) => {
-                                    ui.label(RichText::new(e).color(INK_DIM));
-                                }
-                            }
-                            ui.separator();
-                            if item(ui, "Choose file...", None) {
-                                cmd = Some(Cmd::ChooseModFile);
-                            }
-                            if item(ui, "Refresh List", None) {
-                                cmd = Some(Cmd::RefreshMods);
-                            }
-                            ui.separator();
-                            let has_demo = self.has_demo();
-                            let r = ui.add_enabled(has_demo, egui::Button::new("Demo Song"));
-                            if r.clicked() {
-                                cmd = Some(Cmd::DemoSong);
-                                ui.close();
-                            }
-                            if item(ui, "Info...", None) {
-                                cmd = Some(Cmd::ModInfo);
-                            }
-                        });
-                        note_button(&mut bar, &mods.response);
-                        let options = ui.menu_button("Options", |ui| {
-                            let mut v = self.panel.vintage;
-                            if ui.checkbox(&mut v, "Vintage ReBirth Synth Sound").clicked() {
-                                cmd = Some(Cmd::ToggleVintage);
-                                ui.close();
-                            }
-                            let mut st = self.settings.startup_sound;
-                            if ui.checkbox(&mut st, "Play Mod Startup Sound").clicked() {
-                                cmd = Some(Cmd::ToggleStartupSound);
-                                ui.close();
-                            }
-                            ui.menu_button("Screen Reader Mode", |ui| {
-                                for v in ScreenReaderSetting::ALL {
-                                    let on = self.settings.screen_reader == v;
-                                    if ui.radio(on, v.label()).clicked() {
-                                        cmd = Some(Cmd::SetScreenReader(v));
-                                        ui.close();
-                                    }
-                                }
-                            });
-                            // task-192: only in screen reader mode
-                            let mut raw = self.settings.speak_raw_values;
-                            if self.screen_reader_mode()
-                                && ui.checkbox(&mut raw, "Speak Raw Values").clicked()
-                            {
-                                cmd = Some(Cmd::ToggleSpeakRawValues);
-                                ui.close();
-                            }
-                            // task-190: only in screen reader mode
-                            let mut follows = self.settings.step_editor_follows;
-                            if self.screen_reader_mode()
-                                && ui
-                                    .checkbox(&mut follows, "Step Editor Follows Playback")
-                                    .clicked()
-                            {
-                                cmd = Some(Cmd::ToggleStepEditorFollows);
-                                ui.close();
-                            }
-                            // task-211: only in screen reader mode
-                            let mut makes = self.settings.pitch_keys_make_notes;
-                            if self.screen_reader_mode()
-                                && ui.checkbox(&mut makes, "Pitch Keys Make Notes").clicked()
-                            {
-                                cmd = Some(Cmd::TogglePitchKeysMakeNotes);
-                                ui.close();
-                            }
-                            ui.separator();
-                            // the browser's "Use as ... folder" buttons, for the system dialog
-                            if self.screen_reader_mode() {
-                                for f in [Folder::Songs, Folder::Mods] {
-                                    let label = match f {
-                                        Folder::Songs => "Set Songs Folder...",
-                                        Folder::Mods => "Set Mods Folder...",
-                                    };
-                                    if item(ui, label, None) {
-                                        cmd = Some(Cmd::SetFolder(f));
-                                    }
-                                }
-                                ui.separator();
-                            }
-                            let ctx = ui.ctx().clone();
-                            let synth = format!(
-                                "Program Synth ({})",
-                                shortcuts::text(&ctx, &shortcuts::KEYS_SYNTH)
-                            );
-                            let patterns = format!(
-                                "Select Patterns ({})",
-                                shortcuts::text(&ctx, &shortcuts::KEYS_PATTERNS)
-                            );
-                            if ui.radio(self.key_mode == KeyMode::Synth, synth).clicked() {
-                                cmd = Some(Cmd::SetKeyMode(KeyMode::Synth));
-                                ui.close();
-                            }
-                            if ui
-                                .radio(self.key_mode == KeyMode::Patterns, patterns)
-                                .clicked()
-                            {
-                                cmd = Some(Cmd::SetKeyMode(KeyMode::Patterns));
-                                ui.close();
-                            }
-                        });
-                        note_button(&mut bar, &options.response);
-                        // Last in the bar. An item is one line of `HELP_ITEMS`.
-                        let help = ui.menu_button("Help", |ui| {
-                            for (text, c) in HELP_ITEMS {
-                                if item(ui, text, None) {
-                                    cmd = Some(c.clone());
-                                }
-                            }
-                        });
-                        note_button(&mut bar, &help.response);
+                        self.menu_items(ui, &mut cmd, &mut bar, focus_file);
                     });
                 });
             });
@@ -1408,8 +1539,18 @@ impl App {
             bar.iter().any(|(b, _)| Some(*b) == f)
         };
         ui.data_mut(|d| d.insert_temp(bar_id(), bar));
-        if let Some(c) = cmd {
-            self.command(c);
+        match cmd {
+            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V
+            Some(Cmd::PastePattern) => {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+            Some(c) => {
+                self.command(c);
+                // the panel shows the change in the next frame, also with no audio stream
+                ui.ctx().request_repaint();
+            }
+            None => {}
         }
         if sr {
             if leave {
@@ -1422,6 +1563,264 @@ impl App {
         } else {
             self.bar_active = false;
         }
+    }
+
+    /// The menus of the bar: File, Edit, Mods, Options and Help; what is chosen goes to `cmd`
+    /// (Edit > Paste Pattern as [`Cmd::PastePattern`], which `menu_bar` turns into a paste of
+    /// the system clipboard). A plugin's File menu has New, Open and Info only, and a plugin's
+    /// editor has no Edit menu (task-201). Each menu's button goes into `bar` (the keyboard
+    /// walk of the bar, task-184); `focus_file` focuses the File button.
+    fn menu_items(
+        &mut self,
+        ui: &mut Ui,
+        cmd: &mut Option<Cmd>,
+        bar: &mut Vec<(Id, Id)>,
+        focus_file: bool,
+    ) {
+        let plugin = self.is_plugin();
+        // a plugin's editor has no keyboard shortcuts (task-201): no shortcut texts
+        let key = |s| (!plugin).then_some(s);
+        let file = ui.menu_button("File", |ui| {
+            if item(ui, "New", key(&shortcuts::NEW)) {
+                *cmd = Some(Cmd::New);
+            }
+            if item(ui, "Open...", key(&shortcuts::OPEN)) {
+                *cmd = Some(Cmd::Open);
+            }
+            if !plugin && item(ui, "Save", key(&shortcuts::SAVE)) {
+                *cmd = Some(Cmd::Save);
+            }
+            if !plugin && item(ui, "Save As...", None) {
+                *cmd = Some(Cmd::SaveAs);
+            }
+            if item(ui, "Info...", None) {
+                *cmd = Some(Cmd::Info);
+            }
+            if plugin {
+                return;
+            }
+            ui.separator();
+            let ok = self.panel.transport.song_mode && !self.exporting();
+            let r = ui.add_enabled(ok, egui::Button::new("Export Loop as Audio File..."));
+            let r = if self.panel.transport.song_mode {
+                r
+            } else {
+                r.on_disabled_hover_text("Export needs song mode.")
+            };
+            if r.clicked() {
+                *cmd = Some(Cmd::Export);
+                ui.close();
+            }
+        });
+        if focus_file {
+            file.response.request_focus();
+        }
+        note_button(bar, &file.response);
+        // the pattern commands paste through the system clipboard and its keys, which a
+        // plugin's editor does not take (task-201)
+        if !plugin {
+            let edit = ui.menu_button("Edit", |ui| {
+                let song = self.link.is_some();
+                self.edit_items.clear();
+                // "Undo Paste Pattern": the item names what it undoes
+                let what = self.undo_name().filter(|_| song);
+                let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
+                let r = item_if(ui, what.is_some(), &text, Some(&shortcuts::UNDO));
+                self.edit_items.push(("Undo", r.rect, what.is_some()));
+                if r.clicked() {
+                    *cmd = Some(Cmd::Undo);
+                }
+                ui.separator();
+                for (text, sc, c) in EDIT_ITEMS {
+                    let r = item_if(ui, song, text, Some(sc));
+                    self.edit_items.push((text, r.rect, song));
+                    if r.clicked() {
+                        *cmd = Some(c);
+                    }
+                }
+            });
+            note_button(bar, &edit.response);
+        }
+        let mods = ui.menu_button("Mods", |ui| {
+            // task-195: only in screen reader mode
+            if self.screen_reader_mode() {
+                if item(ui, "Choose Mod...", Some(&shortcuts::CHOOSE_MOD)) {
+                    *cmd = Some(Cmd::ChooseMod);
+                }
+                ui.separator();
+            }
+            let (std_on, checked) = match &self.mod_list {
+                Some(Ok(l)) => self.mod_checks(l),
+                _ => self.mod_checks(&[]),
+            };
+            if checked_item(ui, std_on, STANDARD).clicked() {
+                *cmd = Some(Cmd::UseKit(Kit::Standard));
+                ui.close();
+            }
+            match &self.mod_list {
+                None => {}
+                Some(Ok(list)) => {
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for (i, e) in list.iter().enumerate() {
+                                let on = checked == Some(i);
+                                if !e.variants.is_empty() {
+                                    // mods that share a name: a submenu of files
+                                    let mut b = egui::containers::menu::SubMenuButton::new(&e.name);
+                                    b.button = b.button.selected(on);
+                                    let active = match &self.doc.kit {
+                                        Kit::Mod(p) => Some(p),
+                                        Kit::Standard => None,
+                                    };
+                                    let pref = self.preferred_variant(e);
+                                    b.ui(ui, |ui| {
+                                        for v in &e.variants {
+                                            let mut t = v.label();
+                                            if pref.is_some_and(|p| p == v) {
+                                                t.push_str("  (preferred)");
+                                            }
+                                            let me = active == Some(&v.path);
+                                            if checked_item(ui, me, t).clicked() {
+                                                *cmd = Some(Cmd::ChooseVariant(v.path.clone()));
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                                    continue;
+                                }
+                                if checked_item(ui, on, &e.name).clicked() {
+                                    *cmd = Some(Cmd::UseKit(Kit::Mod(e.path.clone())));
+                                    ui.close();
+                                }
+                            }
+                        });
+                }
+                Some(Err(e)) => {
+                    ui.label(RichText::new(e).color(INK_DIM));
+                }
+            }
+            ui.separator();
+            if item(ui, "Choose file...", None) {
+                *cmd = Some(Cmd::ChooseModFile);
+            }
+            if item(ui, "Refresh List", None) {
+                *cmd = Some(Cmd::RefreshMods);
+            }
+            ui.separator();
+            let has_demo = self.has_demo();
+            let r = ui.add_enabled(has_demo, egui::Button::new("Demo Song"));
+            if r.clicked() {
+                *cmd = Some(Cmd::DemoSong);
+                ui.close();
+            }
+            if item(ui, "Info...", None) {
+                *cmd = Some(Cmd::ModInfo);
+            }
+        });
+        note_button(bar, &mods.response);
+        let options = ui.menu_button("Options", |ui| {
+            let mut v = self.panel.vintage;
+            if ui.checkbox(&mut v, "Vintage ReBirth Synth Sound").clicked() {
+                *cmd = Some(Cmd::ToggleVintage);
+                ui.close();
+            }
+            let mut st = self.settings.startup_sound;
+            if ui.checkbox(&mut st, "Play Mod Startup Sound").clicked() {
+                *cmd = Some(Cmd::ToggleStartupSound);
+                ui.close();
+            }
+            // the keyboard modes: none in a plugin's editor (task-201); the plugin's mode is the
+            // panel's selector only (task-231), not a menu item
+            if plugin {
+                return;
+            }
+            ui.menu_button("Screen Reader Mode", |ui| {
+                for v in ScreenReaderSetting::ALL {
+                    let on = self.settings.screen_reader == v;
+                    if ui.radio(on, v.label()).clicked() {
+                        *cmd = Some(Cmd::SetScreenReader(v));
+                        ui.close();
+                    }
+                }
+            });
+            // task-192: only in screen reader mode
+            let mut raw = self.settings.speak_raw_values;
+            if self.screen_reader_mode() && ui.checkbox(&mut raw, "Speak Raw Values").clicked() {
+                *cmd = Some(Cmd::ToggleSpeakRawValues);
+                ui.close();
+            }
+            // task-190: only in screen reader mode
+            let mut follows = self.settings.step_editor_follows;
+            if self.screen_reader_mode()
+                && ui
+                    .checkbox(&mut follows, "Step Editor Follows Playback")
+                    .clicked()
+            {
+                *cmd = Some(Cmd::ToggleStepEditorFollows);
+                ui.close();
+            }
+            // task-211: only in screen reader mode
+            let mut makes = self.settings.pitch_keys_make_notes;
+            if self.screen_reader_mode()
+                && ui.checkbox(&mut makes, "Pitch Keys Make Notes").clicked()
+            {
+                *cmd = Some(Cmd::TogglePitchKeysMakeNotes);
+                ui.close();
+            }
+            ui.separator();
+            // the browser's "Use as ... folder" buttons, for the system dialog
+            if self.screen_reader_mode() {
+                for f in [Folder::Songs, Folder::Mods] {
+                    let label = match f {
+                        Folder::Songs => "Set Songs Folder...",
+                        Folder::Mods => "Set Mods Folder...",
+                    };
+                    if item(ui, label, None) {
+                        *cmd = Some(Cmd::SetFolder(f));
+                    }
+                }
+                ui.separator();
+            }
+            let ctx = ui.ctx().clone();
+            let synth = format!(
+                "Program Synth ({})",
+                shortcuts::text(&ctx, &shortcuts::KEYS_SYNTH)
+            );
+            let patterns = format!(
+                "Select Patterns ({})",
+                shortcuts::text(&ctx, &shortcuts::KEYS_PATTERNS)
+            );
+            if ui.radio(self.key_mode == KeyMode::Synth, synth).clicked() {
+                *cmd = Some(Cmd::SetKeyMode(KeyMode::Synth));
+                ui.close();
+            }
+            if ui
+                .radio(self.key_mode == KeyMode::Patterns, patterns)
+                .clicked()
+            {
+                *cmd = Some(Cmd::SetKeyMode(KeyMode::Patterns));
+                ui.close();
+            }
+        });
+        note_button(bar, &options.response);
+        // Last in the bar. An item is one line of `HELP_ITEMS`.
+        let help = ui.menu_button("Help", |ui| {
+            // the plugin's guide (task-221); the standalone's menu is unchanged
+            if plugin && item(ui, "Plugin Usage...", None) {
+                *cmd = Some(Cmd::PluginUsage);
+            }
+            for (text, c) in HELP_ITEMS {
+                // no Keyboard Shortcuts in a plugin's editor (task-201)
+                if plugin && *c == Cmd::KeyHelp {
+                    continue;
+                }
+                if item(ui, text, None) {
+                    *cmd = Some(c.clone());
+                }
+            }
+        });
+        note_button(bar, &help.response);
     }
 }
 
@@ -1505,6 +1904,18 @@ fn menu_bar_key(ui: &Ui) -> bool {
     f10 || alone_released
 }
 
+/// The pattern items of the Edit menu, in order.
+const EDIT_ITEMS: [(&str, &egui::KeyboardShortcut, Cmd); 4] = [
+    ("Cut Pattern", &shortcuts::CUT, Cmd::CutPattern),
+    ("Copy Pattern", &shortcuts::COPY, Cmd::CopyPattern),
+    ("Paste Pattern", &shortcuts::PASTE, Cmd::PastePattern),
+    (
+        "Duplicate Pattern",
+        &shortcuts::DUPLICATE,
+        Cmd::DuplicatePattern,
+    ),
+];
+
 /// The items of the Help menu, in order.
 const HELP_ITEMS: &[(&str, Cmd)] = &[
     ("Keyboard Shortcuts...", Cmd::KeyHelp),
@@ -1524,15 +1935,25 @@ fn checked_item(ui: &mut Ui, on: bool, text: impl Into<egui::WidgetText>) -> egu
 
 /// A menu item with its shortcut; true when clicked (the menu closes).
 fn item(ui: &mut Ui, text: &str, shortcut: Option<&egui::KeyboardShortcut>) -> bool {
+    item_if(ui, true, text, shortcut).clicked()
+}
+
+/// [`item`], enabled or not; its response.
+fn item_if(
+    ui: &mut Ui,
+    enabled: bool,
+    text: &str,
+    shortcut: Option<&egui::KeyboardShortcut>,
+) -> egui::Response {
     let mut b = egui::Button::new(text);
     if let Some(sc) = shortcut {
         b = b.shortcut_text(shortcuts::text(ui.ctx(), sc));
     }
-    let clicked = ui.add(b).clicked();
-    if clicked {
+    let r = ui.add_enabled(enabled, b);
+    if r.clicked() {
         ui.close();
     }
-    clicked
+    r
 }
 
 /// The order of the Mods menu's top-level entries (task-167): the names with ASCII letters

@@ -4,7 +4,7 @@
 //! [`set_field`]): an edit changes the document's song and marks it modified; the other facts
 //! are read-only.
 
-use eframe::egui::{self, Context, Key, Modifiers, RichText};
+use egui::{self, Context, Key, Modifiers, RichText};
 use orb_cli::info::{SongFacts, last_tick};
 use orb_cli::mods::{Kit, STANDARD};
 use orb_engine::seq::Event as TrackEvent;

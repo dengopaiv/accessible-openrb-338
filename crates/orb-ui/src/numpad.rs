@@ -19,7 +19,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
-use eframe::egui::Key;
+use egui::Key;
 
 /// A numpad key event the hook saw: the key egui names it (`None`: numpad `*`) and whether it
 /// went down.

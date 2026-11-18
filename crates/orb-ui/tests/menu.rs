@@ -24,6 +24,7 @@ use orb_ui::link::{self, Link};
 use orb_ui::menu::{Answer, Cmd, MENU_H};
 use orb_ui::model::Panel;
 use orb_ui::session;
+use orb_ui::shortcuts;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -65,6 +66,10 @@ struct Harness {
     audio: Audio,
     time: f64,
     height: f32,
+    /// What the frames put on the clipboard (`OutputCommand::CopyText`).
+    copied: Vec<String>,
+    /// The viewport commands the frames sent.
+    requested: Vec<egui::ViewportCommand>,
 }
 
 impl Harness {
@@ -80,6 +85,8 @@ impl Harness {
             audio,
             time: 0.0,
             height: PANEL_H,
+            copied: Vec::new(),
+            requested: Vec::new(),
         };
         h.calls(1);
         h
@@ -114,7 +121,50 @@ impl Harness {
         let app = &mut self.app;
         let mut out = self.ctx.run_ui(input, |ui| app.show(ui));
         out.textures_delta.clear();
+        for c in &out.platform_output.commands {
+            if let egui::OutputCommand::CopyText(t) = c {
+                self.copied.push(t.clone());
+            }
+        }
+        for v in out.viewport_output.values() {
+            self.requested.extend(v.commands.iter().cloned());
+        }
         format!("{:?}", out.shapes)
+    }
+
+    /// Runs a frame and returns where it painted the first text that contains `needle`.
+    fn text_rect(&mut self, needle: &str) -> Option<Rect> {
+        self.time += 0.016;
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(PANEL_W, self.height),
+            )),
+            time: Some(self.time),
+            ..Default::default()
+        };
+        let app = &mut self.app;
+        let mut out = self.ctx.run_ui(input, |ui| app.show(ui));
+        out.textures_delta.clear();
+        out.shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Text(t) if t.galley.text().contains(needle) => {
+                Some(Rect::from_min_size(t.pos, t.galley.size()))
+            }
+            _ => None,
+        })
+    }
+
+    /// What eframe does for a `RequestPaste`: the clipboard's text (the last copy) comes back
+    /// as a Paste event in the next frame.
+    fn answer_paste_request(&mut self) {
+        let asked = self
+            .requested
+            .iter()
+            .any(|c| matches!(c, egui::ViewportCommand::RequestPaste));
+        assert!(asked, "a paste was requested: {:?}", self.requested);
+        self.requested.clear();
+        let text = self.copied.last().cloned().unwrap_or_default();
+        self.frame(vec![Event::Paste(text)]);
     }
 
     /// `n` engine calls, then a UI frame that takes the snapshot.
@@ -633,6 +683,44 @@ fn an_edit_of_each_kind_is_saved() {
     assert_eq!(a.head, b.head);
 }
 
+/// The engine's four pattern arrays.
+fn engine_patterns(audio: &mut Audio) -> Vec<Vec<u8>> {
+    let channels = &mut audio.current_mut().frame.devices.channels;
+    (0..4)
+        .map(|c| channels[c].patterns_mut().unwrap().to_vec())
+        .collect()
+}
+
+#[test]
+fn pasted_cut_and_duplicated_patterns_are_saved() {
+    let src = root().join("tests/songs/shipped/Calm.rbs");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("pasted.rbs");
+    let mut h = Harness::new();
+    h.open(&src);
+    let before = engine_patterns(&mut h.audio);
+    for r in 0..4 {
+        // A1 to D7, A1 cut, D7 duplicated
+        h.app.panel.focus = r;
+        h.app.panel.rows[r].pattern = 0;
+        h.app.command(Cmd::CopyPattern);
+        h.app.command(Cmd::CutPattern);
+        h.app.panel.rows[r].pattern = 30;
+        h.app.command(Cmd::PastePattern);
+        h.app.command(Cmd::DuplicatePattern);
+        h.frame(vec![]);
+    }
+    assert!(h.app.doc.modified);
+    h.calls(2);
+    let edited = engine_patterns(&mut h.audio);
+    assert_ne!(edited, before);
+    h.app.save_to(&out);
+
+    let mut h2 = Harness::new();
+    h2.open(&out);
+    assert_eq!(engine_patterns(&mut h2.audio), edited);
+}
+
 #[test]
 fn the_vintage_flag_toggles_the_sound_model_and_is_saved() {
     let src = root().join("tests/songs/diag/songs/303_saw_lowcut.rbs");
@@ -865,6 +953,298 @@ fn the_menu_bar_sits_above_the_panel_and_opens() {
     // File opens a menu
     h.click(Pos2::new(14.0, MENU_H / 2.0));
     assert!(egui::Popup::is_any_open(&h.ctx), "no menu opened");
+}
+
+/// An 808 pattern with the BD on every step.
+fn bd_pattern() -> Vec<u8> {
+    let mut p = vec![0u8; 194];
+    p[1] = 16;
+    for s in 0..16 {
+        p[2 + 12 * s + 1] = 1;
+    }
+    p
+}
+
+/// The link's pattern `p` of row `r`.
+fn pattern(h: &Harness, r: usize, p: u8) -> Vec<u8> {
+    h.app.link.as_ref().unwrap().pattern(r, p).to_vec()
+}
+
+/// Selects pattern `p` (bank A) of row `r`, as a click on its button does.
+fn select(h: &mut Harness, r: usize, p: u8) {
+    h.app
+        .panel
+        .press(&format!("pattern{}.pattern{}", r + 1, p + 1), 0.0);
+    h.frame(vec![]);
+}
+
+/// Clicks along the menu bar from its left end and returns the first x at which a menu with
+/// `item` opens; the shapes of that frame.
+fn open_menu_with(h: &mut Harness, item: &str) -> (f32, String) {
+    for x in (6..300).step_by(4) {
+        egui::Popup::close_all(&h.ctx);
+        h.click(Pos2::new(x as f32, MENU_H / 2.0));
+        let shapes = h.frame_shapes(vec![]);
+        if shapes.contains(item) {
+            return (x as f32, shapes);
+        }
+    }
+    panic!("no menu has {item}");
+}
+
+/// Opens the Edit menu and clicks its item `text`.
+fn click_edit_item(h: &mut Harness, text: &str) {
+    open_menu_with(h, "Cut Pattern");
+    let (r, enabled) = h.app.edit_item(text).expect("the item is drawn");
+    assert!(enabled, "{text}");
+    h.click(r.center());
+}
+
+#[test]
+fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
+    let mut h = Harness::with_menu();
+    let (file, _) = open_menu_with(&mut h, "Save As...");
+    let (edit, shapes) = open_menu_with(&mut h, "Cut Pattern");
+    let (mods, _) = open_menu_with(&mut h, "Refresh List");
+    assert!(file < edit && edit < mods, "{file} {edit} {mods}");
+    for (text, sc) in [
+        ("Cut Pattern", shortcuts::CUT),
+        ("Copy Pattern", shortcuts::COPY),
+        ("Paste Pattern", shortcuts::PASTE),
+        ("Duplicate Pattern", shortcuts::DUPLICATE),
+    ] {
+        assert!(shapes.contains(text), "{text}");
+        let keys = shortcuts::text(&h.ctx, &sc);
+        assert!(shapes.contains(&format!("\"{keys}\"")), "{keys}");
+    }
+
+    // the 808's A1 copied and pasted into A3; the menu over the TB-303 1 row does not take the
+    // focus from the 808
+    let bytes = bd_pattern();
+    let link = h.app.link.as_mut().unwrap();
+    link.set_pattern(2, 0, &bytes, &mut h.app.panel);
+    select(&mut h, 2, 0);
+    click_edit_item(&mut h, "Copy Pattern");
+    let marker = h.app.clip.as_ref().expect("copied").marker.clone();
+    assert_eq!(
+        h.copied.last(),
+        Some(&marker),
+        "the marker is on the clipboard"
+    );
+    select(&mut h, 2, 2);
+    click_edit_item(&mut h, "Paste Pattern");
+    // the item asks for the system clipboard, which brings the marker back
+    assert!(link::is_empty_pattern(2, &pattern(&h, 2, 2)));
+    h.answer_paste_request();
+    assert_eq!(pattern(&h, 2, 2), bytes);
+    // A3 to the next empty pattern, A4, which is selected
+    click_edit_item(&mut h, "Duplicate Pattern");
+    h.frame(vec![]);
+    assert_eq!(h.app.panel.rows[2].pattern, 3);
+    assert_eq!(pattern(&h, 2, 3), bytes);
+    click_edit_item(&mut h, "Cut Pattern");
+    assert!(link::is_empty_pattern(2, &pattern(&h, 2, 3)));
+    assert_eq!(h.app.status.as_deref(), Some("TR-808: A4 cut"));
+}
+
+#[test]
+fn the_undo_item_names_its_command_and_ctrl_z_runs_it() {
+    let mut h = Harness::with_menu();
+    let (_, shapes) = open_menu_with(&mut h, "Cut Pattern");
+    assert!(shapes.contains("\"Undo\""), "nothing to undo");
+    assert_eq!(h.app.edit_item("Undo").map(|i| i.1), Some(false));
+    // the fork withholds the panel's keys while a menu is open (task-202): close it first, as
+    // the user would (the mouse opened it, so no title keeps the focus afterwards)
+    egui::Popup::close_all(&h.ctx);
+    h.frame(vec![]);
+    let link = h.app.link.as_mut().unwrap();
+    link.set_pattern(2, 0, &bd_pattern(), &mut h.app.panel);
+    select(&mut h, 2, 0);
+    h.frame(vec![Event::Copy]);
+    let marker = h.app.clip.as_ref().unwrap().marker.clone();
+    select(&mut h, 2, 1);
+    h.frame(vec![Event::Paste(marker.clone())]);
+    let (_, shapes) = open_menu_with(&mut h, "Cut Pattern");
+    assert!(shapes.contains("\"Undo Paste Pattern\""));
+    egui::Popup::close_all(&h.ctx);
+    h.frame(vec![]);
+    click_edit_item(&mut h, "Undo");
+    assert!(link::is_empty_pattern(2, &pattern(&h, 2, 1)));
+    // Ctrl/Cmd+Z
+    h.frame(vec![Event::Paste(marker)]);
+    assert_eq!(pattern(&h, 2, 1), bd_pattern());
+    let z = |pressed| Event::Key {
+        key: egui::Key::Z,
+        physical_key: Some(egui::Key::Z),
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    };
+    h.frame(vec![z(true)]);
+    h.frame(vec![z(false)]);
+    assert!(link::is_empty_pattern(2, &pattern(&h, 2, 1)));
+    let (_, shapes) = open_menu_with(&mut h, "Cut Pattern");
+    assert!(shapes.contains("\"Undo\""));
+    assert_eq!(h.app.edit_item("Undo").map(|i| i.1), Some(false));
+}
+
+#[test]
+fn the_edit_items_are_disabled_without_a_song() {
+    let mut h = Harness::with_menu();
+    open_menu_with(&mut h, "Cut Pattern");
+    assert_eq!(h.app.edit_item("Copy Pattern").map(|i| i.1), Some(true));
+    h.app.link = None;
+    open_menu_with(&mut h, "Cut Pattern");
+    for text in [
+        "Cut Pattern",
+        "Copy Pattern",
+        "Paste Pattern",
+        "Duplicate Pattern",
+    ] {
+        let (r, enabled) = h.app.edit_item(text).unwrap();
+        assert!(!enabled, "{text}");
+        h.click(r.center());
+        open_menu_with(&mut h, "Cut Pattern");
+    }
+    assert_eq!(h.app.clip, None);
+    let paste = |c: &egui::ViewportCommand| matches!(c, egui::ViewportCommand::RequestPaste);
+    assert!(!h.requested.iter().any(paste));
+}
+
+#[test]
+fn the_clipboard_events_and_the_duplicate_key_run_the_pattern_commands() {
+    let mut h = Harness::new();
+    let bytes = bd_pattern();
+    let link = h.app.link.as_mut().unwrap();
+    link.set_pattern(2, 0, &bytes, &mut h.app.panel);
+    select(&mut h, 2, 0);
+    // Ctrl/Cmd+C arrives as egui's Copy event (egui-winit), never as a key
+    h.frame(vec![Event::Copy]);
+    let marker = h.app.clip.as_ref().expect("copied").marker.clone();
+    assert!(
+        marker.starts_with("OpenRB-338 pattern: TR-808 A1 "),
+        "{marker}"
+    );
+    assert_eq!(h.copied.last(), Some(&marker));
+    // a paste of other text pastes nothing
+    select(&mut h, 2, 4);
+    h.frame(vec![Event::Paste("OpenRB-338 pattern: TR-808 A1".into())]);
+    assert!(link::is_empty_pattern(2, &pattern(&h, 2, 4)));
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("The clipboard holds no pattern")
+    );
+    h.frame(vec![Event::Paste(marker)]);
+    assert_eq!(pattern(&h, 2, 4), bytes);
+    h.frame(vec![Event::Cut]);
+    assert!(link::is_empty_pattern(2, &pattern(&h, 2, 4)));
+    assert_eq!(h.copied.len(), 2, "the cut is on the clipboard");
+    // Ctrl/Cmd+D is a key
+    select(&mut h, 2, 0);
+    let d = |pressed| Event::Key {
+        key: egui::Key::D,
+        physical_key: Some(egui::Key::D),
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    };
+    h.frame(vec![d(true)]);
+    h.frame(vec![d(false)]);
+    assert_eq!(h.app.panel.rows[2].pattern, 1);
+    assert_eq!(pattern(&h, 2, 1), bytes);
+}
+
+#[test]
+fn a_focused_field_keeps_the_clipboard_events_and_the_keys() {
+    use orb_ui::info::Field;
+    let mut h = Harness::with_menu();
+    let link = h.app.link.as_mut().unwrap();
+    link.set_pattern(2, 0, &bd_pattern(), &mut h.app.panel);
+    select(&mut h, 2, 0);
+    // A1 is cut: a paste of the marker would fill it again, Undo too, a Duplicate would select
+    // A2, and a copy or a cut would put another marker on the clipboard
+    h.frame(vec![Event::Cut]);
+    let clip = h.app.clip.clone().expect("cut");
+    let marker = clip.marker.clone();
+    assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
+    h.app.show_info();
+    h.frame(vec![]);
+    h.ctx
+        .memory_mut(|m| m.request_focus(Field::WebPage.edit_id()));
+    h.frame(vec![]);
+    assert!(h.ctx.text_edit_focused());
+    let before: Vec<Vec<u8>> = h.app.link.as_ref().unwrap().patterns().to_vec();
+    let key = |key, pressed| Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    };
+    let (d, z) = (egui::Key::D, egui::Key::Z);
+    h.frame(vec![Event::Copy, Event::Cut, key(d, true), key(z, true)]);
+    h.frame(vec![key(d, false), key(z, false)]);
+    h.frame(vec![Event::Paste(marker.clone())]);
+    assert_eq!(h.app.link.as_ref().unwrap().patterns().to_vec(), before);
+    assert_eq!(h.app.panel.rows[2].pattern, 0);
+    assert_eq!(
+        h.app.clip,
+        Some(clip),
+        "the field's copy is not a pattern's"
+    );
+    assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
+    // the paste went into the field
+    let web = &h.app.doc.source.usri.web_page;
+    assert!(web.ends_with(&marker), "{web:?}");
+}
+
+#[test]
+fn selected_text_of_a_window_copies_as_text() {
+    let mut h = Harness::with_menu();
+    let link = h.app.link.as_mut().unwrap();
+    link.set_pattern(2, 0, &bd_pattern(), &mut h.app.panel);
+    select(&mut h, 2, 0);
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let r = h.ctx.memory(|m| m.area_rect(h.app.about_id())).unwrap();
+    let selected = |h: &Harness| {
+        h.ctx
+            .plugin::<egui::text_selection::LabelSelectionState>()
+            .lock()
+            .has_selection()
+    };
+    // drag across a line of the window's text
+    let button = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    // the version line, where the window paints it (its margins move it)
+    let line = h
+        .text_rect("Version ")
+        .expect("the version line is painted");
+    assert!(r.contains_rect(line), "{line:?} in {r:?}");
+    let (from, to) = (
+        line.left_center() + Vec2::new(1.0, 0.0),
+        line.right_center() - Vec2::new(1.0, 0.0),
+    );
+    h.frame(vec![Event::PointerMoved(from)]);
+    h.frame(vec![button(from, true)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![button(to, false)]);
+    assert!(selected(&h), "no text selected in {line:?}");
+    h.copied.clear();
+    h.frame(vec![Event::Copy]);
+    assert_eq!(h.app.clip, None);
+    assert_eq!(h.copied.len(), 1, "{:?}", h.copied);
+    assert!(
+        !h.copied[0].starts_with("OpenRB-338 pattern"),
+        "{:?}",
+        h.copied
+    );
 }
 
 #[test]
@@ -2059,7 +2439,7 @@ fn the_about_window_opens_centered_and_closes() {
         shapes.contains(orb_ui::about::VERSION),
         "the version is drawn"
     );
-    assert_eq!(orb_ui::about::URL, "https://github.com/pingw33n/openrb-338");
+    assert_eq!(orb_ui::about::URL, "https://github.com/pingw33n/OpenRB-338");
     assert_eq!(
         orb_ui::about::SONGS_URL,
         "https://github.com/pingw33n/rb-songs"
@@ -2075,11 +2455,12 @@ fn the_about_window_opens_centered_and_closes() {
     }
     assert_eq!(orb_ui::about::COLLECTIONS[0].0, "Song collection:");
     assert_eq!(orb_ui::about::COLLECTIONS[1].0, "Mod collection:");
-    // the icon and the wordmark: two more images than without the window
+    // the icon, the wordmark's gray plate (task-179) and the wordmark: three more images than
+    // without the window
     assert_eq!(
         images(&shapes),
-        before + 2,
-        "the icon and the logo are drawn"
+        before + 3,
+        "the icon, the plate and the logo are drawn"
     );
     // the version is `YYYY.MMDD.HHMM (<git>)` (task-133)
     let v = orb_ui::about::VERSION;
@@ -2292,6 +2673,24 @@ fn the_key_help_window_opens_centered_marks_the_mode_and_closes() {
     h.click(close);
     h.frame(vec![]);
     assert!(!h.app.key_help_is_open(), "the close button closes it");
+}
+
+/// task-221: Plugin Usage is the plugin's Help item only; the standalone's Help menu keeps its
+/// two items and the command does nothing there.
+#[test]
+fn the_standalone_has_no_plugin_usage() {
+    let mut h = Harness::with_menu();
+    h.app.command(Cmd::PluginUsage);
+    assert!(!h.app.plugin_usage_is_open());
+    // Help, found along the bar (the Edit menu moved it right)
+    open_menu_with(&mut h, "Keyboard Shortcuts...");
+    let mut shapes = String::new();
+    for _ in 0..3 {
+        shapes = h.frame_shapes(vec![]);
+    }
+    assert!(shapes.contains("Keyboard Shortcuts..."), "{shapes}");
+    assert!(shapes.contains("About OpenRB-338..."), "{shapes}");
+    assert!(!shapes.contains("Plugin Usage"), "{shapes}");
 }
 
 /// task-099: the startup sound plays only when the kit that plays after the change differs
@@ -3375,4 +3774,103 @@ fn the_info_fields_fill_the_window_and_follow_its_width() {
         "{w0} -> {}",
         win(&h).width()
     );
+}
+
+/// task-235: a window's close button over the logo (or any panel control) does not reach the
+/// panel under it: closing About that way does not play the startup sound, and a click on its
+/// body or title bar over the logo does not either. Without the window the same click plays it.
+#[test]
+fn a_click_on_a_window_over_the_logo_does_not_reach_the_panel() {
+    let mut h = Harness::with_menu();
+    h.app.settings.startup_sound = false;
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let rect = |h: &Harness| h.ctx.memory(|m| m.area_rect(h.app.about_id())).unwrap();
+    let button = |p: Pos2, pressed| Event::PointerButton {
+        pos: p,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    // drag the window by its title so the close button is over the logo
+    let logo = Pos2::new(540.0, MENU_H + 25.0);
+    let r = rect(&h);
+    let close = Pos2::new(r.max.x - 12.0, r.min.y + 10.0);
+    let grab = Pos2::new(r.center().x, r.min.y + 10.0);
+    let to = grab + (logo - close);
+    h.frame(vec![Event::PointerMoved(grab)]);
+    h.frame(vec![button(grab, true)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![button(to, false)]);
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let r = rect(&h);
+    let close = Pos2::new(r.max.x - 12.0, r.min.y + 10.0);
+    assert!(
+        (close - logo).abs().max_elem() < 4.0,
+        "{close:?} over {logo:?}"
+    );
+    // a press in the window's title bar over the logo: no startup sound
+    h.click(close - Vec2::new(30.0, 0.0));
+    h.calls(4);
+    assert_eq!(h.audio.preview_position(), None, "a click on the window");
+    assert!(h.app.about_is_open());
+    // the close button closes it, and the sound does not play
+    h.click(close);
+    h.calls(4);
+    assert!(!h.app.about_is_open(), "the close button closes it");
+    assert_eq!(h.audio.preview_position(), None, "the close click");
+    // the same point with no window plays it
+    h.click(logo);
+    h.calls(4);
+    assert!(h.audio.preview_position().is_some(), "the logo plays");
+}
+
+/// task-235: a click on a window over the status bar does not dismiss the status line; a click
+/// on the bar itself does.
+#[test]
+fn a_click_on_a_window_over_the_status_bar_keeps_the_status() {
+    let mut h = Harness::with_menu();
+    h.app.status = Some("a status".to_string());
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let rect = |h: &Harness| h.ctx.memory(|m| m.area_rect(h.app.about_id())).unwrap();
+    let button = |p: Pos2, pressed| Event::PointerButton {
+        pos: p,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    // drag the window by its title to the bottom: the screen keeps it in, its body is over
+    // the bar
+    let r = rect(&h);
+    let grab = Pos2::new(r.center().x, r.min.y + 10.0);
+    let to = Pos2::new(grab.x, h.height - 2.0);
+    h.frame(vec![Event::PointerMoved(grab)]);
+    h.frame(vec![button(grab, true)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![Event::PointerMoved(to)]);
+    h.frame(vec![button(to, false)]);
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let r = rect(&h);
+    let on_bar = Pos2::new(r.center().x, h.height - 10.0);
+    assert!(r.contains(on_bar), "the window covers the bar: {r:?}");
+    assert_eq!(h.app.status.as_deref(), Some("a status"));
+    h.click(on_bar);
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("a status"),
+        "a click on the window"
+    );
+    // beside the window, on the bar: dismissed
+    h.click(Pos2::new(5.0, h.height - 10.0));
+    assert_eq!(h.app.status, None, "a click on the bar");
 }

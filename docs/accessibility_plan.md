@@ -501,6 +501,25 @@ NVDA check: the user's check was that the program starts (TASK-218).
     well, whose repository and Windows zips carry the same file; no answer upstream yet.
   - Issues #1 and #3 (a VST, LV2 or CLAP plug-in) and #5 (no sound on macOS) do not touch the
     fork: it is a local, Windows-only program.
+
+  Checked on 2026-11-18: upstream's main was at 6858253, 107 commits after 32a642d. The user
+  decided what to take (TASK-229) and TASK-230 merged it as a merge commit:
+  - Taken: the panel redesign (upstream task-179), a double click that sets a knob to its new-song
+    value, the Edit menu (Undo, Cut, Copy, Paste and Duplicate Pattern, Ctrl+Z, X, C, V, D), the
+    settings file that merges a save into the file instead of overwriting it, the optimized test
+    profile, the MIDI Standard Mapping layer in orb-player, and fixes. The merge keeps the
+    fork's work: the settings keep the fork's keys and portable folders inside upstream's merging
+    save (the fork's portable field is now `Settings::portable_root`, since upstream named its
+    bookkeeping `base`); the Edit menu is the second of the menu bar's five titles (File, Edit,
+    Mods, Options, Help), walked from the keyboard like the others; its
+    status messages go through `App::set_status`, so they are announced in screen reader mode;
+    the fork's DirectX 12 rule (TASK-217, with OpenGL after it and the run log) stays in place of
+    upstream's DX12-only setup, with upstream's start error text; the double click comes before a
+    knob's screen reader request and description.
+  - Not taken: the GitHub Pages landing page with GoatCounter (removed in the merge) and the
+    VST3/CLAP plugin (removed by TASK-231). Upstream's backlog from task-176 and its m-7 are
+    left out because their numbers collide with the fork's (AGENTS.md, "This fork").
+  - Upstream PR #6 (orb-mcp) is still open upstream, and still not wanted here.
 - **Units that are only estimates.** docs/control_units.md marks each unit [C], [D] or [G], and
   Options > Speak Raw Values gives the exact stored number next to it.
 - **Space no longer plays in screen reader mode.** A habit from ReBirth (D2). F5 plays, Enter
