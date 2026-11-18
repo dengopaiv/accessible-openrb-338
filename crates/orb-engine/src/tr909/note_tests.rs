@@ -58,19 +58,143 @@ const NOTES: [(u8, usize); 11] = [
     (51, RC),
 ];
 
+/// The edges of the eight velocity bands (`docs/midi.md` 5.5): velocity, step value, AC byte.
+const BANDS: [(u8, u8, u8); 16] = [
+    (1, 3, 0),
+    (7, 3, 0),
+    (8, 1, 0),
+    (47, 1, 0),
+    (48, 4, 0),
+    (55, 4, 0),
+    (56, 2, 0),
+    (95, 2, 0),
+    (96, 3, 2),
+    (99, 3, 2),
+    (100, 1, 2),
+    (111, 1, 2),
+    (112, 4, 2),
+    (115, 4, 2),
+    (116, 2, 2),
+    (127, 2, 2),
+];
+
+#[test]
+fn the_bands_cover_every_velocity_in_order() {
+    let mut last = velocity_band(1);
+    let mut changes = 0;
+    for v in 2..=127 {
+        let b = velocity_band(v);
+        if b != last {
+            changes += 1;
+            assert!(BANDS.iter().any(|&(e, x, a)| e == v && (x, a) == b), "{v}");
+        }
+        last = b;
+    }
+    assert_eq!(changes, 7);
+}
+
+/// A block of `d` at `tick` (120 BPM).
+fn block(d: &mut Tr909, tick: i32) -> [f32; BLOCK] {
+    let t = crate::tables::Tables::new();
+    let ctx = BlockContext {
+        tables: &t,
+        meter_index: 0,
+        tempo: 120_000,
+        tick,
+        stack_word: None,
+    };
+    let mut bus = [0.0f32; BLOCK];
+    d.process(&mut bus, &ctx);
+    bus
+}
+
+/// task-245: a flam band's note retriggers its instrument as the step's flam pass does, at the
+/// same block: a step with flam values played by the step function against its notes (in the
+/// step's descending column order, as the step triggers them) played in note mode, a tick a
+/// block, the samples bit for bit.
+#[test]
+fn a_flam_note_plays_as_a_flam_step() {
+    let cases: [&[(usize, u8)]; 4] = [
+        &[(CP, 3)],
+        &[(CP, 4), (BD, 1)],
+        &[(OH, 3), (CH, 4), (SD, 3)],
+        &[(RC, 4), (LT, 3), (BD, 3)],
+    ];
+    for flam in [0, 54, 127] {
+        for ac in [0, 2] {
+            for case in cases {
+                let mut a = device(44_100);
+                let mut b = device(44_100);
+                for d in [&mut a, &mut b] {
+                    d.live[FLAM] = flam;
+                    d.live[ACCENT] = 45;
+                }
+                let pat = &mut a.patterns[..PATTERN_LEN];
+                pat[2 + AC] = ac;
+                for &(col, v) in case {
+                    pat[2 + col] = v;
+                }
+                // the band's velocity of the step value and AC
+                let vel = |v: u8| BANDS.iter().find(|b| (b.1, b.2) == (v, ac)).unwrap().0;
+                let mut cols: Vec<_> = case.to_vec();
+                cols.sort_by_key(|c| std::cmp::Reverse(c.0));
+                for (col, v) in cols {
+                    let note = NOTES.iter().find(|n| n.1 == col).unwrap().0;
+                    b.key_on(note, vel(v));
+                }
+                let what = format!("flam {flam} AC {ac} {case:?}");
+                let mut fired = false;
+                for t in 0..47 {
+                    a.step(t, t, 120_000);
+                    let x = block(&mut a, t);
+                    let y = block(&mut b, t);
+                    assert_eq!(x.map(f32::to_bits), y.map(f32::to_bits), "{what} tick {t}");
+                    assert_eq!(voices(&b), voices(&a), "{what} tick {t}");
+                    assert_eq!(b.sounding(), a.sounding(), "{what} tick {t}");
+                    fired |= b.note_flam.iter().all(Option::is_none) && !a.flam_pending;
+                }
+                assert!(fired, "{what}: the flam fired");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_plain_note_or_slot_6_forgets_a_flam() {
+    let mut d = device(44_100);
+    d.key_on(39, 98);
+    assert!(d.note_flam[CP].is_some());
+    d.key_on(39, 104);
+    assert_eq!(d.note_flam[CP], None);
+    d.key_on(39, 98);
+    d.silence();
+    assert_eq!(d.note_flam, [None; 12]);
+    d.key_on(39, 98);
+    d.start(0);
+    assert_eq!(d.note_flam, [None; 12]);
+}
+
+/// Velocity 0 is the note-off: no hit, no flam, and a pending flam stays.
+#[test]
+fn velocity_0_neither_plays_nor_arms_a_flam() {
+    let mut d = device(44_100);
+    let before = voices(&d);
+    for (note, _) in NOTES {
+        d.key_on(note, 0);
+    }
+    assert_eq!(voices(&d), before);
+    assert_eq!(d.note_flam, [None; 12]);
+    assert_eq!(d.sounding(), Sounding::default());
+    d.key_on(39, 98);
+    d.key_on(39, 0);
+    assert_eq!(d.note_flam[CP], Some(NoteFlam { ac: 2, tick: None }));
+    assert_eq!(d.sounding().hits[sound::CP as usize], 1);
+}
+
 #[test]
 fn each_gm_note_plays_as_a_step_of_its_band() {
     for (note, col) in NOTES {
-        for (velocity, value, ac) in [
-            (1, 1, 0),
-            (47, 1, 0),
-            (48, 2, 0),
-            (95, 2, 0),
-            (96, 1, 2),
-            (111, 1, 2),
-            (112, 2, 2),
-            (127, 2, 2),
-        ] {
+        for (velocity, value, ac) in BANDS {
             assert_eq!(velocity_band(velocity), (value, ac));
             let mut a = device(100);
             a.live[ACCENT] = 45;
@@ -84,8 +208,10 @@ fn each_gm_note_plays_as_a_step_of_its_band() {
             let what = format!("note {note} velocity {velocity}");
             assert_eq!((b.accent, b.gain), (a.accent, a.gain), "{what}");
             assert_eq!(voices(&b), voices(&a), "{what}");
-            // a note arms no flam
+            // a note leaves the step's flam alone and arms its own in a flam band
             assert!(!b.flam_pending);
+            let want = (value > 2).then_some(NoteFlam { ac, tick: None });
+            assert_eq!(b.note_flam[col], want, "{what}");
             let s = b.sounding();
             assert_eq!(s.mask, 1 << (col - 1), "{what}");
             assert_eq!(s.ac, if ac != 0 { s.mask } else { 0 }, "{what}");

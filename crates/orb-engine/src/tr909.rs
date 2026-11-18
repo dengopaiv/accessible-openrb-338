@@ -124,16 +124,34 @@ pub fn gm_note(note: u8) -> Option<usize> {
     })
 }
 
-/// Note mode's velocity bands (task-200, `docs/midi.md` section 5.5): the step value (1 low,
-/// 2 high) and the AC byte (0, or 2 as the panel's AC row stores it) a velocity 1..127 plays
-/// as: 1..47 low, 48..95 high, 96..111 low + AC, 112..127 high + AC.
+/// Note mode's velocity bands (task-200, task-245; `docs/midi.md` section 5.5): the step value
+/// (1 low, 2 high, 3 low + flam, 4 high + flam, as the pattern's step bytes) and the AC byte (0,
+/// or 2 as the panel's AC row stores it) a velocity 1..127 plays as. Four bands, each with a
+/// flam slice at its bottom (velocity 0 is the note-off, never a band: [`Tr909::key_on`]):
+/// 1..7 low + flam, 8..47 low; 48..55 high + flam, 56..95 high;
+/// 96..99 low + AC + flam, 100..111 low + AC; 112..115 high + AC + flam, 116..127 high + AC.
 pub fn velocity_band(velocity: u8) -> (u8, u8) {
     match velocity {
-        0..=47 => (1, 0),
-        48..=95 => (2, 0),
-        96..=111 => (1, 2),
+        0..=7 => (3, 0),
+        8..=47 => (1, 0),
+        48..=55 => (4, 0),
+        56..=95 => (2, 0),
+        96..=99 => (3, 2),
+        100..=111 => (1, 2),
+        112..=115 => (4, 2),
         _ => (2, 2),
     }
+}
+
+/// Not in the original (task-245): a flam a note-mode note armed on its instrument
+/// ([`Tr909::key_on`]), fired by [`Tr909::note_flams`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoteFlam {
+    /// The note's AC byte, for the retrigger's accent.
+    pub ac: u8,
+    /// The tick the flam waits to pass, set by the first block after the note (`None` until
+    /// then), as the step's flamTick (0x1002ABBC).
+    pub tick: Option<i32>,
 }
 
 /// The parameter block of `sub_100195A0` (ctor, both copies), in the DLL's order.
@@ -269,6 +287,8 @@ pub struct Tr909 {
     pub pattern_gate: Gate,
     /// The hits per sound ([`Sounding::hits`]).
     hits: [u32; 16],
+    /// Not in the original (task-245): the flams note-mode notes armed, by instrument column.
+    pub note_flam: [Option<NoteFlam>; 12],
 }
 
 const SIMPLE_RS: usize = 0;
@@ -313,6 +333,7 @@ impl Tr909 {
             ac_bits: 0,
             pattern_gate: Gate::default(),
             hits: [0; 16],
+            note_flam: [None; 12],
         }
     }
 
@@ -325,16 +346,56 @@ impl Tr909 {
     /// Note mode's hit (task-200): the General MIDI drum note's instrument as a step with it
     /// alone would play it, at the step value and AC byte of the velocity's band
     /// ([`velocity_band`]): the gain `f32(accent * 0.8)` or `f32(accent * 2.0)` of 0x1002B011
-    /// and 0x1002AD02. The flam is not armed.
+    /// and 0x1002AD02. A flam band (value 3 or 4) arms the instrument's own flam, which
+    /// [`Tr909::note_flams`] fires as the step's flam pass; any other band clears it, as a new
+    /// step disarms the step's flam (task-245). The step function's flam is not touched.
+    /// Velocity 0 is the note-off, which does nothing ([`crate::frame::Engine::live_note`] sends
+    /// it to the note-off already): it neither plays nor arms a flam.
     pub fn key_on(&mut self, note: u8, velocity: u8) {
-        let Some(i) = gm_note(note) else {
+        let Some(i) = gm_note(note).filter(|_| velocity > 0) else {
             return;
         };
         let (value, ac) = velocity_band(velocity);
         self.set_accent(ac);
-        let k = if value == 1 { GAIN_ON } else { GAIN_ACCENT };
+        let k = if matches!(value, 1 | 3) {
+            GAIN_ON
+        } else {
+            GAIN_ACCENT
+        };
         self.gain = st(self.accent as f64 * k);
         self.trigger(i);
+        self.note_flam[i] = (value > 2).then_some(NoteFlam { ac, tick: None });
+    }
+
+    /// Not in the original (task-245): the note-mode flams at the block's tick and tempo (the
+    /// note-mode clock's, `docs/plugin.md` 9.5), before the block's audio, where the step
+    /// function's flam runs in a playing song. A flam armed since the last block takes its tick
+    /// as the step does at 0x1002ABB0..0x1002ABC9: `tick + (flam * tempo) / 700000 + 1` (32-bit
+    /// `imul`, `idiv`), with the Flam knob of that block; a later block whose tick is past it
+    /// (signed, 0x1002AB87) retriggers the instrument at `f32(accent * 1.5)` with the note's AC
+    /// byte (the flam pass, 0x1002B320, `dbl_10154350`), columns from 11 down to 1 as there.
+    pub fn note_flams(&mut self, tick: i32, tempo: i32) {
+        for i in (1..=11).rev() {
+            let Some(f) = self.note_flam[i] else {
+                continue;
+            };
+            match f.tick {
+                None => {
+                    let d = (self.live[FLAM] as i32).wrapping_mul(tempo) / FLAM_DIV;
+                    self.note_flam[i] = Some(NoteFlam {
+                        tick: Some(tick.wrapping_add(d).wrapping_add(1)),
+                        ..f
+                    });
+                }
+                Some(at) if tick > at => {
+                    self.note_flam[i] = None;
+                    self.set_accent(f.ac);
+                    self.gain = st(self.accent as f64 * GAIN_FLAM);
+                    self.trigger(i);
+                }
+                Some(_) => {}
+            }
+        }
     }
 
     /// The sounding mask and the AC flags of [`Sounding`].
@@ -639,6 +700,8 @@ impl SongDevice for Tr909 {
     fn start(&mut self, now: i32) {
         self.wrapped = true;
         self.pat_start = Self::bar_of(now);
+        // not in the original (task-245): Play forgets note mode's flams
+        self.note_flam = [None; 12];
     }
 
     /// Slot 4, 0x100106C0: slot 6.
@@ -663,6 +726,8 @@ impl SongDevice for Tr909 {
             v.silence();
         }
         self.dual.silence();
+        // not in the original (task-245): and note mode's flams
+        self.note_flam = [None; 12];
     }
 
     /// Slot 9, 0x1002D510: entering song mode saves the live block into the pattern-mode copy,
@@ -801,8 +866,13 @@ impl ChannelDevice for Tr909 {
 
     /// Slot 14, 0x1002B6F0: the bus is zeroed, then the voices add in this order: BD A, BD B,
     /// SD, LT, MT, HT, RS, CP, CH, OH, crash, ride (every per-instrument output is null in the
-    /// export, so all go to bus 0).
-    fn process(&mut self, bus: &mut Block, _ctx: &BlockContext) {
+    /// export, so all go to bus 0). Not in the original (task-245): first the flams note-mode
+    /// notes armed ([`Tr909::note_flams`]); only notes arm them, so a playing song never runs
+    /// one.
+    fn process(&mut self, bus: &mut Block, ctx: &BlockContext) {
+        if self.note_flam.iter().any(Option::is_some) {
+            self.note_flams(ctx.tick, ctx.tempo as i32);
+        }
         bus.fill(0.0);
         for v in &mut self.filter {
             v.process(bus);

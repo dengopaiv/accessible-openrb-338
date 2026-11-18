@@ -41,8 +41,9 @@ pub const TB303_C: i32 = 36;
 /// The export velocities (`docs/midi.md` 5.6).
 pub const VEL_NORMAL: u8 = 80;
 pub const VEL_ACCENT: u8 = 127;
-/// The 909's: value 1 (low), value 2 (high), each without and with AC.
-pub const VEL_909: [[u8; 2]; 2] = [[40, 104], [80, 127]];
+/// The 909's, by flam (values 1 and 2, then 3 and 4: `tr909::velocity_band`'s flam slices),
+/// then low (value 1 or 3) and high (2 or 4), each without and with AC.
+pub const VEL_909: [[[u8; 2]; 2]; 2] = [[[40, 104], [80, 127]], [[4, 98], [52, 114]]];
 
 /// The bytes of one pattern: the shuffle flag, the length, 16 steps.
 pub const LEN_303: usize = 2 + 16 * 6;
@@ -144,9 +145,11 @@ pub fn notes(row: usize, pattern: &[u8], c: &Controls) -> Vec<Note> {
             c,
             |i, _| key_909(i),
             |r, v| {
-                // values 1 and 3 are low; 2, 4 and the flam-only 5..255 high (`docs/midi.md` 5.6)
+                // values 1 and 3 are low; 2, 4 and the flam-only 5..255 high; 3 and 4 flam (the
+                // flam-only hit has no band: the step's high hit; `docs/midi.md` 5.6)
                 let high = !matches!(v, 1 | 3);
-                VEL_909[high as usize][(r[tr909::AC] != 0) as usize]
+                let flam = matches!(v, 3 | 4);
+                VEL_909[flam as usize][high as usize][(r[tr909::AC] != 0) as usize]
             },
         ),
     };

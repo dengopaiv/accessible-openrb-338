@@ -6,11 +6,12 @@
 mod common;
 
 use common::{activate, set, with_song};
+use nice_plug::prelude::Params;
 use orb_engine::pcf;
 use orb_engine::seq::{TEMPO_STEP, trunc};
 use orb_player::midi::Message;
 use orb_plugin::core::{Core, HostEvent, HostTransport, TICKS_PER_BEAT};
-use orb_plugin::instance::{Mode, OrbParams};
+use orb_plugin::instance::{Mode, OrbParams, STATE_KEY};
 use orb_plugin::{clip, editor};
 
 /// The host's tempo, BPM (the diag songs' own).
@@ -104,7 +105,13 @@ fn by_frame(
 /// An instance of the diag song `song` in `mode` with the PCF at `pcf` (`d0c2`), on, at
 /// [`WAVE`].
 fn instance(song: &str, pcf: i32, mode: Mode) -> (OrbParams, Core) {
+    instance_with(song, pcf, mode, |_| {})
+}
+
+/// [`instance`] with `edit` applied to the instance after the song's load.
+fn instance_with(song: &str, pcf: i32, mode: Mode, edit: fn(&OrbParams)) -> (OrbParams, Core) {
     let p = with_song(song);
+    edit(&p);
     set(&p, "d0c2", pcf);
     set(&p, "d7c0", 1);
     set(&p, "d7c4", WAVE as i32);
@@ -186,8 +193,18 @@ const LSB: f32 = 1.0 / 32768.0;
 /// frames and the notes in the blocks where the pattern plays its steps. The PCF's steps are
 /// the same, block for block, in all three. Returns the output differences of both.
 fn compare(song: &str, rows: &[usize], pcf: i32) -> [(Option<usize>, usize, f32); 2] {
+    compare_with(song, rows, pcf, |_| {})
+}
+
+/// [`compare`] with `edit` applied to both instances after the song's load.
+fn compare_with(
+    song: &str,
+    rows: &[usize],
+    pcf: i32,
+    edit: fn(&OrbParams),
+) -> [(Option<usize>, usize, f32); 2] {
     let frames = 4 * 44_100;
-    let (pp, mut pc) = instance(song, pcf, Mode::Latch);
+    let (pp, mut pc) = instance_with(song, pcf, Mode::Latch, edit);
     let (pattern_out, pattern_steps) = by_frame(&pp, &mut pc, frames, rolling, &[]);
     // 2 bars of 16 steps, and the first of the third (the blocks run one ahead)
     assert_eq!(
@@ -202,7 +219,7 @@ fn compare(song: &str, rows: &[usize], pcf: i32) -> [(Option<usize>, usize, f32)
         .enumerate()
     {
         let ev: Vec<(usize, Message)> = notes.iter().map(|&(t, m)| (at(t), m)).collect();
-        let (np, mut nc) = instance(song, pcf, Mode::Note);
+        let (np, mut nc) = instance_with(song, pcf, Mode::Note, edit);
         let (note_out, note_steps) = by_frame(&np, &mut nc, frames, rolling, &ev);
         assert!(
             !nc.audio().last_snapshot().playing,
@@ -247,6 +264,92 @@ fn dragged_shuffled_patterns_step_the_pcf_as_the_patterns_do() {
     // task-227's timing rule, as for the 808; the measured largest difference
     assert!(host.2 <= 0.21432495, "{host:?}");
     assert!(aligned.2 <= LSB, "{aligned:?}");
+}
+
+/// The user's 909 pattern A6 (task-245, `909_a6_clap.RPP`): AC 2 on every step, BD 2, CH and OH
+/// 1, the crash 1 on step 1 and the hand clap 3 (low + flam) on steps 5 and 13. Columns AC, BD,
+/// SD, LT, MT, HT, RS, CP, CH, OH, CC, RC.
+const A6: [[u8; 12]; 16] = {
+    let mut s = [[0u8; 12]; 16];
+    let mut k = 0;
+    while k < 16 {
+        s[k][0] = 2;
+        if k % 4 == 0 {
+            s[k][1] = 2;
+        }
+        if k % 4 < 2 {
+            s[k][8] = 1;
+        } else if k % 4 == 2 {
+            s[k][9] = 1;
+        }
+        k += 1;
+    }
+    s[0][10] = 1;
+    s[4][7] = 3;
+    s[12][7] = 3;
+    s
+};
+
+/// The largest difference of [`A6`]'s notes at the host's frames (measured).
+const HOST_A6: f32 = 1.9999695;
+
+/// The 909's selected pattern becomes [`A6`], with the user's Flam knob (54), Accent (127) and
+/// clap level (121).
+fn user_a6(p: &OrbParams) {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let values = p.panel_values();
+    let mut patterns = p.view(&values).1;
+    let at = p.param("d4c1").unwrap().value() as usize * clip::LEN_DRUM;
+    let one = &mut patterns[3][at..at + clip::LEN_DRUM];
+    one[..2].copy_from_slice(&[0, 16]);
+    one[2..].copy_from_slice(A6.as_flattened());
+    let mut fields = p.serialize_fields();
+    let mut doc: serde_json::Value = serde_json::from_str(&fields[STATE_KEY]).unwrap();
+    doc["patterns"] = patterns.iter().map(|a| b64.encode(a)).collect();
+    fields.insert(STATE_KEY.to_string(), doc.to_string());
+    p.deserialize_fields(&fields);
+    set(p, "d4c29", 54);
+    set(p, "d4c2", 127);
+    set(p, "d4c21", 121);
+}
+
+/// task-245: the clap's flam (value 3) is carried by the drag-out's flam band and played by
+/// note mode's flam as the pattern's flam pass plays it, so the dragged A6 sounds as the
+/// pattern (with the flam bands written as the plain ones, the aligned notes differ by 0.51,
+/// in 111324 frames, from frame 3080).
+#[test]
+fn the_dragged_909_flam_pattern_plays_as_the_pattern() {
+    let [host, aligned] = compare_with("909_accent_level127", &[3], PCF_909, user_a6);
+    // task-227's timing rule, as above; the measured largest difference
+    assert!(host.2 <= HOST_A6, "{host:?}");
+    // in the steps' blocks: within one LSB (9.5, task-243)
+    assert!(aligned.2 <= LSB, "{aligned:?}");
+}
+
+/// task-245 review: a note-on of velocity 0 on the 909's channel (`0x93 39 0`, which the MIDI
+/// parser keeps as a note-on) is the note-off, through the core and the engine: no hit, no flam
+/// retrigger, silence.
+#[test]
+fn a_velocity_0_note_on_plays_no_909_hit_and_no_flam() {
+    let (p, mut core) = instance("909_accent_level127", PCF_909, Mode::Note);
+    let ev: Vec<(usize, Message)> = [39, 36, 42]
+        .into_iter()
+        .map(|note| {
+            (
+                100,
+                Message::NoteOn {
+                    channel: 3,
+                    note,
+                    velocity: 0,
+                },
+            )
+        })
+        .collect();
+    let (out, _) = by_frame(&p, &mut core, 22_050, rolling, &ev);
+    assert!(out.iter().all(|&x| x == 0.0), "silence");
+    let hits = core.audio().last_snapshot().sounding[3].hits;
+    assert_eq!(hits, [0; 16], "no hit, no flam retrigger");
 }
 
 #[test]

@@ -73,8 +73,9 @@ In both pattern modes the notes 0 to 31 select the pattern of the section on the
 
 - **Shared slots of the ORB-808.** Five slots hold two sounds each (LT/LC, MT/MC, HT/HC, RS/CL, CP/MA). The note picks the sound for that hit: 43, 47, 50, 37 and 39 the first of each pair, 64, 63, 62, 75 and 70 the second. The slot's switch on the panel is not changed and still decides the sound in the patterns. A slot has one voice, so its two sounds cannot sound together.
 - **Velocity, ORB-808:** 100 and up is accented, below is not.
-- **Velocity, ORB-909:** four bands: 1 to 47 low, 48 to 95 high, 96 to 111 low with accent, 112 to 127 high with accent. From Accent knob 25 up the bands get louder in that order; below 25 the 96 to 111 band is quieter than the 48 to 95 band (the same at 24).
-- A note-off does nothing: the drum voices decay on their own. There is no flam note; two quick notes are two hits.
+- **Velocity, ORB-909:** four bands: 1 to 47 low, 48 to 95 high, 96 to 111 low with accent, 112 to 127 high with accent; the bottom of each band adds a flam (next item). From Accent knob 25 up the bands get louder in that order; below 25 the 96 to 111 band is quieter than the 48 to 95 band (the same at 24).
+- **Flam, ORB-909:** the bottom of each band plays the hit with a flam, as a flam step does (timed by the Flam knob): 1 to 7, 48 to 55, 96 to 99 and 112 to 115. A dragged-out pattern uses them for its flam steps.
+- A note-off does nothing: the drum voices decay on their own. There is no separate flam note; two quick notes are two hits.
 - The section's On/off switch does not mute notes; the mixer channel's On/off does.
 - **Feedback.** In Note mode the panel lights what sounds: a green ring on the ORB-808's chip of the sound played (and on AC), a green LED in the ORB-909's instrument row. A hit lights for at least 0.1 s.
 

@@ -310,7 +310,9 @@ parameter (controllers 11, 14, 17, 19, 21) is not changed and governs pattern mo
 one voice, so its two sounds cannot sound at once. Notes not in the table do nothing. A note-off
 does nothing (the drum voices run their own decay).
 
-**909 flam: no note.** Two notes in quick succession play as two hits.
+**909 flam: by velocity, no note of its own** (task-245, decided in task-246). A note in one of
+the flam slices of the velocity bands (5.5) plays the hit and its flam; two notes in quick
+succession play as two hits.
 
 The drums' note mode is implemented by task-200 (`docs/plugin.md` section 9.2; the sounding
 mask for the note-mode lights in 9.3).
@@ -338,14 +340,35 @@ scales is from the engine code:
 the 808's row). AC is louder for any knob above 0 and equal at 0.
 
 **909 in note mode:** four bands, the hit's gain relative to the level (k = the Accent knob,
-AC = 2 as the panel's row):
+AC = 2 as the panel's row). Each band has a flam slice at its bottom (task-245, decided in
+task-246): 1..7, 48..55, 96..99 and 112..115 play the band's hit and its flam, as step values
+3 (low + flam) and 4 (high + flam) do (`tr909::velocity_band`).
 
 | Velocity | Step | Gain | k = 0 | k = 16 | k = 24 | k = 32 (default) | k = 127 |
 |---|---|---|---|---|---|---|---|
-| 1..47 | low (value 1) | 0.8 | 0.8 | 0.8 | 0.8 | 0.8 | 0.8 |
-| 48..95 | high (value 2) | 2.0 | 2.0 | 2.0 | 2.0 | 2.0 | 2.0 |
-| 96..111 | low + AC | 0.8 (1 + k/16) | 0.8 | 1.6 | 2.0 | 2.4 | 7.15 |
-| 112..127 | high + AC | 2.0 (1 + k/16) | 2.0 | 4.0 | 5.0 | 6.0 | 17.875 |
+| 1..47 (flam 1..7) | low (value 1; 3) | 0.8 | 0.8 | 0.8 | 0.8 | 0.8 | 0.8 |
+| 48..95 (flam 48..55) | high (value 2; 4) | 2.0 | 2.0 | 2.0 | 2.0 | 2.0 | 2.0 |
+| 96..111 (flam 96..99) | low + AC | 0.8 (1 + k/16) | 0.8 | 1.6 | 2.0 | 2.4 | 7.15 |
+| 112..127 (flam 112..115) | high + AC | 2.0 (1 + k/16) | 2.0 | 4.0 | 5.0 | 6.0 | 17.875 |
+
+**The flam slices.** They are at the bottom of each band, so the four velocities the drag-out
+wrote before (40, 80, 104, 127) keep their meaning and a hard hit within a band never flams.
+Velocity 0 is the note-off, not the bottom of the 1..7 slice: `Engine::live_note` sends a
+velocity-0 note-on to the note-off, and `Tr909::key_on` ignores velocity 0 as well, so it
+neither plays nor arms a flam (task-245's review).
+A note in a flam slice plays its hit at the band's gain, then the flam as the step function's
+flam pass does (0x1002AAC0; `docs/initial_investigation.md` 5 [C]): the first block after the
+note sets the flam's tick, `tick + (Flam * tempo) / 700000 + 1` in 32-bit integers
+(0x1002ABBC) with the Flam knob and the tempo of that block, and the first block whose tick is
+past it (signed) retriggers the instrument at `f32(accent * 1.5)` (0x1002B320,
+`dbl_10154350`), its accent recomputed from the note's AC byte, before the block's audio. The
+tick is the note-mode clock's (`docs/plugin.md` 9.5): at knob 54 and 120 BPM the retrigger is
+11 ticks (28.6 ms) after the note's block. The flam is per instrument: a later note of the same
+instrument in a plain band forgets it (as a new step disarms the step's flam), one in a flam
+slice re-arms it, and Stop, a reset or Play (slots 3 and 6) forget every one. Notes of one step
+fire in one block, columns 11 down to 1 as the flam pass. Without the note-mode clock (the song
+stopped and the clock off: not the plugin's note mode) the tick does not move and a flam never
+fires. The slice edges are a first choice, to be tuned by ear like the bands.
 
 **The loudness order.** Low < high and low + AC < high + AC always; low + AC is at least low
 and high + AC at least high (equal at k = 0). The bands rise with velocity (low < high < low +
@@ -366,14 +389,16 @@ the pattern sounds:
 | 808 | step without / with AC (every instrument of the step) | 80 / 127 |
 | 909 | value 1 (low), value 2 (high) | 40, 80 |
 | 909 | value 1 + AC, value 2 + AC | 104, 127 |
+| 909 | value 3 (low + flam), value 4 (high + flam) | 4, 52 |
+| 909 | value 3 + AC, value 4 + AC | 98, 114 |
 
 80 stays below any accent threshold above 80 and 127 above any threshold, should the threshold
 become a setting. A 909 AC byte other than 0 counts as AC (a value of 1 from a hand-made file
 plays back as 2: louder). The 909's flam pass retriggers every step value above 2 at accent x1.5
-(0x1002B320; `docs/initial_investigation.md` 5, 7.2), and a flam has no note (5.4), so the flam
-is lost in the clip: a value 3 (low + flam) is exported as value 1 (40 or 104), a value 4 (high
-+ flam) as value 2 (80 or 127), and a value 5..255 (a hand-made file: no step hit, the flam hit
-alone at x1.5) as value 2 (80 or 127), the band whose gain (x2.0) is nearest, at the step's start.
+(0x1002B320; `docs/initial_investigation.md` 5, 7.2); the clip writes values 3 and 4 in the
+flam slices (5.5, task-245), whose note plays the hit and the flam as the pattern does. A value
+5..255 (a hand-made file: no step hit, the flam hit alone at x1.5) has no band and is exported
+as value 2 (80 or 127), the band whose gain (x2.0) is nearest, at the step's start.
 The AC row writes no note. The 808's shared slots (LT/LC, MT/MC, HT/HC, RS/CL, CP/MA) write the
 note of the voice the slot's switch selects when the clip is made (the LT/LC slot: 43 when it
 says tom, 64 when conga; RS/CL: 37 or 75; CP/MA: 39 or 70), as the pattern plays it. The 303's

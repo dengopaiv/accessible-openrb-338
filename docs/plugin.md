@@ -526,9 +526,26 @@ noise sequence counter, one voice per slot (a second hit restarts it). A note-of
 nothing. The accent is the step's expression with the note's AC byte:
 
 - 808: `accent = f32((AC * knob) * 0.03125f + 1.0)` with AC = 1 at velocity 100 and up, else 0.
-- 909: the band's step value and AC byte (`tr909::velocity_band`: 1..47 value 1, 48..95 value 2,
-  96..111 value 1 + AC 2, 112..127 value 2 + AC 2), then `gain = f32(accent * 0.8)` or
-  `f32(accent * 2.0)`. A note arms no flam.
+- 909: the band's step value and AC byte (`tr909::velocity_band`: 1..7 value 3, 8..47 value 1,
+  48..55 value 4, 56..95 value 2, 96..99 value 3 + AC 2, 100..111 value 1 + AC 2, 112..115
+  value 4 + AC 2, 116..127 value 2 + AC 2), then `gain = f32(accent * 0.8)` (values 1, 3) or
+  `f32(accent * 2.0)` (2, 4).
+- **The 909's flam** (task-245, decided in task-246). Values 3 and 4 (the flam slices) arm the
+  instrument's own flam (`Tr909::note_flam`, not the step function's `+0x1910`), and
+  `Tr909::note_flams`, run by the 909's audio slot before each block, fires it as the step
+  function's flam pass: the tick and the retrigger of `docs/midi.md` 5.5, on the note-mode
+  clock's tick (section 9.5). A plain note of the instrument, slot 6 and Play forget it; only
+  notes arm one, so pattern playback and the corpus are unchanged.
+  - **Why** (the user's report, 2026-11-18: the clap of a dragged-out 909 pattern A6 sounded
+    shorter than the preview's). The clap's step value there is 3 (low + flam). In the pattern
+    the flam pass (0x1002AAC0, flamTick 0x1002ABBC, the value test at 0x1002B324) restarts
+    the clap's SIMPLE voice (decay byte 127: multiplier 1.0, the sample plays out) 11 ticks
+    (28.6 ms at Flam 54 and 120 BPM) after the step at `accent * 1.5` instead of
+    `accent * 0.8`, so the pattern's clap ended 28.6 ms later and 5.5 dB louder. The drag-out
+    wrote value 3 as value 1 and a note armed no flam: the notes' output differed from the
+    pattern's by up to 0.94 from the flam's block on; with the clap's value 3 set to 1 in both,
+    within one LSB. The bands, the following CH/OH/BD steps and the trigger code gave no
+    difference.
 
 A note on an 808 shared slot plays the sound it names through an override of the trigger's
 switch read (`trigger_as`); the switch byte is not changed, and the step function passes no
@@ -632,9 +649,11 @@ note mode comes from a clock of its own:
   the Stop's locate (`sub_1001E100`) moves the song to. When the song was already stopped (an
   activation, Latch Pattern Mode with the host stopped) that is its bar start. In the pattern
   modes and the preview the clock is off. The song stays stopped and the sequencer steps no
-  device; only the PCF reads the tick.
-- **What reads the tick.** Of the devices and effects, only the PCF reads
-  `BlockContext::tick` (`pcf.rs`, `control`). The delay reads `ctx.tempo` (its length, slot 16),
+  device; only the PCF and the 909's note flams read the tick.
+- **What reads the tick.** Of the devices and effects, the PCF reads `BlockContext::tick`
+  (`pcf.rs`, `control`), and the 909's audio slot reads it and `ctx.tempo` for the flams that
+  note-mode notes armed (`Tr909::note_flams`, section 9.2, task-245; only notes arm one, so a
+  playing song never runs it). The delay reads `ctx.tempo` (its length, slot 16),
   which is the host's tempo in note mode too, so the delay's time is the preview's. The mixer
   update's context keeps the song's tick (the PCF's slot 16 does not read it).
 
@@ -663,8 +682,12 @@ Mode, and their drag-out (`clip::notes`) is played into note mode with the same 
   and 6, resets; task-243).
 - So the accent mapping (808 velocity 127 = AC 1; the 909's bands), the shuffle baked into the
   clip (the shuffled ticks, `seq::shuffled`) and the delay's tempo give no difference of their
-  own. Not compared: the 909's flam (a note arms none, section 9.2, so a flam step's drag-out
-  differs by design) and the 303s (their own comparison is section 9.1's).
+  own. Not compared: the 303s (their own comparison is section 9.1's).
+- **The 909's flam** (task-245, section 9.2): the user's pattern A6 (the clap at value 3 on
+  steps 5 and 13, Flam 54, Accent 127) written into `909_accent_level127` gives, in the steps'
+  blocks, the pattern's output within one LSB, and differences up to 2.0 at the host's frames
+  (the same loud hits a block apart, as above). With the clip's flam velocities replaced by the plain
+  ones the aligned outputs differ by up to 0.51.
 
 ## 10. The editor (task-201)
 

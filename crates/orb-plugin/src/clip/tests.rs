@@ -507,18 +507,24 @@ fn a_909_pattern_four_levels_and_flam() {
             (48, 38, 80),
             (96, 43, 104),
             (144, 47, 127),
-            (192, 50, 40),
-            (240, 37, 80),
+            // the flam bands (task-245); the flam-only value 7 is the plain high band
+            (192, 50, 4),
+            (240, 37, 52),
             (288, 39, 80),
-            (336, 42, 127),
+            (336, 42, 114),
             (384, 46, 104),
             (432, 49, 80),
             (480, 51, 127),
         ]
     );
-    // each band plays back in note mode as the step's value and AC (tr909::velocity_band)
-    for (vel, value, ac) in [(40, 1, 0), (80, 2, 0), (104, 1, 2), (127, 2, 2)] {
-        assert_eq!(velocity_band(vel), (value, ac));
+    // each band plays back in note mode as the step's value (3 and 4 with flam) and AC
+    // (tr909::velocity_band)
+    for (flam, by_high) in VEL_909.iter().enumerate() {
+        for (high, by_ac) in by_high.iter().enumerate() {
+            for (&vel, ac) in by_ac.iter().zip([0, 2]) {
+                assert_eq!(velocity_band(vel), (1 + high as u8 + 2 * flam as u8, ac));
+            }
+        }
     }
     assert!(f.notes.iter().all(|n| n.end == n.start + DRUM_LEN));
 }
