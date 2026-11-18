@@ -1,0 +1,81 @@
+# The GitHub Pages site (task-212): the landing page of site/, built into one folder by
+# tools/build_site.py, deployed at https://pingw33n.github.io/OpenRB-338/. It runs when a
+# release is PUBLISHED (a tag push only makes a draft whose assets are not public yet) and by
+# hand. The download links come from the release's tag at build time, and the build HEADs every
+# one of them, so it fails instead of deploying a dead link. One Pages artifact holds the whole
+# site: the web app (task-175) goes into the same folder under web/ (see the marked step).
+#
+# One-time setting (docs/building.md): Settings > Pages > Source: GitHub Actions. Until it is
+# set, the deploy job fails at deploy-pages with "Pages site not found / not enabled".
+name: pages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to take the downloads from (empty: the latest published release)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build the site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Choose the release
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag=${EVENT_TAG:-$INPUT_TAG}
+          if [ -z "$tag" ]; then
+            tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]{4}\.[0-9]{4}\.[0-9]{4}$'; then
+            echo "::error::the tag '$tag' is not of the form vYYYY.MMDD.HHMM"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Site for release $tag"
+      - name: Test the detection and the builder
+        run: |
+          node site/detect_test.js
+          python3 -m unittest tools/build_site_test.py
+      - name: Build the site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: >
+          python3 tools/build_site.py --tag "$TAG" --out _site
+          --release-sizes --check-urls
+      # task-175: build the web app here and add `--web PATH_TO_ITS_BUILD` to the command
+      # above, which copies it to _site/web/.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

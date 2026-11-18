@@ -30,3 +30,6 @@ __pycache__/
 
 # Packages built by scripts/ (task-108)
 /dist/
+
+# The Pages site built by tools/build_site.py (task-212)
+/_site/

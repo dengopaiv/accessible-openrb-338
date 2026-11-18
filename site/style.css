@@ -1,0 +1,163 @@
+/* The landing page in the look of the OpenRB-338 panel (task-212). The colors, gradients and
+   proportions are those of crates/orb-ui-art/src/parts.rs and svg.rs: the gray speckled plates
+   on dark seams between the wooden sides, the glossy section headers with their lamps, the
+   pattern buttons, the 808's step keys, the 303's silver face, and Inter for every text. */
+@font-face { font-family: "Inter"; font-weight: 500; font-display: swap;
+  src: url(fonts/Inter-Medium.woff) format("woff"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-display: swap;
+  src: url(fonts/Inter-Bold.woff) format("woff"); }
+:root { color-scheme: dark; --label: #edf1f3; --seam: #14181b; --wood: 26px; }
+* { box-sizing: border-box; }
+/* The textures are pictures (tools/site_textures.py), not the SVG noise filters they are drawn
+   from: Safari redrew the filters while scrolling. For the same reason no background is fixed.
+   The desk around the unit (crates/orb-ui/src/backdrop.rs): */
+body { margin: 0; padding: 28px 12px 40px; font: 500 16px/1.55 "Inter", system-ui, sans-serif;
+  color: var(--label); background: #181b1d url(img/desk.webp) 0 0 / 512px; }
+b, strong { font-weight: 700; }
+a { color: #fff; text-underline-offset: 2px; }
+a:hover { color: #ffcf8f; }
+
+/* the unit: the wooden sides and the seams between the plates */
+.unit { max-width: 1080px; margin: 0 auto; padding: 0 var(--wood);
+  background: url(img/wood.webp) left top / var(--wood) auto repeat-y,
+  url(img/wood.webp) right top / var(--wood) auto repeat-y, var(--seam);
+  box-shadow: 0 18px 50px #000c, 0 2px 6px #000a; }
+.plate { margin: 0; padding: 22px 26px 26px; border: 1.5px solid var(--seam);
+  background: #5f7079 url(img/plate.webp) 0 0 / 512px;
+  box-shadow: inset 1.5px 1.5px 0 #ffffff47, inset -1.5px -1.5px 0 #00000073; }
+.plate > :last-child { margin-bottom: 0; }
+
+/* the wordmark, as on the transport plate */
+header.plate { text-align: center; padding-top: 30px; }
+.brand { display: inline-flex; align-items: center; gap: 22px; max-width: 100%; margin: 0;
+  font-size: 1rem; }
+.b-icon { width: 84px; height: auto; flex: none; filter: drop-shadow(0 2px 3px #0008); }
+.b-logo { width: 400px; max-width: calc(100% - 106px); height: auto; }
+.tag { max-width: 40em; margin: 18px auto 0; }
+
+/* a section header: the glossy bar, its title in Inter Bold and its lit lamp */
+.hdr { position: relative; margin: 0 0 18px; padding: 0 16px 0 52px; height: 42px;
+  display: flex; align-items: center; border-radius: 3px; color: #fff;
+  font: 700 24px/1 "Inter", system-ui, sans-serif; letter-spacing: .07em;
+  text-transform: uppercase; text-shadow: 1.5px 1.5px 0 #00000073;
+  box-shadow: inset 0 1.5px 0 #ffffff59, 1.5px 2.5px 2px #00000073; }
+.hdr::before { content: ""; position: absolute; left: -15px; top: -19px; width: 80px;
+  height: 80px; background: center / contain no-repeat; pointer-events: none; }
+.hdr.pat { background: linear-gradient(#ffffff1a, #fff0 50%, #00000024),
+  linear-gradient(#c23148, #a82439 50%, #8a1a2c); }
+.hdr.mix { background: linear-gradient(#ffffff1a, #fff0 50%, #00000024),
+  linear-gradient(#b8b055, #a39b41 50%, #878033); }
+.hdr.fx { background: linear-gradient(#ffffff1a, #fff0 50%, #00000024),
+  linear-gradient(#3d62b8, #2c4b9c 50%, #213a80); }
+.hdr.pat::before { background-image: url(img/power_pat_on.svg); }
+.hdr.mix::before { background-image: url(img/power_mix_on.svg); }
+.hdr.fx::before { background-image: url(img/power_fx_on.svg); }
+
+/* printed labels */
+h3, h4, summary, figcaption { font-weight: 500; letter-spacing: .07em; text-transform: uppercase; }
+h3 { font-size: 1.05rem; margin: 24px 0 8px; }
+h4 { font-size: .85rem; margin: 14px 0 4px; }
+.note, .small { font-size: .9rem; }
+p { margin: 12px 0; }
+
+/* the screenshots, each in a dark window like the mod's picture */
+#shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; }
+figure { margin: 0; }
+figure img { width: 100%; height: auto; display: block; }
+a.zoom { cursor: zoom-in; display: block; padding: 6px; border-radius: 4px; background: #0b0b0b;
+  box-shadow: inset 0 0 0 1px #000, 1px 1px 0 #ffffff40, -1px -1px 0 #00000059; }
+figcaption { text-align: center; margin-top: 8px; font-size: .8rem; }
+.lightbox { position: fixed; inset: 0; z-index: 10; background: #000d; display: flex;
+  align-items: center; justify-content: center; cursor: zoom-out; padding: 12px; }
+.lightbox-close { position: absolute; top: 10px; right: 14px; width: 40px; height: 40px;
+  font-size: 28px; line-height: 1; color: #fff; background: #000a; border: 1px solid #fff8;
+  border-radius: 50%; cursor: pointer; }
+.lightbox-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.lightbox img { max-width: 100%; max-height: 100%; }
+
+/* the features on the 303's silver face, a red lamp for each */
+.face { list-style: none; margin: 0; padding: 12px 26px 12px 44px; border: 1px solid #0b0b0b;
+  border-radius: 3px; color: #17191b; background: linear-gradient(#f6f6f6, #e3e4e5 60%, #cfd0d2);
+  box-shadow: inset 0 1.5px 0 #fff, 1.5px 2.5px 2px #00000073; }
+.face li { position: relative; margin: 10px 0; }
+.face li::before { content: ""; position: absolute; left: -24px; top: .45em; width: 9px;
+  height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px #0b0b0b;
+  background: radial-gradient(circle at 40% 35%, #ffd9d2, #ff3a2a 45%, #8a0f0a); }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+code { padding: 1px 5px; border-radius: 3px; font-size: .9em; background: #0000001a; }
+
+/* the release, on a red display */
+.release { margin: 0 0 14px; }
+.lcd { display: inline-block; margin-left: 4px; padding: 1px 9px; border-radius: 2px;
+  background: #160404; color: #ff4a3a; text-decoration: none; font-weight: 700;
+  letter-spacing: .08em; font-variant-numeric: tabular-nums; text-shadow: 0 0 6px #ff3a2a99;
+  box-shadow: inset 0 0 0 1px #000, 1px 1px 0 #ffffff40; }
+.lcd:hover { color: #ff7a6c; }
+
+/* the system tabs: the pattern buttons, the chosen one lit */
+.tabs { display: none; gap: 8px; margin: 0 0 6px; flex-wrap: wrap; }
+.js .tabs { display: flex; }
+.tab { font: 700 15px/1 "Inter", system-ui, sans-serif; padding: 11px 20px; cursor: pointer;
+  color: #3c4046; border: 1px solid #5d6166; border-radius: 6px;
+  background: linear-gradient(#ffffffb3, #ffffffb3) 4px 3px / calc(100% - 8px) 36% no-repeat,
+  linear-gradient(#fff, #e4e6e8 55%, #b8bcc1); box-shadow: 1px 2px 2px #00000080; }
+.tab.on { color: #a8251b; border-color: #e53b2d;
+  background: linear-gradient(#ffffff8c, #ffffff8c) 4px 3px / calc(100% - 8px) 36% no-repeat,
+  linear-gradient(#fff6f3, #ffc9bf 50%, #ff8c7c); box-shadow: 0 0 9px 2px #ff3a2acc; }
+.tab:focus-visible, .button:focus-visible, a:focus-visible { outline: 2px solid #fff;
+  outline-offset: 2px; }
+/* the tab already names the system */
+.js .os > h3 { display: none; }
+
+/* the download buttons: the 808's orange step keys */
+.button { display: inline-flex; align-items: center; gap: 9px; margin: 4px 10px 6px 0;
+  padding: 9px 22px 9px 18px; border: 1px solid #0b0b0a; border-radius: 4px; color: #1d1104;
+  font-weight: 700; text-decoration: none;
+  background: linear-gradient(#ffb65a, #f58a21 28%, #ffb65a 34%, #f58a21 60%, #c9600c);
+  box-shadow: inset 0 1.5px 0 #fff9, 1.5px 2.5px 2px #0009; }
+.button:hover { color: #1d1104; filter: brightness(1.08); }
+.button:active { transform: translateY(1px); filter: brightness(.94);
+  box-shadow: inset 0 1.5px 0 #fff6, 0 1px 1px #0009; }
+.ico { fill: currentColor; flex: none; }
+/* a system's mark (or GitHub's) before a name: on a tab, in the list of all downloads */
+.osi { flex: none; width: 1.05em; height: 1.05em; margin-right: .5em; vertical-align: -.14em; }
+.tab { display: inline-flex; align-items: center; }
+.tab .osi { margin-right: .55em; }
+/* on a button: what it is, and under it the file's format and size */
+.bl { display: flex; flex-direction: column; line-height: 1.25; }
+.bs { font-weight: 500; font-size: .8rem; }
+.arch p { margin: 0; }
+.linklike { font: inherit; background: none; border: 0; padding: 0; color: #fff;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.linklike:hover { color: #ffcf8f; }
+.js .nojs-only { display: none; }
+
+/* the macOS steps, on a dark inset */
+.warn { margin: 16px 0; padding: 4px 18px 10px; border: 1px solid #000; border-radius: 3px;
+  border-left: 6px solid #f58a21; background: var(--seam); color: #e6eaed;
+  box-shadow: 1px 1px 0 #ffffff40; }
+.warn h4 { color: #ffb65a; font-size: 1rem; font-weight: 700; letter-spacing: 0;
+  text-transform: none; overflow-wrap: anywhere; }
+.warn h5 { margin: 12px 0 4px; font-size: .95rem; }
+.warn li { overflow-wrap: anywhere; }
+pre { margin: 8px 0; padding: 10px 12px; border-radius: 3px; overflow-x: auto; user-select: all;
+  background: #0a0c0d; color: #dfe5e8; font-size: .9rem; }
+
+.dls { list-style: none; padding-left: 0; margin: 8px 0; }
+.dls li { padding: 3px 0; }
+.dl { font-weight: 700; }
+summary { cursor: pointer; margin: 14px 0 6px; font-size: .85rem; }
+footer.plate { text-align: center; font-size: .85rem; padding: 18px 26px; }
+.gh { color: var(--label); display: inline-block; filter: drop-shadow(1px 1.5px 0 #00000073); }
+.gh:hover { color: #fff; }
+
+@media (max-width: 600px) {
+  :root { --wood: 10px; }
+  body { padding: 0 0 24px; }
+  .plate { padding: 16px 14px 18px; }
+  .hdr { font-size: 20px; }
+  .b-icon { width: 54px; }
+  .brand { gap: 12px; }
+  .b-logo { max-width: calc(100% - 66px); }
+  .face { padding-right: 14px; }
+}

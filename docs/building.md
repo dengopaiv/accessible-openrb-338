@@ -895,6 +895,93 @@ symlink test). This emulated run is local only: everything but the x86_64 runtim
 exercised, and the x86_64 runtime itself (and so `--screenshot` through it) was not. A real x86_64 Linux host or the CI runner runs it. The first release
 run (task-134) still has to check the runners and a real desktop.
 
+## The landing page (task-212)
+
+The page at https://pingw33n.github.io/OpenRB-338/ is plain HTML and CSS with a little
+JavaScript, its source in `site/` (`index.html`, `style.css`, `detect.js`, `app.js`, `img/`).
+No framework, no build tool beyond `tools/build_site.py`.
+
+- **Build** into one folder (the release tag is a parameter):
+  `python3 tools/build_site.py --tag v2026.1118.0730 --out _site` (`_site/` is git-ignored).
+  Open `_site/index.html`, or serve it: `python3 -m http.server -d _site`. `--release-sizes`
+  reads the release's assets with `gh release view` (which needs `gh` logged in, and sees a
+  draft release as its owner) and writes each file's size on its button next to the format
+  (`.dmg, 13.9 MB`; decimal megabytes); it fails when the release lacks a file the page links.
+  Without it a button names the format only. The two collection zips are made by GitHub on
+  request without a length, so their sizes are constants of the script (`SONGS_DETAIL`,
+  `MODS_DETAIL`). `--check-urls` sends an
+  HTTP HEAD for every download link and fails on a link that does not answer 200 (a draft
+  release's assets are not public, so it fails until the release is published). `--web DIR`
+  copies the web app's build to `_site/web/` (task-175).
+- **Download links** are written into the HTML at build time from the release tag, with the asset
+  names that `scripts/release-assets.sh` checks (`OpenRB-338-<version>-<target>.dmg`, ...):
+  `https://github.com/pingw33n/OpenRB-338/releases/download/<tag>/<name>`. They are not the
+  `releases/latest/download/NAME` form (the names carry the version) and the visitor's browser
+  never calls the GitHub API (no rate limit). `tools/build_site_test.py` checks the 14 names
+  against `release-assets.sh`.
+- **The download section** has a tab per system (macOS, Windows, Linux), the detected one
+  selected, and per architecture a Standalone and a Plugins button (Windows: one installer that
+  holds the plugins). `site/detect.js` (`navigator.userAgentData`'s architecture where the
+  browser gives it, else the user agent) detects the system and processor. When the processor
+  is unknown it shows both: Safari and Firefox on an Apple silicon Mac say "Intel", and Windows
+  on ARM says "x64" in the user agent, so macOS and Windows without `userAgentData` get both
+  groups; Linux's `x86_64`/`aarch64` in the user agent is trusted; a phone or an unknown system
+  gets the macOS tab. Clicking a macOS button starts the download and shows the box of
+  `app.js`: the binaries are not signed or notarized, with the steps for the file just
+  downloaded (Open Anyway, and the `xattr` commands for that file name), as README's Quick
+  start. Without JavaScript the page lists every system and both architectures. Tested by
+  `node site/detect_test.js` on macOS, Windows, Linux and phone user agents.
+- **The look** is the panel's, made in `site/style.css` from the colors and gradients of
+  `crates/orb-ui-art/src/parts.rs` and `svg.rs`: the page is a unit on the desk
+  (`img/desk.webp`) between two wooden sides (`img/wood.webp`), every section a gray
+  speckled plate (`img/plate.webp`) on the dark seams, every section title a glossy header bar
+  with its lit lamp (`img/power_*_on.svg`; red as PATTERN, blue as the effects, olive as MIX),
+  the features on the 303's silver face, the system tabs as pattern buttons, the download
+  buttons as the 808's orange step keys, and the release on a red display. The other SVGs are copies of `assets/ui/`. There is one look, no
+  light variant.
+- **The textures** are pictures, made by `tools/site_textures.py` (Pillow and headless
+  Firefox): it draws `tools/site_textures/plate.svg` and `wood.svg` (written by hand from the
+  art's definitions `GRAY`, `GRAIN_GRAY` and `wood_left.svg`, every noise stitched so the tile
+  repeats without a seam) and `assets/ui/desk_tile.svg` at 2 pixels per unit and writes
+  `site/img/plate.webp` (71 KiB), `wood.webp` and `desk.webp`. The page does not use the SVGs
+  themselves as backgrounds, and fixes no background, because Safari redraws SVG noise filters
+  (feTurbulence) while scrolling: the page scrolled slowly there and its background flickered.
+- **For search engines and link previews** the page has one `h1` (the wordmark, with its text
+  as the image's `alt`), a title, a description of at most 160 characters, the canonical
+  address, Open Graph tags with the picture `img/og.jpg` (1200 x 630, the standalone window,
+  made by `tools/site_images.py`), and a schema.org `SoftwareApplication` block (JSON-LD) with
+  the release's version. `build_site.py` writes them from `SITE_URL` and `DESCRIPTION` and
+  adds `sitemap.xml`. There is no `robots.txt`: it only counts at the host's root
+  (`pingw33n.github.io/robots.txt`), which belongs to another repository; without one,
+  everything may be crawled. All text and every download link are in the HTML itself, so a
+  crawler needs no JavaScript.
+- **The icons** are inline SVG symbols of `site/index.html`: the download arrow and the GitHub
+  mark from Octicons (MIT), and the three system marks on the tabs and in "All downloads" from
+  Font Awesome Free 6.7.2 brands (CC BY 4.0, credited in a comment next to them). "All
+  downloads" lists every asset of the release by system, with its format and size.
+- **The font** is Inter, as the panel's labels: `tools/site_fonts.py` (fontTools) writes
+  `site/fonts/Inter-Medium.woff` and `Inter-Bold.woff`, the printable ASCII subset of
+  `crates/orb-ui-art/fonts/` (20 KiB each), with the license.
+- **The logo** is the panel's wordmark (`logo.svg` = `assets/ui/logo.svg`) on the top plate,
+  as on the transport, next to the app icon (`favicon.svg` = `assets/ui/app_icon.svg`),
+  without the animation.
+- **Screenshots and favicons:** `tools/site_images.py` (Pillow) makes `site/img/standalone*.webp`
+  and `plugin*.webp` (a page copy 1200 px wide at quality 75 and the full-size copy of the zoom at quality 92; sRGB, no
+  metadata) from the user's window screenshots, laying the plugin window over the REAPER window
+  at the offset that matches the intended layout, and `favicon-32.png` and `apple-touch-icon.png`
+  from `orb-ui-art iconset DIR`; its docstring has the command. A click on a screenshot opens
+  the full-size file in an overlay (Esc or a click closes it); without JavaScript the link
+  opens the file.
+- **The workflow** `.github/workflows/pages.yml` runs when a release is published (a tag push
+  only makes a draft whose assets are not public) and by hand (`workflow_dispatch`, optional
+  `tag`, else the latest published release). The `build` job runs the two tests, builds with
+  `--release-sizes --check-urls` and uploads the Pages artifact; the `deploy` job alone has `pages: write` and
+  `id-token: write`. Actions are pinned by SHA. The site is one artifact: the web app (task-175)
+  is built in the `build` job and copied to `web/` with `--web`.
+- **The user's one-time setting:** Settings > Pages > Build and deployment > Source: GitHub
+  Actions. Until it is set, the `deploy` job fails at `deploy-pages` with an error that Pages is
+  not enabled for the repository.
+
 ## The plugin (task-204)
 
 The VST® 3 and CLAP instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundles
