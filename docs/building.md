@@ -955,6 +955,12 @@ No framework, no build tool beyond `tools/build_site.py`.
   (`pingw33n.github.io/robots.txt`), which belongs to another repository; without one,
   everything may be crawled. All text and every download link are in the HTML itself, so a
   crawler needs no JavaScript.
+- **The visitor count** is GoatCounter (https://pingw33n.goatcounter.com, the dashboard): a
+  script in the `<head>` of `site/index.html` (`data-goatcounter` names the count endpoint,
+  `src="https://gc.zgo.at/count.js"`, async). It is cookieless, so no consent banner is needed.
+  It is the page's only third-party request: the page loads nothing else from another host, and
+  its links to GitHub are navigations. `tools/build_site_test.py` asserts the script in the
+  built page.
 - **The icons** are inline SVG symbols of `site/index.html`: the download arrow and the GitHub
   mark from Octicons (MIT), and the three system marks on the tabs and in "All downloads" from
   Font Awesome Free 6.7.2 brands (CC BY 4.0, credited in a comment next to them). "All

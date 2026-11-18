@@ -1,10 +1,11 @@
 ---
 id: TASK-247
 title: 'Landing page: GoatCounter visitor counting'
-status: To Do
+status: Done
 assignee:
   - '@agent-chore'
 created_date: '2026-11-18T10:15:00Z'
+updated_date: '2026-11-18T10:17:00Z'
 labels:
   - tools
 milestone: m-6
@@ -41,7 +42,35 @@ Do not change anything else on the page.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The built _site/index.html loads https://gc.zgo.at/count.js async with data-goatcounter="https://pingw33n.goatcounter.com/count"
-- [ ] #2 build_site_test.py asserts it and passes; node site/detect_test.js passes
-- [ ] #3 docs/building.md names GoatCounter, its dashboard URL, and that it is the page's only third-party request
+- [x] #1 The built _site/index.html loads https://gc.zgo.at/count.js async with data-goatcounter="https://pingw33n.goatcounter.com/count"
+- [x] #2 build_site_test.py asserts it and passes; node site/detect_test.js passes
+- [x] #3 docs/building.md names GoatCounter, its dashboard URL, and that it is the page's only third-party request
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add the GoatCounter script to site/index.html's head as given in the task, with src=https://gc.zgo.at/count.js (not protocol-relative), async and the data-goatcounter URL exact; before </head>. No CSP exists in index.html or build_site.py (checked by grep), so none to change.
+2. Extend tools/build_site_test.py Build.test_build to assert the built index.html contains the script tag with async, src https://gc.zgo.at/count.js and data-goatcounter https://pingw33n.goatcounter.com/count.
+3. Add a visitor-counting bullet to docs/building.md's landing page section (task-212): GoatCounter, cookieless, no consent banner, dashboard https://pingw33n.goatcounter.com, the page's only third-party request when it loads.
+4. Run /usr/bin/python3 -m unittest tools/build_site_test.py and node site/detect_test.js; build with --tag v2026.1118.0919 --out _site; grep goatcounter _site/index.html.
+5. Check ACs, final summary, Done, one commit (tools subject, Task: task-247).
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-a5dc68f5c4b234988 (worktree /Users/pingw33n/dev/OpenRB-338/.claude/worktrees/agent-a5dc68f5c4b234988), rebased onto main (9dba6a2 has the task-247 file).
+
+Done in the worktree: site/index.html head gets the GoatCounter script (before </head>, after the js class script) with src https://gc.zgo.at/count.js, async, data-goatcounter https://pingw33n.goatcounter.com/count; an HTML comment above it names the cookieless reason. No CSP in index.html or build_site.py (grep for content-security/csp: none), so none added.
+Ran: python3 -m unittest tools/build_site_test.py: Ran 4 tests OK (the new assertion is in Build.test_build). A ResourceWarning from the existing Names test (open() without close) is pre-existing, not changed.
+Ran: node site/detect_test.js: detect_test: ok.
+Ran: python3 tools/build_site.py --tag v2026.1118.0919 --out _site: built _site for v2026.1118.0919: 15 release assets linked. grep goatcounter _site/index.html: line 47 has data-goatcounter=https://pingw33n.goatcounter.com/count; grep -c gc.zgo.at/count.js: 1. _site is git-ignored (.gitignore line 35).
+docs/building.md: new bullet 'The visitor count' in the landing page section (task-212), names GoatCounter, dashboard URL, cookieless, only third-party request.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+GoatCounter is on the landing page. site/index.html carries the script in its head (src https://gc.zgo.at/count.js, async, data-goatcounter https://pingw33n.goatcounter.com/count). tools/build_site_test.py asserts the script in the built page. docs/building.md (landing page section) names GoatCounter, its dashboard URL, that it is cookieless, and that it is the page's only third-party request. No CSP exists, so none changed. Branch worktree-agent-a5dc68f5c4b234988, rebased onto main, one commit. Tests: python3 -m unittest tools/build_site_test.py Ran 4 tests OK; node site/detect_test.js ok; the build with --tag v2026.1118.0919 wrote _site/index.html with the script at line 47 (one occurrence of gc.zgo.at/count.js). Not pushed.
+<!-- SECTION:FINAL_SUMMARY:END -->
