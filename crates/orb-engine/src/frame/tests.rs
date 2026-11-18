@@ -1428,3 +1428,60 @@ fn a_closed_gate_silences_its_section_and_does_not_step() {
     e.set_gate(D::Tb303_1, Gate::default());
     assert_eq!(e.frame.devices.channels[0].gate(), Gate::default());
 }
+
+/// A channel device that logs the block's tick.
+struct Ticks(Rc<RefCell<Vec<i32>>>);
+impl SongDevice for Ticks {}
+impl ChannelDevice for Ticks {
+    fn process(&mut self, _bus: &mut Block, ctx: &BlockContext) {
+        self.0.borrow_mut().push(ctx.tick);
+    }
+}
+
+#[test]
+fn the_note_clock_gives_the_stopped_songs_blocks_their_tick() {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let mut d = Devices::placeholders();
+    d.channels[0] = Box::new(Ticks(seen.clone()));
+    let mut e = Engine::new(tables(), d);
+    e.set_tempo(120_000);
+    let inc = 120_000.0 * crate::seq::TEMPO_STEP;
+    let run = |e: &mut Engine, n: usize| {
+        seen.borrow_mut().clear();
+        for _ in 0..n {
+            block_once(e);
+        }
+        seen.borrow().clone()
+    };
+    // off (every song's start): the stopped song's tick
+    assert_eq!(e.frame.note_clock, None);
+    assert_eq!(run(&mut e, 4), [0; 4]);
+    // free-running from the song's position, the song clock's advance per block
+    e.set_note_clock(NoteClock::Run);
+    let mut c = 0.0f64;
+    let mut want = Vec::new();
+    for _ in 0..200 {
+        c += inc;
+        want.push(crate::seq::trunc(c));
+    }
+    assert_eq!(run(&mut e, 200), want);
+    assert_eq!(e.frame.note_clock, Some(c));
+    assert_eq!(e.frame.seq.tick_pos(), 0, "the song stays where it is");
+    // Run keeps a running clock
+    e.set_note_clock(NoteClock::Run);
+    assert_eq!(e.frame.note_clock, Some(c));
+    // At sets it before the block, which then adds its advance (as Position does)
+    e.set_note_clock(NoteClock::At(1000.25));
+    assert_eq!(run(&mut e, 1), [crate::seq::trunc(1000.25 + inc)]);
+    // the playing song's own tick wins, and the clock does not run
+    e.play();
+    let before = e.frame.note_clock;
+    let t = run(&mut e, 3);
+    assert_eq!(t[2], e.frame.seq.tick_pos());
+    assert_eq!(e.frame.note_clock, before);
+    // off: the song's tick again
+    e.stop();
+    e.set_note_clock(NoteClock::Off);
+    let p = e.frame.seq.tick_pos();
+    assert_eq!(run(&mut e, 3), [p; 3]);
+}

@@ -594,6 +594,78 @@ before (the standalone app has no lights and is unchanged).
   `led909ac_lit` (assets/ui/README.md). `editor_preview --note CH,NOTE,VEL` sends host notes
   for screenshots.
 
+### 9.5 The PCF in note mode: the note-mode clock (task-242)
+
+The PCF picks its wave step from the block's tick: `quotient(ctx.tick, res)`
+(`crates/orb-engine/src/pcf.rs`, the original's 0x100166D0; `tick / 24`, `/ 48` or `/ 96` at
+resolution 32, 16 or 8, 0x10016792..0x100167AE), and a new step sets the decay and triggers the
+envelope (0x10016845). The tick is the song's position (`sub_1001F870`). In note mode the song
+is stopped, so it stood at the bar start: the PCF stayed on one step, with no triggers, and a
+dragged-out pattern (section 12) sounded unlike its preview. The original behaves so with its
+song stopped: the PCF block 0x100166D0 takes the tick from the song's position (`sub_1001F870`,
+read at 0x10016756), and the clock `sub_1001EF20`, the only code that advances the position
+each block, returns at once while the play flag is clear (0x1001EF34,
+`docs/initial_investigation.md` section 5 [C]), so the tick stays where Stop's locate put it.
+Note mode is new engine behavior, and the user decided (2026-11-18) that the PCF's tick in
+note mode comes from a clock of its own:
+
+- **The engine** (not in the original): `Frame::note_clock`, a fractional tick, off (`None`)
+  in every new song, so the corpus renders, the app and the pattern modes never see it. While
+  it runs and the song is stopped, each block first adds the song clock's advance to it
+  (`tempo * TEMPO_STEP`, as `sub_1001EF20` adds it to the position at 0x1001EF51; the tempo is
+  the song's, which the plugin sets to the host's in every mode, section 8.2), and the block's
+  `BlockContext::tick` is `trunc` of it (`Frame::block_tick`). While the song plays the song's
+  tick wins and the clock stands. `Engine::set_note_clock` (orb-player's
+  `Command::NoteClock`): `Off`; `Run`, which starts a clock that is off at the song's position
+  and keeps a running one; `At(tick)`, which sets it.
+- **The plugin** (`src/core.rs`, `Engine::note_clock`, in `sync` before the Stop the mode owes):
+  in note mode outside the preview, while the host plays and reports a position, the clock is
+  set before every block to the host's tick at the block's host frame, `beats * 192`
+  extrapolated at its tempo exactly as pattern mode's position (section 8.2), so that after the
+  block's advance it equals pattern mode's position after the same block. While the host is
+  stopped or reports no position the clock runs free at the tempo from where it was: from the
+  last host position when the host stops; from the song's position when note mode starts with
+  the host stopped. The clock is started before the Stop that the mode owes, so a song that
+  played stops after the clock has taken its position: leaving the preview (or Gate Pattern
+  Mode's free-running gate, or a host that played without a position) with the host stopped
+  continues the PCF from the tick the playing song had reached, not from the bar start that
+  the Stop's locate (`sub_1001E100`) moves the song to. When the song was already stopped (an
+  activation, Latch Pattern Mode with the host stopped) that is its bar start. In the pattern
+  modes and the preview the clock is off. The song stays stopped and the sequencer steps no
+  device; only the PCF reads the tick.
+- **What reads the tick.** Of the devices and effects, only the PCF reads
+  `BlockContext::tick` (`pcf.rs`, `control`). The delay reads `ctx.tempo` (its length, slot 16),
+  which is the host's tempo in note mode too, so the delay's time is the preview's. The mixer
+  update's context keeps the song's tick (the PCF's slot 16 does not read it).
+
+**The drag-out against the pattern** (`tests/note_clock.rs`): an 808 pattern (the diag song
+`808_accent_level127`: BD and SD with AC), a 909 one (`909_accent_level127`) and both with
+shuffle (`shuffle_drums_g64`, 808 and 909 together), with the PCF on the section's channel
+(wave 0), are played for two loops at 120 BPM with the host rolling from bar 1 in Latch Pattern
+Mode, and their drag-out (`clip::notes`) is played into note mode with the same host:
+
+- The PCF's step quotient after every block is the same in both, block for block, from the
+  first block (the PCF triggers on the same blocks).
+- The notes played at the host's frames (the first frame whose position reaches the note's
+  tick, as a host plays a MIDI item) sound up to a block later than the steps: a step plays in
+  the first block whose position after the advance reaches it, a note in the first block at or
+  after its frame (section 4, task-227), so the note comes one block (64 frames, 1.45 ms) later
+  for most ticks; and the pattern's step at tick 0 after the clean start (Stop, Locate 0, Play)
+  plays in the second block, as the clock steps the devices from tick 1, while a note at 0
+  plays in the first. The outputs differ by up to 1.6 (808), 1.7 (909) and 0.21 (shuffled),
+  the same hits shifted by a block.
+- The same notes put in the blocks where the pattern plays its steps give the pattern's output
+  within one LSB of the int16 output (1/32768): the first difference at frame 3394 (808), 3396
+  (909) and 3438 (shuffled), in about 3400 of the 176400 frames. It is there without the PCF
+  too, so it is the drum voices', not the clock's; the cause was not isolated (the notes and the
+  steps run the same trigger code, section 9.2; as section 4's later notes, some state that
+  runs on in silence, here likely what the pattern mode's clean start, a Stop with its slot 4
+  and 6, resets; task-243).
+- So the accent mapping (808 velocity 127 = AC 1; the 909's bands), the shuffle baked into the
+  clip (the shuffled ticks, `seq::shuffled`) and the delay's tempo give no difference of their
+  own. Not compared: the 909's flam (a note arms none, section 9.2, so a flam step's drag-out
+  differs by design) and the 303s (their own comparison is section 9.1's).
+
 ## 10. The editor (task-201)
 
 The editor is orb-ui's panel, drawn by the same code as the standalone app

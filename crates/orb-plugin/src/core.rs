@@ -56,7 +56,10 @@
 //!   a loop) by a tick or more from where the last block's position and the tempo put it, the song
 //!   is located there; otherwise only the position is set (`Command::Position`), as the original's
 //!   TopHat sync does in every audio call (`sub_1001C2F4`, `docs/plugin.md` section 8);
-//! - while the host is stopped the song is stopped (no sound in pattern mode).
+//! - while the host is stopped the song is stopped (no sound in pattern mode);
+//! - in note mode the song is stopped, and the note-mode clock (`Command::NoteClock`, task-242)
+//!   gives the PCF its tick: the host's, set before each block, while the host plays with a
+//!   position, and free-running at the tempo from where it was otherwise.
 //!
 //! # MIDI
 //!
@@ -89,7 +92,7 @@
 
 use std::sync::Arc;
 
-use orb_engine::frame::Gate;
+use orb_engine::frame::{Gate, NoteClock};
 use orb_engine::seq::TEMPO_STEP;
 use orb_engine::song::Device;
 use orb_player::midi::{Action, Message, StandardMapping, Timed};
@@ -419,11 +422,23 @@ impl Engine {
             self.send(Command::Tempo(tempo));
         }
         let host_plays = self.mode.patterns() && rec.t.playing;
-        let pos = match rec.t.pos_beats {
-            Some(p) if !self.preview && host_plays && p.is_finite() => p,
+        // the host's tick at `h` while it plays with a position, 192 a quarter note
+        let host_tick = match rec.t.pos_beats {
+            Some(p) if rec.t.playing && p.is_finite() => {
+                let bpm = host_tempo.unwrap_or(tempo as f64 / 1000.0);
+                let beats = p + (h - rec.start as f64) * bpm / 60.0 / self.rate as f64;
+                Some((beats * TICKS_PER_BEAT).clamp(0.0, MAX_TICK))
+            }
+            _ => None,
+        };
+        let tick = match host_tick {
+            Some(t) if !self.preview && host_plays => t,
             _ => {
                 self.following = false;
                 self.audio.set_host_sync(false);
+                // before the Stop note mode owes: a clock that starts takes the position the
+                // playing song (the preview's) has reached, not the bar start the Stop locates to
+                self.note_clock(host_tick);
                 let fading = self.audio.newest().frame.gate_fade.contains(&true);
                 if self.preview || host_plays || self.any_open() || fading {
                     // the preview, a host that plays without a position, or a held gate note
@@ -437,9 +452,7 @@ impl Engine {
                 return;
             }
         };
-        let bpm = host_tempo.unwrap_or(tempo as f64 / 1000.0);
-        let beats = pos + (h - rec.start as f64) * bpm / 60.0 / self.rate as f64;
-        let tick = (beats * TICKS_PER_BEAT).clamp(0.0, MAX_TICK);
+        self.note_clock(None);
         let at = tick as u32;
         if self.audio.has_pending() || !self.audio.current().playing() {
             // a song loaded over the playing one: switch to it, then start it cleanly
@@ -463,6 +476,25 @@ impl Engine {
         self.following = true;
         self.last_tick = tick;
         self.audio.set_host_sync(true);
+    }
+
+    /// The note-mode clock (task-242, `docs/plugin.md` 9.5), before the song's Stop the mode
+    /// owes: in note mode outside the preview the PCF's tick is the host's (`host_tick`) while
+    /// the host plays with a position, set before the block as pattern mode's
+    /// `Command::Position`, and free-running at the tempo from where it was otherwise (a clock
+    /// that starts takes the song's position, which a song still playing, the preview's, has
+    /// not yet lost to the Stop's locate); in the pattern modes and the preview the clock is
+    /// off.
+    fn note_clock(&mut self, host_tick: Option<f64>) {
+        let on = self.mode == Mode::Note && !self.preview;
+        let running = self.audio.newest().frame.note_clock.is_some();
+        let c = match (on, host_tick) {
+            (true, Some(t)) => NoteClock::At(t),
+            (true, None) if !running => NoteClock::Run,
+            (false, _) if running => NoteClock::Off,
+            _ => return,
+        };
+        self.send(Command::NoteClock(c));
     }
 
     /// One host MIDI message.

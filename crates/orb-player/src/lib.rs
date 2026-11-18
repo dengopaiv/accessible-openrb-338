@@ -96,7 +96,7 @@ use std::sync::Arc;
 
 use orb_engine::frame::edit::PatternShape;
 use orb_engine::frame::export::REALTIME_FRAMES;
-use orb_engine::frame::{Devices, Engine, Gate, LoadRefused, MixerParams, Sounding};
+use orb_engine::frame::{Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, Sounding};
 use orb_engine::process::ProcessState;
 use orb_engine::samples::{Retired, STARTUP_ID, Sample, SampleSet};
 use orb_engine::seq::Pool;
@@ -157,6 +157,10 @@ pub enum Command {
     /// audio call; [`Engine::set_position`]): no chase, no relocate, the last tick kept. The
     /// plugin's host sync (`orb-plugin`, task-198).
     Position(f64),
+    /// The note-mode clock ([`Engine::set_note_clock`]): the tick the inserts (the PCF) see
+    /// while the song is stopped, at the host's position or free-running. The plugin's note
+    /// mode (task-242); not a message of the original's.
+    NoteClock(NoteClock),
     /// Slot 2 (relocate) on one device at the current tick ([`Engine::relocate_device`]): its
     /// pending pattern and on/off switch take effect at once. The plugin's pattern selection by
     /// notes (task-198); not a message of the original's.
@@ -801,6 +805,7 @@ impl Audio {
             Command::Stop => self.target().stop(),
             Command::Locate(t) => self.target().locate(t),
             Command::Position(p) => self.target().set_position(p),
+            Command::NoteClock(c) => self.target().set_note_clock(c),
             Command::Relocate(d) => self.target().relocate_device(d),
             Command::Note {
                 device,

@@ -83,7 +83,9 @@ pub struct BlockContext<'a> {
     /// The song's tempo, BPM*1000 (`sub_1001FCF0`), which the delay's update reads.
     pub tempo: u32,
     /// The tick of the song's position (`sub_1001F870`), already advanced by this block's
-    /// sequencer step; the PCF's pattern step follows it (0x10016756).
+    /// sequencer step; the PCF's pattern step follows it (0x10016756). With the song stopped
+    /// and the note-mode clock on ([`Frame::note_clock`], not in the original) it is that
+    /// clock's tick.
     pub tick: i32,
     /// The dword at an insert's entry `esp - 0x1C` when it is called ([`Frame::stack_word`]):
     /// the inserts are called from the same `esp` as the channel's audio slot (0x10013580,
@@ -926,6 +928,23 @@ pub struct Frame {
     /// gate has just closed; its next block fades the bus out linearly
     /// ([`gate_fade_gain`]), then slot 6 runs on the device.
     pub gate_fade: [bool; 4],
+    /// Not in the original (task-242): the note-mode clock, a fractional tick, or `None` (off,
+    /// as every song starts). While it runs and the song is stopped, each block advances it as
+    /// the song's clock advances its position and the inserts see its tick
+    /// ([`BlockContext::tick`]) in place of the stopped song's, so that the PCF steps through
+    /// its wave in the plugin's note mode ([`Engine::set_note_clock`]).
+    pub note_clock: Option<f64>,
+}
+
+/// What [`Engine::set_note_clock`] does to the note-mode clock ([`Frame::note_clock`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NoteClock {
+    /// Off: the blocks see the song's tick.
+    Off,
+    /// Running on from where it is; a clock that was off starts at the song's position.
+    Run,
+    /// At this fractional tick (the host's position), running.
+    At(f64),
 }
 
 /// The gain of sample `i` (0..64) of a closed gate's fade-out block: `(63 - i) / 64`, from
@@ -977,6 +996,22 @@ impl Frame {
             stack_word: None,
             out_end: None,
             gate_fade: [false; 4],
+            note_clock: None,
+        }
+    }
+
+    /// The tick the block's devices and inserts see ([`BlockContext::tick`]), after the song's
+    /// clock ran: the song's tick, or, with the note-mode clock on and the song stopped, the
+    /// note-mode clock's after this block's advance (not in the original, task-242; the
+    /// advance is the song clock's, `tempo * TEMPO_STEP` added to the position, 0x1001EF51).
+    fn block_tick(&mut self) -> i32 {
+        match &mut self.note_clock {
+            Some(c) if self.seq.globals.play == 0 => {
+                let tempo = self.seq.globals.tempo as i32;
+                *c += tempo as f64 * crate::seq::TEMPO_STEP;
+                crate::seq::trunc(*c)
+            }
+            _ => self.seq.tick_pos(),
         }
     }
 
@@ -1065,11 +1100,12 @@ impl Frame {
         let mi = mi as usize;
         l.fill(GUARD);
         r.fill(GUARD);
+        let tick = self.block_tick();
         let mut ctx = BlockContext {
             tables: &self.tables,
             meter_index: mi,
             tempo: self.seq.globals.tempo,
-            tick: self.seq.tick_pos(),
+            tick,
             stack_word: None,
         };
         let bus = &mut self.bus;
@@ -1483,6 +1519,20 @@ impl Engine {
     /// The position alone (`sub_1001F8B0`; [`crate::seq::Sequencer::set_pos`]).
     pub fn set_position(&mut self, pos: f64) {
         self.frame.seq.set_pos(pos);
+    }
+
+    /// Not in the original (task-242): the note-mode clock ([`Frame::note_clock`]), which the
+    /// plugin's note mode runs so that the PCF steps through its wave while the song is
+    /// stopped: at the host's position while the host plays ([`NoteClock::At`], set before
+    /// each block as [`Engine::set_position`] in pattern mode), free-running at the tempo
+    /// otherwise ([`NoteClock::Run`]).
+    pub fn set_note_clock(&mut self, c: NoteClock) {
+        let f = &mut self.frame;
+        f.note_clock = match c {
+            NoteClock::Off => None,
+            NoteClock::Run => Some(f.note_clock.unwrap_or(f.seq.pos)),
+            NoteClock::At(t) => Some(t),
+        };
     }
 
     /// Slot 2 on one device at the current tick ([`crate::seq::Sequencer::relocate_device`]).
