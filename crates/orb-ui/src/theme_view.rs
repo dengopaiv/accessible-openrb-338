@@ -287,24 +287,6 @@ pub fn header_meter_frame(state: u8) -> u16 {
     }
 }
 
-/// How many of the compressor's nine gain-reduction LEDs the original lights, a bar from the
-/// left. The link keeps the engine's gain byte (live byte 3, `trunc(min(G*18, 127))`, 18 at
-/// unity gain) as `n = ceil(byte*4/127)` LEDs left of `Panel::gr_leds`' center; the viewer
-/// lights none for n 0 (a byte of 0, and before the engine reports), LEDs 1 to 5 (up to "0")
-/// for n 1 (unity gain), all nine for n 4 (the byte at its top), and 6 and 8 between. The
-/// original on the test machine (docs/ui_spec.md section 21): idle with the compressor on the
-/// master, LEDs 1 to 5; the threshold at its lowest while playing, all nine; the master's COMP
-/// switch off, none [C: screenshots; the scale between G, `sub_424A7E` not read].
-pub fn gr_lit(leds: &[u8; 9]) -> usize {
-    match leds[..4].iter().filter(|&&v| v > 0).count() {
-        0 => 0,
-        1 => 5,
-        2 => 6,
-        3 => 8,
-        _ => 9,
-    }
-}
-
 /// The lights the panel model does not hold: the Sync and MIDI LEDs (a plugin's; dark in the
 /// standalone app).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -746,9 +728,10 @@ fn effects(o: &mut Vec<Op>, p: &Panel) {
     // dist (526, 352)
     knob(o, p, "dist.amount", KNOB_SMALL, 538, 380);
     knob(o, p, "dist.shape", KNOB_SMALL, 579, 380);
-    // comp (526, 417): the gain-reduction LEDs, 7 px each, the lit row (frame 1) per LED
+    // comp (526, 417): the gain-reduction LEDs, 7 px each, a bar from the left of the lit row
+    // (frame 1) over the unlit one, as the original's draw `sub_424C20` blits them
     o.push(Op::v(12570, 2, 0, 534, 442, 63, 10));
-    for i in 0..gr_lit(&p.gr_leds) {
+    for i in 0..crate::model::gr_lit(p.gr_byte) {
         let x = 7 * i as i32;
         o.push(Op {
             sx: x,

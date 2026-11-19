@@ -456,8 +456,8 @@ pub struct Link {
     /// The open song's saved blocks while the engine plays it in song mode
     /// ([`Link::song_mode_blocks`]).
     saved: Option<SavedBlocks>,
-    /// The gain-reduction LEDs [`Link::moving`] saw last.
-    shown_gr: Option<[u8; 9]>,
+    /// The number of lit gain-reduction LEDs [`Link::moving`] saw last.
+    shown_gr: Option<usize>,
     /// A pattern written into the mirror whose message waits until the engine no longer plays
     /// it ([`Link::set_pattern_unplayed`]).
     deferred: Option<Deferred>,
@@ -621,7 +621,8 @@ impl Link {
         let (playing, frames) = (s.playing, s.frames);
         // the compressor's reduction holds its last value in silence: it moves only when it
         // changes
-        let gr_moved = self.shown_gr.replace(panel.gr_leds) != Some(panel.gr_leds);
+        let gr = crate::model::gr_lit(panel.gr_byte);
+        let gr_moved = self.shown_gr.replace(gr) != Some(gr);
         playing
             || frames <= mark
             || !self.backlog.is_empty()
@@ -1267,13 +1268,8 @@ impl Link {
                 .meters
                 .insert(id.into(), meter_state(live(d, i).unwrap_or(0)));
         }
-        // the gain reduction: the centre LED is "0", the reduction lights the ones to its left
-        let n = ((live(Device::Compressor, 3).unwrap_or(0) as u32 * 4 + 63) / 127) as usize;
-        panel.gr_leds = [0; 9];
-        panel.gr_leds[4] = 1;
-        for k in 1..=n.min(4) {
-            panel.gr_leds[4 - k] = if k <= 2 { 2 } else { 3 };
-        }
+        // the compressor's gain byte, which the gain-reduction LEDs show (`model::gr_lit`)
+        panel.gr_byte = live(Device::Compressor, 3).unwrap_or(0);
         // a section whose pattern gate is closed (the plugin's Gate Pattern Mode) lights no step
         let step = |d: Device, i: usize| {
             live(d, i)

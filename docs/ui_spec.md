@@ -201,9 +201,49 @@ class, the bank's hit function was not read].
 12015, 11 frames: frame 0 blank, frames 1..10 the digits 0..9, section 21), right-aligned, leading zeros blank (screenshots:
 "16", " 3", "140"). A disabled display shows all segments dark.
 
-**Meters** (`CPeakMeterView` `sub_4248B6`, `CHorisontalMeterView` `sub_424ACC`): display only;
-the frame follows the engine's meter byte (`sub_424220`, `sub_424A7E`) [C for the wiring, G for
-the scale].
+**Meters** (`CPeakMeterView` `sub_4248B6`, `CHorisontalMeterView` `sub_424ACC`): display only.
+The peak meters (the mixer channels', the master's two, the effects' input meters) take the
+engine's meter byte through the table `sub_424220` (`L[0] = 0`,
+`L[i] = __ftol(log(i) / log(127.0) * 127.0)`, 0x424258..0x424294) and store it with
+`sub_424A7E` (view `+0x22`); the update `sub_424A96` copies it to `+0x20` and redraws; the
+draw `sub_4249A8` shows frame `trunc(L * (F - 1) / 127)` (`sub_467F31`), F the word at `+4` of
+the view's bitmap object (0x46DBC3) [C for the code; G: F is the strip's frame count; orb does
+not follow this scale yet, task-253].
+
+**Gain-reduction meter** (task-252) [C]: the comp section's nine LEDs (bitmap 12570) are a
+`CHorisontalMeterView` at section `+0xD4`, built by the section ctor `sub_403BE0` with
+`sub_424ACC(bitmap, 9 LEDs, 10 high, 7 wide)` (0x403C90..0x403CB0: fields `+0x24`, `+0x26`,
+`+0x28`) and placed by the layout `sub_4040CE` at (8, 25, 63, 10). The section's poll
+`sub_404396` reads the compressor's gain byte (section `+0x127`, its live byte 3,
+`trunc(min(G*18, 127))` of the engine, 0x1000EB48; `+0x128`, live byte 4, is the input meter)
+and passes it through the table `sub_4044FD`, then stores it with `sub_424D45` (view `+0x20`)
+(0x4044AD..0x4044CE):
+
+    t(0) = 0
+    t(b) = __ftol(((log(b / 16.0f) - log(0.0625)) / (log(7.9375) - log(0.0625))) * 127.0)
+
+(0x4046AC..0x404708; `flt_4BA2F0` = 16.0f, `dbl_4BA2F8` = 127.0, the two other constants
+pushed as doubles 0x3FB00000:0 = 0.0625 and 0x401FC000:0 = 7.9375; `fsubr` and `fdivr` give
+the order shown). The table is filled once for b = 1..N, where N is a copy-protection
+expression: 127 when `\\.\SICE` opens, else `(dword_4DA0AC >> 16) - ([dword_4DFB24 + 0x13C](..,
+-6) & 0x7F)`, whose intended value is also 127 (`docs/standard_midi_mapping.md` section 3, the
+same expression + 1 = 128). The view's update `sub_424D5D` (vtable 0x4BBB44 slot 18) computes
+`n = sub_467F31(t, 9, 127)` = `__ftol(t * 9 / 127)` (`fild`, `fimul`, `fidiv`; for these
+integers the integer quotient), stores it at `+0x22` and redraws when it changed; the draw
+`sub_424C20` (slot 15) blits columns `0 .. 7n` from the strip's lit row (source y 10) and the
+rest from the unlit row: **a bar of n LEDs from the left**.
+
+| Gain byte | 0..1 | 2..3 | 4..5 | 6..8 | 9..15 | 16..25 | 26..43 | 44..74 | 75..126 | 127 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Lit LEDs | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+
+So the idle compressor (unity gain, byte 18) lights LEDs 1 to 5, up to the "0" mark, and all
+nine need the byte at its top, as the screenshots of task-187 show (section 21). No table value
+but those of 1 (0.0) and 127 (127.0) lies near an integer, so a log that differs in its last
+bit gives the same table. A byte of 0 lights none: the engine clears byte 3 when the
+compressor got no call since the last mixer update (0x1000EFB0), so the master's COMP switch
+off (and the compressor off) shows no LED, also while playing. OpenRB-338: `model::gr_lit`,
+shared by the main panel (section 16) and the theme viewer.
 
 ## 3. Transport
 
@@ -705,8 +745,9 @@ task-187 review round 4) [C].
 
 The on/off button's and the meters' y and the button's x are copy-protection expressions; the
 art matches the button at (3, 3) and the meter at (64, 3) [C: template match]. The gain-reduction
-meter has 9 LEDs ("-40 -20 0 +20 +40"); 0 in the middle is no reduction, LEDs to the left show
-reduction (manual page 164).
+meter has 9 LEDs ("-40 -20 0 +20 +40"); the manual (page 164) reads 0 in the middle as no
+reduction, but the program lights a bar from the left whose length grows with the gain byte
+(section 2, "Gain-reduction meter") [C].
 
 ## 10. Keyboard
 
@@ -899,7 +940,9 @@ Each item says what would settle it.
   `sub_43D37B` / `sub_4242B6`), as `sub_41A5B0` was read for the pattern grid.
 - Settled (task-187, review round 4): the master right meter's x is 50 and the dist meter's x
   64 (section 9), by an exact match in a lossless screenshot of the original.
-- [G] The meter scales. Settle: read `sub_424220` and `sub_424A7E`.
+- Settled (task-252): the gain-reduction meter's scale (`sub_4044FD`, `sub_424D5D`; section 2).
+  The peak meters' scale is read (`sub_424220`, section 2) but for the frame count F [G];
+  orb's `link::meter_state` is still linear (task-253).
 - [G] The 909 tap keys and the drums' Shift+Tab deletion. Settle: read the 909 view's key handler
   (`CTR909View` vtable slot 14, 0x4472AF) and search `sub_42D1D3` / `sub_440213`'s 808/909
   counterparts for code 31 with Shift; or tap on the test machine during playback.
@@ -944,9 +987,13 @@ read, and what it leaves out.
   that waits for Play (the old one plays on; the panel shows the newest song, as the original's
   does) are not taken.
 - **Meters [G].** The meter byte (0..127) maps linearly to the 11 states, rounded up so that any
-  signal shows. The compressor's gain reduction (live byte 3, `min(G*18, 127)`) lights the centre
-  LED ("0") and up to four LEDs to its left, the first two amber and the others red. Neither scale
-  was read in the original (`sub_424220`, `sub_424A7E`; section 15).
+  signal shows (the original's log scale, section 2, is task-253).
+- **Gain reduction [C] (task-252, decision task-251).** The panel keeps the compressor's gain
+  byte (live byte 3, `trunc(min(G*18, 127))`; `Panel::gr_byte`) and lights `model::gr_lit(byte)`
+  LEDs as a bar from the left, the original's mapping (section 2: none at 0, five at 18, nine at
+  127), each LED in the color of its place, lit or unlit: green, green, green, amber, amber,
+  amber, red, red, red (`model::GR_COLORS`, the same in orb-ui-art). The master's COMP switch
+  off leaves the byte 0 (the engine clears it), so no LED is lit.
 - **Repainting (task-153).** egui draws a frame only when one is asked for; the window asks
   for one by these rules, and by no others:
   - **The engine's side.** After each frame's `Link::sync`, `Link::moving` decides: while the
@@ -1612,9 +1659,9 @@ meter byte mapped as section 16 says). The app shows state s as `[0, 1, 1, 1, 2,
 4][s]` lit segments (`model::header_meter_segments`): any signal lights the first segment, the
 amber one lights from state 7 and the red one from 9, the states at which the master's 10-segment
 meters light their amber and red segments. The master's meters keep 10 segments and 11 states.
-The compressor's gain-reduction LEDs light in the colors section 16 gives (the center green,
-the reduction amber then red to its left); unlit, each shows its place's color, dark (the
-center green, the two beside it amber, the outer two red, the right side mirrored).
+The compressor's gain-reduction LEDs are a bar from the left (section 16, task-252), each in
+the color of its place, lit or unlit and dark: green, green, green, amber, amber, amber, red,
+red, red.
 
 **The knobs' TUNE and TONE labels** (the user's decision, 2026-11-13). On the 808 every tune or
 tone knob is labeled TUNE, except BD's and CY's, which are TONE (so the SD knob that drives the
@@ -1669,8 +1716,8 @@ it the speckle's specks; every control, label and section is in the mockup's pla
   mockup drew them only at rest);
 - the mod window's picture and name: the app paints them, `panel.svg` has none;
 - the gain-reduction LEDs: the mockup lit LEDs 1 to 5 in fixed colors by place (green, green,
-  green, amber, amber); the app lights them in the link's colors (section 16: the center green,
-  then amber and red to its left), so the demo shows red, red, amber, amber, green;
+  green, amber, amber), and so does the demo since task-252 (the app lit the center green and
+  the reduction amber then red to its left until then);
 - the PCF and delay lamps' halo tints the display frame below them a little (the mockup drew
   the frame after the lamp; here the frame is background);
 - the labels are outlines of the same Inter glyphs, so their antialiasing differs by a few
@@ -1863,11 +1910,10 @@ now fixed:
   yellow and three red); playing with the threshold at its lowest, all nine; the master's COMP
   switch off, none, also while playing. The engine's byte (live byte 3 of the compressor,
   `trunc(min(G*18, 127))`, 0x1000EB48) is 18 at unity gain, 0 when the gain is 0 and 127 at
-  the top, so the bar is the byte's: none at 0, five at 18, nine at 127 [C at those three; the
-  scale between G, `sub_424A7E` not read]. The viewer lights `theme_view::gr_lit` LEDs from the
-  link's `gr_leds` (none, 5, 6, 8, 9 for 0 to 4 LEDs left of its center). The main panel's own
-  gain-reduction LEDs (section 16: the center green, the reduction amber then red to its left)
-  are not the original's; the decision task-251 asks how the main panel shows them.
+  the top, so the bar is the byte's: none at 0, five at 18, nine at 127 [C; the whole scale
+  read in task-252: `sub_4044FD` and `sub_424D5D`, section 2, "Gain-reduction meter"]. The
+  viewer and the main panel (decision task-251, section 16) both light `model::gr_lit(byte)`
+  LEDs from the left.
 
 **OpenRB-338's viewer.** Mods > Theme Viewer... (`crates/orb-ui/src/theme_view.rs`,
 `App::theme_viewer_ui`) opens a window that draws the panel at this geometry with the current
@@ -1881,7 +1927,7 @@ frame comes from the live panel model, as the main panel draws it: knobs by
 the running light, the grid and the bank row, the displays (disabled ones blank), the 808
 selector at `(127 * i + 5) / 11`, the meters (the 11-frame master meter by the state, the
 four-frame meters off from 0, green from 1, amber from 7, red from 9 [G]) and the gain-reduction
-LEDs (a bar from the left, `theme_view::gr_lit`). The window is a native window of its own (an egui immediate viewport), 624 x 510 at first,
+LEDs (a bar from the left, `model::gr_lit`). The window is a native window of its own (an egui immediate viewport), 624 x 510 at first,
 resizable with the panel letterboxed at its aspect on black (`theme_view::DESK`, the user's review
 round 4), closed by its close button and reopened by
 the menu (at the size it had). The menu item while it is open brings it to the front with the

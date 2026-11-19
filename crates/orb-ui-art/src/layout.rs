@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use crate::parts::{
-    BANK_Y, BLACK_303, FG_PCF, FG_TR808, GR_OFF, KEY_X, KEY_Y, KEYCAP, KNOB_SWEEP, KNOB_X_303,
+    BANK_Y, BLACK_303, FG_PCF, FG_TR808, GR_COLORS, KEY_X, KEY_Y, KEYCAP, KNOB_SWEEP, KNOB_X_303,
     KNOBS, KNOBS_909, LEGEND_808, LOGO_X, LOGO_Y, MOD_PICTURE, MOD_VIEW_808, NAMES_808, NAMES_909,
     SEAM, WHITE_303, chip_909, led_909,
 };
@@ -585,13 +585,13 @@ fn effects(b: &mut Builder) {
 
     b.section("comp", "bg_comp", 526.0, 417.0);
     fx_header(b, 3.0, true, 3);
-    for (i, off) in GR_OFF.into_iter().enumerate() {
-        // the demo's reduction: the center and the four LEDs left of it, as the app lights them
-        let state = match i {
-            0 | 1 => "red".to_string(),
-            2 | 3 => "amber".to_string(),
-            4 => "green".to_string(),
-            _ => format!("off_{off}"),
+    for (i, color) in GR_COLORS.into_iter().enumerate() {
+        // the demo: the idle compressor at unity gain, LEDs 1 to 5 lit, as the app lights them
+        let state = match (i < 5, color) {
+            (true, "g") => "green".to_string(),
+            (true, "y") => "amber".to_string(),
+            (true, _) => "red".to_string(),
+            (false, c) => format!("off_{c}"),
         };
         b.part(
             &format!("gr{}", i + 1),

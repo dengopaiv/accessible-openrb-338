@@ -2661,8 +2661,8 @@ fn fx_bg(out: &mut Vec<Part>) {
             |s| slide_v(s, 0.0, 0.0, 9.0, 18.0, pos),
         ));
     }
-    // the compressor's nine gain-reduction LEDs, 7 x 7 around the lamp: lit in the color the
-    // app gives, unlit in their place's color (`GR_OFF`)
+    // the compressor's nine gain-reduction LEDs, 7 x 7 around the lamp: in the color of their
+    // place (`GR_COLORS`), lit or unlit
     for (name, c, on) in [
         ("gr_led_green", "G", true),
         ("gr_led_amber", "Y", true),
@@ -2677,9 +2677,10 @@ fn fx_bg(out: &mut Vec<Part>) {
     }
 }
 
-/// The unlit color of each gain-reduction LED, left to right: the center (0) green, the two
-/// beside it amber and the outer ones red, as the app lights them (docs/ui_spec.md section 16).
-pub const GR_OFF: [&str; 9] = ["r", "r", "y", "y", "g", "y", "y", "r", "r"];
+/// The color of each gain-reduction LED by its place, left to right, lit or not: three green,
+/// three amber, three red; the app lights a bar from the left (decision task-251,
+/// docs/ui_spec.md section 16).
+pub const GR_COLORS: [&str; 9] = ["g", "g", "g", "y", "y", "y", "r", "r", "r"];
 
 // ---------------------------------------------------------------- seven-segment digits
 

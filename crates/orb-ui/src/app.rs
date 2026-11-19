@@ -1680,7 +1680,7 @@ mod geometry_tests {
             let sel = crate::art::part(&format!("sel909_{name}")).unwrap();
             assert!((sel.w - w).abs() < 1e-3, "sel909 {i}");
         }
-        assert_eq!(crate::model::GR_OFF, art::GR_OFF);
+        assert_eq!(crate::model::GR_COLORS, art::GR_COLORS);
     }
 }
 

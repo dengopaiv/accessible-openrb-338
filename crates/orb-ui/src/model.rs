@@ -280,8 +280,9 @@ pub struct Panel {
     pub comp_id: u8,
     /// Meter states 0..=10 by control id (mixer, master, effect input); engine-fed.
     pub meters: HashMap<String, u8>,
-    /// The compressor's nine gain-reduction LEDs: 0 off, 1 green, 2 amber, 3 red.
-    pub gr_leds: [u8; 9],
+    /// The compressor's gain byte (its live byte 3, `trunc(min(G*18, 127))`, 18 at unity
+    /// gain, 0 while the compressor gets no audio); [`gr_lit`] gives the LEDs it lights.
+    pub gr_byte: u8,
     /// The song's sound model: the Options menu's "Vintage ReBirth Synth Sound" (GLOB byte 482,
     /// the engine's global byte 21). Changes go through [`Panel::set_vintage`].
     pub vintage: bool,
@@ -313,9 +314,30 @@ pub fn header_meter_segments(state: u8) -> u8 {
     [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4][state.min(10) as usize]
 }
 
-/// The color of each unlit gain-reduction LED, left to right: the center ("0") green, the two
-/// beside it amber and the outer ones red, the colors the link lights them in.
-pub const GR_OFF: [&str; 9] = ["r", "r", "y", "y", "g", "y", "y", "r", "r"];
+/// The color of each gain-reduction LED by its place, left to right, lit or not: three green,
+/// three amber, three red (decision task-251).
+pub const GR_COLORS: [&str; 9] = ["g", "g", "g", "y", "y", "y", "r", "r", "r"];
+
+/// How many of the compressor's nine gain-reduction LEDs the original lights for its gain
+/// byte, a bar from the left (docs/ui_spec.md section 2, "Gain-reduction meter") [C]. The comp
+/// section's poll `sub_404396` maps the byte through the table `sub_4044FD`,
+/// `t = trunc((ln(b / 16) - ln(0.0625)) / (ln(7.9375) - ln(0.0625)) * 127)` (`t(0) = 0`), and
+/// the view's update `sub_424D5D` lights `trunc(t * 9 / 127)` LEDs (`sub_467F31`): none at
+/// 0 and 1, five at 16 to 25 (18 is unity gain), all nine only at 127. A byte above 127 (the
+/// engine never writes one) counts as 127.
+pub fn gr_lit(byte: u8) -> usize {
+    let b = byte.min(127);
+    if b == 0 {
+        return 0;
+    }
+    // 0x4046AC..0x404708 in double precision, in the original's operand order, then `__ftol`
+    // (truncation)
+    let low = 0.0625f64.ln();
+    let num = (b as f64 / 16.0).ln() - low;
+    let den = 7.9375f64.ln() - low;
+    let t = (num / den * 127.0) as i64;
+    (t * 9 / 127) as usize
+}
 
 fn index_of(section: &str, prefix: &str) -> Option<usize> {
     section
@@ -342,7 +364,7 @@ impl Panel {
             pcf_id: 0,
             comp_id: 0,
             meters: HashMap::new(),
-            gr_leds: [0; 9],
+            gr_byte: 0,
             vintage: false,
             events: Vec::new(),
             held: None,
@@ -455,7 +477,8 @@ impl Panel {
         ] {
             p.meters.insert(id.into(), v);
         }
-        p.gr_leds = [0, 0, 0, 2, 1, 0, 0, 0, 0];
+        // the idle compressor at unity gain: LEDs 1 to 5
+        p.gr_byte = 18;
         p.events.clear();
         p
     }
@@ -1084,10 +1107,17 @@ impl Panel {
             "steps" => self.step_part(c),
             "meter" if name.starts_with("gr") => {
                 let i: usize = name[2..].parse::<usize>().unwrap_or(1).clamp(1, 9);
-                match self.gr_leds[i - 1].min(3) {
-                    // unlit, in the color of its place (task-179)
-                    0 => format!("gr_led_off_{}", GR_OFF[i - 1]),
-                    s => format!("gr_led_{}", ["", "green", "amber", "red"][s as usize]),
+                // a bar from the left, each LED in the color of its place, lit or not
+                let color = GR_COLORS[i - 1];
+                if i <= gr_lit(self.gr_byte) {
+                    let lit = match color {
+                        "g" => "green",
+                        "y" => "amber",
+                        _ => "red",
+                    };
+                    format!("gr_led_{lit}")
+                } else {
+                    format!("gr_led_off_{color}")
                 }
             }
             "meter" => {
@@ -1458,12 +1488,41 @@ mod tests {
         assert!(!p.part_name(&fx, true, 0.0).ends_with("_pressed"));
     }
 
-    /// task-179: the gain-reduction LEDs light in the link's colors and are unlit in their
-    /// place's; the 303 has a rest LED beside the note LED.
+    /// task-252: the original's byte-to-LED mapping (`sub_4044FD`, `sub_424D5D`) at each
+    /// threshold (the first byte of each count and the last of the count before) and at 0, 18
+    /// (unity gain) and 127.
+    #[test]
+    fn gain_reduction_byte_to_lit_leds() {
+        let firsts = [
+            (2, 1),
+            (4, 2),
+            (6, 3),
+            (9, 4),
+            (16, 5),
+            (26, 6),
+            (44, 7),
+            (75, 8),
+        ];
+        for (b, n) in firsts {
+            assert_eq!(gr_lit(b), n, "byte {b}");
+            assert_eq!(gr_lit(b - 1), n - 1, "byte {}", b - 1);
+        }
+        assert_eq!(gr_lit(0), 0);
+        assert_eq!(gr_lit(1), 0);
+        assert_eq!(gr_lit(18), 5);
+        assert_eq!(gr_lit(126), 8);
+        assert_eq!(gr_lit(127), 9);
+        assert_eq!(gr_lit(255), 9);
+        // a bar: never fewer LEDs for a larger byte
+        assert!((1..=255u8).all(|b| gr_lit(b) >= gr_lit(b - 1)));
+    }
+
+    /// task-252 (decision task-251): the main panel's gain-reduction LEDs are a bar from the
+    /// left in the colors of their places (green x3, amber x3, red x3), unlit in the same
+    /// colors; task-179: the 303 has a rest LED beside the note LED.
     #[test]
     fn gain_reduction_and_rest_leds() {
         let mut p = Panel::new();
-        p.gr_leds = [3, 2, 0, 0, 1, 0, 0, 0, 0];
         let part = |p: &Panel, id: &str| {
             let c = crate::layout::controls()
                 .into_iter()
@@ -1471,10 +1530,29 @@ mod tests {
                 .unwrap();
             p.part_name(&c, false, 0.0)
         };
-        assert_eq!(part(&p, "comp.gr1"), "gr_led_red");
-        assert_eq!(part(&p, "comp.gr2"), "gr_led_amber");
-        assert_eq!(part(&p, "comp.gr3"), "gr_led_off_y");
-        assert_eq!(part(&p, "comp.gr5"), "gr_led_green");
+        let leds = |p: &Panel| {
+            (1..=9)
+                .map(|i| part(p, &format!("comp.gr{i}")))
+                .collect::<Vec<_>>()
+        };
+        let lit = ["gr_led_green", "gr_led_amber", "gr_led_red"];
+        let off = ["gr_led_off_g", "gr_led_off_y", "gr_led_off_r"];
+        // unity gain: LEDs 1 to 5
+        p.gr_byte = 18;
+        let want: Vec<&str> = (0..9)
+            .map(|i| if i < 5 { lit[i / 3] } else { off[i / 3] })
+            .collect();
+        assert_eq!(leds(&p), want);
+        // the byte at its top: all nine
+        p.gr_byte = 127;
+        let want: Vec<&str> = (0..9).map(|i| lit[i / 3]).collect();
+        assert_eq!(leds(&p), want);
+        // a byte of 0 (the master's COMP off: the engine clears the byte): none
+        p.gr_byte = 0;
+        let want: Vec<&str> = (0..9).map(|i| off[i / 3]).collect();
+        assert_eq!(leds(&p), want);
+        p.gr_byte = 75;
+        assert_eq!(part(&p, "comp.gr8"), "gr_led_red");
         assert_eq!(part(&p, "comp.gr9"), "gr_led_off_r");
         let rest = p.synth[0].step(0).rest;
         let led = |on: bool| if on { "led_303_on" } else { "led_303_off" };

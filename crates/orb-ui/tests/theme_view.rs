@@ -17,10 +17,10 @@ use orb_cli::mods::Kit;
 use orb_ui::app::App;
 use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::menu::Cmd;
-use orb_ui::model::Panel;
+use orb_ui::model::{Panel, gr_lit};
 use orb_ui::settings::Settings;
 use orb_ui::theme_view::{
-    self, Bitmaps, IDS, Lights, Op, compose, gr_lit, header_meter_frame, knob_frame, ops,
+    self, Bitmaps, IDS, Lights, Op, compose, header_meter_frame, knob_frame, ops,
 };
 
 /// Frame `frame` of the `n`-frame strip `id` (`vertical` or not), `w` x `h` from `(sx, sy)` of
@@ -198,8 +198,8 @@ fn meters_and_faders_follow_the_state() {
     p.meters.insert("master.meter_l".into(), 7);
     p.meters.insert("mixer2.meter".into(), 9);
     p.meters.insert("delay.meter".into(), 3);
-    // the link's idle compressor (unity gain, byte 18: one LED left of the center)
-    p.gr_leds = [0, 0, 0, 2, 1, 0, 0, 0, 0];
+    // the idle compressor (unity gain, byte 18)
+    p.gr_byte = 18;
     let img = compose_panel(&p);
     assert!(shows(&img, b, Op::v(12557, 11, 7, 542, 74, 15, 56)));
     assert!(shows(&img, b, Op::v(12557, 11, 0, 576, 74, 15, 56)));
@@ -217,17 +217,25 @@ fn meters_and_faders_follow_the_state() {
     for i in 5..9 {
         assert!(shows(&img, b, led(i, 0)), "LED {i} off");
     }
-    // more gain lengthens the bar to the right, all nine at the byte's top
-    p.gr_leds = [0, 3, 2, 2, 1, 0, 0, 0, 0];
+    // more gain lengthens the bar to the right: 8 LEDs from byte 75 (the original's mapping,
+    // `model::gr_lit`), all nine only at 127
+    p.gr_byte = 75;
     let img = compose_panel(&p);
     assert!(shows(&img, b, led(7, 1)));
     assert!(shows(&img, b, led(8, 0)));
-    assert_eq!(gr_lit(&[0, 0, 2, 2, 1, 0, 0, 0, 0]), 6);
-    assert_eq!(gr_lit(&[3, 3, 2, 2, 1, 0, 0, 0, 0]), 9);
+    p.gr_byte = 74;
+    let img = compose_panel(&p);
+    assert!(shows(&img, b, led(6, 1)));
+    assert!(shows(&img, b, led(7, 0)));
+    p.gr_byte = 127;
+    let img = compose_panel(&p);
+    assert!(shows(&img, b, led(8, 1)));
     // a gain byte of 0 (the original with the master's COMP switch off), and before the engine
     // reports: none
-    assert_eq!(gr_lit(&[0, 0, 0, 0, 1, 0, 0, 0, 0]), 0);
-    assert_eq!(gr_lit(&[0; 9]), 0);
+    p.gr_byte = 0;
+    let img = compose_panel(&p);
+    assert!(shows(&img, b, led(0, 0)));
+    assert_eq!(gr_lit(0), 0);
     assert_eq!(header_meter_frame(0), 0);
     assert_eq!(header_meter_frame(10), 3);
 }
