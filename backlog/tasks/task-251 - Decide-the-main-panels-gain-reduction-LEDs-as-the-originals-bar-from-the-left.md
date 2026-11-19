@@ -3,10 +3,11 @@ id: TASK-251
 title: >-
   Decide: the main panel's gain-reduction LEDs as the original's bar from the
   left
-status: To Do
+status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-19T11:59:00Z'
+updated_date: '2026-11-19T12:37:00Z'
 labels:
   - decision
   - ui
@@ -39,6 +40,12 @@ Evidence: task-187's notes (the like-for-like section), docs/ui_spec.md section 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user chose an option (A, B or C) and the outcome and date are in the final summary
-- [ ] #2 If A or B: a follow-up task for the change exists, with the IDA read of sub_424A7E for the scale
+- [x] #1 The user chose an option (A, B or C) and the outcome and date are in the final summary
+- [x] #2 If A or B: a follow-up task for the change exists, with the IDA read of sub_424A7E for the scale
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by the user on 2026-11-19: option A. The main panel's gain-reduction LEDs follow the original: a bar from the left, lit by place in the redesign's colors (green, green, green, amber, amber, amber, red, red, red), none at a byte of 0, five at 18, nine at 127, one byte-to-LEDs mapping shared with the theme viewer. Follow-up: task-252 (includes reading sub_424A7E for the scale).
+<!-- SECTION:FINAL_SUMMARY:END -->
