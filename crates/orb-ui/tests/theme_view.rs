@@ -19,9 +19,7 @@ use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::menu::Cmd;
 use orb_ui::model::{Panel, gr_lit};
 use orb_ui::settings::Settings;
-use orb_ui::theme_view::{
-    self, Bitmaps, IDS, Lights, Op, compose, header_meter_frame, knob_frame, ops,
-};
+use orb_ui::theme_view::{self, Bitmaps, IDS, Lights, Op, compose, knob_frame, ops};
 
 /// Frame `frame` of the `n`-frame strip `id` (`vertical` or not), `w` x `h` from `(sx, sy)` of
 /// its cell, as pixels.
@@ -195,16 +193,32 @@ fn displays_show_their_values() {
 fn meters_and_faders_follow_the_state() {
     let b = Bitmaps::builtin();
     let mut p = Panel::new();
-    p.meters.insert("master.meter_l".into(), 7);
-    p.meters.insert("mixer2.meter".into(), 9);
-    p.meters.insert("delay.meter".into(), 3);
+    // the meter bytes on the original's log scale (`model::peak_meter_frame`, task-253): the
+    // master's 11 frames step at 2, 3, 5, 7, 12, 19, 30, 49, 81, 127, the four-frame header
+    // meters at 6 (green), 26 (amber) and 127 (red)
+    p.meters.insert("master.meter_l".into(), 30);
+    p.meters.insert("master.meter_r".into(), 29);
+    p.meters.insert("mixer2.meter".into(), 127);
+    p.meters.insert("mixer3.meter".into(), 126);
+    p.meters.insert("delay.meter".into(), 6);
+    p.meters.insert("dist.meter".into(), 5);
+    p.meters.insert("pcf.meter".into(), 26);
     // the idle compressor (unity gain, byte 18)
     p.gr_byte = 18;
     let img = compose_panel(&p);
     assert!(shows(&img, b, Op::v(12557, 11, 7, 542, 74, 15, 56)));
-    assert!(shows(&img, b, Op::v(12557, 11, 0, 576, 74, 15, 56)));
+    assert!(shows(&img, b, Op::v(12557, 11, 6, 576, 74, 15, 56)));
     assert!(shows(&img, b, Op::h(12558, 4, 3, 507, 169, 14, 15)));
+    assert!(shows(&img, b, Op::h(12558, 4, 2, 507, 284, 14, 15)));
+    assert!(shows(&img, b, Op::h(12558, 4, 0, 507, 399, 14, 15)));
     assert!(shows(&img, b, Op::h(12067, 4, 1, 590, 262, 13, 16)));
+    assert!(shows(&img, b, Op::h(12067, 4, 0, 590, 355, 13, 16)));
+    assert!(shows(&img, b, Op::h(12067, 4, 2, 590, 150, 13, 16)));
+    p.meters.insert("master.meter_l".into(), 0);
+    p.meters.insert("master.meter_r".into(), 127);
+    let img = compose_panel(&p);
+    assert!(shows(&img, b, Op::v(12557, 11, 0, 542, 74, 15, 56)));
+    assert!(shows(&img, b, Op::v(12557, 11, 10, 576, 74, 15, 56)));
     // unity gain: the gain-reduction LEDs lit from the left up to "0" (the original's idle
     // compressor on the built-in kit), the others off
     let led = |i: i32, frame: u16| Op {
@@ -236,8 +250,6 @@ fn meters_and_faders_follow_the_state() {
     let img = compose_panel(&p);
     assert!(shows(&img, b, led(0, 0)));
     assert_eq!(gr_lit(0), 0);
-    assert_eq!(header_meter_frame(0), 0);
-    assert_eq!(header_meter_frame(10), 3);
 }
 
 /// Review round 2 of task-187 ("PCF sliders are off"): the PCF's four faders are the short

@@ -24,7 +24,7 @@ use orb_cli::mods::Kit;
 use crate::app::{App, View};
 use crate::behavior;
 use crate::layout::{PANEL_H, PANEL_W};
-use crate::model::Panel;
+use crate::model::{Panel, peak_meter_frame};
 
 /// The panel's size in pixels.
 pub const W: usize = 624;
@@ -272,19 +272,6 @@ pub fn digits(value: Option<i32>, n: usize) -> Vec<u16> {
                 .map_or(0, |d| d + 1)
         })
         .collect()
-}
-
-/// The frame of the four-frame header meters (12558 of the mixer channels, 12067 of the
-/// effects: off, green, amber, red) for a meter state 0..=10 (`link::meter_state`): green from
-/// any signal, amber from 7 and red from 9, the thresholds of the master's 11-frame meter 12557
-/// (docs/ui_spec.md section 21) [G: the original's scale `sub_424220` was not read].
-pub fn header_meter_frame(state: u8) -> u16 {
-    match state {
-        0 => 0,
-        1..=6 => 1,
-        7 | 8 => 2,
-        _ => 3,
-    }
 }
 
 /// The lights the panel model does not hold: the Sync and MIDI LEDs (a plugin's; dark in the
@@ -648,7 +635,7 @@ fn mixer(o: &mut Vec<Op>, p: &Panel, c: usize) {
     o.push(Op::h(
         12558,
         4,
-        header_meter_frame(m),
+        peak_meter_frame(m, 4),
         x0 + 51,
         y0 + 4,
         14,
@@ -663,12 +650,15 @@ fn mixer(o: &mut Vec<Op>, p: &Panel, c: usize) {
 }
 
 fn effects(o: &mut Vec<Op>, p: &Panel) {
-    let meter = |p: &Panel, id: &str| p.meters.get(id).copied().unwrap_or(0).min(10);
+    // the original's peak-meter scale (`model::peak_meter_frame`) over each strip's frames
+    let meter = |p: &Panel, id: &str, frames: u16| {
+        peak_meter_frame(p.meters.get(id).copied().unwrap_or(0), frames)
+    };
     // master (526, 50): the 11-frame meters, the fader, the stereo compressor switch
     // the right one at x 50 of the section (an exact match in the ReBirthday screenshot;
     // docs/ui_spec.md section 9 had 51)
     for (id, x) in [("master.meter_l", 542), ("master.meter_r", 576)] {
-        o.push(Op::v(12557, 11, meter(p, id) as u16, x, 74, 15, 56));
+        o.push(Op::v(12557, 11, meter(p, id, 11), x, 74, 15, 56));
     }
     fader(o, p, "master.fader", TRACK_LONG, 559, 75);
     toggle(o, 12040, p.toggle_on("master.comp"), 568, 131, 24, 11);
@@ -684,7 +674,7 @@ fn effects(o: &mut Vec<Op>, p: &Panel) {
             16,
             16,
         );
-        let f = header_meter_frame(meter(p, &format!("{s}.meter")));
+        let f = meter(p, &format!("{s}.meter"), 4);
         o.push(Op::h(12067, 4, f, 590, y + dy, 13, 16));
     }
     // PCF (526, 148)

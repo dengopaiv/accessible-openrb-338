@@ -278,7 +278,8 @@ pub struct Panel {
     /// The global PCF and Comp routing ids: 0 none, PCF `c + 1`, Comp `c + 2` (master 1).
     pub pcf_id: u8,
     pub comp_id: u8,
-    /// Meter states 0..=10 by control id (mixer, master, effect input); engine-fed.
+    /// The meter bytes 0..=127 by control id (mixer, master, effect input); engine-fed. The
+    /// main panel shows [`meter_state`], the theme viewer the original's [`peak_meter_frame`].
     pub meters: HashMap<String, u8>,
     /// The compressor's gain byte (its live byte 3, `trunc(min(G*18, 127))`, 18 at unity
     /// gain, 0 while the compressor gets no audio); [`gr_lit`] gives the LEDs it lights.
@@ -304,10 +305,43 @@ impl Default for Panel {
     }
 }
 
-/// `c` for a section name like `mixer3` -> 2.
+/// The main panel's meter state 0..=10 of a meter byte 0..=127: the original's 11-frame master
+/// meter ([`peak_meter_frame`] over 11 frames, decision task-254), so the states step at the
+/// bytes 2, 3, 5, 7, 12, 19, 30, 49, 81 and 127. The header meters show it through
+/// [`header_meter_segments`].
+pub fn meter_state(byte: u8) -> u8 {
+    peak_meter_frame(byte, 11) as u8
+}
+
+/// The original's peak-meter level of a meter byte, the table `sub_424220` (`byte_4DABA8`,
+/// docs/ui_spec.md section 2, "Meters") [C]: `L(0) = 0`,
+/// `L(b) = __ftol(log(b) / log(127.0) * 127.0)` (0x424258..0x424294, `fdivr`: `log(b)` over
+/// `log(127)`, in double precision), so `L(1) = 0`, `L(2) = 18`, `L(127) = 127`. The table has
+/// 128 entries; a byte above 127 (the engine never writes one) counts as 127.
+pub fn peak_meter_level(byte: u8) -> u8 {
+    let b = byte.min(127);
+    if b == 0 {
+        return 0;
+    }
+    ((b as f64).ln() / 127.0f64.ln() * 127.0) as u8
+}
+
+/// The frame a peak meter of the original (`CPeakMeterView`: the mixer channels', the master's
+/// and the effects' input meters) shows for its meter byte, with `frames` frames in its strip:
+/// the draw `sub_4249A8` takes `sub_467F31(L, frames - 1, 127) = trunc(L * (frames - 1) / 127)`
+/// of the level [`peak_meter_level`], `frames` the count the strip's bitmap object was built
+/// with (`sub_46DB82`, its `+4`: 11 for the master's 12557, 4 for the mixer's 12558 and the
+/// effects' 12067; docs/ui_spec.md section 2) [C]. The master's 11 frames step at the bytes 2,
+/// 3, 5, 7, 12, 19, 30, 49, 81 and 127; the four-frame meters are green from 6, amber from 26
+/// and red only at 127.
+pub fn peak_meter_frame(byte: u8, frames: u16) -> u16 {
+    // `fild; fimul; fidiv` then `__ftol`: the exact quotient of integers, truncated
+    (peak_meter_level(byte) as u32 * (frames.max(1) as u32 - 1) / 127) as u16
+}
+
 /// The lit segments (0..=4) of a header meter (the mixer channels' and the effects') for the
-/// meter's state 0..=10 (`link::meter_state`, the 11 frames of the original's meter): any
-/// signal lights the first segment, the amber third segment lights from 7 and the red top one
+/// meter's state 0..=10 ([`meter_state`], the 11 frames of the original's meter): state 1
+/// (byte 2) lights the first segment, the amber third segment lights from 7 and the red top one
 /// from 9, where the master's 10-segment meters light their amber and red segments
 /// (task-179; docs/ui_spec.md section 19).
 pub fn header_meter_segments(state: u8) -> u8 {
@@ -464,16 +498,17 @@ impl Panel {
         p.set_knob("mixer4.pan", 800);
         p.set_fader("mixer1.level", 640);
         p.set_fader("mixer3.level", 880);
+        // the meter bytes of the states 6, 5, 8, 3, 8, 7, 4, 3, 2 ([`meter_state`])
         for (id, v) in [
-            ("mixer1.meter", 6),
-            ("mixer2.meter", 5),
-            ("mixer3.meter", 8),
-            ("mixer4.meter", 3),
-            ("master.meter_l", 8),
-            ("master.meter_r", 7),
-            ("pcf.meter", 4),
-            ("comp.meter", 3),
-            ("delay.meter", 2),
+            ("mixer1.meter", 19),
+            ("mixer2.meter", 12),
+            ("mixer3.meter", 49),
+            ("mixer4.meter", 5),
+            ("master.meter_l", 49),
+            ("master.meter_r", 30),
+            ("pcf.meter", 7),
+            ("comp.meter", 5),
+            ("delay.meter", 3),
         ] {
             p.meters.insert(id.into(), v);
         }
@@ -1121,7 +1156,7 @@ impl Panel {
                 }
             }
             "meter" => {
-                let state = self.meters.get(&c.id).copied().unwrap_or(0).min(10);
+                let state = meter_state(self.meters.get(&c.id).copied().unwrap_or(0));
                 if fam == "meter_14x14_" {
                     format!("{fam}{}", header_meter_segments(state))
                 } else {
@@ -1440,8 +1475,22 @@ mod tests {
             .into_iter()
             .find(|c| c.id == "mixer2.meter")
             .unwrap();
-        for (state, want) in [(0, 0), (1, 1), (6, 2), (8, 3), (10, 4), (200, 4)] {
-            p.meters.insert(c.id.clone(), state);
+        // the meter bytes on the original's scale (decision task-254): one segment from 2 (state
+        // 1), two from 7 (state 4), three from 30 (state 7), four from 81 (state 9)
+        for (byte, want) in [
+            (0, 0),
+            (1, 0),
+            (2, 1),
+            (6, 1),
+            (7, 2),
+            (29, 2),
+            (30, 3),
+            (80, 3),
+            (81, 4),
+            (127, 4),
+            (200, 4),
+        ] {
+            p.meters.insert(c.id.clone(), byte);
             assert_eq!(p.part_name(&c, false, 0.0), format!("meter_14x14_{want}"));
         }
         // the master's keep their 11 states
@@ -1449,8 +1498,55 @@ mod tests {
             .into_iter()
             .find(|c| c.id == "master.meter_l")
             .unwrap();
-        p.meters.insert(m.id.clone(), 7);
-        assert_eq!(p.part_name(&m, false, 0.0), "meter_15x56_7");
+        for (byte, want) in [(29, 6), (30, 7), (126, 9), (127, 10)] {
+            p.meters.insert(m.id.clone(), byte);
+            assert_eq!(p.part_name(&m, false, 0.0), format!("meter_15x56_{want}"));
+        }
+    }
+
+    /// Decision task-254: the main panel's meter state is the original's 11-frame master meter.
+    #[test]
+    fn main_panel_meter_state_follows_the_originals_scale() {
+        let starts = [0, 2, 3, 5, 7, 12, 19, 30, 49, 81, 127];
+        for (s, &b) in starts.iter().enumerate() {
+            assert_eq!(meter_state(b), s as u8, "byte {b}");
+            if b > 0 {
+                assert_eq!(meter_state(b - 1), s as u8 - 1, "byte {}", b - 1);
+            }
+        }
+        assert_eq!(meter_state(127), 10);
+        assert_eq!(meter_state(255), 10);
+    }
+
+    /// task-253: the original's peak-meter table `sub_424220` and the frame its draw
+    /// `sub_4249A8` shows, at every frame's first byte and the byte before it, for the master's
+    /// 11 frames (12557) and the header meters' 4 (12558, 12067).
+    #[test]
+    fn peak_meter_frames_follow_the_originals_log_scale() {
+        assert_eq!(
+            [0, 1, 2, 3, 30, 81, 126, 127, 128, 255].map(peak_meter_level),
+            [0, 0, 18, 28, 89, 115, 126, 127, 127, 127]
+        );
+        let levels: Vec<u8> = (0..=127).map(peak_meter_level).collect();
+        assert!(levels.windows(2).all(|w| w[0] <= w[1]));
+        for (frames, starts) in [
+            (11, &[0, 2, 3, 5, 7, 12, 19, 30, 49, 81, 127][..]),
+            (4, &[0, 6, 26, 127][..]),
+        ] {
+            for (f, &b) in starts.iter().enumerate() {
+                assert_eq!(
+                    peak_meter_frame(b, frames),
+                    f as u16,
+                    "{frames} frames, byte {b}"
+                );
+                if b > 0 {
+                    let before = peak_meter_frame(b - 1, frames);
+                    assert_eq!(before, f as u16 - 1, "{frames} frames, byte {}", b - 1);
+                }
+            }
+            assert_eq!(peak_meter_frame(255, frames), frames - 1);
+        }
+        assert_eq!(peak_meter_frame(127, 1), 0);
     }
 
     /// task-179 (review round 2): a routing key shows pressed only while the mouse is down on

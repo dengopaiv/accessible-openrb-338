@@ -205,10 +205,38 @@ class, the bank's hit function was not read].
 The peak meters (the mixer channels', the master's two, the effects' input meters) take the
 engine's meter byte through the table `sub_424220` (`L[0] = 0`,
 `L[i] = __ftol(log(i) / log(127.0) * 127.0)`, 0x424258..0x424294) and store it with
-`sub_424A7E` (view `+0x22`); the update `sub_424A96` copies it to `+0x20` and redraws; the
-draw `sub_4249A8` shows frame `trunc(L * (F - 1) / 127)` (`sub_467F31`), F the word at `+4` of
-the view's bitmap object (0x46DBC3) [C for the code; G: F is the strip's frame count; orb does
-not follow this scale yet, task-253].
+`sub_424A7E` (view `+0x22`); the update `sub_424A96` copies it to `+0x20` and redraws when it
+changed; the draw `sub_4249A8` shows frame `trunc(L * (F - 1) / 127)` (`sub_467F31`:
+`fild; fimul; fidiv; __ftol`, the exact quotient truncated), F the word at `+4` of the view's
+bitmap object (`+0x1C`, read by 0x46DBC3) [C, task-253]. The polls pass the engine's byte
+straight in (master `sub_412DC7`: `+0xF4`/`+0xF5` at 0x412E73..0x412EB8; mixer `sub_413F47`
+0x414407, delay `sub_407F7A` 0x4081FB, dist `sub_408AF5` 0x408C16, PCF `sub_41B914` 0x41BC60,
+comp input `sub_404396` 0x4044DD).
+
+F is the frame count [C, task-253]: the bitmap objects are built in the resource list
+`sub_4287A0` by `sub_46DB82` (`CBitmapSequence` `sub_46DBFD`, `CFilmStrip` `sub_46DCB6`), which
+stores its second argument, the frame count, at `+4` (0x46DB90) and the resource id at `+8`.
+The meters' strips: 12067 (0x2F23, the effects' input meters) at `+0x124` with 4 frames
+(0x428A09); 12558 (0x310E, the mixer channels') at `+0x13C` with 4 (0x428A3B); 12557 (0x310D,
+the master's) at `+0x148`, a `CFilmStrip` of 11 frames, cells 15 x 56 (0x428A54..0x428A5E). The
+views take them from there: master `sub_412AF0` `[+0x30] + 0x148` (0x412B84..0x412BC1), mixer
+`sub_413B55` `[+0x2C] + 0x13C` (0x413CAE), and the delay, dist, PCF and comp sections
+`[+0x30] + 0x124` (0x4077DD, 0x408642, 0x41B4D9, 0x403CBB).
+
+So `L(b) = trunc(ln(b) / ln(127) * 127)`, `L(1) = 0`, `L(2) = 18`, `L(127) = 127` (only 1 and
+127 are exact; every other value is at least 0.003 from an integer, so a last-bit difference of
+`log` changes nothing), and the frame by meter byte b:
+
+| Strip | Frames | Frame k from byte (k = 1, 2, ...) |
+|---|---|---|
+| 12557 master | 11 | 2, 3, 5, 7, 12, 19, 30, 49, 81, 127 |
+| 12558 mixer channel, 12067 effect input | 4 (off, green, amber, red) | 6, 26, 127 |
+
+The four-frame meters show red only at full scale (byte 127). The table has 128 entries
+(`byte_4DABA8`, 0x424250: `i < 0x80`); the lookup masks the byte with 0xFF (0x4242A6), so a byte
+above 127 would read past it, but the engine writes none. orb: `model::peak_meter_level`,
+`model::peak_meter_frame` (the theme viewer, section 21, and the main panel's meters by
+decision task-254, section 16).
 
 **Gain-reduction meter** (task-252) [C]: the comp section's nine LEDs (bitmap 12570) are a
 `CHorisontalMeterView` at section `+0xD4`, built by the section ctor `sub_403BE0` with
@@ -679,7 +707,7 @@ channel controls sub 147 `{c, k, v}` (`sub_413206`) (`docs/song_load.md` section
 The right meter's x is a copy-protection expression; the table's 51 was the mirror of the left
 one in the art. The original draws it at **50**: the strip 12557 matches pixel for pixel at x 50
 of the section in a lossless screenshot of the original (task-187, review round 4) [C: section
-21]. The meters have 11 states (resource 12557).
+21]. The meters have 11 states (resource 12557), on the log scale of section 2, "Meters" [C].
 
 **PCF** (526, 148, 82, 111), track 7:
 
@@ -941,8 +969,9 @@ Each item says what would settle it.
 - Settled (task-187, review round 4): the master right meter's x is 50 and the dist meter's x
   64 (section 9), by an exact match in a lossless screenshot of the original.
 - Settled (task-252): the gain-reduction meter's scale (`sub_4044FD`, `sub_424D5D`; section 2).
-  The peak meters' scale is read (`sub_424220`, section 2) but for the frame count F [G];
-  orb's `link::meter_state` is still linear (task-253).
+- Settled (task-253): the peak meters' scale (`sub_424220`, `sub_4249A8`) and the frame count
+  F (`sub_46DB82` in `sub_4287A0`: 11 for 12557, 4 for 12558 and 12067; section 2). The main
+  panel's meters follow it (decision task-254, section 16).
 - [G] The 909 tap keys and the drums' Shift+Tab deletion. Settle: read the 909 view's key handler
   (`CTR909View` vtable slot 14, 0x4472AF) and search `sub_42D1D3` / `sub_440213`'s 808/909
   counterparts for code 31 with Shift; or tap on the test machine during playback.
@@ -986,8 +1015,13 @@ read, and what it leaves out.
   call that ran before the panel's last commands, of a control being dragged, and of a loaded song
   that waits for Play (the old one plays on; the panel shows the newest song, as the original's
   does) are not taken.
-- **Meters [G].** The meter byte (0..127) maps linearly to the 11 states, rounded up so that any
-  signal shows (the original's log scale, section 2, is task-253).
+- **Meters [C] (task-253, decision task-254).** The panel keeps each meter's byte (0..127;
+  `Panel::meters`). The main panel maps it to 11 states by the original's master meter
+  (`model::meter_state` = `model::peak_meter_frame(byte, 11)`, section 2, "Meters"): the states
+  step at the bytes 2, 3, 5, 7, 12, 19, 30, 49, 81 and 127, so byte 1 shows nothing. The header
+  meters light `model::header_meter_segments` of that state: one segment from byte 2, two from
+  7, three (amber) from 30, four (red) from 81 (section 19). The theme viewer draws the
+  original's strips by `model::peak_meter_frame` over their own frame counts (section 21).
 - **Gain reduction [C] (task-252, decision task-251).** The panel keeps the compressor's gain
   byte (live byte 3, `trunc(min(G*18, 127))`; `Panel::gr_byte`) and lights `model::gr_lit(byte)`
   LEDs as a bar from the left, the original's mapping (section 2: none at 0, five at 18, nine at
@@ -1656,9 +1690,10 @@ Propellerhead mark).
 **The header meters** (the mixer channels' and the effects') have four segments, green,
 yellow-green, amber and red from the bottom; the engine's meter has 11 states (0 to 10, the
 meter byte mapped as section 16 says). The app shows state s as `[0, 1, 1, 1, 2, 2, 2, 3, 3, 4,
-4][s]` lit segments (`model::header_meter_segments`): any signal lights the first segment, the
+4][s]` lit segments (`model::header_meter_segments`): state 1 lights the first segment, the
 amber one lights from state 7 and the red one from 9, the states at which the master's 10-segment
-meters light their amber and red segments. The master's meters keep 10 segments and 11 states.
+meters light their amber and red segments (on the original's scale, decision task-254: the
+meter bytes 2, 7, 30 and 81). The master's meters keep 10 segments and 11 states.
 The compressor's gain-reduction LEDs are a bar from the left (section 16, task-252), each in
 the color of its place, lit or unlit and dark: green, green, green, amber, amber, amber, red,
 red, red.
@@ -1816,7 +1851,7 @@ them.
 | 12064 | 82 x 111 | PCF background | 1 | (526, 148) | [C: match 12.8] |
 | 12065 | 82 x 65 | dist background | 1 | (526, 352) | [C: match 4.7] |
 | 12066 | 33 x 16 | on/off LED button of the effects (blue plate) | 2 (16 x 16): off, on | PCF (529, 150), delay (529, 262), dist (529, 355), comp (529, 420) | [C: exact match of ReBirthday's strip, frame 1 lit, at all four places (round 4), and the built-in like-for-like; the lossy panel.png's 23.6 was that capture's] |
-| 12067 | 55 x 16 | input meter of the effects (blue plate) | 4 (13 x 16): off, green, amber, red | (590, 150), (590, 262), (590, 355), (590, 420) | [C: match 7.7, frame 0; the scale G] |
+| 12067 | 55 x 16 | input meter of the effects (blue plate) | 4 (13 x 16): off, green, amber, red | (590, 150), (590, 262), (590, 355), (590, 420) | [C: match 7.7, frame 0; the scale read, section 2] |
 | 12068 | 9 x 115 | row focus bar | 2 (4 x 115): off, lit | (86, 50 +115r) | [C: match 4.1, frame 1 at row 1] |
 | 12500 | 366 x 115 | TB-303 background | 1 | (90, 50 / 165) | [C: match 6.2] |
 | 12501 | 19 x 16 | white key; the Down, Up, Accent and Slide buttons | 2 (9 x 16): rest, pressed | keys (142, 163, 184, 205, 226, 247, 268, 289; 139 / 254), buttons (314, 339, 364, 389; 139 / 254) | [C: match 2.2] |
@@ -1841,7 +1876,7 @@ them.
 | 12555 | 68 x 184 | bank row A..D | 4, **v**, cells of 46 (68 x 30): the shown bank lit; no unlit frame | (17, 108 +115r) | [C: match 3.3, frame 0 = A; the count by the bitmap's four lit states] |
 | 12556 | 27 x 14 | pattern section on/off LED button (red plate) | 2 (13 x 14): off, lit | (20, 54 +115r) | [C: exact match of ReBirthday's strip, frame 1, at x 20 (round 4); section 4 had 21] |
 | 12557 | 15 x 792 | master meter | 11, **v**, cells of 72 (15 x 56) | (542, 74), (576, 74) | [C: exact match of ReBirthday's strip at both, frame 0 (round 4); section 9 had 577] |
-| 12558 | 59 x 15 | mixer channel meter (olive plate) | 4 (14 x 15): off, green, amber, red | (507, 54 +115c) | [C: match 9.7, frame 0; the scale G] |
+| 12558 | 59 x 15 | mixer channel meter (olive plate) | 4 (14 x 15): off, green, amber, red | (507, 54 +115c) | [C: match 9.7, frame 0; the scale read, section 2] |
 | 12559 | 65 x 25 | Play | 2 (32 x 25): rest, lit | (112, 21) | [C: match 3.1; each of the five matches only its own place] |
 | 12560 | 65 x 25 | Stop | 2 | (144, 21) | [C: match 2.6] |
 | 12561 | 65 x 25 | Rewind | 2 | (176, 21) | [C: match 2.4; section 13] |
@@ -1882,7 +1917,8 @@ these facts follow:
   the PCF pattern and on/off states, the row focus, the Shuffle of row 4), confirmed control by
   control by which frame matched. The fader handle's offsets (9, 8 and 15 px under the mixer,
   master and PCF tracks' tops) agree with the handle formula only for values that could not be
-  read from the template [G]; the meters were dark, so the meter scale stays [G].
+  read from the template [G]; the meters were dark (the meter scale was read in IDA later,
+  task-253, section 2).
 - The grid (40 high at y 19) and the bank row (at y 58) overlap by one row; the viewer draws the
   bank row last.
 - Every one of the 58 bitmaps has its place now. 12030 was first listed as placeless: its
@@ -1925,8 +1961,10 @@ frame comes from the live panel model, as the main panel draws it: knobs by
 `((n - 1) * p + 500) / 1000`, faders, toggles and switches by the position drawn
 (`behavior::switch_position`), LEDs, the 303's lit notes, the 808's and 909's step LEDs with
 the running light, the grid and the bank row, the displays (disabled ones blank), the 808
-selector at `(127 * i + 5) / 11`, the meters (the 11-frame master meter by the state, the
-four-frame meters off from 0, green from 1, amber from 7, red from 9 [G]) and the gain-reduction
+selector at `(127 * i + 5) / 11`, the meters by the original's log scale
+(`model::peak_meter_frame`, section 2 [C]: the 11-frame master meter steps at the bytes 2, 3,
+5, 7, 12, 19, 30, 49, 81, 127, the four-frame meters are green from 6, amber from 26, red at
+127) and the gain-reduction
 LEDs (a bar from the left, `model::gr_lit`). The window is a native window of its own (an egui immediate viewport), 624 x 510 at first,
 resizable with the panel letterboxed at its aspect on black (`theme_view::DESK`, the user's review
 round 4), closed by its close button and reopened by

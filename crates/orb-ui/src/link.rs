@@ -418,12 +418,6 @@ fn new_song_knobs(
     knobs
 }
 
-/// The meter state 0..=10 of a meter byte 0..=127: linear, rounded up so that any signal shows
-/// [G: the scale was not read, `sub_424220`].
-pub fn meter_state(byte: u8) -> u8 {
-    ((byte as u32 * 10).div_ceil(127)).min(10) as u8
-}
-
 /// The panel's player link.
 pub struct Link {
     player: Box<dyn Port>,
@@ -1244,19 +1238,20 @@ impl Link {
             self.flush_marked();
         }
         self.refresh_tracks();
-        // the meters and the running lights follow every call
+        // the meters and the running lights follow every call; the meters keep the engine's
+        // byte, which the main panel (`model::meter_state`) and the theme viewer
+        // (`model::peak_meter_frame`, the original's scale) map each their way
         for c in 0..4 {
-            panel.meters.insert(
-                format!("mixer{}.meter", c + 1),
-                meter_state(s.channel_meters[c]),
-            );
+            panel
+                .meters
+                .insert(format!("mixer{}.meter", c + 1), s.channel_meters[c]);
         }
         panel
             .meters
-            .insert("master.meter_l".into(), meter_state(s.master_meters[0]));
+            .insert("master.meter_l".into(), s.master_meters[0]);
         panel
             .meters
-            .insert("master.meter_r".into(), meter_state(s.master_meters[1]));
+            .insert("master.meter_r".into(), s.master_meters[1]);
         let live = |d: Device, i: usize| s.live[d as usize].as_slice().get(i).copied();
         for (id, d, i) in [
             ("delay.meter", Device::Delay, 5),
@@ -1264,9 +1259,7 @@ impl Link {
             ("pcf.meter", Device::Pcf, 7),
             ("comp.meter", Device::Compressor, 4),
         ] {
-            panel
-                .meters
-                .insert(id.into(), meter_state(live(d, i).unwrap_or(0)));
+            panel.meters.insert(id.into(), live(d, i).unwrap_or(0));
         }
         // the compressor's gain byte, which the gain-reduction LEDs show (`model::gr_lit`)
         panel.gr_byte = live(Device::Compressor, 3).unwrap_or(0);
