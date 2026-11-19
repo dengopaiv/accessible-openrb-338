@@ -210,6 +210,8 @@ pub struct App {
     /// The same for the plugin's Help > Plugin Usage window (`App::plugin_usage_ui`, task-221).
     pub(crate) plugin_usage_open: bool,
     pub(crate) plugin_usage_serial: u32,
+    /// The Mods > Theme Viewer window (task-187).
+    pub(crate) theme_viewer: crate::theme_view::Viewer,
     /// What the info window drew last (`App::info_shown`).
     pub(crate) info_shown: Option<crate::info::SongInfo>,
     pub(crate) events_seen: usize,
@@ -280,6 +282,7 @@ impl App {
             key_help_serial: 0,
             plugin_usage_open: false,
             plugin_usage_serial: 0,
+            theme_viewer: Default::default(),
             info_shown: None,
             events_seen: 0,
             allow_close: false,
@@ -987,6 +990,7 @@ impl App {
         self.key_help_ui(&ctx);
         self.plugin_usage_ui(&ctx);
         self.mod_info_ui(&ctx);
+        self.theme_viewer_ui(&ctx);
         self.poll_export(&ctx);
         if let Some(marker) = self.clip_text.take() {
             ctx.copy_text(marker);
@@ -1184,6 +1188,16 @@ impl App {
             "modview" => {
                 paint_part(ui, &c.part, rect);
                 self.mod_view(ui, view, c);
+                // the standalone's link to the Theme Viewer (task-187, the user's review): a
+                // click opens it or brings the open one to the front, as the Mods menu's item
+                if !self.is_plugin() {
+                    let r = ui
+                        .interact(rect, egui::Id::unique(("hit", "modview")), Sense::click())
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if r.clicked() {
+                        self.show_theme_viewer();
+                    }
+                }
             }
             "knob" => self.knob(ui, view, c, rect),
             "fader" => self.fader(ui, view, c, rect),

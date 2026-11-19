@@ -198,7 +198,7 @@ class, the bank's hit function was not read].
 **LED** (`CLEDView`, `sub_424612`): two frames (off, lit), display only [C].
 
 **Seven-segment display** (`CLEDNumberView`, `sub_4252DD`) [C]: n digits of 9 x 16 px (resource
-12015, 11 frames: digits 0..9 and blank), right-aligned, leading zeros blank (screenshots:
+12015, 11 frames: frame 0 blank, frames 1..10 the digits 0..9, section 21), right-aligned, leading zeros blank (screenshots:
 "16", " 3", "140"). A disabled display shows all segments dark.
 
 **Meters** (`CPeakMeterView` `sub_4248B6`, `CHorisontalMeterView` `sub_424ACC`): display only;
@@ -300,8 +300,11 @@ Layout `sub_41A9A0`, poll `sub_41AB67` [C]. The table gives row 1; add 115 px (0
 | Steps up | 56 | 94 | 11 | 9 | 0.1154 | 0.2824 | 0.0176 | 0.0176 | repeat | length + 1 |
 | Steps down | 56 | 103 | 11 | 9 | 0.1154 | 0.3000 | 0.0176 | 0.0176 | repeat | length - 1 |
 
-The On/off LED's x (5) is a copy-protection expression in the layout; 5 is where the LED's
-sprite matches the background art [C: template match, mean difference 5 of 255].
+The On/off LED's x is a copy-protection expression in the layout. The table's 5 came from a
+template match against the background art (mean difference 5 of 255); the original draws it at
+**4**: in a lossless screenshot of the original with the ReBirthday mod (task-187, review round
+4) the strip 12556 matches pixel for pixel at x 4 of the section, and the built-in screenshot
+matches better at 4 too [C: section 21].
 
 Behavior [C]:
 - **Bank buttons** only change the shown bank (`vt+132`). No pattern changes until a pattern
@@ -477,6 +480,8 @@ UI state (BD at start: observed, the steps showed the BD column and a drag paint
   selector knob (the user's change of 2026-10-28): the legend selects, and the knob's place
   right of the legend shows the mod's window, the `splash.jpg` of the kit that plays (the
   embedded standard mod's for the built-in kit) above the song's mod name (`App::mod_view`).
+  In the standalone app the mod's window is a link to the Theme Viewer (section 21): the hand
+  cursor over it, a click opens the viewer or brings the open one to the front.
 
 **Shared slots [C].** The switch of slots 3..7 is a vertical two-position switch: the top half
 gives 0, the bottom half 1. 0 plays the sound of the upper label (LC, MC, HC, CL, MA), non-zero
@@ -551,7 +556,10 @@ section 4.8).
 with `dx = x - section x`: `dx < 26` selects AC, `26 <= dx < 236` selects
 `(dx - 26) / 42 + 1` (BD..HT, 42 px each), `dx >= 236` selects `(dx - 236) / 21 + 6` (RS..RC,
 21 px each), more than 11 selects nothing. The area (4..25, 44..61) also selects AC. A drag keeps
-selecting while held (`sub_44740D`).
+selecting while held (`sub_44740D`). The selected instrument shows by a lit LED (resource
+12567, 6 x 6) over its dot of the background: AC's in the AC box at (7, 52), the others in the
+name-label row at y 76 (section 21) [C: observed, task-187 review round 4; the drawing code was
+not read].
 
 **Step buttons [C]** (`CTR909PatternView`, mouse 0x44503E, draw 0x444E30).
 - Step `(x - 29) / 21`, 16 cells of 21 px (`sub_444FB3`).
@@ -628,9 +636,10 @@ channel controls sub 147 `{c, k, v}` (`sub_413206`) (`docs/song_load.md` section
 | Master fader | 33 | 25 | 15 | 54 | 0.8958 | 0.1471 | 0.0240 | 0.1059 | fader | MIXR master level (not automatable) |
 | Comp switch (stereo master compressor) | 42 | 81 | 24 | 11 | 0.9103 | 0.2569 | 0.0385 | 0.0216 | radio | mixer ctrl 1 = 1, or 0 |
 
-The right meter's x is a copy-protection expression; 51 is the mirror of the left one in the art
-[G: not template-matched, the meter strip has a different frame layout]. The meters have 11
-states (resource 12557).
+The right meter's x is a copy-protection expression; the table's 51 was the mirror of the left
+one in the art. The original draws it at **50**: the strip 12557 matches pixel for pixel at x 50
+of the section in a lossless screenshot of the original (task-187, review round 4) [C: section
+21]. The meters have 11 states (resource 12557).
 
 **PCF** (526, 148, 82, 111), track 7:
 
@@ -648,7 +657,9 @@ states (resource 12557).
 | Dec fader | 61 | 55 | 15 | 54 | 0.9407 | 0.3980 | 0.0240 | 0.1059 | fader | ctrl 5 |
 
 The fader pitch is a copy-protection expression whose intended value is 19 (`X + 1` with X = 18,
-`docs/song_load.md` section 9); the art has the faders at 4, 23, 42, 61 [C]. The pattern
+`docs/song_load.md` section 9); the art has the faders at 4, 23, 42, 61 [C]. Their track is
+the short 12030, 45 px high from y 55, not 54 (section 21; the original draws it there, so the
+table's h 54 is the generic fader's) [C: the screenshot]. The pattern
 display is two digits wide (`9 * digits`) and shows the pattern number itself, clamped to 0..54
 (`sub_41B914`); the screenshot shows 25 for wave 25.
 
@@ -678,8 +689,9 @@ the normal branch places it at (64, 3) [C]. Mode 0 = triplet steps (1/3 beat), 1
 | Amount knob | 12 | 28 | 18 | 19 | 0.8622 | 0.7451 | 0.0288 | 0.0373 | knob | ctrl 1 |
 | Shape knob | 53 | 28 | 18 | 19 | 0.9279 | 0.7451 | 0.0288 | 0.0373 | knob | ctrl 2 |
 
-The meter's x is a copy-protection expression; the art matches at 63 or 64 [G: the JPEG noise
-makes it one pixel uncertain; 64 as for PCF and delay].
+The meter's x is a copy-protection expression; the original draws it at 64, as for PCF and
+delay (the strip 12067 matches pixel for pixel there in a lossless screenshot of the original,
+task-187 review round 4) [C].
 
 **Comp** (526, 417, 82, 93), track 8:
 
@@ -885,10 +897,8 @@ Each item says what would settle it.
 - [G] The bank row's hit function (assumed 4 equal columns). Settle: read the slot-23 method of
   `CBankSelectView`'s vtable (the class of the 12555 bitmap view in the pattern section ctor
   `sub_43D37B` / `sub_4242B6`), as `sub_41A5B0` was read for the pattern grid.
-- [G] The master right meter's x (51) and the dist meter's x (63 or 64). Settle: on the test
-  machine, play a song with the master and the distortion active and crop the lit meters from a
-  screenshot; or evaluate the expressions in `sub_412D6B` and `sub_408A5F` with the genuine
-  `RB20FUL.DAT` pages.
+- Settled (task-187, review round 4): the master right meter's x is 50 and the dist meter's x
+  64 (section 9), by an exact match in a lossless screenshot of the original.
 - [G] The meter scales. Settle: read `sub_424220` and `sub_424A7E`.
 - [G] The 909 tap keys and the drums' Shift+Tab deletion. Settle: read the 909 view's key handler
   (`CTR909View` vtable slot 14, 0x4472AF) and search `sub_42D1D3` / `sub_440213`'s 808/909
@@ -1030,7 +1040,8 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   place, the Mods menu's folder). "Use as songs/mods folder" in the dialog sets those to the
   folder shown. The last 8 folders a file was chosen in are the recent folders. All of it is a
   TOML file (task-107) of `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
-  (an array) and `startup_sound` at `$ORB_UI_CONFIG`, else `OpenRB-338/ui.toml` (task-068;
+  (an array), `startup_sound` and `theme_viewer_filter` (`"nearest"`, the default, or
+  `"linear"`: the Theme Viewer's scaling, section 21) at `$ORB_UI_CONFIG`, else `OpenRB-338/ui.toml` (task-068;
   settings of the old `rb/` folder are not carried over) in `$XDG_CONFIG_HOME` (Linux
   `~/.config`, macOS `~/Library/Application Support`, Windows `%APPDATA%`); it is rewritten
   written through a temporary file and a rename, when a path is chosen or a folder set. The
@@ -1077,10 +1088,11 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
 | Mods | Demo Song | opens the `Demo.rbs` of the current song's mod (below); enabled only when that mod file has one, so never for "Standard ReBirth" (task-094) |
 | Mods | Info... | a centered, closable window (Escape closes it) with the splash of the kit that plays at its 2000-era physical size, the mod's INFO facts and the file's (task-106; below) |
+| Mods | Theme Viewer... | a view-only window of its own with the panel drawn from the current mod's 58 bitmaps at the original's geometry, following the song; when it is open, the item brings it to the front with the focus; not in a plugin's editor (task-187; section 21) |
 | Options | Vintage ReBirth Synth Sound | the song's sound model (the original has it in the Edit menu) |
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
-| Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
+| Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser, with the Theme Viewer window's Space); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
 
 The Help menu is last in the bar. Its items are the list `HELP_ITEMS` in `menu.rs`, so a new item
@@ -1128,7 +1140,11 @@ is one more entry.
   key. The groups "Windows and the file browser" and "Prompts and questions" (the unsaved-changes
   prompt: S/Y/Enter save, D/N do not, Esc cancels; the browser's overwrite question: Y replaces,
   Enter/Esc/N go back) are listed by hand from `prompt_ui` (`menu.rs`) and the browser's key
-  handler (`browser.rs`); no test checks them.
+  handler (`browser.rs`); no test checks them. The windows group also lists Space in the Theme
+  Viewer window (switches its scaling between nearest and bilinear; section 21), with no bind
+  (it is the viewer window's key, not the panel's; the unit test
+  `the_theme_viewer_space_is_listed` checks the line). Like the viewer, the help window is the
+  standalone app's only (section 20).
 
 - **Help > About and the version string** (task-102; `crates/orb-ui/src/about.rs`, `version.rs`,
   `build.rs`). The window is centered as File > Info is (pivot CENTER_CENTER, `default_pos` at
@@ -1704,8 +1720,196 @@ The VST3/CLAP plugin (`docs/plugin.md` section 10) shows this panel, drawn by th
   user's decision of 2026-11-16). The Sync LED
   lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
 - **The menus**: File has New, Open and Info only; nothing asks to save. There is no Edit menu
-  (section 18's pattern commands paste through the system clipboard's keys). Options has no
-  keyboard modes; Help no Keyboard Shortcuts.
+  (section 18's pattern commands paste through the system clipboard's keys). Mods has no Theme
+  Viewer (section 21: the viewer is the standalone app's only). Options has no keyboard modes;
+  Help no Keyboard Shortcuts.
 - **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
   shortcut; every key goes on to the host (decided by the user, 2026-11-16). The mouse
   gestures of section 2 are the same.
+
+## 21. The panel bitmaps and the mod theme viewer (task-187)
+
+**The 58 bitmaps.** A mod's `<id>.jpg` replaces the exe's JPEG resource `<id>`, bitmap by bitmap
+(`sub_41703A`, docs/rbm.md 13.1). The table gives each one's size (the built-in kit's, from the
+embedded `assets/Standard.rbm`), what it draws, its frames and where it sits (panel pixels;
+`+115r` is the row r = 0..3, `+115c` the mixer channel, `/` separates the two 303s). A film strip
+of n frames is cut as the original's `CBitmapSequence` does (vtable 0x4BD664 slot 1, 0x46DC43,
+section 2): the cell is `(size + 1) / n` pixels along the strip and frame k starts at `k * cell`.
+The frames run left to right, or top to bottom where the table says "v".
+
+How it was found (2026-11-19): the idalib MCP tools were not available to the agent of
+task-187, so no new code was read. The roles come from the sizes against the control
+rectangles of sections 3 to 9 (whose addresses are given there) and from template matching:
+every frame of every strip was compared with the original's screenshot `ui_spec/panel.png`
+(pattern mode, the template song) at the places of sections 3 to 9, ±3 px, by the mean absolute
+difference of the RGB values (0..255). [C: match d] is that observation, with d the best mean
+difference at the place given (JPEG noise gives 1 to 5 on a static picture); the frame named
+is the one that matched. Rows marked [G] are not settled; reading `CReBirthBitmaps` (0x4287A0,
+which registers each id with its frame count) and the sections' constructors would settle
+them.
+
+| Id | Size | Draws | Frames | Place (panel x, y) | Mark |
+|---|---|---|---|---|---|
+| 12015 | 109 x 16 | seven-segment digit of every display | 11, cells of 10 (9 x 16): **frame 0 blank, frame d + 1 the digit d** | tempo (60, 27), bar (287, 27), loop start (345, 27), loop length (388, 27); steps (52, 145 +115r); 303 edit step (420, 75 / 190); PCF pattern (536, 171); delay steps (535, 282) | [C: match 3.2 (blank at the disabled bar display), the screenshot's tempo 140] |
+| 12016 | 53 x 19 | Pattern/Song mode switch | 2 (26 x 19): pattern, song | (177, 2) | [C: match 4.9, frame 0] |
+| 12017 | 19 x 18 | vertical two-position switch of the PCF mode and the delay's triplet/sixteenth | 2 (9 x 18) | (575, 169), (575, 281) | [C: match 2.0, frame 1 at both] |
+| 12019 | 23 x 9 | up arrow of a value display (repeat or wind button) | 2 (11 x 9): rest, pressed | tempo (89, 26), bar (316, 26), loop start (374, 26), loop length (417, 26), steps (72, 144 +115r), PCF (555, 170), delay (555, 281) | [C: match 1.7, frame 0] |
+| 12020 | 23 x 9 | down arrow | 2 (11 x 9) | 9 px under each up arrow | [C: match 1.7, frame 0] |
+| 12030 | 15 x 45 | the PCF's short fader track | 1 | PCF Freq, Q, Amt, Dec (530 +19i, 203) | [C: match 1.5 at each of the four, outside the handle's rows (review round 2 of task-187); the PCF background's own drawn tracks are at the same place] |
+| 12031 | 15 x 11 | fader handle | 1 | on each track, its top `round((1 - p / 999) * (h - 11))` px under the top of a track h high (43 px of travel on 12032, 34 on 12030) | [C: match 1.8 at (466, 116 +115c), (559, 83), (530 +19i, 219); the formula's ends are section 2's, its rounding G] |
+| 12032 | 15 x 54 | the long fader track | 1 | mixer level (466, 109 +115c), master (559, 75) | [C: match 12.3 with the handle over it; it lies on the mixer's and master's backgrounds at these places, 4.5] |
+| 12040 | 49 x 11 | routing switch with its lamp | 2 (24 x 11): off, on | mixer Dist, PCF, Comp (498, 69 / 87 / 105 +115c), master Comp (568, 131) | [C: match 2.0] |
+| 12041 | 35 x 11 | Sync and MIDI LEDs | 3 (11 x 11): off, green, red | (55, 2), (90, 2) | [C: match 1.3, frame 0] |
+| 12057 | 592 x 50 | transport background | 1 | (16, 0) | [C: match 4.7] |
+| 12058 | 70 x 115 | pattern section background | 1 | (16, 50 +115r) | [C: the size and the art; match 24.2, the lit buttons cover much of it] |
+| 12060 | 70 x 115 | mixer channel background | 1 | (456, 50 +115c) | [C: match 7.3] |
+| 12061 | 82 x 98 | master background | 1 | (526, 50) | [C: match 7.5] |
+| 12062 | 16 x 510 | wood side | 1 | (0, 0) and (608, 0) | [C: match 4.5] |
+| 12063 | 82 x 93 | delay background | 1 | (526, 259) | [C: match 4.8] |
+| 12064 | 82 x 111 | PCF background | 1 | (526, 148) | [C: match 12.8] |
+| 12065 | 82 x 65 | dist background | 1 | (526, 352) | [C: match 4.7] |
+| 12066 | 33 x 16 | on/off LED button of the effects (blue plate) | 2 (16 x 16): off, on | PCF (529, 150), delay (529, 262), dist (529, 355), comp (529, 420) | [C: exact match of ReBirthday's strip, frame 1 lit, at all four places (round 4), and the built-in like-for-like; the lossy panel.png's 23.6 was that capture's] |
+| 12067 | 55 x 16 | input meter of the effects (blue plate) | 4 (13 x 16): off, green, amber, red | (590, 150), (590, 262), (590, 355), (590, 420) | [C: match 7.7, frame 0; the scale G] |
+| 12068 | 9 x 115 | row focus bar | 2 (4 x 115): off, lit | (86, 50 +115r) | [C: match 4.1, frame 1 at row 1] |
+| 12500 | 366 x 115 | TB-303 background | 1 | (90, 50 / 165) | [C: match 6.2] |
+| 12501 | 19 x 16 | white key; the Down, Up, Accent and Slide buttons | 2 (9 x 16): rest, pressed | keys (142, 163, 184, 205, 226, 247, 268, 289; 139 / 254), buttons (314, 339, 364, 389; 139 / 254) | [C: match 2.2] |
+| 12502 | 35 x 10 | pill button: Clear, Note/Pause, Back | 2 (17 x 10) | Clear (108, 146 / 261), Note/Pause (384, 108 / 223), Back (418, 112 / 227) | [C: match 2.0] |
+| 12503 | 51 x 17 | Step button | 2 (25 x 17) | (415, 140 / 255) | [C: match 1.8] |
+| 12504 | 33 x 12 | waveform switch | 2 (16 x 12): saw, square | (114, 60 / 175) | [C: match 2.0 frame 0 at #1, 2.2 frame 1 at #2] |
+| 12505 | 17 x 8 | LED of the white keys, of Down, Up, Accent and Slide, the Note and Rest LEDs | 2 (8 x 8): off, lit | over each white key and button (x, 131 / 246), Note (336, 109 / 224), Rest (374, 109 / 224) | [C: match 3.4; frame 1 at the lit C key LED and Rest LED] |
+| 12506 | 17 x 8 | LED of the black keys and the pitch-mode LED | 2 (8 x 8) | black keys (152, 173, 215, 236, 257; 105 / 220), pitch mode (113, 116 / 231) | [C: match 3.1] |
+| 12507 | 1674 x 30 | TB-303 knob | 54 (30 x 30) | (162 +33i, 62 / 177), i = Tune .. Accent | [C: match 1.0] |
+| 12509 | 17 x 15 | black key | 2 (8 x 15) | (153, 174, 216, 237, 258; 113 / 228) | [C: match 1.8] |
+| 12510 | 31 x 8 | Pitch mode button | 2 (15 x 8) | (110, 124 / 239) | [C: match 2.2] |
+| 12520 | 366 x 115 | TR-808 background | 1 | (90, 280) | [C: match 6.9] |
+| 12521 | 504 x 13 | TR-808 level knob (red) | 36 (13 x 13) | (104 +22i, 289) | [C: match 7.2] |
+| 12522 | 504 x 13 | TR-808 tone, decay, snappy and tuning knob (white) | 36 (13 x 13) | section 6's places | [C: match 1.5] |
+| 12523 | 23 x 17 | TR-808 shared-slot switch | 2 (11 x 17): top, bottom | (171, 193, 215, 236, 259; 335) | [C: match 1.5 / 1.9] |
+| 12524 | 47 x 5 | TR-808 step LED | 4 (11 x 5): red, orange, yellow, white; frame `step / 4`, drawn only when lit | (106 +16i, 371) | [C: section 6 (0x440FC3); no step is lit in the screenshot] |
+| 12525 | 360 x 31 | TR-808 instrument selector | 12 (29 x 31) | (396, 321) | [C: match 2.5, frame 1 = BD] |
+| 12550 | 35 x 15 | mixer channel on/off LED button (olive plate) | 2 (17 x 15) | (459, 54 +115c) | [C: exact match of ReBirthday's strip, frame 1 lit, at its places (round 4), and the built-in like-for-like; the lossy panel.png's 28.7 was that capture's] |
+| 12551 | 35 x 21 | Loop switch | 2 (17 x 21): off, on | (331, 2) | [C: match 1.8] |
+| 12552 | 608 x 19 | small knob | 32 (18 x 19) | shuffle (27, 13), mixer pan (466, 75 +115c) and delay send (498, 129 +115c), delay Pan and F.Back (538 / 579, 317), dist (538 / 579, 380), comp (538 / 579, 473) | [C: match 1.8] |
+| 12554 | 68 x 504 | pattern grid 4 x 2 | 9, **v**, cells of 56 (68 x 40): frame 0 none lit, frame k button k | (17, 69 +115r) | [C: match 3.4, frame 1] |
+| 12555 | 68 x 184 | bank row A..D | 4, **v**, cells of 46 (68 x 30): the shown bank lit; no unlit frame | (17, 108 +115r) | [C: match 3.3, frame 0 = A; the count by the bitmap's four lit states] |
+| 12556 | 27 x 14 | pattern section on/off LED button (red plate) | 2 (13 x 14): off, lit | (20, 54 +115r) | [C: exact match of ReBirthday's strip, frame 1, at x 20 (round 4); section 4 had 21] |
+| 12557 | 15 x 792 | master meter | 11, **v**, cells of 72 (15 x 56) | (542, 74), (576, 74) | [C: exact match of ReBirthday's strip at both, frame 0 (round 4); section 9 had 577] |
+| 12558 | 59 x 15 | mixer channel meter (olive plate) | 4 (14 x 15): off, green, amber, red | (507, 54 +115c) | [C: match 9.7, frame 0; the scale G] |
+| 12559 | 65 x 25 | Play | 2 (32 x 25): rest, lit | (112, 21) | [C: match 3.1; each of the five matches only its own place] |
+| 12560 | 65 x 25 | Stop | 2 | (144, 21) | [C: match 2.6] |
+| 12561 | 65 x 25 | Rewind | 2 | (176, 21) | [C: match 2.4; section 13] |
+| 12562 | 65 x 25 | Fast forward | 2 | (208, 21) | [C: match 2.5] |
+| 12563 | 65 x 25 | Record | 2 | (240, 21) | [C: match 2.7] |
+| 12564 | 366 x 115 | TR-909 background | 1 | (90, 395) | [C: match 3.9] |
+| 12565 | 532 x 12 | TR-909 knob | 41 (12 x 12) | section 7's places | [C: match 3.4 / 3.7] |
+| 12566 | 59 x 8 | TR-909 step LED | 4 (14 x 8): value 1, value 2, (unused), flam; drawn only when lit | (120 +21i, 481) | [C: match 10.1, frame 1 at steps 1, 5, 9, 13; section 7 (0x444F0C)] |
+| 12567 | 6 x 6 | the TR-909's selected-instrument LED (lit) | 1 | over the selected instrument's dot of the 909's background: AC (97, 447), BD (119, 471), then x 161, 203, 246, 288, 330, 357, 372, 399, 414, 441 at y 471 for SD .. RC (`theme_view::TR909_SELECTED_LED`) | [C: exact match at BD's in the ReBirthday screenshot (round 4); the built-in screenshot shows BD's lit red (the best match of round 1, 10.7 at (119, 471)); the other places by the background's unlit dots] |
+| 12568 | 29 x 14 | Flam button | 2 (14 x 14) | (98, 488) | [C: match 2.9] |
+| 12569 | 82 x 93 | comp background | 1 | (526, 417) | [C: match 4.8] |
+| 12570 | 63 x 20 | gain-reduction LEDs | 2, **v** (63 x 10): all off, all lit; 9 LEDs of 7 px | (534, 442) | [C: match 13.6, frame 0; the built-in like-for-like (below): a bar from the left, each LED its 7 px of the lit row, pixel for pixel] |
+| 12571 | 37 x 20 | pattern Shuffle button | 2 (18 x 20) | (19, 143 +115r) | [C: match 2.4] |
+
+**The side by side with the original (task-187, review round 4, 2026-11-19).** A lossless
+screenshot of the original on the test machine (ReBirth 2.01 with the ReBirthday mod, the
+new-song template in song mode, stopped; the panel at screen (8, 74)) was compared with the
+viewer's frames of the same mod (the recrypted copy in the user's collection, the same
+bitmaps). Every horizontal strip, picture, seven-segment digit and vertical strip of the panel
+matches the original **pixel for pixel** (mean difference 0.0; the grid and the bank row 0.3
+and 0.4, where they overlap) at its place with one frame, and
+these facts follow:
+- **A view is sized by its bitmap.** A horizontal strip of n frames is drawn at its own frame
+  size, `(w + 1) / n - 1` wide and the bitmap's height, at the control's top-left corner, not at
+  the control's size of sections 3 to 9: ReBirthday's strips are other sizes than the built-in
+  ones (12041 Sync/MIDI 23 x 7: frames of 7 x 7; 12551 Loop 81 x 15: 40 x 15; 12568 Flam 35 x 21:
+  17 x 21; 12571 Shuffle 53 x 21: 26 x 21; 12507 303 knobs 1674 x 34: 30 x 34; 28 in all), and
+  each matches only that way. The first viewer cut every frame to the control's size, which
+  showed a slice of the next frame (the lit-looking Sync and MIDI LEDs, the Loop, Shuffle and
+  Flam buttons the user saw). The vertical strips (12554, 12555, 12557, 12570) are the same size
+  in every mod seen, so their drawn size stays the control's [G for a mod that changes them].
+- **The lit on/off buttons are frame 1** (12550, 12556, 12066 match exactly, lit). The pale
+  square in a ring that `ui_spec/panel.png` shows for the built-in kit is that capture's, not
+  the original's: the built-in like-for-like below draws them as the viewer does.
+- **Places corrected:** the pattern on/off button is at x 4 of its section (section 4 had 5),
+  the master's right meter at x 50 (section 9 had 51), the dist meter at 64 [C].
+- What differed besides: only the song's state (knob and fader positions, the 909 and 808 steps,
+  the PCF pattern and on/off states, the row focus, the Shuffle of row 4), confirmed control by
+  control by which frame matched. The fader handle's offsets (9, 8 and 15 px under the mixer,
+  master and PCF tracks' tops) agree with the handle formula only for values that could not be
+  read from the template [G]; the meters were dark, so the meter scale stays [G].
+- The grid (40 high at y 19) and the bank row (at y 58) overlap by one row; the viewer draws the
+  bank row last.
+- Every one of the 58 bitmaps has its place now. 12030 was first listed as placeless: its
+  full-picture search ran against the screenshot with the handle over it and missed; matched
+  outside the handle's rows it is the PCF's track (review round 2). 12567 was too: it is the
+  909's selected-instrument LED (review round 4), which section 7 did not list; the viewer
+  draws it.
+- The PCF's faders are 45 px high, not 54 as the table of section 9 gives them: the original
+  draws the short track 12030 there. If `CBitmapFaderView` takes its travel from its track
+  (45 - 11 = 34 px), the PCF's drag scale differs from section 2's `k = 10000 / 43` [G: the
+  constructor's arguments for the PCF were not read].
+
+**The like-for-like with the built-in kit (task-187, 2026-11-19).** The original (a copy of the
+installation on the test machine with no mod, so the built-in kit) opened its new song
+("Untitled song", pattern mode, stopped; the panel at screen (94, 160)); a lossless screenshot
+of it was compared with the viewer's frame of the same song, saved from that original as
+`.rbs` and opened in orb (the panel synced from the engine). **312,861 of the 318,240 pixels are
+equal; the other 5,379 differ by 1 to 3 in a channel** (the largest 3), spread over the
+bitmaps: the two JPEG decoders' rounding (the original decodes with its own, orb with the
+`image` crate), no place, frame or size. The one real difference was the gain-reduction LEDs,
+now fixed:
+- **The gain-reduction meter is a bar from the left** [C: screenshots of the original]: idle
+  (stopped, and playing a song the compressor does not reduce) with the compressor on the
+  master, LEDs 1 to 5 lit (up to "0"; the lit row's colors: three green, two yellow, then one
+  yellow and three red); playing with the threshold at its lowest, all nine; the master's COMP
+  switch off, none, also while playing. The engine's byte (live byte 3 of the compressor,
+  `trunc(min(G*18, 127))`, 0x1000EB48) is 18 at unity gain, 0 when the gain is 0 and 127 at
+  the top, so the bar is the byte's: none at 0, five at 18, nine at 127 [C at those three; the
+  scale between G, `sub_424A7E` not read]. The viewer lights `theme_view::gr_lit` LEDs from the
+  link's `gr_leds` (none, 5, 6, 8, 9 for 0 to 4 LEDs left of its center). The main panel's own
+  gain-reduction LEDs (section 16: the center green, the reduction amber then red to its left)
+  are not the original's; the decision task-251 asks how the main panel shows them.
+
+**OpenRB-338's viewer.** Mods > Theme Viewer... (`crates/orb-ui/src/theme_view.rs`,
+`App::theme_viewer_ui`) opens a window that draws the panel at this geometry with the current
+kit's bitmaps: the mod's file where it has one that decodes, else the built-in one
+(`Bitmaps::of_kit`; a strip of another size than the built-in one is drawn at its own frame
+size, as the original sizes the view, `Op::size`; a JPEG over 8192 px a side is not decoded).
+Every
+frame comes from the live panel model, as the main panel draws it: knobs by
+`((n - 1) * p + 500) / 1000`, faders, toggles and switches by the position drawn
+(`behavior::switch_position`), LEDs, the 303's lit notes, the 808's and 909's step LEDs with
+the running light, the grid and the bank row, the displays (disabled ones blank), the 808
+selector at `(127 * i + 5) / 11`, the meters (the 11-frame master meter by the state, the
+four-frame meters off from 0, green from 1, amber from 7, red from 9 [G]) and the gain-reduction
+LEDs (a bar from the left, `theme_view::gr_lit`). The window is a native window of its own (an egui immediate viewport), 624 x 510 at first,
+resizable with the panel letterboxed at its aspect on black (`theme_view::DESK`, the user's review
+round 4), closed by its close button and reopened by
+the menu (at the size it had). The menu item while it is open brings it to the front with the
+focus (the user's review of 2026-11-19): on macOS and Windows by `ViewportCommand::Focus`; on
+Linux (`theme_view::REOPEN_TO_FOCUS`, `cfg!(target_os = "linux")`) by closing its window and
+opening a new one at the same inner size, which gets the focus, because GNOME's Mutter (Wayland
+and X11) raises a window only with an activation token from the click, which egui does not pass,
+so `Focus` did nothing there (the user's decision, review round 3). A window that opens is
+repainted at once for its first three passes: on Wayland winit draws a window's frame and title
+bar only on a repaint, and a viewer opened from the menu stayed without them until the mouse
+entered it. WSLg drops the app with two windows open (docs/building.md). It is the standalone
+app's only:
+a plugin's Mods menu has no Theme Viewer item and the command does nothing there (the user's
+review of 2026-11-19; `orb-plugin/tests/editor.rs`). In the standalone app the 808's mod
+window on the main panel (section 6, `App::mod_view`) is a link to it: the pointing-hand cursor
+over it, and a click (at release) opens the viewer or brings the open one to the front, as the
+menu item does; the press still gives the 808's row the focus, as a click anywhere in a row
+does, and the mod window overlaps no other control (the 808's legend and label areas end at
+x 273 and 183 of the section, the window starts at 277). A plugin's mod window does neither. It
+is view only (decided by the user, 2026-11-19): it ignores every click, drag and scroll, no
+control in it reacts, the cursor over the panel is the "not allowed" cursor, and nothing goes to
+the status line. Its one key (the user's review of 2026-11-19) is Space, pressed while its
+window has the focus: it switches the scaling of the panel picture between nearest pixel
+(`TextureOptions::NEAREST`, the default with no saved choice; the user's review round 4) and
+bilinear (`LINEAR`), saved at once as
+`theme_viewer_filter` in the UI settings file (section 17, merged as every setting is,
+task-229) and taken by the next run; a held key's repeats do not switch again. The key is the
+viewer window's own input, so it never reaches the main panel (no play or stop).
+`crates/orb-ui/tests/theme_view.rs` checks the composed frames, the fallback, the input, the
+cursor, the focus, Space and the mod window's link; with `ORB_THIRDPARTY_MODS_DIR` it composes
+every mod of the collection.

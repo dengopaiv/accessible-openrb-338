@@ -530,6 +530,13 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                     vec![],
                 ),
                 menu_row(is_mac, &shortcuts::EDIT_PATH, "Edit the browser's path"),
+                // the viewer's one key (theme_view.rs); the window is the standalone app's,
+                // as the viewer is
+                row(
+                    "Space",
+                    "Theme Viewer window: switch the scaling between nearest and bilinear",
+                    vec![],
+                ),
             ],
         },
         Group {
@@ -762,6 +769,25 @@ mod tests {
         let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "F", "G"];
         assert_eq!(text(true), keys.map(|k| format!("Cmd+{k}")));
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
+    }
+
+    /// The Theme Viewer's Space is listed with the windows (task-187), with no bind: it is the
+    /// viewer window's key, not the panel's (Space on the panel plays and stops).
+    #[test]
+    fn the_theme_viewer_space_is_listed() {
+        let g = groups(false);
+        let windows = g
+            .iter()
+            .find(|g| g.title == "Windows and the file browser")
+            .unwrap();
+        let r = windows
+            .rows
+            .iter()
+            .find(|r| r.what.starts_with("Theme Viewer window"))
+            .expect("the Theme Viewer's row");
+        assert_eq!(r.keys, "Space");
+        assert!(r.what.contains("nearest") && r.what.contains("bilinear"));
+        assert!(r.binds.is_empty());
     }
 
     /// The current-mode mark: Synth marks exactly the two Program Synth groups, Patterns only

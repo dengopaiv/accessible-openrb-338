@@ -1006,7 +1006,9 @@ are pixel-identical):
 - Mods: a mod chosen (the Mods menu, a song's mod, Choose file) is read and given to the plugin
   (`OrbParams::set_mod`, embedded in the state). An editor that opens on a state's mod names a
   copy of its bytes in the temporary folder (`OpenRB-338/mods/<sha256>.rbm`), or the file an
-  editor of the process chose, for the 808's mod window and Mods > Info.
+  editor of the process chose, for the 808's mod window and Mods > Info. The plugin's Mods menu
+  has no Theme Viewer (task-187: the viewer is a window of the standalone app only,
+  docs/ui_spec.md section 21).
 - **No keyboard** (the user, 2026-11-16): hosts take keys from plugin windows, and the 303
   plugins surveyed (task-185) have no shortcuts. The editor acts on no key: no menu
   accelerators (no shortcut texts in the menus), no Program Synth / Select Patterns modes in

@@ -98,6 +98,9 @@ pub enum Cmd {
     RefreshMods,
     /// "Info" of the Mods menu: the current mod's splash and details (task-106).
     ModInfo,
+    /// "Theme Viewer" of the Mods menu: the panel drawn with the current mod's bitmaps
+    /// (task-187, [`App::show_theme_viewer`]).
+    ThemeViewer,
     ToggleVintage,
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
     ToggleStartupSound,
@@ -1019,6 +1022,7 @@ impl App {
             Cmd::DemoSong => self.demo_song(),
             Cmd::RefreshMods => self.refresh_mods_reported(),
             Cmd::ModInfo => self.show_mod_info(),
+            Cmd::ThemeViewer => self.show_theme_viewer(),
             Cmd::ToggleVintage => {
                 let on = !self.panel.vintage;
                 self.panel.set_vintage(on);
@@ -1592,6 +1596,11 @@ impl App {
             }
             if item(ui, "Info...", None) {
                 *cmd = Some(Cmd::ModInfo);
+            }
+            // the viewer is a window of its own: the standalone app's only (the user's
+            // review of task-187)
+            if !plugin && item(ui, "Theme Viewer...", None) {
+                *cmd = Some(Cmd::ThemeViewer);
             }
         });
         ui.menu_button("Options", |ui| {

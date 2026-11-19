@@ -29,4 +29,5 @@ pub mod plugin_usage;
 pub mod session;
 pub mod settings;
 pub mod shortcuts;
+pub mod theme_view;
 pub mod version;

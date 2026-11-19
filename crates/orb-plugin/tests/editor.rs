@@ -345,6 +345,39 @@ fn the_options_menu_has_no_mode_items() {
     }
 }
 
+/// task-187 (the user's review): the viewer is the standalone app's only; the plugin's Mods
+/// menu has no Theme Viewer item, and the command does nothing in the plugin.
+#[test]
+fn the_mods_menu_has_no_theme_viewer() {
+    let mut h = Harness::new(with("303_accent0"));
+    // Mods is the second title of the bar (File, Mods, Options, Help)
+    h.click(Pos2::new(56.0, MENU_H / 2.0));
+    h.frame(vec![]);
+    h.frame(vec![]);
+    assert!(egui::Popup::is_any_open(&h.ctx), "Mods opened");
+    let texts = h.texts.join("|");
+    assert!(texts.contains("Refresh List"), "the Mods menu: {texts}");
+    assert!(texts.contains("Info..."), "{texts}");
+    assert!(!texts.contains("Theme Viewer"), "{texts}");
+    h.app.command(orb_ui::menu::Cmd::ThemeViewer);
+    h.frame(vec![]);
+    assert!(!h.app.theme_viewer_is_open());
+}
+
+/// task-187 (the user's review): the 808's mod window is the standalone's link to the Theme
+/// Viewer; in the plugin it shows no hand cursor and a click opens nothing.
+#[test]
+fn the_mod_window_is_no_link_in_the_plugin() {
+    let mut h = Harness::new(with("303_accent0"));
+    let p = Harness::center("tr808.mod_view");
+    h.move_to(p);
+    h.frame(vec![]);
+    assert_ne!(h.cursor, egui::CursorIcon::PointingHand);
+    h.click(p);
+    h.frame(vec![]);
+    assert!(!h.app.theme_viewer_is_open());
+}
+
 /// task-221: the plugin's Help menu has Plugin Usage (and About, no Keyboard Shortcuts); the
 /// item opens the guide, a scrollable window that shows the trademark terms, and its close
 /// button closes it. The standalone's Help menu has no Plugin Usage (orb-ui's tests).

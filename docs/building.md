@@ -132,6 +132,14 @@ architectures, so the minimum is glibc 2.35. Both Linux packages were smoke-test
 `ubuntu:22.04` containers (`orb --help`, `orb info` on a shipped song, and OpenRB-338
 `--screenshot` under xvfb, which wrote a PNG), amd64 and arm64.
 
+**WSLg (Windows' Linux GUI) drops OpenRB-338 with two windows open** (task-187, the user's test of
+2026-11-19): under WSLg's Wayland compositor the app is disconnected (the connection is reset,
+with no `wl_display.error`) on a focus change or when the Theme Viewer's window closes. It does
+not happen on a default Ubuntu desktop (GNOME's Mutter on Wayland) nor under X11 in WSLg, so it
+is taken as a WSLg compositor bug and orb has no code for it. Workaround: run under X11 with an
+empty `WAYLAND_DISPLAY` (`WAYLAND_DISPLAY= ./OpenRB-338`); the `.tar.gz` then needs
+`libxkbcommon-x11-0` (above).
+
 The Windows build of OpenRB-338 is a GUI-subsystem exe (task-111), see "The Windows installer".
 
 ## Scripts (`scripts/`)

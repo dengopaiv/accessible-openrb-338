@@ -1069,7 +1069,7 @@ impl Panel {
                 }
             }
             "trigger" | "wind" | "repeat" => push(),
-            "led" => on_off(self.led_on(c, now)),
+            "led" => on_off(self.led_lit(&c.id, now)),
             "grid" => {
                 if let Some(n) = name.strip_prefix("pattern") {
                     let r = index_of(sec, "pattern").unwrap_or(0).min(3);
@@ -1112,15 +1112,17 @@ impl Panel {
             .min_by(f64::total_cmp)
     }
 
-    fn led_on(&self, c: &crate::layout::Ctl, now: f64) -> bool {
-        let Some(k) = index_of(&c.section, "tb303_") else {
+    /// Whether the 303 LED `id` (`tb303_1.key0_led`, `tb303_2.pitch_led`, ...) is lit at `now`.
+    pub fn led_lit(&self, id: &str, now: f64) -> bool {
+        let (section, name) = id.split_once('.').unwrap_or((id, ""));
+        let Some(k) = index_of(section, "tb303_") else {
             return false;
         };
         let k = k.min(1);
         let s = &self.synth[k.min(1)];
         let pattern = self.rows[k].pattern;
         let step = s.step(pattern);
-        match c.name() {
+        match name {
             "pitch_led" => s.pitch_mode,
             "down_led" => step.down,
             "up_led" => step.up,
