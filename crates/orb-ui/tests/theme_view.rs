@@ -909,6 +909,34 @@ fn on_linux_an_open_viewer_comes_back_as_a_new_window_of_its_size() {
     }
 }
 
+/// Task-255: the builder's inner size is the one at creation and does not follow the window's
+/// live size (egui turns a changed builder size into a resize command that fought the drag):
+/// the same builder size on every pass while the window is resized, and the last size again
+/// when a window is opened after a close.
+#[test]
+fn a_live_resize_does_not_change_the_builders_size() {
+    let mut h = Harness::new();
+    h.app.command(Cmd::ThemeViewer);
+    h.viewer_frame(vec![]);
+    let panel = Some(Vec2::new(PANEL_W, PANEL_H));
+    assert_eq!(VIEWER.with(|v| v.borrow().last).unwrap().1, panel);
+    for w in [650.0, 700.0, 640.0, 900.0] {
+        VIEWER.with(|v| v.borrow_mut().size = Some(Vec2::new(w, w * 0.8)));
+        h.viewer_frame(vec![]);
+        h.viewer_frame(vec![]);
+        assert_eq!(VIEWER.with(|v| v.borrow().last).unwrap().1, panel, "{w}");
+    }
+    // closed and opened again: the last size, then constant again
+    h.app.close_theme_viewer();
+    h.app.command(Cmd::ThemeViewer);
+    h.viewer_frame(vec![]);
+    let last = Some(Vec2::new(900.0, 720.0));
+    assert_eq!(VIEWER.with(|v| v.borrow().last).unwrap().1, last);
+    VIEWER.with(|v| v.borrow_mut().size = Some(Vec2::new(500.0, 400.0)));
+    h.viewer_frame(vec![]);
+    assert_eq!(VIEWER.with(|v| v.borrow().last).unwrap().1, last);
+}
+
 /// Review round 4 of task-187: the TR-909 lights the selected instrument's LED (12567) at its
 /// dot: BD's at (29, 76) of the section, as the original does, and it moves with the selection.
 #[test]

@@ -1,10 +1,11 @@
 ---
 id: TASK-255
 title: 'Theme viewer: resizing the window makes the scale jump and can loop'
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-19T14:32:00Z'
+updated_date: '2026-11-19T14:51:00Z'
 labels:
   - ui
 milestone: m-5
@@ -32,8 +33,32 @@ Also check the letterboxing math (`draw`, ~line 800) for a jump between fits dur
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Resizing the viewer window by dragging scales the panel smoothly with no jumps and the window never changes size by itself (checked by the user on macOS)
-- [ ] #2 The viewport builder sets the inner size only when the window is created; a test checks that live size changes do not produce a resize command/builder change for an open viewer
-- [ ] #3 A reopened viewer (Linux path of task-187) still opens at the last size; its test still passes
-- [ ] #4 cargo test, clippy -D warnings and nightly fmt pass; docs/ui_spec.md section 21 updated if the behavior description changes
+- [x] #1 Resizing the viewer window by dragging scales the panel smoothly with no jumps and the window never changes size by itself (checked by the user on macOS)
+- [x] #2 The viewport builder sets the inner size only when the window is created; a test checks that live size changes do not produce a resize command/builder change for an open viewer
+- [x] #3 A reopened viewer (Linux path of task-187) still opens at the last size; its test still passes
+- [x] #4 cargo test, clippy -D warnings and nightly fmt pass; docs/ui_spec.md section 21 updated if the behavior description changes
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Add open_size (size at window creation) to the viewer state, set in show_theme_viewer on open and on Linux reopen; the builder uses it, never the live size. Test: builder size constant across live resizes.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-a1e653ca6d1d6651c
+
+Cause confirmed in the cargo registry: egui 0.37 ViewportBuilder::patch (viewport.rs:771-775) pushes ViewportCommand::InnerSize when the new builder inner_size differs from the stored one; eframe glow_integration.rs:1661 / wgpu_integration.rs:1438 call it every frame for an existing immediate viewport and apply the commands. theme_viewer_ui gave with_inner_size(v.size), v.size = live inner_rect one frame earlier, so every frame resized the window back to its previous size (jumps during the drag, oscillation with the OS events). Not verified from the video (no frames extracted). Letterbox math (View::fit, app.rs:46) is a continuous min-scale fit with centre rounding: no jump source. Viewer repaints on resize on its own; no size is requested. Fix: new field open_size, set from size in show_theme_viewer at open and Linux reopen; builder uses it (min size unchanged). Test a_live_resize_does_not_change_the_builders_size (orb-ui tests/theme_view.rs); the task-187 reopen test still passes. cargo test all ok, clippy -D warnings clean, nightly fmt clean. Dev app for the user's check (AC 1): target/OpenRB-338.app in the worktree.
+
+The user checked the dev app on macOS on 2026-11-19: resizing looks good.
+
+Review round 1: send back (amend only): the commit body said the user's check was still open (now the approval of 2026-11-19), and docs/ui_spec.md section 21 had a 120-column line (rewrapped). Done.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The viewer's ViewportBuilder now gets its inner size only at window creation (new open_size field, set at open and at the Linux reopen), so egui's ViewportBuilder::patch no longer sends an InnerSize command each frame; that command fought the drag (cause confirmed in egui 0.37 viewport.rs:771 and eframe glow/wgpu integrations). Branch worktree-agent-a1e653ca6d1d6651c. Test a_live_resize_does_not_change_the_builders_size added; cargo test, clippy -D warnings and nightly fmt pass. The user checked the macOS dev app on 2026-11-19: looks good.
+<!-- SECTION:FINAL_SUMMARY:END -->

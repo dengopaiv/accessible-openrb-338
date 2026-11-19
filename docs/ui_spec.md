@@ -1971,13 +1971,15 @@ round 4), closed by its close button and reopened by
 the menu (at the size it had). The menu item while it is open brings it to the front with the
 focus (the user's review of 2026-11-19): on macOS and Windows by `ViewportCommand::Focus`; on
 Linux (`theme_view::REOPEN_TO_FOCUS`, `cfg!(target_os = "linux")`) by closing its window and
-opening a new one at the same inner size, which gets the focus, because GNOME's Mutter (Wayland
-and X11) raises a window only with an activation token from the click, which egui does not pass,
-so `Focus` did nothing there (the user's decision, review round 3). A window that opens is
-repainted at once for its first three passes: on Wayland winit draws a window's frame and title
-bar only on a repaint, and a viewer opened from the menu stayed without them until the mouse
-entered it. WSLg drops the app with two windows open (docs/building.md). It is the standalone
-app's only:
+opening a new one at the same inner size (the builder's size is set only when a window is
+created, from the size at that moment; a size that followed the live window made egui send a
+resize command every frame and fought the user's drag, task-255), which gets the focus,
+because GNOME's Mutter (Wayland and X11) raises a window only with an activation token from the
+click, which egui does not pass, so `Focus` did nothing there (the user's decision, review
+round 3). A window that opens is repainted at once for its first three passes: on Wayland
+winit draws a window's frame and title bar only on a repaint, and a viewer opened from the
+menu stayed without them until the mouse entered it. WSLg drops the app with two windows
+open (docs/building.md). It is the standalone app's only:
 a plugin's Mods menu has no Theme Viewer item and the command does nothing there (the user's
 review of 2026-11-19; `orb-plugin/tests/editor.rs`). In the standalone app the 808's mod
 window on the main panel (section 6, `App::mod_view`) is a link to it: the pointing-hand cursor

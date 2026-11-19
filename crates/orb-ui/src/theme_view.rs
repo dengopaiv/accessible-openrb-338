@@ -749,6 +749,11 @@ pub struct Viewer {
     serial: u32,
     /// The window's inner size, as its last pass saw it (points).
     size: Option<egui::Vec2>,
+    /// The inner size the window is created with: `size` as it was when the window was
+    /// opened, and constant while the window lives. The builder must not follow the live
+    /// `size`: egui turns a changed builder size into `ViewportCommand::InnerSize`, which
+    /// fought the user's drag (task-255).
+    open_size: Option<egui::Vec2>,
     /// The passes still to repaint at once after the window opened: Wayland draws the window's
     /// frame and title bar only on a repaint (the user's review of task-187).
     fresh: u8,
@@ -820,10 +825,12 @@ impl App {
             v.open = true;
             v.serial += 1;
             v.fresh = FRESH_PASSES;
+            v.open_size = v.size;
         } else if v.reopen.unwrap_or(REOPEN_TO_FOCUS) {
             // the open window goes (its viewport is not shown again) and a new one comes
             v.serial += 1;
             v.fresh = FRESH_PASSES;
+            v.open_size = v.size;
         } else {
             v.focus = true;
         }
@@ -919,8 +926,9 @@ impl App {
         let mut size = None;
         let builder = egui::ViewportBuilder::default()
             .with_title(title)
-            // a window opened in place of the open one keeps its size
-            .with_inner_size(v.size.unwrap_or(egui::vec2(PANEL_W, PANEL_H)))
+            // a window opened in place of the open one keeps its size; the size is the one
+            // at creation, never the live one (a changed size is a resize command)
+            .with_inner_size(v.open_size.unwrap_or(egui::vec2(PANEL_W, PANEL_H)))
             .with_min_inner_size([PANEL_W / 4.0, PANEL_H / 4.0])
             .with_resizable(true);
         ctx.show_viewport_immediate(id, builder, |ui, _class| {
