@@ -3,10 +3,10 @@ id: TASK-215
 title: >-
   First CI and release run: verify the plugin bundles and validators; DMG window
   layout
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-16T12:13:00Z'
-updated_date: '2026-11-17T17:43:00Z'
+updated_date: '2026-11-19T07:23:00Z'
 labels:
   - tools
   - tests
@@ -34,10 +34,10 @@ Follow-up of task-204 (task-134, the first release run, is Done and the user's, 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The ci.yml job 'plugin validators' passes on ubuntu-22.04 and macos-latest
-- [ ] #2 The job fails on a validator error
-- [ ] #3 The five other targets build the plugin and every package archive holds plugins/, including the cargo-xwin and Docker paths of scripts/build.sh
-- [ ] #4 The plugins-<target> artifact reaches the dmg jobs and scripts/package-dmg.sh accepts it
-- [ ] #5 The DMG window shows the app with its Applications link and the two plugin bundles with their links (VST3, CLAP)
+- [x] #2 The job fails on a validator error
+- [x] #3 The five other targets build the plugin and every package archive holds plugins/, including the cargo-xwin and Docker paths of scripts/build.sh
+- [x] #4 The plugins-<target> artifact reaches the dmg jobs and scripts/package-dmg.sh accepts it
+- [x] #5 The DMG window shows the app with its Applications link and the two plugin bundles with their links (VST3, CLAP)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -51,3 +51,9 @@ Update (task-238, user's decision 2026-11-17): the plugin installer is not in th
 
 2026-11-17: the user asked for the tagged release (v<UTC time>) once task-241 merges; the supervisor tags main, pushes the tag, reruns jobs that no runner picked up, and checks the draft release.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed by the user on 2026-11-19. Evidence from the release runs: release.yml succeeded for v2026.1117.1748, v2026.1118.0730 and v2026.1118.0919 (run 44274925230), and ci.yml's plugin validators job passes on ubuntu-22.04 and macos-latest. v2026.1118.0919 publishes all six targets' packages with the plugins (two macOS dmgs and plugin pkgs, Windows setup.exe with the VST3/CLAP components, Linux tar.gz and AppImage). The validator failure path was verified locally (an empty bundle dir and empty .clap/.vst3 folders exit 1). The DMG layout and the plugin bundles were checked by the user in their DAWs from the released builds.
+<!-- SECTION:FINAL_SUMMARY:END -->
