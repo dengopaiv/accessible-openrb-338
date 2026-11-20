@@ -936,7 +936,8 @@ No framework, no build tool beyond `tools/build_site.py`.
   groups; Linux's `x86_64`/`aarch64` in the user agent is trusted; a phone or an unknown system
   gets the macOS tab. Clicking a macOS button starts the download and shows the box of
   `app.js`: the binaries are not signed or notarized, with the steps for the file just
-  downloaded (Open Anyway, and the `xattr` commands for that file name), as README's Quick
+  downloaded (Open Anyway, and the `xattr` command: on the `.pkg` itself, or on the app copied
+  out of the `.dmg`, since the image needs none), as README's Quick
   start. Without JavaScript the page lists every system and both architectures. Tested by
   `node site/detect_test.js` on macOS, Windows, Linux and phone user agents.
 - **The look** is the panel's, made in `site/style.css` from the colors and gradients of

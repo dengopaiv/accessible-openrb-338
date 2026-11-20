@@ -101,11 +101,10 @@
     warn.appendChild(ol);
     warn.appendChild(el("h5", null, "In Terminal"));
     warn.appendChild(el("p", null, pkg ? "Remove the quarantine mark from the file, then open " +
-      "it:" : "Remove the quarantine mark from the download, and from the app after you " +
-      "have copied it to Applications:"));
-    var cmds = ["xattr -d com.apple.quarantine ~/Downloads/" + file];
-    if (!pkg) cmds.push("xattr -dr com.apple.quarantine /Applications/OpenRB-338.app");
-    warn.appendChild(el("pre", null, cmds.join("\n")));
+      "it:" : "Remove the quarantine mark from the app after you have copied it to " +
+      "Applications:"));
+    warn.appendChild(el("pre", null, pkg ? "xattr -d com.apple.quarantine ~/Downloads/" + file :
+      "xattr -dr com.apple.quarantine /Applications/OpenRB-338.app"));
     warn.hidden = false;
   });
 
