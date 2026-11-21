@@ -7,10 +7,12 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-21T06:27:00Z'
+updated_date: '2026-11-21T06:32:00Z'
 labels:
   - player
 milestone: m-7
-dependencies: []
+dependencies:
+  - TASK-244
 references:
   - /Users/pingw33n/documents/reaper_routing_on_off_bug.mp4
   - crates/orb-plugin/src/core.rs
@@ -38,4 +40,5 @@ The fix must make the plugin recover on its own: e.g. honour CC123/CC120 and the
 - [ ] #3 The plugin recovers without a mode switch: on all-notes-off or all-sound-off, on transport stop, and from the stuck state the test reproduces
 - [ ] #4 docs/plugin.md describes how note mode treats held, missing and stray note-offs
 - [ ] #5 The user confirms in REAPER that adding or removing a send while playing no longer leaves the 303 sliding
+- [ ] #6 A case in task-244's REAPER harness (a note-on whose note-off never arrives, then more 303 notes in note mode) passes after the fix
 <!-- AC:END -->

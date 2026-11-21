@@ -3,13 +3,15 @@ id: TASK-244
 title: 'Plugin: opt-in REAPER render tests (ORB_REAPER) against orb-player''s renders'
 status: To Do
 assignee:
-  - '@agent-worker'
+  - '@agent-complex'
 created_date: '2026-11-18T07:28:00Z'
+updated_date: '2026-11-21T06:32:00Z'
 labels:
   - tests
   - player
 milestone: m-7
-dependencies: []
+dependencies:
+  - TASK-256
 references:
   - crates/orb-plugin/tests
   - docs/plugin.md
@@ -17,9 +19,11 @@ references:
   - task-226
   - task-227
   - task-243
+  - task-256
+  - task-258
 priority: medium
 type: task
-ordinal: 700
+ordinal: 250500
 ---
 
 ## Description
@@ -30,28 +34,37 @@ ordinal: 700
 - note frames and note-offs at a loop seam;
 - transport positions, loops and pre-roll;
 - latency compensation;
-- resampling.
+- resampling;
+- multi-output routing (task-256).
 
-Several bugs showed up only in REAPER: task-226's timeline-start bugs, and task-242's note-mode PCF. The user agreed (2026-11-18) to an integration test that renders REAPER projects through REAPER's command line.
+Several bugs showed up only in REAPER: task-226's timeline-start bugs, task-242's note-mode PCF and task-258's 303 left sliding after a send change. The user agreed (2026-11-18) to an integration test that renders REAPER projects through REAPER's command line. On 2026-11-21 the user set the order: after task-256 (the per-device outputs) and before task-258, which adds its own case to this harness. The task was reassigned to @agent-complex for its scope.
 
 **Shape.**
-- **Off by default, like ORB_CD_ISO.** The test runs only when `ORB_REAPER` is set to the REAPER executable (on macOS `/Applications/REAPER.app/Contents/MacOS/REAPER`); otherwise it skips with a message. CI does not run it, because REAPER is licensed software.
-- **Plugin install.** Build the bundles (`cargo xtask bundle orb-plugin --release`) and install them where REAPER finds them without sudo (`~/Library/Audio/Plug-Ins/VST3` and `/CLAP` on macOS). Make sure REAPER rescans or finds the new build: check its plugin cache (`reaper-vstplugins*.ini`, `reaper-clap*.ini`) and document what is needed. Beware the root-owned copies in `/Library/Audio/Plug-Ins`, which REAPER may prefer; say how the test avoids picking up a stale build.
+- **Off by default, like ORB_CD_ISO.** The test runs only when `ORB_REAPER` is set to the REAPER executable (on macOS `/Applications/REAPER.app/Contents/MacOS/REAPER`). Otherwise it skips with a message. CI does not run it, because REAPER is licensed software.
+- **Plugins from the fresh build only, with no install (user's decision, 2026-11-21).**
+  - Build the bundles (`cargo xtask bundle orb-plugin --release`, into `target/bundled`).
+  - Give REAPER a scratch config of its own: `REAPER -cfgfile <scratch>/reaper.ini ...`. Its VST and CLAP plugin paths list only the folder holding the fresh bundles. They replace REAPER's default list, so `/Library/Audio/Plug-Ins` and `~/Library/Audio/Plug-Ins` (where the user's root-owned installed copies live) are never scanned.
+  - Nothing is copied into a plugin folder, and the user's own REAPER config and plugin caches are never read or written.
+  - Confirm against the pinned REAPER version:
+    - the exact `reaper.ini` keys for the VST and CLAP paths;
+    - whether `-cfgfile` also moves the resource folder and the plugin caches (`reaper-vstplugins*.ini`, `reaper-clap*.ini`). If it does not, also give the test its own empty resource folder so REAPER scans fresh.
+  - The test checks that REAPER loaded the fresh build, not some other copy: for example, the bundle path in the scratch plugin cache, or a build id the plugin writes into its state or log. It fails otherwise.
 - **Fixtures.** Committed `.RPP` projects, each holding the plugin state in its plugin block: the base64 VST3 or CLAP state, whose JSON fields include the song, the patterns and the mode. Generate them from a template with a small tool, so a fixture can be rebuilt when the state format changes.
-- **Rendering.** Run `REAPER -nosplash -renderproject X.RPP` into a scratch folder, check the exit status, and read the WAV.
+- **Rendering.** Run `REAPER -cfgfile ... -nosplash -renderproject X.RPP` into a scratch folder, check the exit status, and read the WAVs. Render stems where a case needs the device tracks.
 - **Comparison.** Compare against orb-player's render of the same song in pattern mode, offset by the known latency (docs/plugin.md section 4). The tolerance is documented per case: drum notes against pattern steps differ by up to 1 LSB (task-243), plus the task-227 timing gap.
 - **Cases:**
   - 303 notes with a slide (note mode);
-  - an 808 and a 909 pattern dragged out (task-203) played in note mode against the same pattern, with the PCF inserted (task-242);
+  - an 808 and a 909 pattern dragged out (task-203), played in note mode against the same pattern, with the PCF inserted (task-242);
   - Latch Pattern Mode over a looped time selection;
-  - a 48 kHz project (resampling).
+  - a 48 kHz project (resampling);
+  - multi-output (task-256): the four device outputs routed to their own tracks. The Mix renders bit-identical to the same project with no outputs routed, and each device track carries only its device. The device tracks match orb's per-channel render of the same song within the documented tolerance.
 - **Version.** Pin and document the REAPER version used. The RPP format and the CLI behave differently between versions.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 `cargo test -p orb-plugin --test reaper` skips with a message without ORB_REAPER and runs with it on the user's Mac
-- [ ] #2 The four cases (303 slide in note mode, 808/909 drag-out with PCF in note mode vs pattern, Latch over a loop, 48 kHz) render through REAPER's CLI and match orb-player's renders within documented per-case tolerances
-- [ ] #3 The test installs and uses the freshly built bundles, not a stale or root-owned copy; how is documented
+- [ ] #2 The five cases (303 slide in note mode, 808/909 drag-out with PCF in note mode vs pattern, Latch over a loop, 48 kHz, multi-output) render through REAPER's CLI and match orb-player's renders within documented per-case tolerances
+- [ ] #3 REAPER runs with a scratch -cfgfile whose plugin paths list only the fresh bundles; nothing is installed, the user's REAPER config and caches are untouched, and the test fails if REAPER loaded any other copy of the plugin; how is documented
 - [ ] #4 Fixtures are generated by a committed tool from a template and the plugin state; docs/plugin.md section 7 describes the test, the REAPER version and how to regenerate them
 <!-- AC:END -->
