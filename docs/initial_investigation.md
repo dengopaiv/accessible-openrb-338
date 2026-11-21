@@ -150,7 +150,10 @@ every block:   if (blk & 15) == 0: mixer_update()    // 0x10012C14; blk starts a
   non-null (a null one is replaced by the unfilled scratch `song+0x140C`/`+0x150C`).
 - Channel c's own output entry is 2, 3, 4 or 11. It is always null in the app, so the device
   renders into the shared scratch `unk_1010012C` (a process global, overwritten by each device in
-  turn), and only then is the channel mixed into the master (`cmp eax, ebp; jnz` at 0x100136B1).
+  turn), and only then is the channel mixed into the master (`cmp eax, ebp` at 0x100136AB, eax
+  the scratch's address from 0x100136A2 and ebp the channel's buffer; `jnz` at 0x100136B1).
+  A non-null entry (a ReWire host's buffer, task-257) gets the channel after its inserts and
+  takes it out of the master, its delay send kept (`docs/rewire.md` section 4).
   A device gets `float **` (slot 14, 0x10013580), an insert `float *` (slot 15).
 - Each block first advances the meter index `song+0xA0`: `i = (i + 23) & 63` (0x10013481). The
   channel peak (`+0xB8` of the channel block) and the master peaks (`song+0`, `+4`, after the
@@ -799,7 +802,11 @@ after each pair.
   - **909:** BD-A, BD-B, SD, LT, MT, HT, RS, CP, CH, OH, Crash, Ride. [C] task-025: the audio slot
     0x1002B6F0 calls FILTER `+0x1904`, `+0x1908`, DUAL `+0x190C`, PITCHED `+0x18F0`, `+0x18F4`,
     `+0x18F8`, SIMPLE `+0x18E0`..`+0x18EC`, PITCHED `+0x18FC`, `+0x1900` in this order.
-  - [G] For export the per-instrument ReWire outputs are null, so everything sums into bus 0.
+  - [C] task-257: the audio slot gets the device's entry of the 18-entry output array and reads
+    the six after it (808: entries 5..10 from 0x100280B0, 909: 12..17 from 0x1002B6F0), one per
+    voice group (BD, SD, Tom, Per, HH, CY). For export they are null, so every voice sums into
+    the device's bus; a non-null entry (a ReWire host's buffer) is zeroed and its group renders
+    there instead, out of the bus. `docs/rewire.md`.
 
 ### 7.2 Triggering and accent [C]
 

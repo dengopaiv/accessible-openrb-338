@@ -363,7 +363,7 @@ follow the host the same way; the section notes differ (Latch: below; Gate: sect
 ### 8.1 How the original follows an external position [C]
 
 The DLL has a host-sync path of its own, for TopHat (ReWire's precursor; out of orb's scope
-otherwise): the export `TopHatDriveAudioProc` (0x1001B800) calls `sub_1001C0F4` (0x1001B891)
+otherwise; its 18 audio outputs are in `docs/rewire.md`): the export `TopHatDriveAudioProc` (0x1001B800) calls `sub_1001C0F4` (0x1001B891)
 with the host's block in each audio call.
 
 - The host's tempo (`+0x950`) becomes the song's tempo (globals `+4`, 0x1001C118) and

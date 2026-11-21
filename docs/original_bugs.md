@@ -611,3 +611,43 @@ See OB-8 for the unclean buffer.
 - **Corpus.** [G] Every corpus song with a rising 303 slide; the songs were not counted.
 - **orb.** `crates/orb-engine/src/tb303.rs` (`glide`), the same arithmetic.
 - **Home.** `docs/initial_investigation.md` 6.1; `docs/midi.md` 5.3.
+
+### Q-6: a channel on its own ReWire output freezes its level and pan smoothing [C]
+
+- **What.** In the mixer block, a mixer channel whose output entry is a ReWire host's buffer
+  jumps past both the per-block gain smoothing (`n = old*0.93 + tgt*0.07`) and the pan-and-mix
+  loop. Its current L and R gains (channel block `+0xC` and `+8`, song `+0xB0 + 44c` and
+  `+0xAC + 44c`) stay at the values of the last block it was in the Mix, while the targets
+  keep following the panel. When the host disables the channel again, the smoothing starts from
+  the frozen gains: after a level or pan change made while it was routed out, the channel glides
+  into the Mix from its old level over the next blocks instead of coming back at the new one.
+- **Where.** `sub_10013444`: `mov eax, offset unk_1010012C` (0x100136A2), `cmp eax, ebp`
+  (0x100136AB, ebp the channel's buffer), `jnz loc_10013808` (0x100136B1) past the smoothing
+  (0x100136B7..0x10013732) and the mix loop (0x10013742..0x100137FA). Read in IDA (task-257).
+- **Trigger.** ReWire only: a host enabling 303-1, 303-2, 808-Mix or 909-Mix, a level, pan or on
+  change, then the host disabling the channel. Never in the export or the app's realtime output
+  (entries 2..17 are always null there).
+- **Verdict.** Not claimed as a defect: a short glide, and only in a ReWire host.
+- **Corpus.** None (no corpus song reaches ReWire).
+- **orb.** Not modeled: orb has no ReWire routing (`docs/rewire.md`; task-259).
+- **Home.** `docs/rewire.md` section 4.
+
+### Q-7: a disabled ReWire Mix-L or Mix-R bus accumulates in a scratch [C]
+
+- **What.** When a ReWire host disables Mix-L or Mix-R, the mixer block uses the song's scratch
+  `song+0x140C` (L) or `+0x150C` (R) as that master bus and does not fill it with the 1e-6
+  guard, which it does only for a host buffer. Each block then adds the channels and the delay
+  return into the previous block's content, already multiplied by the master gain. Nothing is
+  output from it, but the master compressor (when routed to the master) and the master peak
+  meter read it.
+- **Where.** `sub_10013444`: `mov eax, [esi]; test eax, eax; jnz` at 0x1001349D..0x100134A1 and
+  `lea eax, [edi+140Ch]` (0x100134A3) for L, the same at 0x100134DF..0x100134E6 for R; the
+  1e-6 fill loops at 0x100134BA and 0x100134FF run only on a non-null entry. Read in IDA
+  (task-257).
+- **Trigger.** ReWire only, a host with Mix-L or Mix-R off. The export and the app always pass
+  both.
+- **Verdict.** Not claimed as a defect: no output carries it; the master compressor's gain
+  reduction and the master meter can differ from a run with both enabled.
+- **Corpus.** None.
+- **orb.** Not modeled (no ReWire routing).
+- **Home.** `docs/rewire.md` section 4.
