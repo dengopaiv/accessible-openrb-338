@@ -727,14 +727,18 @@ unsafe fn vst3_first_note(
         let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
         assert_eq!(component.initialize(null_mut()), kResultOk);
         // task-256: the main Mix bus and the four per-device aux buses, stereo
-        let (audio, output) = (MediaTypes_::kAudio as i32, BusDirections_::kOutput as i32);
+        // `as _`: the vst3 enum constants are i32 on Windows and u32 elsewhere, and clippy's
+        // unnecessary_cast rejects `as i32` on Windows
+        let audio: vst3::Steinberg::Vst::MediaType = MediaTypes_::kAudio as _;
+        let output: vst3::Steinberg::Vst::BusDirection = BusDirections_::kOutput as _;
         assert_eq!(component.getBusCount(audio, output), 5);
         let mut names = Vec::new();
         for i in 0..5 {
             let mut info: BusInfo = std::mem::zeroed();
             assert_eq!(component.getBusInfo(audio, output, i, &mut info), kResultOk);
             assert_eq!(info.channelCount, 2);
-            let main = info.busType == BusTypes_::kMain as i32;
+            let kmain: vst3::Steinberg::Vst::BusType = BusTypes_::kMain as _;
+            let main = info.busType == kmain;
             assert_eq!(main, i == 0);
             let n = info.name.iter().position(|&c| c == 0).unwrap();
             names.push(String::from_utf16(&info.name[..n]).unwrap());
