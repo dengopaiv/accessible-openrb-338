@@ -175,6 +175,10 @@ pub enum Command {
         note: u8,
         velocity: u8,
     },
+    /// Every note a 303, the 808 or the 909 holds in note mode is let go: the plugin's
+    /// all-notes-off, all-sound-off and the host's stop (task-258; [`Engine::live_notes_off`],
+    /// ignored while the song plays). Not a message of the original's.
+    NotesOff(Device),
     /// The pattern gate of a 303, the 808 or the 909 at the current tick: the plugin's Gate
     /// Pattern Mode (task-218; [`Engine::set_gate`]). Not a message of the original's.
     Gate { device: Device, gate: Gate },
@@ -826,6 +830,7 @@ impl Audio {
                 note,
                 velocity,
             } => self.target().live_note(device, note, velocity),
+            Command::NotesOff(device) => self.target().live_notes_off(device),
             Command::Gate { device, gate } => self.target().set_gate(device, gate),
             Command::SongMode(on) => self.target().set_song_mode(on as u8),
             Command::Record(on) => self.target().set_record(on as u8),

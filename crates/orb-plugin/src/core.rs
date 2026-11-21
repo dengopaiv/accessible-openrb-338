@@ -73,7 +73,9 @@
 //! open gate plays the song from step 1, free-running. In note mode (task-200) a note-on or
 //! note-off on those channels
 //! plays the device (`Command::Note`, `docs/plugin.md` section 9), whatever the host's
-//! transport does. Every other message goes, when the Standard Mapping is on (off by default),
+//! transport does; there an all-notes-off or all-sound-off (CC 123, CC 120) on one of those
+//! channels, and the host's stop, let go of the notes held (`Command::NotesOff`, task-258).
+//! Every other message goes, when the Standard Mapping is on (off by default),
 //! to it on the remote channel (default 16, [`crate::instance::Shared`]); of its actions the
 //! controls are applied, the transport ones (Play, Stop, Record, Locate) are not: the
 //! transport is the host's. The preview ignores every message.
@@ -129,6 +131,10 @@ const RECORDS: usize = 1024;
 const MAX_TICK: f64 = 1.0e9;
 /// The MIDI actions one message can give (the Standard Mapping gives at most two).
 const ACTIONS: usize = 8;
+/// The channel mode messages that let go of note mode's held notes (task-258): All Sound Off
+/// and All Notes Off.
+const ALL_SOUND_OFF: u8 = 120;
+const ALL_NOTES_OFF: u8 = 123;
 
 /// What the host says about its transport at a call's first frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -215,6 +221,9 @@ struct Engine {
     /// The block before followed the host's position, which was `last_tick`.
     following: bool,
     last_tick: f64,
+    /// The host played at the block before (its record's transport): its stop lets go of
+    /// note mode's held notes (task-258).
+    host_was_playing: bool,
     /// The newest song seen (the player's load count when it came) and its own tempo,
     /// BPM*1000.
     song: Option<u64>,
@@ -427,6 +436,12 @@ impl Engine {
         // the block's host timeline frame
         let h = (self.blocks * BLOCK as u64) as f64 * self.rate as f64 / ENGINE_RATE as f64;
         let rec = self.record_at(h);
+        // the host stops: note mode lets go of every held note, which a note-off the host
+        // lost would otherwise keep sliding (task-258)
+        if self.host_was_playing && !rec.t.playing && self.mode == Mode::Note && !self.preview {
+            self.notes_off_all();
+        }
+        self.host_was_playing = rec.t.playing;
         // the host's tempo also in the preview and while the host is stopped (hosts report it
         // then; the user, 2026-11-16); the song's only when the host reports none
         let host_tempo = rec.t.tempo.filter(|t| t.is_finite() && *t > 0.0);
@@ -513,12 +528,31 @@ impl Engine {
         self.send(Command::NoteClock(c));
     }
 
+    /// Note mode's held notes on the four devices are let go (task-258).
+    fn notes_off_all(&mut self) {
+        for device in ROWS {
+            self.send(Command::NotesOff(device));
+        }
+    }
+
     /// One host MIDI message.
     fn message(&mut self, m: &Message) {
         // the MIDI LED counts it even in the preview, which ignores it
         self.audio.midi_received(1);
         if self.previewing() {
             return;
+        }
+        if let Message::ControlChange {
+            channel: c @ 0..=3,
+            controller: ALL_SOUND_OFF | ALL_NOTES_OFF,
+            ..
+        } = *m
+        {
+            // note mode: the section's held notes are let go (task-258); the message then goes
+            // on to the Standard Mapping as any other, which maps neither
+            if self.shared.mode() == Mode::Note {
+                self.send(Command::NotesOff(ROWS[c as usize]));
+            }
         }
         let (c, note, velocity) = match *m {
             Message::NoteOn {
@@ -703,6 +737,7 @@ impl Core {
                 len: 0,
                 following: false,
                 last_tick: 0.0,
+                host_was_playing: false,
                 song: None,
                 song_tempo: 0,
                 mapping,

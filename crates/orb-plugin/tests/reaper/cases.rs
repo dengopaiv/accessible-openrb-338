@@ -80,7 +80,15 @@ pub struct Case {
     /// The four device outputs routed to tracks of their own ([`DEVICE_TRACKS`]), rendered as
     /// stems with the master.
     pub routed: bool,
+    /// A key the MIDI item also presses at tick 0 on the clip's channel and never lets go (a
+    /// note-off the host lost, task-258), the item then running [`TAIL`] past the clips.
+    pub orphan: Option<u8>,
 }
+
+/// How long the MIDI item of a case with an orphan note runs past its clips, seconds: the 303's
+/// release is over in the first half, and the rest is silent unless a held note keeps the gate
+/// open.
+pub const TAIL: f64 = 1.5;
 
 /// The projects' tempo, BPM. A quarter note is then 22050 frames at 44.1 kHz and 24000 at
 /// 48 kHz: the MIDI items count in frames ([`ppq`]), so a note plays at the frame the case
@@ -118,6 +126,16 @@ const fn note(
         clip: Some((row, timing)),
         loop_selection: None,
         routed: false,
+        orphan: None,
+    }
+}
+
+/// A note-mode case of the 303's clip with an orphan note-on of `key` at tick 0 (task-258).
+const fn stuck(name: &'static str, song: &'static str, key: u8) -> Case {
+    Case {
+        seconds: 4.0 + TAIL + 0.5,
+        orphan: Some(key),
+        ..note(name, song, &[], 0, Timing::Clip)
     }
 }
 
@@ -140,6 +158,7 @@ const fn latch(
         clip: None,
         loop_selection,
         routed,
+        orphan: None,
     }
 }
 
@@ -151,9 +170,10 @@ const PCF_909: &[(&str, i32)] = &[("d0c2", 4), ("d7c0", 1), ("d7c4", 0)];
 /// The cases (`docs/plugin.md` section 7): the 303's slide pattern and the 808's and 909's
 /// accent patterns with the PCF on their channel, dragged out and played in note mode, each at
 /// the clip's times and aligned to the pattern's blocks; the full mix in Latch Pattern Mode at
-/// 48 kHz, and with the device outputs routed (and the same project unrouted); and a pin of
-/// REAPER's render ignoring a looped selection.
-pub const CASES: [Case; 10] = [
+/// 48 kHz, and with the device outputs routed (and the same project unrouted); a pin of
+/// REAPER's render ignoring a looped selection; and the 303's clip with a note-on whose
+/// note-off never comes (task-258: key 39, which the clip plays and lets go later in each loop).
+pub const CASES: [Case; 11] = [
     note("tb303_slide_clip", "303_slide", &[], 0, Timing::Clip),
     note("tb303_slide_aligned", "303_slide", &[], 0, Timing::Aligned),
     note(
@@ -190,6 +210,7 @@ pub const CASES: [Case; 10] = [
     latch("latch_48k", 48_000, 4.0, None, false),
     latch("outputs_routed", 44_100, 4.0, None, true),
     latch("outputs_unrouted", 44_100, 4.0, None, false),
+    stuck("tb303_stuck_note", "303_slide", 39),
 ];
 
 pub fn case(name: &str) -> &'static Case {
@@ -273,7 +294,9 @@ pub fn pattern_frame(c: &Case, t: u32) -> usize {
 /// The MIDI item's events of the case, (frame, message): the drag-out notes (`clip::notes`)
 /// of the section's selected pattern, [`LOOPS`] times one after the other, at their ticks'
 /// frames or aligned ([`Timing`]). At one frame the note-offs come first, then the note-ons
-/// (REAPER's order), each kind by pitch. Also the item's end, the frame of the clips' end.
+/// (REAPER's order), each kind by pitch; with them a case's orphan note-on, and last the
+/// all-notes-off REAPER writes at the item's end. Also the item's end: the frame of the clips'
+/// end, [`TAIL`] later with an orphan.
 pub fn notes(c: &Case, p: &OrbParams) -> (Vec<(usize, Message)>, usize) {
     let Some((row, timing)) = c.clip else {
         return (Vec::new(), 0);
@@ -322,13 +345,34 @@ pub fn notes(c: &Case, p: &OrbParams) -> (Vec<(usize, Message)>, usize) {
             v.push((at(k * ticks + end), off));
         }
     }
+    if let Some(key) = c.orphan {
+        let on = Message::NoteOn {
+            channel,
+            note: key,
+            velocity: clip::VEL_NORMAL,
+        };
+        v.push((0, on));
+    }
     let rank = |m: &Message| match *m {
         Message::NoteOff { note, .. } => (0, note),
         Message::NoteOn { note, .. } => (1, note),
         _ => unreachable!(),
     };
     v.sort_by_key(|(f, m)| (*f, rank(m)));
-    (v, frame_of(c, LOOPS * ticks))
+    let tail = match c.orphan {
+        Some(_) => (TAIL * c.rate as f64).round() as usize,
+        None => 0,
+    };
+    let end = frame_of(c, LOOPS * ticks) + tail;
+    // the item's end: REAPER's all-notes-off on channel 1 (no section note before task-258;
+    // since, note mode lets go of 303 #1's held notes, none in a case)
+    let all_off = Message::ControlChange {
+        channel: 0,
+        controller: 123,
+        value: 0,
+    };
+    v.push((end, all_off));
+    (v, end)
 }
 
 /// nice-plug's state of the instance: its parameters by id and its persisted fields, as JSON
@@ -460,6 +504,11 @@ fn instrument_track(c: &Case, f: Format, p: &OrbParams) -> String {
                     velocity,
                 } => (0x90 | channel, note, velocity),
                 Message::NoteOff { channel, note, .. } => (0x80 | channel, note, 0),
+                Message::ControlChange {
+                    channel,
+                    controller,
+                    value,
+                } => (0xb0 | channel, controller, value),
                 _ => unreachable!(),
             };
             s.push_str(&format!(
@@ -468,8 +517,8 @@ fn instrument_track(c: &Case, f: Format, p: &OrbParams) -> String {
             ));
             at = *t;
         }
-        // the item's end: REAPER's all-notes-off on channel 1 (no section note)
-        s.push_str(&format!("        E {} b0 7b 00\n", end - at));
+        // the last event is the item's end ([`notes`])
+        assert_eq!(at, end, "{}: the item's end", c.name);
         s.push_str("      >\n    >\n");
     }
     s.push_str("  >\n");

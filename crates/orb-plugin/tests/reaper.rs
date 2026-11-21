@@ -450,7 +450,22 @@ fn check(c: &Case, f: Format, r: &Render) {
         "{id}: equal to the in-process host (latency {})",
         host.latency
     );
-    if let Some((_, timing)) = c.clip {
+    if c.orphan.is_some() {
+        // task-258: the orphan note holds the gate open (every clip note slides) until the
+        // clip lets its key go; after that the 303 closes the gate at each note-off, so the
+        // item's tail is silent once the last note's release is over (before the fix the
+        // orphan held the gate to the end of the render)
+        let clips = end - (cases::TAIL * c.rate as f64).round() as usize;
+        let from = clips + c.rate as usize / 2;
+        let tail = peak(&master[2 * from..2 * end]);
+        eprintln!("{id}: the tail's peak, frames {from}..{end}: {tail}");
+        assert!(
+            tail < 1e-3,
+            "{id}: the 303 still sounds after the clips ({tail})"
+        );
+        let during = peak(&master[..2 * clips]);
+        assert!(during > 0.05, "{id}: the clips play ({during})");
+    } else if let Some((_, timing)) = c.clip {
         // orb-player's pattern-mode render through the same process side, the host rolling
         // from beat 0; compared up to the block where the pattern starts its third loop, which
         // the clip does not have

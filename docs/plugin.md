@@ -353,10 +353,11 @@ the library, loads it with the dynamic loader, checks the CLAP descriptor and th
 class info, and runs a minimal CLAP host that restores a state with a song in pattern mode,
 activates at 44.1 kHz, processes with a CLAP transport that plays (no tempo, no position), and
 gets the same samples as the process side run directly. A real host, REAPER, is the opt-in
-`reaper.rs` (task-244, section 7.1). `sync.rs` (task-198) runs a simulated host transport (section 8),
-`note_mode.rs` (task-200) note mode (section 9), `editor.rs` (task-201) the editor headless
-(section 10), `preview.rs` (task-217) the preview and its set through the process path
-(section 4.2).
+`reaper.rs` (task-244, section 7.1). `sync.rs` (task-198) runs a simulated host transport
+(section 8), `note_mode.rs` (task-200) note mode (section 9), `held_notes.rs` (task-258) the
+303's held notes with lost and stray note-offs, CC 123/120 and the host's stop (section 9.1),
+`editor.rs` (task-201) the editor headless (section 10), `preview.rs` (task-217) the preview
+and its set through the process path (section 4.2).
 
 ### 7.1 The REAPER render test (task-244)
 
@@ -453,7 +454,19 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
     `full_mix` with a looped time selection (bar 2 to 3, `LOOP 1`). **REAPER's command-line
     render does not loop**: it renders the linear timeline, bit for bit the project's without
     the loop (the master renders compared bit for bit), and the test fails once that changes. A looped host transport is not
-    covered (task-264).
+    covered (task-264);
+  - `tb303_stuck_note` (task-258, section 9.1): the 303's slide clip (two loops, note mode, the
+    clip's times) with a note-on of key 39 at tick 0 whose note-off never comes, the item
+    running 1.5 s past the clips. The orphan holds the gate (the clip's notes slide) until the
+    clip plays key 39 and lets it go; from half a second after the clips to the item's end the
+    master is silent (peak 0 in both formats). Before task-258 the in-process render kept the
+    303 sounding to the end, and REAPER's differed from it from the item's end (frame 242569,
+    up to 0.092). The inference, not an observation of REAPER's messages: **REAPER most likely
+    closes a note an item left open at the item's end** with a note-off, because the pre-fix
+    plugin changed its output there and reacted to nothing at that point but a note-off of the
+    held key (the item's all-notes-off it ignored); the in-process host sends no such note-off.
+    The in-process events carry the all-notes-off REAPER writes at each item's
+    end (`E ... b0 7b 00`, on channel 1), a no-op in every case since nothing is held there.
 - **120 BPM, not 125** (found by this test): at 125 BPM a block starts exactly on bar 2's tick
   768 (the host's tick at block `m` is `m * tempo * 512 / 110250`; block 1323), and the
   plugin's position there, extrapolated from the start of the host's call, comes out as 768.0
@@ -613,14 +626,52 @@ note-on 0x10023CD4 and note-off 0x10023C74 as a pattern would, so the sound is t
   coefficient restart are skipped), and the pitch glides `(11p + t)/12`. The same pitch is a
   tie; its accent still changes the envelope decay and the accent amount, as a tied accented
   step does.
-- **Held notes** (up to 16, a fixed array; a 17th forgets the oldest): the newest sounds
+- **Held notes** (up to 16 keys, a fixed array; a 17th forgets the oldest): the newest sounds
   (last-note priority). Releasing it slides back to the newest note still held, with that
   note's accent (legato; a held note the Tune has since put outside the table is dropped);
   releasing a note that does not sound changes nothing; releasing the last one is the note-off
-  (the gate is the note's length; the release is the note-off's amp constants). A note-off
-  releases the oldest held instance of its note, so two overlapping notes of one pitch (a tie
-  in the pattern drag-out, task-203) sound as one until the second ends.
-- Play (slot 3) and slot 6 (Stop, a song switch, a reset) forget the held notes.
+  (the gate is the note's length; the release is the note-off's amp constants).
+- **A key is held once** (task-258; MIDI's own model, and Gate Pattern Mode's, section 11): a
+  note-on of a key already held presses it again (its old entry goes and it becomes the
+  newest; with another key or itself held it is legato, a tie for itself), and one note-off
+  lets it go. Before task-258 a key was held once per note-on and a note-off let go of the
+  oldest instance; the drag-out never overlaps two notes of one pitch (a tie is one longer
+  note, section 12), so only a host's lost or doubled note gave two.
+- **Missing and stray note-offs** (task-258). A note-off that never comes (the user's report,
+  2026-11-21: a REAPER send to the plugin removed while a 303 note played; REAPER most likely
+  closes the notes of an item at its end, inferred in section 7.1, but the removed send no
+  longer carries them) leaves
+  its key held: every later note slides from it (no attack) and every release slides back to
+  it, so the 303 sounds without a break. It heals at the key's next note-off (a looped clip
+  plays the key again), at an all-notes-off or all-sound-off on the section's channel, and at
+  the host's stop; before task-258 only Play or Stop of the song (a mode switch) cleared it,
+  as the held instances outnumbered the note-offs for good and the plugin ignored both
+  controllers and the stop. A note-off of a key not held (a send added during a note) changes
+  nothing.
+- **A note whose MIDI source is gone** (the user's check, 2026-11-21: a send deleted while a
+  303 note was held). The plugin then gets no more MIDI from that source, so the held key
+  sounds on, as in any MIDI instrument, until the host's transport stops or an all-notes-off
+  or all-sound-off arrives on the section's channel. The user decided on 2026-11-21 to keep
+  this (option A, task-270); neither clearing held notes at a host loop wrap or position jump (B) nor a
+  timeout (C). In REAPER 7.86 the action "Send all-notes-off and all-sounds-off to all MIDI
+  outputs/plug-ins" sends both at once, and its MIDI reset preferences ("Reset on:", "On stop
+  (default, recommended)" or "Reset on playback start"; strings of its executable) choose when
+  it sends reset messages; the plugin also lets go at the stop itself.
+- **All notes off.** In note mode CC 123 (All Notes Off) and CC 120 (All Sound Off) on channel
+  1..4 (`src/core.rs`, `Command::NotesOff`, `Engine::live_notes_off`, `Tb303::key_all_off`)
+  and the host's stop (the first block whose host record stops after one that played; also
+  with the host's position) let go of every held key at once: the slide flag cleared, then the
+  note-off, as the last key's note-off (bit for bit, `tests/held_notes.rs`). All Sound Off is
+  no hard cut: the 303 decays by its release. The reason: the engine has no way to silence a
+  voice but the original's note-off (slot 6, the song's Stop, releases the same way), a cut
+  mid-waveform would click, and hosts send All Sound Off together with All Notes Off at a
+  stop or reset (REAPER's action above), where a release is what a stop sounds like. Nothing when no key is held; the 808 and the 909
+  hold no notes. The messages then reach the Standard Mapping as before, which maps neither
+  (section 8).
+- Play (slot 3) and slot 6 (Stop, a song switch, a reset) forget the held notes. This is what
+  a mode switch reset while the host played: to Latch or Gate the song plays (Play), back to
+  note mode it stops (Stop). With the host stopped a switch to Latch and back sends neither
+  (the song stays stopped).
 
 The unit tests (`src/tb303/note_tests.rs`) play patterns through the step function and the same
 notes through note mode, 12 ticks a block, and require the same samples bit for bit in both

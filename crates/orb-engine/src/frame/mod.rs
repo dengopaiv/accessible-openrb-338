@@ -287,6 +287,9 @@ pub trait ChannelDevice: SongDevice {
     fn live_note_on(&mut self, _note: u8, _velocity: u8) {}
     /// Not in the original: a MIDI note-off for [`ChannelDevice::live_note_on`].
     fn live_note_off(&mut self, _note: u8) {}
+    /// Not in the original (task-258): every note [`ChannelDevice::live_note_on`] holds is let
+    /// go (the plugin's all-notes-off and all-sound-off, the host's stop).
+    fn live_notes_off(&mut self) {}
     /// Not in the original: which of the device's sounds are sounding after the last block and
     /// whether their last hit had accent (the plugin's note-mode lights, task-202). Empty for
     /// the 303s and the placeholders.
@@ -1635,6 +1638,24 @@ impl Engine {
         } else {
             dev.live_note_on(note, velocity);
         }
+    }
+
+    /// Not in the original (task-258): every live note channel device `d` holds is let go
+    /// ([`ChannelDevice::live_notes_off`]; a 303's gate closes as at its last note-off).
+    /// Ignored while the song plays, as [`Engine::live_note`].
+    pub fn live_notes_off(&mut self, d: song::Device) {
+        use song::Device as D;
+        if self.playing() {
+            return;
+        }
+        let c = match d {
+            D::Tb303_1 => 0,
+            D::Tb303_2 => 1,
+            D::Tr808 => 2,
+            D::Tr909 => 3,
+            _ => return,
+        };
+        self.frame.devices.channels[c].live_notes_off();
     }
 
     /// Not in the original (task-218): the gate of channel device `d` (a 303, the 808 or the

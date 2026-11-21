@@ -270,8 +270,9 @@ pub struct Tb303 {
     pub song_mode: bool,
     /// The song's byte `+0x16D` (`sub_10013DA0()+0x15`), followed through msg 36.
     pub vintage: bool,
-    /// Not in the original (task-200): note mode's held notes, oldest first, as (MIDI note,
-    /// accent); the first `held_len` are valid. Cleared by slots 3 and 6.
+    /// Not in the original (task-200): note mode's held keys, oldest first, as (MIDI note,
+    /// accent), one entry a key (task-258); the first `held_len` are valid. Cleared by slots 3
+    /// and 6 and [`Tb303::key_all_off`].
     pub held: [(u8, bool); HELD],
     pub held_len: u8,
     /// Not in the original (task-218): the plugin's pattern gate ([`ChannelDevice::set_gate`]).
@@ -349,13 +350,20 @@ impl Tb303 {
     /// note's semitones, accent at velocity [`ACCENT_VELOCITY`] and up, no rest. With another
     /// note held, the slide flag is set first, as a sliding step before it would have it: no
     /// new attack, the pitch glides (a tie for the same pitch). A note outside the pitch table
-    /// is ignored.
+    /// is ignored. A key is held once (task-258): a note-on of a key already held presses it
+    /// again (its old entry goes, the new one is the newest), so one note-off releases it, and
+    /// a key whose note-off was lost is let go at its next note-off.
     pub fn key_on(&mut self, note: u8, velocity: u8) {
         let Some(semis) = self.key_semis(note) else {
             return;
         };
         let accent = velocity >= ACCENT_VELOCITY;
         let legato = self.held_len > 0;
+        let n = self.held_len as usize;
+        if let Some(i) = self.held[..n].iter().position(|h| h.0 == note) {
+            self.held.copy_within(i + 1..n, i);
+            self.held_len -= 1;
+        }
         if self.held_len as usize == HELD {
             self.held.copy_within(1.., 0);
             self.held_len -= 1;
@@ -370,8 +378,8 @@ impl Tb303 {
         self.note_on_semis(semis, 0, accent as u8, 0);
     }
 
-    /// Note mode's note-off: the oldest held instance of `note` is let go. The last note's
-    /// release is the note-off (the gate lasts as long as the notes); the release of the
+    /// Note mode's note-off: the held key `note` is let go (a key not held: nothing). The last
+    /// key's release is the note-off (the gate lasts as long as the notes); the release of the
     /// sounding (newest) note slides back to the newest one still held (last-note priority),
     /// skipping one the Tune has since put outside the table.
     pub fn key_off(&mut self, note: u8) {
@@ -393,6 +401,18 @@ impl Tb303 {
             self.held_len -= 1;
         }
         // the slide flag is clear: every note-on here is a step without slide
+        self.note_off();
+    }
+
+    /// Not in the original (task-258): every held key is let go at once, the gate closing as
+    /// at the last key's note-off (the plugin's all-notes-off and all-sound-off, the host's
+    /// stop). Nothing when no key is held.
+    pub fn key_all_off(&mut self) {
+        if self.held_len == 0 {
+            return;
+        }
+        self.held_len = 0;
+        self.slide = false;
         self.note_off();
     }
 
@@ -838,6 +858,10 @@ impl ChannelDevice for Tb303 {
 
     fn live_note_off(&mut self, note: u8) {
         self.key_off(note);
+    }
+
+    fn live_notes_off(&mut self) {
+        self.key_all_off();
     }
 
     fn gate(&self) -> Gate {

@@ -48,6 +48,7 @@ In both pattern modes the notes 0 to 31 select the pattern of the section on the
 - Accent: velocity 100 and up.
 - Slide: a note that starts while another is still held slides to it, with no new attack. The same pitch is a tie.
 - Several held notes: the newest sounds. Releasing it slides back to the newest note still held; releasing the last one ends the note.
+- Stuck notes: if the host loses a note-off (for example a MIDI send removed while a note plays), the 303 keeps sliding from that note. It recovers when that key is played and released again, on All Notes Off (CC 123) or All Sound Off (CC 120) on its channel, and when the host stops. If the MIDI source is removed while a note is held, no more MIDI arrives from it, so that note sounds until the transport stops or an all-notes-off arrives. In REAPER the action "Send all-notes-off and all-sounds-off to all MIDI outputs/plug-ins" clears it at once, and REAPER's MIDI reset preferences ("Reset on:") choose whether it also resets on stop or on playback start.
 
 **ORB-808 (channel 3) and ORB-909 (channel 4).** The notes are the General MIDI drum notes:
 
