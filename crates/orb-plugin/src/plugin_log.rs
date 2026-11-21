@@ -371,6 +371,9 @@ impl Probe {
             return None;
         }
         let handle = window.window_handle().map(|h| h.as_raw());
+        // Xlib's window id is a c_ulong: u64 on Linux and macOS but u32 on Windows, where the
+        // conversion is to the same type (clippy's useless_conversion failed CI there)
+        #[allow(clippy::useless_conversion)]
         let x11 = match handle {
             Ok(RawWindowHandle::Xlib(h)) => u32::try_from(h.window).ok(),
             Ok(RawWindowHandle::Xcb(h)) => Some(h.window.get()),
