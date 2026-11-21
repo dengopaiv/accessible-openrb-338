@@ -18,6 +18,7 @@
 
 pub mod bitmaps;
 pub mod classic;
+pub mod fade;
 pub mod svg;
 pub mod table;
 
@@ -125,6 +126,15 @@ pub trait Skin: Send + Sync {
 
     /// Draws the panel's state at `view` (the skin's rectangle on screen).
     fn paint(&self, ui: &mut Ui, view: &View, frame: &Frame);
+
+    /// Draws the panel over what is already drawn, with opacity `alpha` (0..=1): the
+    /// crossfade's overlay (task-268). Only a skin that is one opaque image can fade as a
+    /// whole; the default draws nothing for a part alpha.
+    fn paint_over(&self, ui: &mut Ui, view: &View, frame: &Frame, alpha: f32) {
+        if alpha >= 1.0 {
+            self.paint(ui, view, frame);
+        }
+    }
 }
 
 /// A drum machine's selection mark: whether its instrument is the selected one and whether its

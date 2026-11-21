@@ -272,6 +272,10 @@ impl Skin for ClassicSkin {
     /// Composes the panel image when what it shows changed, and draws it at `view` scaled by
     /// nearest pixel (the user, 2026-11-21: always nearest).
     fn paint(&self, ui: &mut Ui, view: &View, f: &Frame) {
+        self.paint_over(ui, view, f, 1.0);
+    }
+
+    fn paint_over(&self, ui: &mut Ui, view: &View, f: &Frame, alpha: f32) {
         let ops = self.ops(f);
         let Ok(mut cache) = self.cache.lock() else {
             return;
@@ -294,7 +298,9 @@ impl Skin for ClassicSkin {
             let size = self.layout.size;
             let rect = view.rect(0.0, 0.0, size.x, size.y);
             let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-            ui.painter().image(tex.id(), rect, uv, Color32::WHITE);
+            // the image is opaque: its alpha is the fade's (task-268)
+            let tint = Color32::WHITE.gamma_multiply(alpha.clamp(0.0, 1.0));
+            ui.painter().image(tex.id(), rect, uv, tint);
         }
     }
 }

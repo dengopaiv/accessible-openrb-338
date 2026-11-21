@@ -2129,3 +2129,25 @@ Sync and MIDI LEDs, the Bar display, the mode selector, the format's logo, the r
 section 20) are the plugin's overlay in `embed.rs`, drawn from the embedded part set after the
 skin: they are plugin chrome, not part of a skin, as the plugin has no other skin (task-267).
 The About window's wordmark is drawn from the embedded set too.
+
+**The crossfade between the skins (task-268).** View > Classic / Modern fades the panel
+instead of cutting. The user chose the plain crossfade (2026-11-21) from preview videos of
+three variants (pixelate and fade, pixelate then fade, fade only).
+- The classic skin is one opaque texture, so the fade draws the modern skin as usual and the
+  classic texture over it with the fade's alpha (0 all modern, 1 all classic): an exact
+  crossfade with no capture and no part-by-part fading (their overlap would show lower parts
+  through upper ones). Both skins stay live while it runs: meters, lights and steps move in
+  both.
+- The ease is smoothstep `t*t*(3-2t)` over `FADE_SECONDS` = 0.5 (`skin/fade.rs`, the one
+  constant to tune). A switch during a fade starts a new fade from the alpha of the last
+  frame to the other end, taking the full time scaled by the distance, so the alpha never
+  jumps and moves at the same speed.
+- **Input** goes to the target skin's layout from the moment of the switch (`App::skin` is
+  the target at once), so a click lands on what the panel is turning into; the shared
+  controller needs no change. The desk and the shadows are the target skin's, they and the
+  menu bar do not animate (the two panels have the same size and aspect).
+- The window repaints every frame while a fade runs; at its end the classic skin is dropped
+  after a fade to the modern one, and the frames are those of one skin alone. The plugin's
+  editor has no classic skin and no fade. Tests: `skin/fade.rs` (the alpha schedule: start,
+  end, monotonic, the ease, the reversal) and `tests/classic.rs`
+  `the_switch_crossfades_both_ways_and_reverses_from_the_current_alpha`.

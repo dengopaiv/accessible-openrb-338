@@ -207,6 +207,12 @@ pub struct App {
     pub(crate) holds: Vec<crate::controller::Hold>,
     /// The look of the main window's panel (task-266): the modern skin unless set.
     skin: Arc<dyn Skin>,
+    /// The crossfade between the skins in progress (task-268) and the classic overlay's alpha
+    /// of the last frame (1 with the classic skin alone, 0 with the modern one alone).
+    fade: Option<crate::skin::fade::Fade>,
+    overlay_alpha: f32,
+    /// Whether the last frame gave the skins the mod's splash picture (for tests).
+    splash_in_frame: bool,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
     pub frame_stats: Option<FrameStats>,
@@ -276,6 +282,9 @@ impl App {
             title: String::new(),
             holds: Vec::new(),
             skin: crate::skin::svg::modern(),
+            fade: None,
+            overlay_alpha: 0.0,
+            splash_in_frame: false,
             shot,
             frame_stats: FrameStats::from_env(),
             last_px_scale: None,
@@ -303,15 +312,33 @@ impl App {
         if self.is_plugin() {
             return;
         }
+        let changed = self.settings.theme != theme;
         self.settings.set_theme(theme);
         if let Err(e) = self.settings.save() {
             self.fail(e);
         }
+        // the input goes to the target skin from now on; the classic skin stays until the fade
+        // to the modern one is over (`show`)
         if theme == crate::settings::Theme::Modern {
             self.skin = crate::skin::svg::modern();
-            self.classic = None;
         }
         self.apply_theme();
+        if changed && self.classic.is_some() {
+            let to = f32::from(theme == crate::settings::Theme::Classic);
+            self.fade = Some(crate::skin::fade::Fade::new(self.overlay_alpha, to));
+        } else if theme == crate::settings::Theme::Modern {
+            self.classic = None;
+        }
+    }
+
+    /// Whether the last frame's skins got the mod's splash picture.
+    pub fn splash_in_frame(&self) -> bool {
+        self.splash_in_frame
+    }
+
+    /// The classic overlay's alpha of the last frame while a crossfade runs (task-268).
+    pub fn fading(&self) -> Option<f32> {
+        self.fade.map(|_| self.overlay_alpha)
     }
 
     /// The theme the main window shows: the settings' in the standalone app, Modern in a
@@ -333,7 +360,9 @@ impl App {
             return;
         }
         let kit = self.doc.kit.clone();
-        if self.classic.as_ref().is_some_and(|(k, _)| *k == kit) {
+        if let Some((_, skin)) = self.classic.as_ref().filter(|(k, _)| *k == kit) {
+            // (kept through a fade to the modern skin, so the skin may be the modern one)
+            self.skin = skin.clone();
             return;
         }
         let skin = crate::skin::classic::ClassicSkin::of_kit(&kit);
@@ -988,10 +1017,18 @@ impl App {
             self.logo_start = Some(now);
         }
         let logo_t = logo_anim::time_now(now, self.logo_start.filter(|_| self.logo_anim));
-        let splash = if layout.controls.iter().any(|c| c.kind == "modview") {
+        // (a fade to the classic skin, which has no mod window, still draws the modern one
+        // under it: the picture stays in the frame, task-268)
+        let splash = if self.fade.is_some() || layout.controls.iter().any(|c| c.kind == "modview") {
             self.splash_texture(ui.ctx())
         } else {
             None
+        };
+        self.splash_in_frame = splash.is_some();
+        // the crossfade's alpha of this frame and the classic skin it fades (task-268)
+        let fading = match (self.fade.as_mut(), self.classic.as_ref()) {
+            (Some(fade), Some((_, classic))) => Some((fade.alpha(now), classic.clone())),
+            _ => None,
         };
         {
             let hidden = |id: &str| self.hidden(id);
@@ -1006,7 +1043,29 @@ impl App {
                 mod_name: &self.doc.mod_name,
                 splash: splash.as_ref(),
             };
-            skin.paint(ui, &view, &frame);
+            if let Some((alpha, classic)) = &fading {
+                // The crossfade (task-268): the modern skin, then the classic image over it.
+                // Both are live; the desk and the shadows above are the target skin's.
+                let modern = crate::skin::svg::modern();
+                let mview = View::fit_size(area, ppp, modern.layout().size);
+                modern.paint(ui, &mview, &frame);
+                let cview = View::fit_size(area, ppp, classic.layout().size);
+                classic.paint_over(ui, &cview, &frame, *alpha);
+                ui.ctx().request_repaint();
+            } else {
+                skin.paint(ui, &view, &frame);
+            }
+        }
+        self.overlay_alpha = match &fading {
+            Some((alpha, _)) => *alpha,
+            None => f32::from(self.theme() == crate::settings::Theme::Classic),
+        };
+        if self.fade.is_some_and(|f| f.done(now)) {
+            let to = self.fade.take().map_or(0.0, |f| f.to);
+            if to == 0.0 {
+                self.classic = None;
+            }
+            self.overlay_alpha = to;
         }
         // a plugin's LEDs, menus and resize corner (task-201)
         self.plugin_ui(ui, &view, now);

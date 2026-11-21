@@ -1133,6 +1133,72 @@ fn view_menu_switches_and_is_kept() {
     assert!(h.app.skin().layout().control(SELECTOR_808).is_some());
 }
 
+/// The crossfade (task-268): a switch fades the classic image in or out over the fade's time
+/// while the input is already the target skin's; the end state draws one skin; a switch during
+/// a fade turns around from the alpha it had.
+#[test]
+fn the_switch_crossfades_both_ways_and_reverses_from_the_current_alpha() {
+    use orb_ui::skin::fade::FADE_SECONDS;
+    let (_dir, file) = temp_settings(None);
+    let mut h = Harness::new(None);
+    h.app.settings = Settings::load_from(&file);
+    assert_eq!(h.app.fading(), None);
+    assert!(h.app.splash_in_frame(), "the modern panel's mod window");
+    // to Classic: the target's layout takes the input at once, the alpha rises from 0
+    h.app.command(Cmd::SetTheme(Theme::Classic));
+    assert!(h.app.skin().layout().control(SELECTOR_808).is_some());
+    h.frame(vec![]);
+    let first = h.app.fading().expect("fading");
+    assert!(
+        h.app.splash_in_frame(),
+        "the modern panel keeps its picture under the fade"
+    );
+    assert!(first < 0.01, "{first}");
+    let mut last = first;
+    while h.time < 0.4 * FADE_SECONDS {
+        h.frame(vec![]);
+        let a = h.app.fading().expect("fading");
+        assert!(a >= last);
+        last = a;
+    }
+    assert!(last > 0.0 && last < 1.0, "{last}");
+    // reversed in the middle: the alpha falls from where it was, never jumps
+    h.app.command(Cmd::SetTheme(Theme::Modern));
+    assert!(h.app.skin().layout().control(SELECTOR_808).is_none());
+    h.frame(vec![]);
+    let a = h.app.fading().expect("fading");
+    assert!(h.app.splash_in_frame());
+    assert!((a - last).abs() < 0.05, "{a} vs {last}");
+    let mut prev = a;
+    for _ in 0..200 {
+        h.frame(vec![]);
+        match h.app.fading() {
+            Some(a) => {
+                assert!(h.app.splash_in_frame());
+                assert!(a <= prev);
+                prev = a;
+            }
+            None => break,
+        }
+    }
+    // over: the modern skin alone, the classic one dropped
+    assert_eq!(h.app.fading(), None);
+    assert!(h.app.skin().layout().control(SELECTOR_808).is_none());
+    // and back: Modern to Classic runs to alpha 1 and ends with the classic skin alone
+    h.app.command(Cmd::SetTheme(Theme::Classic));
+    for _ in 0..200 {
+        h.frame(vec![]);
+        if h.app.fading().is_some() {
+            assert!(h.app.splash_in_frame());
+        }
+        if h.app.fading().is_none() {
+            break;
+        }
+    }
+    assert_eq!(h.app.fading(), None);
+    assert!(h.app.skin().layout().control(SELECTOR_808).is_some());
+}
+
 /// An old settings file of the Theme Viewer's time (`theme_viewer_filter`) still loads, with
 /// its other keys, the theme Modern; a save drops the old key and writes `theme`.
 #[test]
