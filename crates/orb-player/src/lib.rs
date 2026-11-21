@@ -96,7 +96,9 @@ use std::sync::Arc;
 
 use orb_engine::frame::edit::PatternShape;
 use orb_engine::frame::export::REALTIME_FRAMES;
-use orb_engine::frame::{Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, Sounding};
+use orb_engine::frame::{
+    Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, Sounding, TAP_WIDTH,
+};
 use orb_engine::process::ProcessState;
 use orb_engine::samples::{Retired, STARTUP_ID, Sample, SampleSet};
 use orb_engine::seq::Pool;
@@ -463,6 +465,9 @@ pub struct Audio {
     call_frames: usize,
     /// The int16 output of the last engine call, `2 * call_frames` samples.
     buf: Box<[i16]>,
+    /// The per-channel taps of the last engine call, `TAP_WIDTH * call_frames` values
+    /// ([`Audio::enable_taps`], [`Audio::taps`]); `None` until enabled.
+    taps: Option<Box<[f32]>>,
     /// The frames of `buf` already handed out.
     pos: usize,
     frames: u64,
@@ -520,6 +525,7 @@ impl Player {
             tracks_published: None,
             call_frames,
             buf: vec![0; 2 * call_frames].into_boxed_slice(),
+            taps: None,
             pos: call_frames,
             frames: 0,
             generation: 0,
@@ -752,9 +758,17 @@ impl Audio {
         // a faulting call writes nothing (`Engine::fault`): silence rather than the last call
         self.buf.fill(0);
         let faults = self.faults();
-        self.current.render(&mut self.buf[..], self.call_frames);
+        match &mut self.taps {
+            None => self.current.render(&mut self.buf[..], self.call_frames),
+            Some(t) => self
+                .current
+                .render_taps(&mut self.buf[..], self.call_frames, t),
+        }
         if self.faults() != faults {
             self.buf.fill(0);
+            if let Some(t) = &mut self.taps {
+                t.fill(0.0);
+            }
         }
         // the preview player, after the song (`SafeSoundCallback` step 4)
         if self.preview_on
@@ -1054,6 +1068,24 @@ impl Audio {
     /// The output of the last engine call, as [`Audio::render_call`] returned it.
     pub fn output(&self) -> &[i16] {
         &self.buf
+    }
+
+    /// Makes every later engine call also render the per-channel taps (task-256, the
+    /// plugin's per-device outputs; [`Engine::render_taps`]). Allocates: call it before the
+    /// callback side goes to the audio thread. The int16 output does not change.
+    pub fn enable_taps(&mut self) {
+        if self.taps.is_none() {
+            self.taps = Some(vec![0.0; TAP_WIDTH * self.call_frames].into_boxed_slice());
+        }
+    }
+
+    /// The per-channel taps of the last engine call ([`Audio::enable_taps`]): frame i of
+    /// channel c (0 303-1, 1 303-2, 2 808, 3 909) is `[TAP_WIDTH * i + c]`, the channel's mono
+    /// bus after its inserts and before its level, pan and on switch, f32 (full scale 1.0, not
+    /// clamped). Zero for a faulting call. `None` while not enabled. The preview player is not
+    /// in them.
+    pub fn taps(&self) -> Option<&[f32]> {
+        self.taps.as_deref()
     }
 
     /// The snapshot the last engine call published (the callback's own copy).

@@ -12,7 +12,9 @@
 //! up to that host frame (`crate::core`). The plugin reports `delay * rate / 44100`, rounded up,
 //! as its latency.
 
-use crate::core::BLOCK;
+use orb_engine::frame::TAP_WIDTH;
+
+use crate::core::{AuxOut, BLOCK, BlockOut};
 
 /// The engine's rate.
 pub const ENGINE_RATE: u32 = 44_100;
@@ -28,8 +30,8 @@ const CUTOFF: f64 = 0.94;
 
 /// Where the engine's frames come from.
 pub trait Blocks {
-    /// The next engine block: [`BLOCK`] frames of interleaved stereo int16.
-    fn next_block(&mut self) -> &[i16];
+    /// The next engine block: [`BLOCK`] frames of interleaved stereo int16, and their taps.
+    fn next_block(&mut self) -> BlockOut<'_>;
 }
 
 fn gcd(a: u64, b: u64) -> u64 {
@@ -85,6 +87,8 @@ pub struct Resampler {
     rem: u64,
     /// The last engine frames, indexed by `frame & mask` (frames before 0 are silence).
     ring: Box<[[i16; 2]]>,
+    /// Their taps (task-256), indexed as `ring`.
+    taps: Box<[[f32; TAP_WIDTH]]>,
     mask: usize,
     /// The next engine frame to be written into the ring.
     next: i64,
@@ -115,6 +119,7 @@ impl Resampler {
             pos: 0,
             rem: 0,
             ring: vec![[0; 2]; cap].into_boxed_slice(),
+            taps: vec![[0.0; TAP_WIDTH]; cap].into_boxed_slice(),
             mask: cap - 1,
             next: 0,
         };
@@ -139,10 +144,15 @@ impl Resampler {
         self.pos - self.delay + self.half as i64
     }
 
-    /// Puts the next engine frame into the ring.
-    fn push(&mut self, l: i16, r: i16) {
-        self.ring[self.next as usize & self.mask] = [l, r];
-        self.next += 1;
+    /// Puts the next engine block's frames into the ring.
+    fn push(&mut self, b: BlockOut) {
+        let taps = b.taps.as_chunks::<TAP_WIDTH>().0;
+        for (&[fl, fr], t) in b.main.as_chunks::<2>().0.iter().zip(taps) {
+            let i = self.next as usize & self.mask;
+            self.ring[i] = [fl, fr];
+            self.taps[i] = *t;
+            self.next += 1;
+        }
     }
 
     /// Renders, ahead of their time, the engine blocks whose first frame plays at or before host
@@ -154,22 +164,24 @@ impl Resampler {
     pub fn render_before(&mut self, host: u64, engine: &mut impl Blocks) {
         let limit = (host as i128 - 1 + self.latency() as i128) * self.num as i128;
         while (self.next as i128 + self.delay as i128) * (self.den as i128) <= limit {
-            let b = engine.next_block();
-            for &[fl, fr] in b.as_chunks::<2>().0 {
-                self.push(fl, fr);
-            }
+            self.push(engine.next_block());
         }
     }
 
-    /// Fills `l` and `r` with host frames, pulling engine blocks from `engine` as they are
-    /// needed.
-    pub fn fill(&mut self, l: &mut [f32], r: &mut [f32], engine: &mut impl Blocks) {
-        for (ol, or) in l.iter_mut().zip(r.iter_mut()) {
+    /// Fills `l` and `r` with host frames, and frames `at..at + l.len()` of the buses of `aux`
+    /// with the taps resampled the same way, pulling engine blocks from `engine` as they are
+    /// needed. A bus that is `None` costs nothing.
+    pub fn fill(
+        &mut self,
+        l: &mut [f32],
+        r: &mut [f32],
+        aux: &mut AuxOut,
+        at: usize,
+        engine: &mut impl Blocks,
+    ) {
+        for (j, (ol, or)) in l.iter_mut().zip(r.iter_mut()).enumerate() {
             while self.next <= self.needs() {
-                let b = engine.next_block();
-                for &[fl, fr] in b.as_chunks::<2>().0 {
-                    self.push(fl, fr);
-                }
+                self.push(engine.next_block());
             }
             let base = self.pos - self.delay;
             let first = base - self.half as i64 + 1;
@@ -199,6 +211,18 @@ impl Resampler {
             }
             *ol = (sl / 32768.0) as f32;
             *or = (sr / 32768.0) as f32;
+            for (c, a) in aux.iter_mut().enumerate() {
+                if let Some([al, ar]) = a {
+                    let mut s = 0.0f64;
+                    for (i, &k) in w.iter().enumerate() {
+                        let t = &self.taps[(first + i as i64) as usize & self.mask];
+                        s += k * t[c] as f64;
+                    }
+                    // the mono tap on both sides
+                    al[at + j] = s as f32;
+                    ar[at + j] = s as f32;
+                }
+            }
             self.rem += self.num;
             self.pos += (self.rem / self.den) as i64;
             self.rem %= self.den;
@@ -209,40 +233,99 @@ impl Resampler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::DEVICE_OUTPUTS;
 
     /// A sine of 100 engine frames, left, and its negation, right.
+    /// Its taps: channel c is the sample times `c + 1` (mono, on both sides of its bus).
     struct Sine {
         k: u64,
         block: [i16; 2 * BLOCK],
+        taps: [f32; TAP_WIDTH * BLOCK],
+    }
+
+    impl Sine {
+        fn new() -> Sine {
+            Sine {
+                k: 0,
+                block: [0; 2 * BLOCK],
+                taps: [0.0; TAP_WIDTH * BLOCK],
+            }
+        }
     }
 
     impl Blocks for Sine {
-        fn next_block(&mut self) -> &[i16] {
-            for f in self.block.as_chunks_mut::<2>().0 {
+        fn next_block(&mut self) -> BlockOut<'_> {
+            let taps = self.taps.as_chunks_mut::<TAP_WIDTH>().0;
+            for (f, t) in self.block.as_chunks_mut::<2>().0.iter_mut().zip(taps) {
                 let a = 2.0 * std::f64::consts::PI * self.k as f64 / 100.0;
                 let v = (10000.0 * a.sin()) as i16;
                 f[0] = v;
                 f[1] = -v;
+                for (c, x) in t.iter_mut().enumerate() {
+                    *x = v as f32 / 32768.0 * (c + 1) as f32;
+                }
                 self.k += 1;
             }
-            &self.block
+            BlockOut {
+                main: &self.block,
+                taps: &self.taps,
+            }
         }
     }
 
     fn run(rate: u32, frames: usize, chunk: usize) -> Vec<f32> {
+        run_aux(rate, frames, chunk, false).0
+    }
+
+    /// The main output interleaved, and with `aux` the four buses (each interleaved).
+    fn run_aux(rate: u32, frames: usize, chunk: usize, aux: bool) -> (Vec<f32>, Vec<Vec<f32>>) {
         let mut r = Resampler::new(rate);
-        let mut sine = Sine {
-            k: 0,
-            block: [0; 2 * BLOCK],
-        };
+        let mut sine = Sine::new();
         let (mut l, mut rr) = (vec![0f32; frames], vec![0f32; frames]);
+        let mut buses = vec![vec![0f32; frames]; 2 * DEVICE_OUTPUTS];
         let mut i = 0;
         while i < frames {
             let n = chunk.min(frames - i);
-            r.fill(&mut l[i..i + n], &mut rr[i..i + n], &mut sine);
+            let mut it = buses.iter_mut();
+            let mut a: AuxOut = std::array::from_fn(|_| {
+                let (bl, br) = (it.next().unwrap(), it.next().unwrap());
+                aux.then_some([&mut bl[..], &mut br[..]])
+            });
+            r.fill(&mut l[i..i + n], &mut rr[i..i + n], &mut a, i, &mut sine);
             i += n;
         }
-        l.into_iter().zip(rr).flat_map(|(a, b)| [a, b]).collect()
+        let main = l.into_iter().zip(rr).flat_map(|(a, b)| [a, b]).collect();
+        let buses = buses
+            .chunks(2)
+            .map(|p| p[0].iter().zip(&p[1]).flat_map(|(&a, &b)| [a, b]).collect())
+            .collect();
+        (main, buses)
+    }
+
+    #[test]
+    fn the_taps_are_resampled_as_the_main_output() {
+        for rate in [48_000, 22_050] {
+            let (main, buses) = run_aux(rate, 3000, 333, true);
+            assert_eq!(
+                main,
+                run(rate, 3000, 3000),
+                "the buses do not change the main output"
+            );
+            for (c, b) in buses.iter().enumerate() {
+                assert_eq!(
+                    *b,
+                    run_aux(rate, 3000, 7, true).1[c],
+                    "rate {rate}, bus {c}"
+                );
+                // both sides of the bus are the left sample times c + 1 (the main output's
+                // right is the negated sample)
+                let g = (c + 1) as f32;
+                for (j, (&x, &m)) in b.iter().zip(&main).enumerate() {
+                    let want = if j % 2 == 0 { m * g } else { -m * g };
+                    assert!((x - want).abs() < 1e-6, "rate {rate}, bus {c}, sample {j}");
+                }
+            }
+        }
     }
 
     #[test]

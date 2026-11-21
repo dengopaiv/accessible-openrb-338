@@ -28,7 +28,7 @@ use nice_plug::prelude::Params;
 use orb_engine::song::Device;
 use orb_player::midi::Message;
 use orb_player::{Command, GARBAGE_PER_COMMAND};
-use orb_plugin::core::{Core, HostEvent, HostTransport};
+use orb_plugin::core::{AuxOut, Core, HostEvent, HostTransport};
 use orb_plugin::instance::{Mode, OrbParams};
 
 struct Counting;
@@ -146,19 +146,27 @@ impl Host {
     }
 }
 
-/// `frames` frames in calls of `buf`, armed; the events.
+/// `frames` frames in calls of `buf`, armed; the events. The per-device outputs (task-256)
+/// are connected in a pattern that changes with every call, from none to all four.
 fn run(p: &OrbParams, core: &mut Core, h: &mut Host, frames: usize, buf: usize) -> usize {
     let (mut l, mut r) = (vec![0f32; buf], vec![0f32; buf]);
+    let mut buses = vec![vec![0f32; buf]; 8];
     let mut n = 0;
     let mut done = 0;
     while done < frames {
         let k = buf.min(frames - done);
         let t = h.transport(core.rate());
         let ev = h.events(k);
+        let mask = h.calls % 16;
+        let mut it = buses.iter_mut();
+        let mut aux: AuxOut = std::array::from_fn(|c| {
+            let (bl, br) = (it.next().unwrap(), it.next().unwrap());
+            (mask >> c & 1 == 1).then_some([&mut bl[..k], &mut br[..k]])
+        });
         // what the plugin's `process` does: read the parameters, then the core
         n += armed(|| {
             let values = p.values();
-            core.process_with(&mut l[..k], &mut r[..k], &values, &t, &ev)
+            core.process_aux(&mut l[..k], &mut r[..k], &mut aux, &values, &t, &ev)
         });
         done += k;
         h.frames += k as u64;

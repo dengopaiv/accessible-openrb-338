@@ -618,6 +618,109 @@ fn leftover_buffer() {
     assert_eq!(split.frame.state.counter, c0 + 256);
 }
 
+/// task-256: a frame whose four channels play ramps through steady gains `gains` (left,
+/// right), channel 1 through an insert (`x + 1`).
+fn tap_engine(gains: [(f32, f32); 4]) -> Engine {
+    let log: Log = Rc::default();
+    let mut d = Devices::placeholders();
+    for c in 0..4 {
+        d.channels[c] = Box::new(Ramp(17 * c as u32));
+    }
+    d.dist = Box::new(Op {
+        name: "dist",
+        f: |x| x + 1.0,
+        log,
+    });
+    let mut s = quiet_state();
+    for (ch, (gl, gr)) in s.mixer.channels.iter_mut().zip(gains) {
+        (ch.target_l, ch.gain_l, ch.target_r, ch.gain_r) = (gl, gl, gr, gr);
+        ch.routing = Routing::default();
+    }
+    s.mixer.channels[1].routing.dist = true;
+    engine_with(d, s)
+}
+
+#[test]
+fn the_taps_are_each_channels_bus_after_its_inserts_and_leave_the_master_alone() {
+    // the gains of a channel panned and leveled, of one turned off (the guard alone), and
+    // others: the taps are the same whatever they are (pre-fader, as ReWire's)
+    let gains = [
+        [(0.5, 0.25), (1.0, 0.5), (0.125, 0.0), (0.25, 1.0)],
+        [(GUARD, GUARD), (0.3, 0.7), (1.0, 1.0), (0.0, 0.0)],
+    ];
+    let mut prev = [0u32, 17, 34, 51];
+    let mut engines = gains.map(|g| (tap_engine(g), tap_engine(g)));
+    // counters 1 to 15: no mixer update, which would set the gains from the mixer device
+    for _ in 0..15 {
+        let mut all = Vec::new();
+        for (plain, tapped) in &mut engines {
+            let (mut l0, mut r0) = ([0.0; BLOCK], [0.0; BLOCK]);
+            plain.frame.block(&mut l0, &mut r0).unwrap();
+            let (mut l1, mut r1) = ([0.0; BLOCK], [0.0; BLOCK]);
+            let mut taps: Taps = [[f32::NAN; BLOCK]; TAP_WIDTH];
+            tapped
+                .frame
+                .block_taps(&mut l1, &mut r1, Some(&mut taps))
+                .unwrap();
+            // the master is bit-identical with and without the taps
+            assert_eq!(l0.map(f32::to_bits), l1.map(f32::to_bits));
+            assert_eq!(r0.map(f32::to_bits), r1.map(f32::to_bits));
+            for (c, tap) in taps.iter().enumerate() {
+                for (j, &x) in tap.iter().enumerate() {
+                    // the bus after the channel's insert, exactly
+                    let b = ((prev[c] * 64 + j as u32) % 8192) as f32 / 8192.0;
+                    let b = if c == 1 { b + 1.0 } else { b };
+                    assert_eq!(x, b, "channel {c}, frame {j}");
+                }
+            }
+            all.push(taps);
+        }
+        // the gains do not reach the taps
+        assert_eq!(all[0], all[1]);
+        for p in &mut prev {
+            *p += 1;
+        }
+    }
+}
+
+#[test]
+fn render_taps_outputs_the_same_int16_and_frame_interleaved_taps() {
+    let mut plain = loud_engine();
+    let mut tapped = loud_engine();
+    let mut whole = loud_engine();
+    let mut wt = vec![0.0f32; TAP_WIDTH * 600];
+    let mut wbuf = vec![0i16; 2 * 600];
+    whole.render_taps(&mut wbuf, 600, &mut wt);
+    let mut pos = 0;
+    // calls across the leftover block, each taking at least the leftover frames (a shorter
+    // call drops the rest of them, as in the original)
+    let mut t = vec![f32::NAN; TAP_WIDTH * 180];
+    let (mut a, mut b) = (vec![0i16; 2 * 180], vec![0i16; 2 * 180]);
+    for n in [100, 28, 100, 28, 64, 100, 180] {
+        plain.render(&mut a, n);
+        tapped.render_taps(&mut b, n, &mut t);
+        assert_eq!(a[..2 * n], b[..2 * n], "call at {pos}");
+        assert_eq!(b[..2 * n], wbuf[2 * pos..2 * (pos + n)], "call at {pos}");
+        let want = &wt[TAP_WIDTH * pos..TAP_WIDTH * (pos + n)];
+        assert_eq!(
+            t[..TAP_WIDTH * n]
+                .iter()
+                .map(|x| x.to_bits())
+                .collect::<Vec<_>>(),
+            want.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            "call at {pos}"
+        );
+        pos += n;
+    }
+    assert_eq!(pos, 600);
+    // the 303-1 ramp and the 909 constant sound, the silent channels' taps are zero
+    let wt = &wt;
+    let ch = |c: usize| (0..600).map(move |i| wt[TAP_WIDTH * i + c]);
+    assert!(ch(0).any(|x| x != 0.0));
+    assert!(ch(3).all(|x| x < 0.0));
+    assert!(ch(1).chain(ch(2)).all(|x| x == 0.0));
+}
+
 /// An insert that faults on every call from its `from`-th on (counted from 0), as the PCF with
 /// a zero pattern length does on every call.
 struct Faulty {

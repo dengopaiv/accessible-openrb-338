@@ -208,13 +208,13 @@ models already form (orb-engine `drums.rs`, `tr808.rs`, `tr909.rs`) before they 
 ## 6. Compared with the plugin's per-device outputs (task-256)
 
 task-256 gives the plugin a stereo Mix and four stereo aux outputs, 303-1, 303-2, 808 and 909
-(`docs/plugin.md` 13, on its branch until merged). The differences from ReWire:
+(`docs/plugin.md` 13). The differences from ReWire:
 
 | | ReWire (original) | Plugin (task-256) |
 |---|---|---|
 | Channels | 18: the Mix-L/R stereo pair and 16 mono channels | 5 stereo buses |
-| Device tap | After the inserts, **before** level, pan and on | After the inserts and **after** level, pan and on (the `bus*g` product, 0x10013742) |
-| Device output stereo | Mono | Stereo (the pan law applied) |
+| Device tap | After the inserts, before level, pan and on | The same point (0x100135AF..0x100135F1, before the meter at 0x100135FA) |
+| Device output stereo | Mono | The mono signal on both sides |
 | Effect on the Mix | Enabling a device channel removes it from Mix-L/R (its delay send stays) | None: the Mix is bit-identical whatever is connected; the buses are copies |
 | Delay send of a routed channel | Kept, so its echo stays in Mix-L/R | Not on the buses (the delay return is in the Mix only) |
 | Per-instrument drum outputs | 6 per machine (BD, SD, Tom, Per, HH, CY), raw voice sums before the machine's bus, removed from it | None |
@@ -226,7 +226,7 @@ task-256 gives the plugin a stereo Mix and four stereo aux outputs, 303-1, 303-2
 | Rate | The engine's 44.1 kHz [G] (the host's rate is not read by `TopHatDriveAudioProc`) | Resampled to the host's rate like the Mix |
 
 The user's decision (task-259, 2026-11-21): the plugin keeps task-256's four device outputs and
-adds no per-instrument drum outputs; the device outputs move to ReWire's tap point, after the
+adds no per-instrument drum outputs; the device outputs are at ReWire's tap point, after the
 channel's inserts and before its level, pan and on switch, as stereo buses carrying the mono
 signal on both sides. No delay-return output, and nothing is removed from the Mix (the outputs
-stay copies). task-256 will implement it (see task-259).
+are copies). task-256 implements it.

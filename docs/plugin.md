@@ -6,7 +6,8 @@ OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are tas
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
 the core described here; task-198 the host sync, the pattern selection by notes and the Standard
 Mapping (section 8); task-200 note mode (section 9); task-201 the editor (section 10); task-203
-the pattern drag-out (section 12); packaging and the validators are task-204. task-217 (the
+the pattern drag-out (section 12); packaging and the validators are task-204; task-256 the
+per-device outputs (section 13). task-217 (the
 user's design of 2026-11-16, task-216) replaced the mode parameter `g1` with the pattern/note
 mode setting and made the panel's Play/Stop the pattern preview (section 4.2). task-218 renamed
 pattern mode Latch Pattern Mode and added Gate Pattern Mode (section 11).
@@ -1386,3 +1387,84 @@ Per platform:
 - `drag/windows.rs` (Windows): the data object read as a drop target reads it, and the drop
   source's answers.
 - `drag/x11.rs`: the URI list.
+
+## 13. The per-device outputs (task-256)
+
+Besides the main stereo output, named **Mix**, the plugin has four stereo aux outputs named
+**303-1**, **303-2**, **808** and **909** (VST3 aux buses 1 to 4 after the main bus 0, CLAP
+output ports 1 to 4 after the main port 0; one layout, `AUDIO_IO_LAYOUTS` in `src/lib.rs`,
+names `OUTPUT_NAMES`). Requested by the user on 2026-11-20 (item 7, "multi-out", of task-196's
+deferred features). The tap point is the user's decision of 2026-11-21 (task-259): ReWire's.
+
+**The tap.** Each bus is its mixer channel's signal where ReBirth's own ReWire output for the
+channel takes it (`docs/rewire.md` section 4, [C]): the device's bus after the channel's
+inserts (the distortion, the PCF and the compressor where the mixer routes them to the
+channel, in that order, 0x100135AF..0x100135F1), before the channel's peak meter (0x100135FA),
+its delay send (0x1001364A), its level, pan and on switch (the gain smoothing 0x100136B7 and
+the pan-and-mix loop 0x10013742). The signal is mono; the plugin puts it on both sides of the
+bus. The bus is a stored f32 block (`unk_1010012C`), so the tap is an exact copy
+(`Frame::block_taps`, `crates/orb-engine/src/frame/mod.rs`). Not on the buses: the channel's
+level, pan and on switch, the delay (a send whose return goes only into the master,
+0x10013844), the master compressor (0x10013883) and the master gain (0x100138AE).
+
+Unlike ReWire, the buses are copies: a connected bus does not take its channel out of the Mix,
+and the Mix is the same whatever the host connects. The panel's channel on switch (the
+mixer's ON) does it instead: a channel turned off is out of the Mix (its gains go to the 1e-6
+guard, `lev = on ? level : 0`) but still on its own bus, so a device can be taken out of the
+Mix and processed on its own track. Its delay send goes too (`T[lev]*T[send]`), as ReWire's
+does not: an off channel has no echo in the Mix.
+
+With the send off and no master compressor the Mix is
+`int16(f32(f32(1e-6 + bus*g) * m))` for a device playing alone, `g` the channel's ramped gain
+(level and pan) and `m` the master gain (0.6338 at the default master level 100). The buses
+are f32 at full scale 1.0 and not clamped (the Mix is the original's int16 output over 32768).
+A channel whose pattern gate is closed (Gate Pattern Mode, section 11) has a silent bus; the
+preview player (section 4.2) is mixed into the Mix only.
+
+**The Mix does not change.** The main output is bit-identical whether the host connects none,
+some or all of the buses: `block_taps` runs `block`'s code and only copies each channel's bus,
+and the main output's path through the player and the 44.1 kHz ring or the resampler is
+untouched. `cargo test -p orb-engine --test corpus_golden` and `orb compare --manifest
+tests/refs/manifest.json` stay EQUAL (the corpus renders through `Engine::render`, which
+renders no taps).
+
+**How they flow.** `Engine::render_taps` (a sibling of `render`, with its own leftover tap
+block for a partial block) writes the taps frame-interleaved, `TAP_WIDTH` = 4 values per frame
+(channel c at `[4i + c]`). `Audio::enable_taps` (orb-player) allocates the call's tap buffer
+on the main thread (`Core::new`, at the activation); every `render_call` then fills it
+(zero for a faulting call), `Audio::taps`. The process side keeps each block's taps beside its
+int16 block: at 44.1 kHz in a ring slot of their own (copied with the block), resampled in a
+ring indexed as the int16 frames and interpolated with the same weights. So the buses have
+the Mix's latency and timing. `Core::process_aux` takes the host's buses; `process_with` is
+`process_aux` with none.
+
+**Unconnected buses.** nice-plug gives an empty slice for a bus without a host buffer
+(`wrapper/util/buffer_management.rs`); `process` passes such a bus as `None`, and nothing is
+written for it: no copy at 44.1 kHz, no interpolation when resampled (the per-frame cost is the
+copy of the block's taps into the ring, 1 KiB a block). The engine copies the taps whatever is
+connected (one block copy per channel). Nothing allocates in `process` (`tests/no_alloc.rs`
+connects the buses in every combination). One caveat of nice-plug 0.4.2: it calls the
+plugin's `process` only when every output bus has a buffer (`buffer_is_valid` in the CLAP and
+VST3 wrappers), so a host that passes a null buffer for an unconnected bus would get no
+processing at all, the Mix included; and it reads one bus past the count a host passes when
+that count is lower than the plugin's (`aux_output_idx > numOutputs`, an off-by-one). Hosts
+pass every bus they are told of; whether REAPER and Ableton do is the user's check (task-256
+AC 5). Also of nice-plug 0.4.2: the main output is named after `names.main_input`
+(`AudioIOLayout::main_output_name`), so the layout sets both to "Mix".
+
+**Tests.**
+- `crates/orb-engine/src/frame/tests.rs`: the taps are each channel's bus after an insert,
+  exactly, the same for different gains (one channel at the guard, as when turned off), and
+  the master is bit-identical to `block`'s; `render_taps` across the leftover block gives
+  `render`'s int16 and the taps of one whole-call render.
+- `crates/orb-plugin/tests/outputs.rs`: the Mix of `full_mix` (every device, the delay, the PCF
+  and the master compressor) is bit-identical with none, some or all of the buses connected,
+  at 44.1 and 48 kHz and buffers of 1 to 4096 frames, and a bus does not depend on the buffer
+  size; a device alone with an insert (the distortion on the 303-1 in `dist_a100_s64`, the PCF
+  on the 909 in `pcf_on_909`, the compressor on the 808 in `comp_ch_808`) reproduces the Mix
+  from its bus within one LSB, with the same signal on both sides and the other buses silent
+  (an idle 303 outputs about 3e-6); the 303-1's level, pan and on switch change the Mix and
+  leave its bus bit-identical, and with the channel off the Mix is silent.
+- `src/resample.rs`: the buses are resampled as the main output, independent of the chunks.
+- `tests/exports.rs`: the CLAP audio ports and the VST3 buses (count, names, stereo, which is
+  main), and the CLAP and VST3 hosts pass all five buses.

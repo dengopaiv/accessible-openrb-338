@@ -410,7 +410,8 @@ mod tests {
         }
         assert_eq!(blocks.iter().filter(|b| **b == Block::Logo).count(), 1);
         let tables = blocks.iter().filter(|b| matches!(b, Block::Table(..)));
-        assert_eq!(tables.count(), 3);
+        // the channels, the banks, the drum notes, the outputs (task-256)
+        assert_eq!(tables.count(), 4);
     }
 
     /// Every list item of the file starts its own line (a glued `...mode.- **Keys.**` showed a

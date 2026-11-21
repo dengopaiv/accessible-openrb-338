@@ -31,7 +31,7 @@ use nice_plug::prelude::*;
 
 use orb_player::midi::Message;
 
-use crate::core::{Core, HostEvent, HostTransport};
+use crate::core::{AuxOut, Core, HostEvent, HostTransport};
 use crate::instance::OrbParams;
 
 /// The plugin's name, permanent after the first release (task-185).
@@ -47,6 +47,15 @@ pub const VST3_CLASS_ID: [u8; 16] = [
 ];
 /// The project's page.
 pub const URL: &str = "https://github.com/pingw33n/OpenRB-338";
+
+/// The main output's name.
+pub const MIX_NAME: &str = "Mix";
+/// The per-device outputs' names (task-256), the mixer's channels 0 to 3 in order: each is
+/// its channel after its inserts and before its level, pan and on switch, mono on both sides,
+/// as ReWire's channel outputs (`docs/plugin.md` section 13, `docs/rewire.md` section 4).
+pub const OUTPUT_NAMES: [&str; core::DEVICE_OUTPUTS] = ["303-1", "303-2", "808", "909"];
+
+const STEREO: NonZeroU32 = NonZeroU32::new(2).unwrap();
 
 /// The host MIDI messages one `process` call takes; more are dropped.
 pub const MAX_EVENTS: usize = 4096;
@@ -147,9 +156,20 @@ impl Plugin for OrbPlugin {
     const EMAIL: &'static str = "";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
+    /// The stereo Mix and the four stereo per-device outputs (task-256, [`OUTPUT_NAMES`]).
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
         main_input_channels: None,
         main_output_channels: NonZeroU32::new(2),
+        aux_output_ports: &[STEREO; core::DEVICE_OUTPUTS],
+        names: PortNames {
+            layout: Some("Mix and devices"),
+            // nice-plug 0.4.2 names the main output after `main_input`
+            // (`AudioIOLayout::main_output_name`); there is no main input to name
+            main_input: Some(MIX_NAME),
+            main_output: Some(MIX_NAME),
+            aux_inputs: &[],
+            aux_outputs: &OUTPUT_NAMES,
+        },
         ..AudioIOLayout::const_default()
     }];
 
@@ -190,7 +210,7 @@ impl Plugin for OrbPlugin {
     fn process(
         &mut self,
         buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
+        aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // the host's MIDI, into the buffer made at construction (no allocation: a message past
@@ -213,12 +233,29 @@ impl Plugin for OrbPlugin {
             pos_beats: t.pos_beats(),
         };
         let values = self.params.values();
+        // the per-device outputs the host gave buffers for: nice-plug gives an empty slice for
+        // a bus without one (`wrapper/util/buffer_management.rs`), which is skipped
+        let mut buses: AuxOut = [None, None, None, None];
+        for (slot, b) in buses.iter_mut().zip(aux.outputs.iter_mut()) {
+            if let [l, r, ..] = b.as_slice()
+                && !l.is_empty()
+                && !r.is_empty()
+            {
+                *slot = Some([&mut **l, &mut **r]);
+            }
+        }
         let out = buffer.as_slice();
         match (&mut self.core, out) {
-            (Some(core), [l, r, ..]) => core.process_with(l, r, &values, &transport, &self.events),
+            (Some(core), [l, r, ..]) => {
+                core.process_aux(l, r, &mut buses, &values, &transport, &self.events)
+            }
             (_, out) => {
                 for ch in out.iter_mut() {
                     ch.fill(0.0);
+                }
+                for [l, r] in buses.iter_mut().flatten() {
+                    l.fill(0.0);
+                    r.fill(0.0);
                 }
             }
         }

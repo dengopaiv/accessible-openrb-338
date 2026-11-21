@@ -24,6 +24,9 @@ use clap_sys::events::{
     CLAP_TRANSPORT_IS_PLAYING, clap_event_header, clap_event_note, clap_event_transport,
     clap_input_events, clap_output_events,
 };
+use clap_sys::ext::audio_ports::{
+    CLAP_AUDIO_PORT_IS_MAIN, CLAP_EXT_AUDIO_PORTS, clap_audio_port_info, clap_plugin_audio_ports,
+};
 use clap_sys::ext::latency::{CLAP_EXT_LATENCY, clap_plugin_latency};
 use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::factory::plugin_factory::{CLAP_PLUGIN_FACTORY_ID, clap_plugin_factory};
@@ -130,6 +133,47 @@ fn state_blob(p: &orb_plugin::instance::OrbParams) -> Vec<u8> {
     blob
 }
 
+/// The per-device output buses a host gives the plugin besides the main one (task-256): each
+/// stereo, `frames` long. A host passes every bus the plugin declares (nice-plug reads the
+/// buffers of all of them).
+struct Aux {
+    chans: Vec<Vec<f32>>,
+}
+
+impl Aux {
+    fn new(frames: usize) -> Aux {
+        Aux {
+            chans: vec![vec![0f32; frames]; 2 * orb_plugin::core::DEVICE_OUTPUTS],
+        }
+    }
+
+    /// The channel pointers of the buses from frame `pos`.
+    fn ptrs(&mut self, pos: usize) -> [[*mut f32; 2]; orb_plugin::core::DEVICE_OUTPUTS] {
+        let mut it = self.chans.iter_mut();
+        std::array::from_fn(|_| {
+            let (l, r) = (it.next().unwrap(), it.next().unwrap());
+            [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()]
+        })
+    }
+
+    /// Bus `c`, interleaved.
+    fn bus(&self, c: usize) -> Vec<f32> {
+        let (l, r) = (&self.chans[2 * c], &self.chans[2 * c + 1]);
+        l.iter().zip(r).flat_map(|(&a, &b)| [a, b]).collect()
+    }
+}
+
+/// A CLAP stereo buffer of the channel pointers `chans`.
+fn clap_stereo(chans: &mut [*mut f32; 2]) -> clap_audio_buffer {
+    clap_audio_buffer {
+        data32: chans.as_mut_ptr(),
+        data64: null_mut(),
+        channel_count: 2,
+        latency: 0,
+        constant_mask: 0,
+    }
+}
+
 /// The CLAP tests init and deinit the one entry of the library: one at a time.
 static CLAP_ENTRY: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -180,6 +224,24 @@ fn the_clap_entry_has_the_identity_and_plays_a_restored_song() {
         assert!(!plugin.is_null());
         let pl = &*plugin;
         assert!((pl.init.unwrap())(plugin));
+
+        // task-256: the Mix and the four per-device outputs, stereo, no input
+        let ports = (pl.get_extension.unwrap())(plugin, CLAP_EXT_AUDIO_PORTS.as_ptr())
+            as *const clap_plugin_audio_ports;
+        assert!(!ports.is_null());
+        let ports = &*ports;
+        assert_eq!((ports.count.unwrap())(plugin, true), 0);
+        assert_eq!((ports.count.unwrap())(plugin, false), 5);
+        let mut names = Vec::new();
+        for i in 0..5 {
+            let mut info: clap_audio_port_info = std::mem::zeroed();
+            assert!((ports.get.unwrap())(plugin, i, false, &mut info));
+            assert_eq!(info.channel_count, 2);
+            assert_eq!(text(info.port_type), "stereo");
+            assert_eq!(info.flags & CLAP_AUDIO_PORT_IS_MAIN != 0, i == 0);
+            names.push(chars(&info.name));
+        }
+        assert_eq!(names, ["Mix", "303-1", "303-2", "808", "909"]);
 
         // the state of an instance with a song in pattern mode
         let song = with_song("full_mix");
@@ -235,25 +297,28 @@ fn the_clap_entry_has_the_identity_and_plays_a_restored_song() {
             tsig_num: 4,
             tsig_denom: 4,
         };
+        let mut aux = Aux::new(FRAMES);
         let mut pos = 0;
         while pos < FRAMES {
             let n = BUF.min(FRAMES - pos);
             let mut chans = [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()];
-            let mut out = clap_audio_buffer {
-                data32: chans.as_mut_ptr(),
-                data64: null_mut(),
-                channel_count: 2,
-                latency: 0,
-                constant_mask: 0,
-            };
+            let mut ap = aux.ptrs(pos);
+            let [a0, a1, a2, a3] = &mut ap;
+            let mut out = [
+                clap_stereo(&mut chans),
+                clap_stereo(a0),
+                clap_stereo(a1),
+                clap_stereo(a2),
+                clap_stereo(a3),
+            ];
             let p = clap_process {
                 steady_time: pos as i64,
                 frames_count: n as u32,
                 transport: &transport,
                 audio_inputs: null(),
-                audio_outputs: &mut out,
+                audio_outputs: out.as_mut_ptr(),
                 audio_inputs_count: 0,
-                audio_outputs_count: 1,
+                audio_outputs_count: out.len() as u32,
                 in_events: &in_events,
                 out_events: &out_events,
             };
@@ -270,6 +335,10 @@ fn the_clap_entry_has_the_identity_and_plays_a_restored_song() {
         let want = host(&song, &mut activate(&song, 44_100), FRAMES, BUF, &[]);
         let first = want.iter().zip(&got).position(|(a, b)| a != b);
         assert_eq!(first, None, "first difference at sample {first:?}");
+        // task-256: every device of the song sounds on its own bus
+        for c in 0..orb_plugin::core::DEVICE_OUTPUTS {
+            assert!(common::peak(&aux.bus(c)) > 0.01, "bus {c} sounds");
+        }
     }
 }
 
@@ -447,6 +516,7 @@ unsafe fn clap_first_note(
 ) -> (Vec<f32>, Vec<f32>) {
     let frames = case.frames();
     let (mut l, mut r) = (vec![0f32; frames], vec![0f32; frames]);
+    let mut aux = Aux::new(frames);
     unsafe {
         let f = &*factory;
         let d = &*(f.get_plugin_descriptor.unwrap())(factory, 0);
@@ -531,21 +601,23 @@ unsafe fn clap_first_note(
                 get: Some(notes_get),
             };
             let mut chans = [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()];
-            let mut out = clap_audio_buffer {
-                data32: chans.as_mut_ptr(),
-                data64: null_mut(),
-                channel_count: 2,
-                latency: 0,
-                constant_mask: 0,
-            };
+            let mut ap = aux.ptrs(pos);
+            let [a0, a1, a2, a3] = &mut ap;
+            let mut out = [
+                clap_stereo(&mut chans),
+                clap_stereo(a0),
+                clap_stereo(a1),
+                clap_stereo(a2),
+                clap_stereo(a3),
+            ];
             let p = clap_process {
                 steady_time: pos as i64,
                 frames_count: n as u32,
                 transport: &transport,
                 audio_inputs: null(),
-                audio_outputs: &mut out,
+                audio_outputs: out.as_mut_ptr(),
                 audio_inputs_count: 0,
-                audio_outputs_count: 1,
+                audio_outputs_count: out.len() as u32,
                 in_events: &in_events,
                 out_events: &out_events,
             };
@@ -627,16 +699,18 @@ unsafe fn vst3_first_note(
     case: FirstNote,
 ) -> (Vec<f32>, Vec<f32>) {
     use vst3::Steinberg::Vst::{
-        AudioBusBuffers, AudioBusBuffers__type0, Event, Event_::EventTypes_, Event__type0,
-        IAudioProcessor, IAudioProcessorTrait, IComponent, IComponentTrait, IEventList,
-        NoteOnEvent, ProcessContext, ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_,
-        ProcessSetup, SymbolicSampleSizes_,
+        AudioBusBuffers, AudioBusBuffers__type0, BusDirections_, BusInfo, BusTypes_, Event,
+        Event_::EventTypes_, Event__type0, IAudioProcessor, IAudioProcessorTrait, IComponent,
+        IComponentTrait, IEventList, MediaTypes_, NoteOnEvent, ProcessContext,
+        ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_, ProcessSetup,
+        SymbolicSampleSizes_,
     };
     use vst3::Steinberg::{IPluginBaseTrait, kResultOk};
     use vst3::{ComPtr, ComWrapper};
 
     let frames = case.frames();
     let (mut l, mut r) = (vec![0f32; frames], vec![0f32; frames]);
+    let mut aux = Aux::new(frames);
     let mode: i32 = if case.stopped == 0 {
         ProcessModes_::kOffline as _
     } else {
@@ -652,6 +726,20 @@ unsafe fn vst3_first_note(
         );
         let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
         assert_eq!(component.initialize(null_mut()), kResultOk);
+        // task-256: the main Mix bus and the four per-device aux buses, stereo
+        let (audio, output) = (MediaTypes_::kAudio as i32, BusDirections_::kOutput as i32);
+        assert_eq!(component.getBusCount(audio, output), 5);
+        let mut names = Vec::new();
+        for i in 0..5 {
+            let mut info: BusInfo = std::mem::zeroed();
+            assert_eq!(component.getBusInfo(audio, output, i, &mut info), kResultOk);
+            assert_eq!(info.channelCount, 2);
+            let main = info.busType == BusTypes_::kMain as i32;
+            assert_eq!(main, i == 0);
+            let n = info.name.iter().position(|&c| c == 0).unwrap();
+            names.push(String::from_utf16(&info.name[..n]).unwrap());
+        }
+        assert_eq!(names, ["Mix", "303-1", "303-2", "808", "909"]);
         let processor = component.cast::<IAudioProcessor>().unwrap();
         let mut setup = ProcessSetup {
             processMode: mode,
@@ -697,13 +785,22 @@ unsafe fn vst3_first_note(
                 Vec::new()
             };
             let mut chans = [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()];
-            let mut out = AudioBusBuffers {
+            let mut ap = aux.ptrs(pos);
+            let [a0, a1, a2, a3] = &mut ap;
+            let stereo = |chans: &mut [*mut f32; 2]| AudioBusBuffers {
                 numChannels: 2,
                 silenceFlags: 0,
                 __field0: AudioBusBuffers__type0 {
                     channelBuffers32: chans.as_mut_ptr(),
                 },
             };
+            let mut out = [
+                stereo(&mut chans),
+                stereo(a0),
+                stereo(a1),
+                stereo(a2),
+                stereo(a3),
+            ];
             context.projectTimeSamples = pos as i64;
             context.continousTimeSamples = pos as i64;
             let mut data = ProcessData {
@@ -711,9 +808,9 @@ unsafe fn vst3_first_note(
                 symbolicSampleSize: SymbolicSampleSizes_::kSample32 as _,
                 numSamples: n as i32,
                 numInputs: 0,
-                numOutputs: 1,
+                numOutputs: out.len() as i32,
                 inputs: null_mut(),
-                outputs: &mut out,
+                outputs: out.as_mut_ptr(),
                 inputParameterChanges: null_mut(),
                 outputParameterChanges: null_mut(),
                 inputEvents: list.as_ptr(),

@@ -1,6 +1,6 @@
 # Plugin Usage
 
-How to drive the OpenRB-338 instrument plugin from a DAW. It comes as a VST® 3 and as a CLAP plugin: one instance is the whole ReBirth (two ORB-303 bass lines, the ORB-808, the ORB-909, the effects and the mixer) with stereo output and one MIDI input. This page is also in the plugin: Help > Plugin Usage.
+How to drive the OpenRB-338 instrument plugin from a DAW. It comes as a VST® 3 and as a CLAP plugin: one instance is the whole ReBirth (two ORB-303 bass lines, the ORB-808, the ORB-909, the effects and the mixer) with a stereo Mix output, four stereo outputs of the devices (section 6) and one MIDI input. This page is also in the plugin: Help > Plugin Usage.
 
 ## 1. Modes
 
@@ -89,7 +89,25 @@ In both pattern modes the notes 0 to 31 select the pattern of the section on the
 - **Drag a pattern out as MIDI.** Press a pattern button of a section and drag it out of the window onto a host track: it drops a MIDI clip of that pattern, on the section's channel, 192 ticks to the quarter note, with the shuffle baked in. The press also selects the pattern. The clip is made for Note mode: played into Note mode it plays the pattern. In the pattern modes its notes 0 to 31 would be pattern selects, so use it in Note mode.
 - **Keys.** The plugin window takes no keys: the host keeps them. Everything is done with the mouse. (On Windows, Escape cancels a pattern drag-out in progress.)
 
-## 6. Recipes
+## 6. One output per device
+
+Besides its main output, **Mix**, the plugin has four stereo outputs, one per device, so that each can be recorded and processed on a track of its own:
+
+| Output | Device | Mixer channel |
+|---|---|---|
+| Mix | everything | the master |
+| 303-1 | ORB-303 1 | 1 |
+| 303-2 | ORB-303 2 | 2 |
+| 808 | ORB-808 | 3 |
+| 909 | ORB-909 | 4 |
+
+- **What a device output carries.** The device through the distortion, PCF and compressor when the mixer routes them to its channel, as ReBirth's own ReWire outputs do. It is mono, the same signal on both sides.
+- **What it does not carry.** The channel's level, pan and on/off switch, the delay (a send: its echoes are only in the Mix), the compressor when it is on the master, and the master level. Those change the Mix only: set the device's level and pan on its own track.
+- **The Mix is unchanged.** It is the same sound whether or not you use the device outputs. The devices stay in the Mix unless you turn them off: if you use a device output, turn that channel off in the panel's mixer (its on/off switch), or mute the instrument track's own output in the host, or you hear the device twice.
+- **Turning a channel off** in the panel's mixer removes the device from the Mix (and from the delay) but not from its own output. So you can route some devices to their own tracks and keep the rest, with the delay and the master effects, in the Mix.
+- **Unused outputs** cost almost nothing. They have the same latency as the Mix.
+
+## 7. Recipes
 
 **One track per device (Reaper style).**
 1. Insert OpenRB-338 on one track.

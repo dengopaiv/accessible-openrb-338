@@ -173,6 +173,8 @@ every block:   if (blk & 15) == 0: mixer_update()    // 0x10012C14; blk starts a
   `(n - old) * (1/32)` (`dbl_10151F58`) is kept as a double. The mix loop runs in x87 registers
   from the stored old gains: samples 2p and 2p+1 use `old + p` steps, added one at a time, and
   each output sample is `f32(bus*g + master)`. The L gain mixes into entry 0, the R gain into 1.
+  The plugin's per-device outputs (task-256, `docs/plugin.md` section 13) copy the channel's bus
+  where ReWire takes it, after the inserts and before this loop.
 - Master (0x100138AE): `m = mOld*0.93 + mTgt*0.07`, `f32(m)` stored, every master sample becomes
   `f32(x * m)` with the unrounded m, after the send effect (slot 14 with `(song+0x1FC[i], L, R)`)
   and the master compressor (slot 14 with `(L, R)`).

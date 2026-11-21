@@ -899,6 +899,14 @@ pub struct EngineState {
     pub output: OutputState,
 }
 
+/// The mono taps of one block ([`Frame::block_taps`], task-256): mixer channel c's bus (0
+/// 303-1, 1 303-2, 2 808, 3 909) after its inserts, where ReWire's channels 2, 3, 4 and 11 are
+/// taken (`docs/rewire.md` section 4).
+pub type Taps = [Block; TAP_WIDTH];
+
+/// The tap values one frame of [`Engine::render_taps`] holds: one per mixer channel.
+pub const TAP_WIDTH: usize = 4;
+
 /// The mixer and its devices: everything one block touches.
 pub struct Frame {
     pub state: MixerState,
@@ -1083,6 +1091,22 @@ impl Frame {
     /// [`Fault`] ends it where the original's exception does, right after the faulting insert:
     /// the rest of the block (later channels, the send, the master) does not run.
     pub fn block(&mut self, l: &mut Block, r: &mut Block) -> Result<(), Fault> {
+        self.block_taps(l, r, None)
+    }
+
+    /// [`Frame::block`], and with `taps` the signals ReWire's device channels 2, 3, 4 and 11
+    /// carry (not in the original's export path, task-256: the plugin's per-device outputs;
+    /// `docs/rewire.md` section 4), as copies: `taps[c]` is mixer channel c's bus after its
+    /// inserts (0x100135AF..0x100135F1), before its meter, send, level, pan and on switch. The
+    /// bus is stored f32, so the tap is exact. Nothing is taken out of the master, so `l` and
+    /// `r` are bit-identical to [`Frame::block`]'s. A fault leaves the taps of the channels it
+    /// did not reach as they were.
+    pub fn block_taps(
+        &mut self,
+        l: &mut Block,
+        r: &mut Block,
+        mut taps: Option<&mut Taps>,
+    ) -> Result<(), Fault> {
         self.blocks += 1;
         if self.state.counter & (UPDATE_PERIOD - 1) == 0 {
             self.mixer_update();
@@ -1145,6 +1169,11 @@ impl Frame {
                     }
                     self.stack_word = ins.stack_word(self.stack_word);
                 }
+            }
+            // task-256: the channel's tap, where ReWire's channel buffer is (after the inserts
+            // 0x100135AF..0x100135F1, before the meter, the send, the level and the pan)
+            if let Some(t) = taps.as_deref_mut() {
+                t[c] = *bus;
             }
             // 0x100135FA: the channel's peak meter
             let v = abs_bits(bus[mi]);
@@ -1243,6 +1272,10 @@ pub struct Engine {
     fault: Option<FaultRecord>,
     /// Not in the original: the batch [`Engine::load`] stopped at.
     refused: Option<LoadRefused>,
+    /// Not in the original (task-256): the taps of the whole block being rendered, and those
+    /// of the partial block whose leftover frames the next [`Engine::render_taps`] outputs
+    /// first.
+    taps: Box<[Taps; 2]>,
 }
 
 fn zero_buf() -> Box<[f32; MAX_FRAMES]> {
@@ -1255,6 +1288,17 @@ fn zero_buf() -> Box<[f32; MAX_FRAMES]> {
 
 fn block_mut(buf: &mut [f32], at: usize) -> &mut Block {
     (&mut buf[at..at + BLOCK]).try_into().unwrap()
+}
+
+/// Frames `src` of the block taps `t` into the frame-interleaved `out` from frame `at`
+/// ([`Engine::render_taps`]).
+fn put_taps(t: &Taps, src: std::ops::Range<usize>, out: &mut [f32], at: usize) {
+    for (k, i) in src.enumerate() {
+        let f = &mut out[TAP_WIDTH * (at + k)..TAP_WIDTH * (at + k + 1)];
+        for (x, tap) in f.iter_mut().zip(t.iter()) {
+            *x = tap[i];
+        }
+    }
 }
 
 impl Engine {
@@ -1288,6 +1332,7 @@ impl Engine {
             out: [zero_buf(), zero_buf()],
             fault: None,
             refused: None,
+            taps: Box::new([[[0.0; BLOCK]; TAP_WIDTH]; 2]),
         }
     }
 
@@ -1436,10 +1481,25 @@ impl Engine {
     /// stereo into `buf[..2n]`, through the leftover block. A call with `n = 0` renders nothing
     /// but drops a pending leftover (`L` becomes `L - 64`).
     pub fn render(&mut self, buf: &mut [i16], n: usize) {
+        self.render_with(buf, n, None);
+    }
+
+    /// [`Engine::render`], and the mono taps of the frames rendered (not in the original,
+    /// task-256; [`Frame::block_taps`]): frame i of tap k is `taps[TAP_WIDTH * i + k]`, `taps`
+    /// at least `TAP_WIDTH * n` long. The
+    /// int16 output is bit-identical to [`Engine::render`]'s. A faulting call leaves `taps` as
+    /// the caller had it (or partly written), as it leaves `buf`. The leftover frames of a
+    /// partial block have taps only when the call that rendered it was a `render_taps` too.
+    pub fn render_taps(&mut self, buf: &mut [i16], n: usize, taps: &mut [f32]) {
+        self.render_with(buf, n, Some(taps));
+    }
+
+    fn render_with(&mut self, buf: &mut [i16], n: usize, mut taps: Option<&mut [f32]>) {
         let n = n.min(MAX_FRAMES);
         // 0x10013A5E: the song's try-lock, before the leftover and the first block
         self.frame.stack_word = Some(LOCK_WORD);
         let [ol, or] = &mut self.out;
+        let [tb, tlo] = &mut *self.taps;
         let lp = self.output.leftover_pos;
         let mut pos = 0usize;
         let mut rem = n as i32;
@@ -1453,6 +1513,9 @@ impl Engine {
                 o[..BLOCK - lp].copy_from_slice(&lo[lp..]);
                 lo[lp..].fill(GUARD);
             }
+            if let Some(t) = taps.as_deref_mut() {
+                put_taps(tlo, lp..BLOCK, t, 0);
+            }
             pos = BLOCK - lp;
             rem -= pos as i32;
         }
@@ -1460,13 +1523,19 @@ impl Engine {
             let whole = rem > 63;
             let done = if whole {
                 self.frame.out_end = Some(OUT_RIGHT + 4 * (pos + BLOCK - 1) as i32);
-                self.frame
-                    .block(block_mut(&mut ol[..], pos), block_mut(&mut or[..], pos))
+                let (l, r) = (block_mut(&mut ol[..], pos), block_mut(&mut or[..], pos));
+                match taps.as_deref_mut() {
+                    None => self.frame.block(l, r),
+                    Some(t) => self.frame.block_taps(l, r, Some(tb)).map(|()| {
+                        put_taps(tb, 0..BLOCK, t, pos);
+                    }),
+                }
             } else {
                 // 0x10013BAA: the partial block is rendered whole into the leftover block
                 self.frame.out_end = None;
                 let [ll, lr] = &mut self.output.leftover;
-                self.frame.block(ll, lr)
+                let t = taps.is_some().then_some(&mut *tlo);
+                self.frame.block_taps(ll, lr, t)
             };
             if let Err(f) = done {
                 // a fault ([`Fault`]): the call ends here, before the leftover position is
@@ -1496,6 +1565,9 @@ impl Engine {
             {
                 o[pos..pos + k].copy_from_slice(&lo[..k]);
                 lo[..k].fill(GUARD);
+            }
+            if let Some(t) = taps {
+                put_taps(tlo, 0..k, t, pos);
             }
         }
         for i in 0..n {
