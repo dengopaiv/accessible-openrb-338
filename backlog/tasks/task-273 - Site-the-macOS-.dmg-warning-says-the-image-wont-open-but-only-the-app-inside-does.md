@@ -1,12 +1,13 @@
 ---
 id: TASK-273
 title: >-
-  Site: the macOS .dmg warning says the image won't open, but only the app
-  inside does
+  Site and README: the .dmg warning blames the image, not the app; Features gain
+  the plugin's outputs and the classic theme
 status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-21T13:03:00Z'
+updated_date: '2026-11-21T13:05:00Z'
 labels:
   - docs
   - tools
@@ -45,4 +46,12 @@ The supervisor deploys the site (pages.yml, by hand) after the merge, at the use
 - [ ] #1 For a .dmg the warning's heading and paragraph say the image opens and the app inside is what macOS refuses at first; the .pkg text is unchanged
 - [ ] #2 docs/building.md and README.md say the same where they describe it
 - [ ] #3 node site/detect_test.js passes and node --check site/app.js is clean
+- [ ] #4 The Features sections of site/index.html (section#features) and README.md (## Features) mention the plugin's per-device outputs (303-1, 303-2, 808, 909 beside the Mix, tapped like ReBirth's ReWire channels after each channel's inserts and before its level and pan; docs/plugin.md 13, docs/rewire.md) and the classic theme (View > Classic / Modern in the standalone: the loaded mod's original panel art, fully playable; docs/ui_spec.md 21), in the sections' existing style and length
+- [ ] #5 The user reviewed the changed site (a local preview: tools/build_site.py into a scratch folder, opened in a browser) and README before the agent review
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+User, 2026-11-21: also update the Features sections (site and README) for the plugin's multi-channel output (task-256) and the classic theme support (tasks 266-268). The user reviews the result first.
+<!-- SECTION:NOTES:END -->
