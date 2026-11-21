@@ -12,8 +12,12 @@
 //! (`backdrop`) are drawn around any skin.
 //!
 //! The modern panel is [`svg::modern`]: the generic SVG renderer over one layout table
-//! (`assets/ui/layout.tsv`) and one part set (the embedded `assets/ui`).
+//! (`assets/ui/layout.tsv`) and one part set (the embedded `assets/ui`). The classic panel is
+//! [`classic::ClassicSkin`] (task-267): the original's geometry (`assets/ui/classic.tsv`) drawn
+//! from a kit's bitmaps ([`bitmaps`]).
 
+pub mod bitmaps;
+pub mod classic;
 pub mod svg;
 pub mod table;
 

@@ -134,7 +134,9 @@ architectures, so the minimum is glibc 2.35. Both Linux packages were smoke-test
 
 **WSLg (Windows' Linux GUI) drops OpenRB-338 with two windows open** (task-187, the user's test of
 2026-11-19): under WSLg's Wayland compositor the app is disconnected (the connection is reset,
-with no `wl_display.error`) on a focus change or when the Theme Viewer's window closes. It does
+with no `wl_display.error`) on a focus change or when the second window closed. The second
+window was task-187's Theme Viewer, the app's only other native window; task-267 removed it,
+so the app no longer opens two windows. It did
 not happen on a default Ubuntu desktop (GNOME's Mutter on Wayland) nor under X11 in WSLg, so it
 is taken as a WSLg compositor bug and orb has no code for it. Workaround: run under X11 with an
 empty `WAYLAND_DISPLAY` (`WAYLAND_DISPLAY= ./OpenRB-338`); the `.tar.gz` then needs

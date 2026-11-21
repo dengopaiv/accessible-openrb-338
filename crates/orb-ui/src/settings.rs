@@ -4,8 +4,10 @@
 //! It is a TOML file (task-107) with the keys `songs_dir` and `mods_dir` (paths, absent when
 //! unset), `recent` (an array of paths, newest first), `last_song_dir` and `last_mod_dir`
 //! (paths, absent until a file is chosen: the folder of the last song chosen in Open, Save As
-//! or Export, and of the last mod; task-144), `startup_sound` (a bool), `theme_viewer_filter`
-//! (`"nearest"`, the default, or `"linear"`: the Theme Viewer's scaling, task-187) and the table
+//! or Export, and of the last mod; task-144), `startup_sound` (a bool), `theme` (`"modern"`,
+//! the default, or `"classic"`: the main window's skin, View > Classic / Modern, task-267; the old
+//! `theme_viewer_filter` of the removed Theme Viewer is ignored and dropped at the next save)
+//! and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
 //! `OpenRB-338/ui.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
@@ -17,7 +19,7 @@
 //! last read or wrote it, so another instance's changes survive (task-229; saves in the same
 //! instant can still race, there is no lock). A change is recorded by the setters
 //! (`set_songs_dir`, `set_mods_dir`, `set_last_song_dir`, `set_last_mod_dir`,
-//! `set_startup_sound`, `set_viewer_nearest`, `set_preferred_mod`), which win over the file even
+//! `set_startup_sound`, `set_theme`, `set_preferred_mod`), which win over the file even
 //! when the value equals what this instance last saw; a field assigned directly counts as changed
 //! when it differs from what was last read or written. The list `recent` is changed only through
 //! `note_recent` (a folder is pushed onto the file's list; a direct assignment is not
@@ -42,6 +44,35 @@ use serde::Serialize;
 /// How many recent folders are kept.
 pub const MAX_RECENT: usize = 8;
 
+/// The look of the main window's panel (View > Classic / Modern, task-267): the standalone app's
+/// only.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Theme {
+    /// The SVG panel (`skin::svg::modern`).
+    #[default]
+    Modern,
+    /// The original's panel from the kit's bitmaps (`skin::classic`).
+    Classic,
+}
+
+impl Theme {
+    /// The value stored in the file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::Modern => "modern",
+            Theme::Classic => "classic",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<Self> {
+        match s {
+            "modern" => Some(Theme::Modern),
+            "classic" => Some(Theme::Classic),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Settings {
     /// The original's preference "Play Mod Startup Sound" (on by default: the preferences'
@@ -64,10 +95,9 @@ pub struct Settings {
     /// to file name. Stored as the table `preferred_mods`. Names are compared ignoring ASCII
     /// case ([`Settings::preferred_mod`]).
     pub preferred_mods: BTreeMap<String, String>,
-    /// The Theme Viewer's scaling (task-187): nearest pixel when set (the default, the user's
-    /// review of 2026-11-19), else bilinear. Stored as the string `theme_viewer_filter`,
-    /// `"nearest"` or `"linear"`.
-    pub viewer_nearest: bool,
+    /// The main window's skin (View > Classic / Modern, task-267). Stored as the string `theme`,
+    /// `"modern"` (the default) or `"classic"`; another value is skipped.
+    pub theme: Theme,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
     /// The values as last read from or written to the file: a save changes only what differs
@@ -96,7 +126,7 @@ pub struct Values {
     last_song_dir: Option<PathBuf>,
     last_mod_dir: Option<PathBuf>,
     preferred_mods: BTreeMap<String, String>,
-    viewer_nearest: bool,
+    theme: Theme,
 }
 
 /// Equal when the public fields are (the save bookkeeping is not compared).
@@ -118,11 +148,10 @@ impl Default for Settings {
             last_song_dir: None,
             last_mod_dir: None,
             preferred_mods: BTreeMap::new(),
-            viewer_nearest: true,
+            theme: Theme::Modern,
             file: None,
             base: Box::new(Values {
                 startup_sound: true,
-                viewer_nearest: true,
                 ..Values::default()
             }),
             noted: Vec::new(),
@@ -184,7 +213,7 @@ struct Stored<'a> {
     last_song_dir: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_mod_dir: Option<&'a Path>,
-    theme_viewer_filter: &'a str,
+    theme: &'a str,
     // a table, so last
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     preferred_mods: BTreeMap<&'a str, &'a str>,
@@ -240,10 +269,12 @@ impl Settings {
         s.mods_dir = table.get("mods_dir").and_then(path_of);
         s.last_song_dir = table.get("last_song_dir").and_then(path_of);
         s.last_mod_dir = table.get("last_mod_dir").and_then(path_of);
-        match table.get("theme_viewer_filter").and_then(|v| v.as_str()) {
-            Some("nearest") => s.viewer_nearest = true,
-            Some("linear") => s.viewer_nearest = false,
-            _ => {}
+        if let Some(t) = table
+            .get("theme")
+            .and_then(|v| v.as_str())
+            .and_then(Theme::from_name)
+        {
+            s.theme = t;
         }
         if let Some(list) = table.get("recent").and_then(|v| v.as_array()) {
             for p in list.iter().filter_map(path_of) {
@@ -271,7 +302,7 @@ impl Settings {
             last_song_dir: self.last_song_dir.clone(),
             last_mod_dir: self.last_mod_dir.clone(),
             preferred_mods: self.preferred_mods.clone(),
-            viewer_nearest: self.viewer_nearest,
+            theme: self.theme,
         }
     }
 
@@ -303,8 +334,8 @@ impl Settings {
         if set("last_mod_dir") || v.last_mod_dir != b.last_mod_dir {
             m.last_mod_dir = v.last_mod_dir;
         }
-        if set("theme_viewer_filter") || v.viewer_nearest != b.viewer_nearest {
-            m.viewer_nearest = v.viewer_nearest;
+        if set("theme") || v.theme != b.theme {
+            m.theme = v.theme;
         }
         if self.noted.is_empty() && v.recent != b.recent {
             // The list was assigned as a whole.
@@ -374,11 +405,10 @@ impl Settings {
         self.dirty.insert("startup_sound".into());
     }
 
-    /// Sets the Theme Viewer's scaling (`viewer_nearest`); the next save writes it whatever the
-    /// file holds.
-    pub fn set_viewer_nearest(&mut self, nearest: bool) {
-        self.viewer_nearest = nearest;
-        self.dirty.insert("theme_viewer_filter".into());
+    /// Sets the main window's skin (`theme`); the next save writes it whatever the file holds.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
+        self.dirty.insert("theme".into());
     }
 
     /// The file preferred for the INFO name `name` (ignoring ASCII case), if one is set.
@@ -420,11 +450,7 @@ impl Settings {
             recent: m.recent.iter().filter_map(|p| storable(p)).collect(),
             last_song_dir: m.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: m.last_mod_dir.as_deref().and_then(storable),
-            theme_viewer_filter: if m.viewer_nearest {
-                "nearest"
-            } else {
-                "linear"
-            },
+            theme: m.theme.name(),
             preferred_mods: m
                 .preferred_mods
                 .iter()
@@ -460,7 +486,7 @@ impl Settings {
         self.last_song_dir = m.last_song_dir.clone();
         self.last_mod_dir = m.last_mod_dir.clone();
         self.preferred_mods = m.preferred_mods.clone();
-        self.viewer_nearest = m.viewer_nearest;
+        self.theme = m.theme;
         *self.base = m;
         self.noted.clear();
         self.dirty.clear();

@@ -345,11 +345,15 @@ fn the_options_menu_has_no_mode_items() {
     }
 }
 
-/// task-187 (the user's review): the viewer is the standalone app's only; the plugin's Mods
-/// menu has no Theme Viewer item, and the command does nothing in the plugin.
+/// task-267: the themes are the standalone app's only. The plugin's bar has no View menu, its
+/// Mods menu no Theme Viewer (removed), and the View > Classic command does nothing in the plugin:
+/// the editor keeps the modern skin.
 #[test]
-fn the_mods_menu_has_no_theme_viewer() {
+fn the_plugin_has_no_themes() {
     let mut h = Harness::new(with("303_accent0"));
+    h.frame(vec![]);
+    let bar = h.texts.join("|");
+    assert!(bar.contains("Mods") && !bar.contains("View"), "{bar}");
     // Mods is the second title of the bar (File, Mods, Options, Help)
     h.click(Pos2::new(56.0, MENU_H / 2.0));
     h.frame(vec![]);
@@ -357,15 +361,17 @@ fn the_mods_menu_has_no_theme_viewer() {
     assert!(egui::Popup::is_any_open(&h.ctx), "Mods opened");
     let texts = h.texts.join("|");
     assert!(texts.contains("Refresh List"), "the Mods menu: {texts}");
-    assert!(texts.contains("Info..."), "{texts}");
     assert!(!texts.contains("Theme Viewer"), "{texts}");
-    h.app.command(orb_ui::menu::Cmd::ThemeViewer);
+    let skin = h.app.skin().clone();
+    h.app.command(orb_ui::menu::Cmd::SetTheme(
+        orb_ui::settings::Theme::Classic,
+    ));
     h.frame(vec![]);
-    assert!(!h.app.theme_viewer_is_open());
+    assert_eq!(h.app.theme(), orb_ui::settings::Theme::Modern);
+    assert!(std::sync::Arc::ptr_eq(h.app.skin(), &skin));
 }
 
-/// task-187 (the user's review): the 808's mod window is the standalone's link to the Theme
-/// Viewer; in the plugin it shows no hand cursor and a click opens nothing.
+/// task-267: the 808's mod window is no link (the Theme Viewer is gone): no hand cursor.
 #[test]
 fn the_mod_window_is_no_link_in_the_plugin() {
     let mut h = Harness::new(with("303_accent0"));
@@ -373,9 +379,6 @@ fn the_mod_window_is_no_link_in_the_plugin() {
     h.move_to(p);
     h.frame(vec![]);
     assert_ne!(h.cursor, egui::CursorIcon::PointingHand);
-    h.click(p);
-    h.frame(vec![]);
-    assert!(!h.app.theme_viewer_is_open());
 }
 
 /// task-221: the plugin's Help menu has Plugin Usage (and About, no Keyboard Shortcuts); the

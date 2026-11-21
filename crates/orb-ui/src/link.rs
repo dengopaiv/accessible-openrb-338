@@ -1239,7 +1239,7 @@ impl Link {
         }
         self.refresh_tracks();
         // the meters and the running lights follow every call; the meters keep the engine's
-        // byte, which the main panel (`model::meter_state`) and the theme viewer
+        // byte, which the modern skin (`model::meter_state`) and the classic skin
         // (`model::peak_meter_frame`, the original's scale) map each their way
         for c in 0..4 {
             panel

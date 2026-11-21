@@ -194,8 +194,9 @@ pub struct App {
     /// The same for the plugin's Help > Plugin Usage window (`App::plugin_usage_ui`, task-221).
     pub(crate) plugin_usage_open: bool,
     pub(crate) plugin_usage_serial: u32,
-    /// The Mods > Theme Viewer window (task-187).
-    pub(crate) theme_viewer: crate::theme_view::Viewer,
+    /// The classic skin of the kit last shown with View > Classic (task-267): it is
+    /// made again when the kit changes.
+    classic: Option<(orb_cli::mods::Kit, Arc<crate::skin::classic::ClassicSkin>)>,
     /// What the info window drew last (`App::info_shown`).
     pub(crate) info_shown: Option<crate::info::SongInfo>,
     pub(crate) events_seen: usize,
@@ -268,7 +269,7 @@ impl App {
             key_help_serial: 0,
             plugin_usage_open: false,
             plugin_usage_serial: 0,
-            theme_viewer: Default::default(),
+            classic: None,
             info_shown: None,
             events_seen: 0,
             allow_close: false,
@@ -293,6 +294,60 @@ impl App {
     /// input (task-266).
     pub fn set_skin(&mut self, skin: Arc<dyn Skin>) {
         self.skin = skin;
+    }
+
+    /// View > Classic / Modern (task-267): draws the main window's panel with the modern or the
+    /// classic skin from the next frame on and saves the choice in the UI settings. Nothing in
+    /// a plugin's editor, which has the modern skin only.
+    pub fn set_theme(&mut self, theme: crate::settings::Theme) {
+        if self.is_plugin() {
+            return;
+        }
+        self.settings.set_theme(theme);
+        if let Err(e) = self.settings.save() {
+            self.fail(e);
+        }
+        if theme == crate::settings::Theme::Modern {
+            self.skin = crate::skin::svg::modern();
+            self.classic = None;
+        }
+        self.apply_theme();
+    }
+
+    /// The theme the main window shows: the settings' in the standalone app, Modern in a
+    /// plugin's editor.
+    pub fn theme(&self) -> crate::settings::Theme {
+        if self.is_plugin() {
+            crate::settings::Theme::Modern
+        } else {
+            self.settings.theme
+        }
+    }
+
+    /// With the classic theme, the classic skin of the current kit: made when the kit changed
+    /// (no mod: the built-in kit's bitmaps; a mod's set that cannot be used is reported once
+    /// and the built-in bitmaps are drawn). The modern theme leaves the skin alone (a test may
+    /// have set its own).
+    fn apply_theme(&mut self) {
+        if self.theme() != crate::settings::Theme::Classic {
+            return;
+        }
+        let kit = self.doc.kit.clone();
+        if self.classic.as_ref().is_some_and(|(k, _)| *k == kit) {
+            return;
+        }
+        let skin = crate::skin::classic::ClassicSkin::of_kit(&kit);
+        if let Some(e) = &skin.bitmaps().error
+            && let orb_cli::mods::Kit::Mod(path) = &kit
+        {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            self.fail(format!(
+                "Classic theme: the panel bitmaps of {name} cannot be used ({e}); the built-in \
+                 ones are shown."
+            ));
+        }
+        self.skin = skin.clone();
+        self.classic = Some((kit, skin));
     }
 
     /// Opens the file browser for `mode` over the panel (the menu calls this). Ctrl/Cmd+O opens it
@@ -870,6 +925,8 @@ impl App {
             avail.min.y += MENU_H;
         }
         let ppp = ui.ctx().pixels_per_point();
+        // the classic theme follows the kit (task-267)
+        self.apply_theme();
         let skin = self.skin.clone();
         let layout = skin.layout();
         // a plugin's panel keeps a margin of desk on each side (task-234)
@@ -995,7 +1052,6 @@ impl App {
         self.key_help_ui(&ctx);
         self.plugin_usage_ui(&ctx);
         self.mod_info_ui(&ctx);
-        self.theme_viewer_ui(&ctx);
         self.poll_export(&ctx);
         if let Some(marker) = self.clip_text.take() {
             ctx.copy_text(marker);

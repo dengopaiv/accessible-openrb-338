@@ -12,6 +12,10 @@ pub const BAR: i32 = 768;
 pub const MAX_POS: i32 = 766_464;
 const MAX_END: i32 = 767_232;
 
+/// The TR-808's instrument selector knob (docs/ui_spec.md section 6): the classic skin's; the
+/// modern skin shows the mod's window in its place (task-267).
+pub const SELECTOR_808: &str = "tr808.selector";
+
 /// A change the engine must hear.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
@@ -279,7 +283,7 @@ pub struct Panel {
     pub pcf_id: u8,
     pub comp_id: u8,
     /// The meter bytes 0..=127 by control id (mixer, master, effect input); engine-fed. The
-    /// main panel shows [`meter_state`], the theme viewer the original's [`peak_meter_frame`].
+    /// modern skin shows [`meter_state`], the classic skin the original's [`peak_meter_frame`].
     pub meters: HashMap<String, u8>,
     /// The compressor's gain byte (its live byte 3, `trunc(min(G*18, 127))`, 18 at unity
     /// gain, 0 while the compressor gets no audio); [`gr_lit`] gives the LEDs it lights.
@@ -567,12 +571,24 @@ impl Panel {
     // ---- knobs, faders, switches --------------------------------------------------------
 
     pub fn knob(&self, id: &str) -> i32 {
+        if id == SELECTOR_808 {
+            // the knob shows `(127 * i + 5) / 11` for the selected instrument i (`sub_441E79`)
+            let v = (127 * self.inst808.min(11) as i32 + 5) / 11;
+            return behavior::knob_from_engine(v);
+        }
         self.knobs.get(id).copied().unwrap_or(0)
     }
 
-    /// Sets a knob position and sends the value when it changed.
+    /// Sets a knob position and sends the value when it changed. The TR-808's instrument
+    /// selector ([`SELECTOR_808`]) selects instrument `(11 * v + 63) / 127` of its value v and
+    /// sends nothing (docs/ui_spec.md section 6).
     pub fn set_knob(&mut self, id: &str, p: i32) {
         let p = p.clamp(0, KNOB_MAX);
+        if id == SELECTOR_808 {
+            let v = behavior::knob_send(p);
+            self.inst808 = ((11 * v + 63) / 127).clamp(0, 11) as usize;
+            return;
+        }
         let old = self.knobs.insert(id.into(), p).unwrap_or(-1);
         let changed = old < 0 || behavior::knob_send(old) != behavior::knob_send(p);
         if changed {

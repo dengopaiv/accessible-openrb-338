@@ -224,21 +224,9 @@ impl App {
     fn control(&mut self, ui: &mut Ui, view: &View, p: Placed, now: f64) -> bool {
         let c = p.c;
         match c.kind.as_str() {
-            "area" | "steps" | "display" | "led" | "meter" => false,
-            "modview" => {
-                // the standalone's link to the Theme Viewer (task-187, the user's review): a
-                // click opens it or brings the open one to the front, as the Mods menu's item
-                if !self.is_plugin() {
-                    let rect = view.rect(c.x, c.y, c.w, c.h);
-                    let r = ui
-                        .interact(rect, egui::Id::unique(("hit", "modview")), Sense::click())
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if r.clicked() {
-                        self.show_theme_viewer();
-                    }
-                }
-                false
-            }
+            // display only; the 808's mod window takes no input of its own (its press gives the
+            // row the focus, as any press in a row does)
+            "area" | "steps" | "display" | "led" | "meter" | "modview" => false,
             "knob" => {
                 self.knob(ui, view, p);
                 false
@@ -362,15 +350,16 @@ impl App {
     /// The step strips of the two drum machines: press sets the step to the opposite (808)
     /// or the cycled value (909) and a drag paints every crossed step with that value.
     fn drum_strips(&mut self, ui: &mut Ui, view: &View, layout: &Layout) {
-        for s in &layout.strips {
+        for (n, s) in layout.strips.iter().enumerate() {
             let is808 = s.section == "tr808";
             let rect = view.rect(s.x, s.y, s.w, s.h);
+            // keyed by the place in the layout too, so that a skin may show a strip twice
             let r = ui.interact(
                 rect,
-                egui::Id::unique(("hit", "strip", &s.id)),
+                egui::Id::unique(("hit", "strip", &s.id, n)),
                 Sense::click_and_drag(),
             );
-            let gid = egui::Id::unique(("gesture", "strip", &s.id));
+            let gid = egui::Id::unique(("gesture", "strip", &s.id, n));
             let mut g: Gesture = ui.data(|d| d.get_temp(gid)).unwrap_or_default();
             let down = r.is_pointer_button_down_on();
             if down {
@@ -415,11 +404,11 @@ impl App {
     /// The drum machines' legends and name rows select the instrument; dragging keeps
     /// selecting, over all of the machine's hit areas.
     fn instrument_selection(&mut self, ui: &mut Ui, view: &View, layout: &Layout) {
-        for a in &layout.selects {
+        for (n, a) in layout.selects.iter().enumerate() {
             let rect = view.rect(a.x, a.y, a.w, a.h);
             let r = ui.interact(
                 rect,
-                egui::Id::unique(("hit", "select", &a.id)),
+                egui::Id::unique(("hit", "select", &a.id, n)),
                 Sense::click_and_drag(),
             );
             if !r.is_pointer_button_down_on() {

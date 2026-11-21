@@ -530,13 +530,6 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                     vec![],
                 ),
                 menu_row(is_mac, &shortcuts::EDIT_PATH, "Edit the browser's path"),
-                // the viewer's one key (theme_view.rs); the window is the standalone app's,
-                // as the viewer is
-                row(
-                    "Space",
-                    "Theme Viewer window: switch the scaling between nearest and bilinear",
-                    vec![],
-                ),
             ],
         },
         Group {
@@ -771,23 +764,14 @@ mod tests {
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
     }
 
-    /// The Theme Viewer's Space is listed with the windows (task-187), with no bind: it is the
-    /// viewer window's key, not the panel's (Space on the panel plays and stops).
+    /// The Theme Viewer and its Space key are gone (task-267): no row names them.
     #[test]
-    fn the_theme_viewer_space_is_listed() {
-        let g = groups(false);
-        let windows = g
-            .iter()
-            .find(|g| g.title == "Windows and the file browser")
-            .unwrap();
-        let r = windows
-            .rows
-            .iter()
-            .find(|r| r.what.starts_with("Theme Viewer window"))
-            .expect("the Theme Viewer's row");
-        assert_eq!(r.keys, "Space");
-        assert!(r.what.contains("nearest") && r.what.contains("bilinear"));
-        assert!(r.binds.is_empty());
+    fn no_row_names_the_theme_viewer() {
+        for g in groups(false).iter().chain(groups(true).iter()) {
+            for r in &g.rows {
+                assert!(!r.what.contains("Theme Viewer"), "{}", r.what);
+            }
+        }
     }
 
     /// The current-mode mark: Synth marks exactly the two Program Synth groups, Patterns only

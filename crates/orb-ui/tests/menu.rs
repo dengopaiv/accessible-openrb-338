@@ -1000,6 +1000,19 @@ fn click_edit_item(h: &mut Harness, text: &str) {
     h.click(r.center());
 }
 
+/// Task-267 (the user's review, 2026-11-21): the View menu sits between Edit and Mods and holds
+/// the two theme radio items, Classic and Modern, directly: no Themes submenu.
+#[test]
+fn the_view_menu_has_classic_and_modern_directly() {
+    let mut h = Harness::with_menu();
+    let (edit, _) = open_menu_with(&mut h, "Cut Pattern");
+    let (view, shapes) = open_menu_with(&mut h, "\"Classic\"");
+    let (mods, _) = open_menu_with(&mut h, "Refresh List");
+    assert!(edit < view && view < mods, "{edit} {view} {mods}");
+    assert!(shapes.contains("\"Modern\""), "{shapes}");
+    assert!(!shapes.contains("Themes"), "{shapes}");
+}
+
 #[test]
 fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
     let mut h = Harness::with_menu();

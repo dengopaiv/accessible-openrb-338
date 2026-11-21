@@ -235,7 +235,7 @@ So `L(b) = trunc(ln(b) / ln(127) * 127)`, `L(1) = 0`, `L(2) = 18`, `L(127) = 127
 The four-frame meters show red only at full scale (byte 127). The table has 128 entries
 (`byte_4DABA8`, 0x424250: `i < 0x80`); the lookup masks the byte with 0xFF (0x4242A6), so a byte
 above 127 would read past it, but the engine writes none. orb: `model::peak_meter_level`,
-`model::peak_meter_frame` (the theme viewer, section 21, and the main panel's meters by
+`model::peak_meter_frame` (the classic skin, section 21, and the main panel's meters by
 decision task-254, section 16).
 
 **Gain-reduction meter** (task-252) [C]: the comp section's nine LEDs (bitmap 12570) are a
@@ -271,7 +271,7 @@ but those of 1 (0.0) and 127 (127.0) lies near an integer, so a log that differs
 bit gives the same table. A byte of 0 lights none: the engine clears byte 3 when the
 compressor got no call since the last mixer update (0x1000EFB0), so the master's COMP switch
 off (and the compressor off) shows no LED, also while playing. OpenRB-338: `model::gr_lit`,
-shared by the main panel (section 16) and the theme viewer.
+shared by the modern skin (section 16) and the classic skin (section 21).
 
 ## 3. Transport
 
@@ -548,8 +548,11 @@ UI state (BD at start: observed, the steps showed the BD column and a drag paint
   selector knob (the user's change of 2026-10-28): the legend selects, and the knob's place
   right of the legend shows the mod's window, the `splash.jpg` of the kit that plays (the
   embedded standard mod's for the built-in kit) above the song's mod name (`App::mod_view`).
-  In the standalone app the mod's window is a link to the Theme Viewer (section 21): the hand
-  cursor over it, a click opens the viewer or brings the open one to the front.
+  The mod's window takes no click of its own (a press there gives the 808's row the focus, as
+  anywhere in a row; the Theme Viewer it linked to is gone, task-267). The classic skin
+  (section 21) has the original's selector knob instead (`model::SELECTOR_808`,
+  `tr808.selector`): a drag over 40 px turns it and selects `(11 * v + 63) / 127`, nothing is
+  sent to the engine.
 
 **Shared slots [C].** The switch of slots 3..7 is a vertical two-position switch: the top half
 gives 0, the bottom half 1. 0 plays the sound of the upper label (LC, MC, HC, CL, MA), non-zero
@@ -727,7 +730,8 @@ of the section in a lossless screenshot of the original (task-187, review round 
 The fader pitch is a copy-protection expression whose intended value is 19 (`X + 1` with X = 18,
 `docs/song_load.md` section 9); the art has the faders at 4, 23, 42, 61 [C]. Their track is
 the short 12030, 45 px high from y 55, not 54 (section 21; the original draws it there, so the
-table's h 54 is the generic fader's) [C: the screenshot]. The pattern
+table's h 54 is the generic fader's) [C: the screenshot]; the view is 45 high too, so the
+travel is 34 and `k = 10000 / 34` [C, task-267: `sub_469240`, section 21]. The pattern
 display is two digits wide (`9 * digits`) and shows the pattern number itself, clamped to 0..54
 (`sub_41B914`); the screenshot shows 25 for wave 25.
 
@@ -1020,7 +1024,7 @@ read, and what it leaves out.
   (`model::meter_state` = `model::peak_meter_frame(byte, 11)`, section 2, "Meters"): the states
   step at the bytes 2, 3, 5, 7, 12, 19, 30, 49, 81 and 127, so byte 1 shows nothing. The header
   meters light their `map` (`layout.tsv`, section 22) of that state: one segment from byte 2, two from
-  7, three (amber) from 30, four (red) from 81 (section 19). The theme viewer draws the
+  7, three (amber) from 30, four (red) from 81 (section 19). The classic skin draws the
   original's strips by `model::peak_meter_frame` over their own frame counts (section 21).
 - **Gain reduction [C] (task-252, decision task-251).** The panel keeps the compressor's gain
   byte (live byte 3, `trunc(min(G*18, 127))`; `Panel::gr_byte`) and lights `model::gr_lit(byte)`
@@ -1121,9 +1125,11 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   place, the Mods menu's folder). "Use as songs/mods folder" in the dialog sets those to the
   folder shown. The last 8 folders a file was chosen in are the recent folders. All of it is a
   TOML file (task-107) of `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
-  (an array), `startup_sound` and `theme_viewer_filter` (`"nearest"`, the default, or
-  `"linear"`: the Theme Viewer's scaling, section 21) at `$ORB_UI_CONFIG`, else `OpenRB-338/ui.toml` (task-068;
-  settings of the old `rb/` folder are not carried over) in `$XDG_CONFIG_HOME` (Linux
+  (an array), `startup_sound` and `theme` (`"modern"`, the default, or `"classic"`: View >
+  Classic / Modern, section 21; another value is skipped; the removed Theme Viewer's
+  `theme_viewer_filter` of an older file is ignored and dropped at the next save, task-267) at
+  `$ORB_UI_CONFIG`, else `OpenRB-338/ui.toml` (task-068; settings of the old `rb/` folder are
+  not carried over) in `$XDG_CONFIG_HOME` (Linux
   `~/.config`, macOS `~/Library/Application Support`, Windows `%APPDATA%`); it is rewritten
   written through a temporary file and a rename, when a path is chosen or a folder set. The
   file is shared by the standalone and every plugin instance, so a save (task-229) reads it
@@ -1165,15 +1171,15 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Edit | Copy Pattern (Ctrl+C, Cmd+C) | the focused row's selected pattern (steps, length, shuffle flag) to orb's clipboard; the song is not modified |
 | Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a TB-303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard stays |
+| View | Classic, Modern | two radio items directly in View, no submenu (the user's review of task-267, 2026-11-21): a radio choice of the main window's skin: Modern (the SVG panel, the default) or Classic (the original's panel from the kit's bitmaps, section 21); saved in the settings file at once (`theme`, section 17) and taken by the next run; the standalone app's only, a plugin's editor has no View menu (task-267) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
 | Mods | Demo Song | opens the `Demo.rbs` of the current song's mod (below); enabled only when that mod file has one, so never for "Standard ReBirth" (task-094) |
 | Mods | Info... | a centered, closable window (Escape closes it) with the splash of the kit that plays at its 2000-era physical size, the mod's INFO facts and the file's (task-106; below) |
-| Mods | Theme Viewer... | a view-only window of its own with the panel drawn from the current mod's 58 bitmaps at the original's geometry, following the song; when it is open, the item brings it to the front with the focus; not in a plugin's editor (task-187; section 21) |
 | Options | Vintage ReBirth Synth Sound | the song's sound model (the original has it in the Edit menu) |
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
-| Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser, with the Theme Viewer window's Space); it names the current keyboard mode and marks its groups (task-105; below) |
+| Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
 
 The Help menu is last in the bar. Its items are the list `HELP_ITEMS` in `menu.rs`, so a new item
@@ -1221,10 +1227,8 @@ is one more entry.
   key. The groups "Windows and the file browser" and "Prompts and questions" (the unsaved-changes
   prompt: S/Y/Enter save, D/N do not, Esc cancels; the browser's overwrite question: Y replaces,
   Enter/Esc/N go back) are listed by hand from `prompt_ui` (`menu.rs`) and the browser's key
-  handler (`browser.rs`); no test checks them. The windows group also lists Space in the Theme
-  Viewer window (switches its scaling between nearest and bilinear; section 21), with no bind
-  (it is the viewer window's key, not the panel's; the unit test
-  `the_theme_viewer_space_is_listed` checks the line). Like the viewer, the help window is the
+  handler (`browser.rs`); no test checks them. The Theme Viewer's Space row is gone with the
+  viewer (task-267; the unit test `no_row_names_the_theme_viewer`). The help window is the
   standalone app's only (section 20).
 
 - **Help > About and the version string** (task-102; `crates/orb-ui/src/about.rs`, `version.rs`,
@@ -1802,14 +1806,19 @@ The VST3/CLAP plugin (`docs/plugin.md` section 10) shows this panel, drawn by th
   user's decision of 2026-11-16). The Sync LED
   lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
 - **The menus**: File has New, Open and Info only; nothing asks to save. There is no Edit menu
-  (section 18's pattern commands paste through the system clipboard's keys). Mods has no Theme
-  Viewer (section 21: the viewer is the standalone app's only). Options has no keyboard modes;
+  (section 18's pattern commands paste through the system clipboard's keys). There is no View
+  menu: the editor has the modern skin only (section 21, task-267). Options has no keyboard modes;
   Help no Keyboard Shortcuts.
 - **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
   shortcut; every key goes on to the host (decided by the user, 2026-11-16). The mouse
   gestures of section 2 are the same.
 
-## 21. The panel bitmaps and the mod theme viewer (task-187)
+## 21. The panel bitmaps and the classic skin (task-187, task-267)
+
+The bitmaps' places below were found for task-187's Theme Viewer, a view-only window that
+drew the panel from them; task-267 removed the viewer and made the same drawing the classic
+skin of the main window, which takes input (the end of this section). "The viewer" below is
+that window of task-187.
 
 **The 58 bitmaps.** A mod's `<id>.jpg` replaces the exe's JPEG resource `<id>`, bitmap by bitmap
 (`sub_41703A`, docs/rbm.md 13.1). The table gives each one's size (the built-in kit's, from the
@@ -1885,7 +1894,7 @@ them.
 | 12564 | 366 x 115 | TR-909 background | 1 | (90, 395) | [C: match 3.9] |
 | 12565 | 532 x 12 | TR-909 knob | 41 (12 x 12) | section 7's places | [C: match 3.4 / 3.7] |
 | 12566 | 59 x 8 | TR-909 step LED | 4 (14 x 8): value 1, value 2, (unused), flam; drawn only when lit | (120 +21i, 481) | [C: match 10.1, frame 1 at steps 1, 5, 9, 13; section 7 (0x444F0C)] |
-| 12567 | 6 x 6 | the TR-909's selected-instrument LED (lit) | 1 | over the selected instrument's dot of the 909's background: AC (97, 447), BD (119, 471), then x 161, 203, 246, 288, 330, 357, 372, 399, 414, 441 at y 471 for SD .. RC (`theme_view::TR909_SELECTED_LED`) | [C: exact match at BD's in the ReBirthday screenshot (round 4); the built-in screenshot shows BD's lit red (the best match of round 1, 10.7 at (119, 471)); the other places by the background's unlit dots] |
+| 12567 | 6 x 6 | the TR-909's selected-instrument LED (lit) | 1 | over the selected instrument's dot of the 909's background: AC (97, 447), BD (119, 471), then x 161, 203, 246, 288, 330, 357, 372, 399, 414, 441 at y 471 for SD .. RC (the `tr909.led_*` mark rows of `assets/ui/classic.tsv`) | [C: exact match at BD's in the ReBirthday screenshot (round 4); the built-in screenshot shows BD's lit red (the best match of round 1, 10.7 at (119, 471)); the other places by the background's unlit dots] |
 | 12568 | 29 x 14 | Flam button | 2 (14 x 14) | (98, 488) | [C: match 2.9] |
 | 12569 | 82 x 93 | comp background | 1 | (526, 417) | [C: match 4.8] |
 | 12570 | 63 x 20 | gain-reduction LEDs | 2, **v** (63 x 10): all off, all lit; 9 LEDs of 7 px | (534, 442) | [C: match 13.6, frame 0; the built-in like-for-like (below): a bar from the left, each LED its 7 px of the lit row, pixel for pixel] |
@@ -1927,9 +1936,14 @@ these facts follow:
   909's selected-instrument LED (review round 4), which section 7 did not list; the viewer
   draws it.
 - The PCF's faders are 45 px high, not 54 as the table of section 9 gives them: the original
-  draws the short track 12030 there. If `CBitmapFaderView` takes its travel from its track
-  (45 - 11 = 34 px), the PCF's drag scale differs from section 2's `k = 10000 / 43` [G: the
-  constructor's arguments for the PCF were not read].
+  draws the short track 12030 there, and the view is that high, so its travel is 34 and its
+  drag scale `k = 10000 / 34 = 294` [C, task-267]: `CBitmapFaderView`'s constructor
+  `sub_469240(section, handle, track)` sizes the view as wide as the handle and as high as the
+  track (`sub_46E2BE` on both bitmaps, `+44`/`+46` the handle's size, `+48` the track's
+  height); the PCF's constructor `sub_41B390` passes `[+0x15C]` (12031, the handle) and
+  `[+0x164]` (12030) for its four faders, the mixer's `sub_413B55` `[+0x160]` (12032)
+  (`CReBirthBitmaps` `sub_4287A0`: dwords +87 12031, +88 12032, +89 12030); the mouse-down
+  0x469708 takes `k = 10000 / (view height - handle height)`.
 
 **The like-for-like with the built-in kit (task-187, 2026-11-19).** The original (a copy of the
 installation on the test machine with no mod, so the built-in kit) opened its new song
@@ -1951,13 +1965,71 @@ now fixed:
   viewer and the main panel (decision task-251, section 16) both light `model::gr_lit(byte)`
   LEDs from the left.
 
-**OpenRB-338's viewer.** Mods > Theme Viewer... (`crates/orb-ui/src/theme_view.rs`,
-`App::theme_viewer_ui`) opens a window that draws the panel at this geometry with the current
-kit's bitmaps: the mod's file where it has one that decodes, else the built-in one
-(`Bitmaps::of_kit`; a strip of another size than the built-in one is drawn at its own frame
-size, as the original sizes the view, `Op::size`; a JPEG over 8192 px a side is not decoded).
-Every
-frame comes from the live panel model, as the main panel draws it: knobs by
+**The classic skin (task-267).** View > Classic (section 18; the standalone app's
+only, Modern the default, saved as `theme` in the settings file, section 17) draws the main
+window's panel with `skin::classic::ClassicSkin`: the original's panel at this geometry from
+the current kit's bitmaps, scaled to the window by nearest pixel only (the user, 2026-11-21:
+no bilinear choice, no key). The desk and the panel's shadows around it are the modern
+theme's (section 19), and the panel keeps the 624:510 aspect, so switching changes nothing
+outside the panel. All its input goes through the one controller (section 22); the skin has no
+input code.
+- **The raster source** (`crates/orb-ui/src/skin/bitmaps.rs`, no input code): `Bitmaps::of_kit`
+  decodes the mod's file where it has one that decodes, else the built-in one, bitmap by bitmap;
+  with no mod, or a mod without panel bitmaps, every bitmap is the built-in Standard kit's
+  (`assets/Standard.rbm`). A strip of another size than the built-in one is drawn at its own
+  frame size, as the original sizes the view (`Op::size`); a JPEG over 8192 px a side is not
+  decoded.
+- **Hi-res sets** (the user, 2026-11-21: classic sets in the same format at a higher
+  resolution): the set's integer scale N comes from the background 12057: its width over 592
+  and its height over 50, each to the nearest whole number; N is that number when the two
+  agree, else 1 (`bitmaps::find_scale`). Every bitmap's sides must then be multiples of N,
+  else the set is refused with an error naming the bitmap, the app says so once in the error
+  box and draws the built-in set. Rounded, not exact, because the mods' own 1x backgrounds are
+  not all 592 x 50: 51 of the 320 mods of the user's collection have 600, 608 or 609 x 50,
+  593 x 51 or 592 x 90 (all 1x; the original draws a bitmap at its own size), and all 320 read
+  as 1x. Requiring both sides keeps a 1x background that is only wider (888 x 50 and up) or
+  only taller at 1x. The limit: a 1x set whose background is about N times larger both ways,
+  with every bitmap's sides multiples of N, reads as N and is drawn at 1/N of its size with no
+  error. A bitmap the set lacks is the built-in one upscaled by N. `bitmaps::compose` draws
+  at 624N x 510N pixels: each blit's place, frame cell (from the bitmap's 1x size, its size over
+  N), digit pitch, part offset and fader handle offset are panel units times N, while the
+  layout's rectangles and hit areas stay in 624 x 510 panel units. A 2x set (the built-in
+  bitmaps upscaled by nearest) composes exactly the 1x image upscaled 2x
+  (`tests/classic.rs`). `ClassicSkin::scale` gives N. Where hi-res sets come from (a mod resource, a sidecar folder, a theme file) is a
+  later decision (task-271); today a set is a kit's 58 files.
+- **The layout table** `assets/ui/classic.tsv` (the skin table format, section 22): the
+  original's view rectangles of sections 3 to 9 at the places this section found (the pattern
+  on/off button at x 4 of its section, the master's right meter at 50, the PCF's faders 45
+  high), the rows' focus areas and the logo as the modern skin's (they are the original's), and
+  the hit areas read in IDA for task-267 [C]:
+  - the 808's step view (16, 91, 256, 17) of its section, step `(x - 16) / 16` (layout
+    `sub_442CDA` ends `sub_47E04C(16, 91, 256, 17)`; `sub_44111F` after the PtInRect
+    `sub_479AA2`): panel `106 371 256 17`; the 909's (29, 86, 336, 16), step `(x - 29) / 21`
+    (`sub_446E4E`, `sub_444FB3`): panel `119 481 336 16`. The modern skin's strips (104 and 116,
+    the old constants `x - 14` and `x - 26`) are its own;
+  - the 808's selection (`sub_4433EE`): the legend (10, 71)..(366, 85), `(x - 10) / 22` under
+    12, and the upper labels (78, 43)..(184, 55), `(x - 78) / 22 + 3`, as the modern rows;
+  - the 909's (`sub_447500`): the legend (4, 4)..(366, 18) and the name row (26, 70)..(366,
+    85), by `dx` (AC under 26, then 42 px cells, then 21 px cells from 236, over 11 none), and
+    the AC box (4, 44)..(26, 62), which selects AC. The modern skin's rows differ (its legend is
+    open to the left, its name row is y 74..84, it has no AC box);
+  - the pattern grid (1, 19, 68, 40) and bank row (1, 58, 68, 30) of the section (`sub_41A9A0`):
+    eight 17 x 20 cells (`sub_41A5B0`, `col = 4 dx / 68`, `row = 2 dy / 40`) and four 17 x 30
+    [G: the bank row's hit was not read]. The bank row overlaps the grid's last pixel row and
+    takes it (it is later in the table);
+  - the PCF's faders 45 high, travel 34 (above); the knob spans of section 2.
+  The table's `part` is a bitmap id; its parameters say how a row draws (`n` frames, `v=1`
+  vertical, `frame`, `frames=` a state-to-frame map with `-` for none, `src=` a part of the
+  frame, `digits=` and `pitch=`, a fader's `cap=` handle bitmap): `skin/classic.rs` lists them.
+  The pattern grid and the bank row are `pick` rows (a geometry kind): one strip whose frame is
+  `base=` plus the index of the first `of=` control that is on; their buttons are input-only
+  controls (part `-`). The 909's selected-instrument LED is 12 `mark` rows. The 808's
+  instrument selector is a knob, `tr808.selector` (section 6), which the modern skin lacks; the
+  808's mod window, the modern skin's, is absent here. A control a skin lacks keeps its keys.
+- **Drawing**: each frame the skin lists its blits from the table in the table's order and the
+  model's state (`Panel::look`: on/off, rest/pressed, lit, a value, a meter byte), composes
+  the panel image only when the list changed, and draws it as one texture. Every frame comes
+  from the live panel model: knobs by
 `((n - 1) * p + 500) / 1000`, faders, toggles and switches by the position drawn
 (`behavior::switch_position`), LEDs, the 303's lit notes, the 808's and 909's step LEDs with
 the running light, the grid and the bank row, the displays (disabled ones blank), the 808
@@ -1965,40 +2037,22 @@ selector at `(127 * i + 5) / 11`, the meters by the original's log scale
 (`model::peak_meter_frame`, section 2 [C]: the 11-frame master meter steps at the bytes 2, 3,
 5, 7, 12, 19, 30, 49, 81, 127, the four-frame meters are green from 6, amber from 26, red at
 127) and the gain-reduction
-LEDs (a bar from the left, `model::gr_lit`). The window is a native window of its own (an egui immediate viewport), 624 x 510 at first,
-resizable with the panel letterboxed at its aspect on black (`theme_view::DESK`, the user's review
-round 4), closed by its close button and reopened by
-the menu (at the size it had). The menu item while it is open brings it to the front with the
-focus (the user's review of 2026-11-19): on macOS and Windows by `ViewportCommand::Focus`; on
-Linux (`theme_view::REOPEN_TO_FOCUS`, `cfg!(target_os = "linux")`) by closing its window and
-opening a new one at the same inner size (the builder's size is set only when a window is
-created, from the size at that moment; a size that followed the live window made egui send a
-resize command every frame and fought the user's drag, task-255), which gets the focus,
-because GNOME's Mutter (Wayland and X11) raises a window only with an activation token from the
-click, which egui does not pass, so `Focus` did nothing there (the user's decision, review
-round 3). A window that opens is repainted at once for its first three passes: on Wayland
-winit draws a window's frame and title bar only on a repaint, and a viewer opened from the
-menu stayed without them until the mouse entered it. WSLg drops the app with two windows
-open (docs/building.md). It is the standalone app's only:
-a plugin's Mods menu has no Theme Viewer item and the command does nothing there (the user's
-review of 2026-11-19; `orb-plugin/tests/editor.rs`). In the standalone app the 808's mod
-window on the main panel (section 6, `App::mod_view`) is a link to it: the pointing-hand cursor
-over it, and a click (at release) opens the viewer or brings the open one to the front, as the
-menu item does; the press still gives the 808's row the focus, as a click anywhere in a row
-does, and the mod window overlaps no other control (the 808's legend and label areas end at
-x 273 and 183 of the section, the window starts at 277). A plugin's mod window does neither. It
-is view only (decided by the user, 2026-11-19): it ignores every click, drag and scroll, no
-control in it reacts, the cursor over the panel is the "not allowed" cursor, and nothing goes to
-the status line. Its one key (the user's review of 2026-11-19) is Space, pressed while its
-window has the focus: it switches the scaling of the panel picture between nearest pixel
-(`TextureOptions::NEAREST`, the default with no saved choice; the user's review round 4) and
-bilinear (`LINEAR`), saved at once as
-`theme_viewer_filter` in the UI settings file (section 17, merged as every setting is,
-task-229) and taken by the next run; a held key's repeats do not switch again. The key is the
-viewer window's own input, so it never reaches the main panel (no play or stop).
-`crates/orb-ui/tests/theme_view.rs` checks the composed frames, the fallback, the input, the
-cursor, the focus, Space and the mod window's link; with `ORB_THIRDPARTY_MODS_DIR` it composes
-every mod of the collection.
+LEDs (a bar from the left, `model::gr_lit`; nine 7 x 10 parts of the strip's two rows). The
+pressed looks are the strips' second frames while held (the original's trigger buttons). The
+Sync and MIDI LEDs are a plugin's and stay dark here.
+- **The kit**: the app keeps the classic skin of the kit that plays and makes it again when the
+  kit changes (`App::apply_theme`); Modern drops it.
+- **Removed with it** (task-267): the Theme Viewer window, Mods > Theme Viewer..., the mod
+  window's link to it and its hand cursor, the viewer's Space key and its `theme_viewer_filter`
+  setting (an old settings file still loads; the key is dropped at the next save).
+- **Tests** (`crates/orb-ui/tests/classic.rs`): the classic skin draws what the viewer drew,
+  pixel for pixel, for the new song's panel and 40 random states (the viewer's list of blits
+  kept in the test as the reference); its hit areas against the IDA-read rects and maths above
+  at every whole pixel of both drum machines and 30 around them, the grid's cells, the faders'
+  geometry and the knob spans; the same input gives the same panel state in the modern and the
+  classic skin, per control kind; the 2x set; a set of no whole scale; the fallback and a
+  strip of another size; View > Classic / Modern, its saving and an old settings file; with
+  `ORB_THIRDPARTY_MODS_DIR` every mod of the collection composes at 1x (320 mods).
 
 ## 22. The skin layer: one controller, any look (task-266)
 

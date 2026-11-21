@@ -18,6 +18,8 @@
 //!   ([`crate::settings::Settings::startup_sound`]) the new mod's startup sound plays, as it does
 //!   when a song is opened and at the start ([`App::start`]), but only when the kit changes
 //!   (task-099). "Demo Song" opens the `Demo.rbs` of the current mod as an unsaved song (task-094).
+//! - **View** (the standalone app's only): Classic or Modern, the main window's skin (task-267,
+//!   [`App::set_theme`]), kept in the UI settings.
 //! - **Options**: the Vintage ReBirth Synth Sound flag (GLOB byte 482; Edit menu item 323 of the
 //!   original) and the keyboard mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10).
 
@@ -43,6 +45,7 @@ use crate::keys::KeyMode;
 use crate::link::{emptied_pattern, next_empty_pattern};
 use crate::palette::{INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 use crate::session;
+use crate::settings::Theme;
 use crate::shortcuts;
 
 /// The height of the menu bar in points.
@@ -98,9 +101,9 @@ pub enum Cmd {
     RefreshMods,
     /// "Info" of the Mods menu: the current mod's splash and details (task-106).
     ModInfo,
-    /// "Theme Viewer" of the Mods menu: the panel drawn with the current mod's bitmaps
-    /// (task-187, [`App::show_theme_viewer`]).
-    ThemeViewer,
+    /// View > Classic or View > Modern: the main window's skin (task-267,
+    /// [`App::set_theme`]; nothing in a plugin's editor).
+    SetTheme(Theme),
     ToggleVintage,
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
     ToggleStartupSound,
@@ -1022,7 +1025,7 @@ impl App {
             Cmd::DemoSong => self.demo_song(),
             Cmd::RefreshMods => self.refresh_mods_reported(),
             Cmd::ModInfo => self.show_mod_info(),
-            Cmd::ThemeViewer => self.show_theme_viewer(),
+            Cmd::SetTheme(t) => self.set_theme(t),
             Cmd::ToggleVintage => {
                 let on = !self.panel.vintage;
                 self.panel.set_vintage(on);
@@ -1464,7 +1467,7 @@ impl App {
         }
     }
 
-    /// The menus of the bar: File, Edit, Mods, Options and Help; what is chosen goes to `cmd`
+    /// The menus of the bar: File, Edit, View, Mods, Options and Help; what is chosen goes to `cmd`
     /// (Edit > Paste Pattern as [`Cmd::PastePattern`], which `menu_bar` turns into a paste of
     /// the system clipboard). A plugin's File menu has New, Open and Info only, and a plugin's
     /// editor has no Edit menu (task-201).
@@ -1524,6 +1527,16 @@ impl App {
                     self.edit_items.push((text, r.rect, song));
                     if r.clicked() {
                         *cmd = Some(c);
+                    }
+                }
+            });
+            // the main window's look (task-267): the standalone app's only
+            ui.menu_button("View", |ui| {
+                // two radio items directly in View, no submenu (the user's review, 2026-11-21)
+                for (text, t) in [("Classic", Theme::Classic), ("Modern", Theme::Modern)] {
+                    if ui.radio(self.settings.theme == t, text).clicked() {
+                        *cmd = Some(Cmd::SetTheme(t));
+                        ui.close();
                     }
                 }
             });
@@ -1596,11 +1609,6 @@ impl App {
             }
             if item(ui, "Info...", None) {
                 *cmd = Some(Cmd::ModInfo);
-            }
-            // the viewer is a window of its own: the standalone app's only (the user's
-            // review of task-187)
-            if !plugin && item(ui, "Theme Viewer...", None) {
-                *cmd = Some(Cmd::ThemeViewer);
             }
         });
         ui.menu_button("Options", |ui| {

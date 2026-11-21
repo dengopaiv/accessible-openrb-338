@@ -8,9 +8,10 @@ use egui::Pos2;
 use crate::behavior::{self, Fader, Segment};
 
 /// The kinds of rows that are not controls: the skin's size, its art layers and the areas the
-/// controller tests that are not one control's (docs/ui_spec.md section 22).
-pub const GEOMETRY_KINDS: [&str; 9] = [
-    "panel", "bg", "logo", "focus", "row", "fg", "strip", "select", "mark",
+/// controller tests that are not one control's (docs/ui_spec.md section 22). `pick` is the
+/// classic skin's picture of a group of controls (the pattern grid, the bank row).
+pub const GEOMETRY_KINDS: [&str; 10] = [
+    "panel", "bg", "logo", "focus", "row", "fg", "strip", "select", "mark", "pick",
 ];
 
 /// Whether a row of `kind` is a control (has an id the panel model knows, a state and maybe

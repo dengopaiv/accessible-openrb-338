@@ -304,6 +304,17 @@ pointer turns about the rectangle's center); `<family>handle` for a fader, at th
 size; `<prefix><digit>` and the blank part of a display's `<prefix>0..9,<blank>`, a cell the
 size of `<prefix>0`.
 
+## The classic table
+
+`classic.tsv` is the classic skin's table (task-267, docs/ui_spec.md section 21), in the same
+format, read by its own renderer (`crates/orb-ui/src/skin/classic.rs`): the original's view
+rectangles and hit areas, each row's `part` a bitmap id of the kit's 58 (`-` for an input-only
+control), drawn in the table's order. Its parameters: `n` (frames), `v=1` (a vertical strip),
+`frame`, `frames=` (state to frame, `-` none), `src=sx,sy` (a part of the frame), `digits=` and
+`pitch=` (a display), `cap=` (a fader's handle bitmap), and the kind `pick` (a strip whose frame
+is `base=` plus the index of the first `of=` control that is on: the pattern grid, the bank
+row). It is written by hand, not by orb-ui-art; edits to `layout.tsv` do not touch it.
+
 ## Notes
 
 - The 8 pattern keys and the bank keys carry their number or letter in the part.
