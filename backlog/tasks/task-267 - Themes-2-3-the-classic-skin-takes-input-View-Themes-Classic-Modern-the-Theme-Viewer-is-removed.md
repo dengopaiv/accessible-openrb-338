@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-21T10:03:00Z'
-updated_date: '2026-11-21T10:03:00Z'
+updated_date: '2026-11-21T10:08:00Z'
 labels:
   - ui
 milestone: m-8
@@ -64,4 +64,6 @@ The user is the first reviewer: give them a dev app (`scripts/macos-dev-app.sh`)
 - [ ] #3 The Theme Viewer window, its menu item, the splash click, the Space filter key and theme_viewer_filter are removed; an old ui.toml still loads
 - [ ] #4 Tests: classic hit areas against the original's rects, the same input giving the same state in both skins, the setting round-trip
 - [ ] #5 Docs updated (ui_spec section 21, menus, Help); the user reviewed the build before the agent review
+- [ ] #6 The classic composer is scale-ready (user, 2026-11-21: hi-res classic sets in the same format): it composes at an integer scale N found from the bitmap sizes (the background's size against its 1x size, every other bitmap checked to match, a clear error otherwise); strip frames, digit widths, LED offsets and positions scale by N while the control rects and hit areas stay in 624x510 panel units
+- [ ] #7 A test composes a 2x set (the Standard bitmaps upscaled by nearest) and checks it equals the 1x compose upscaled 2x; where hi-res sets come from (mod resource, sidecar folder, theme file) is left to a later decision and noted in docs/ui_spec.md
 <!-- AC:END -->

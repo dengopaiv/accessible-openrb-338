@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-21T10:03:00Z'
-updated_date: '2026-11-21T10:03:00Z'
+updated_date: '2026-11-21T10:08:00Z'
 labels:
   - ui
 milestone: m-8
@@ -58,4 +58,5 @@ The user is the first reviewer: give them a dev app and say where the duration a
 - [ ] #3 The desk and shadows stay still; input during the transition is defined and documented
 - [ ] #4 The schedule and scaling are unit tested and a both-way switch test passes; docs/ui_spec.md describes the transition
 - [ ] #5 The user reviewed the build (and tuned the constants if wanted) before the agent review
+- [ ] #6 The pixelation's target density is the active classic set's: 624*N blocks across for a set at scale N (task-267), not a fixed 624
 <!-- AC:END -->
