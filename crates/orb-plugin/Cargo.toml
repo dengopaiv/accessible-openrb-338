@@ -47,12 +47,19 @@ sha2 = "0.10"
 # session) or an X connection of the drag's own (XDND); Windows' OLE calls are declared by hand.
 # All three crates are in the tree already through baseview.
 raw-window-handle = "0.6.2"
+# The diagnostic log (task-260, src/plugin_log.rs): the editor's wgpu setup (egui-baseview's
+# egui-wgpu, no features of its own) and the `log` records of wgpu and egui-wgpu. Both are in
+# the tree already through nice-plug-egui.
+egui-wgpu = { version = "0.37.0", default-features = false }
+log = "0.4.29"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 
+# The drag's X connection, and the diagnostic log's Present probe (x11rb 0.13.2's `present`
+# does not compile without `dri3`; baseview enables both on Linux).
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-x11rb = { version = "0.13.2", default-features = false }
+x11rb = { version = "0.13.2", default-features = false, features = ["dri3", "present"] }
 
 [dev-dependencies]
 # tests/exports.rs loads the built plugin library as a host does: the CLAP and VST3 C APIs (the

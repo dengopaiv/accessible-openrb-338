@@ -45,6 +45,7 @@ use crate::clip;
 use crate::drag::{self, Pending};
 use crate::instance::{self, Kit, Mode, OrbParams, ROWS};
 use crate::params::{self, SPECS, Target};
+use crate::plugin_log;
 
 /// The editor's size before the state has one, in logical points: the panel at its native
 /// size, the margins of desk beside it (`orb_ui::embed::MARGIN_X`, `MARGIN_Y`) and the menu bar
@@ -326,9 +327,14 @@ impl OrbEditor {
         let (w, h) = self.logical_size();
         let state =
             EguiEditorState::from_size(Size::Logical(LogicalSize::new(w as f64, h as f64)), 1.0);
+        plugin_log::init();
+        plugin_log::line(format_args!(
+            "editor: spawn, {w}x{h} pt, parent {parent:?}, wait for parent {wait_for_parent}"
+        ));
         let settings = EguiNiceSettings::new()
             .with_tile(crate::NAME)
-            .with_resize_hint(resize_hint());
+            .with_resize_hint(resize_hint())
+            .with_graphics_config(plugin_log::graphics_config());
         // the host's callbacks through a proxy, so that the resize corner reaches them
         let (route, host) = match host {
             Some(h) => {
@@ -355,6 +361,7 @@ impl OrbEditor {
             notifier: notifier.clone(),
             clock: None,
             app: None,
+            probe: None,
         };
         let editor = create_egui_editor(state, notifier, settings, app)
             .ok_or("the egui editor could not be made")?;
@@ -387,6 +394,8 @@ struct EditorApp {
     /// egui's repaint requests, turned into `notifier` at their time ([`RepaintClock`]).
     clock: Option<RepaintClock>,
     app: Option<App>,
+    /// The window's diagnostics while the plugin log is on (task-260).
+    probe: Option<plugin_log::Probe>,
 }
 
 impl NiceEguiApp for EditorApp {
@@ -397,6 +406,11 @@ impl NiceEguiApp for EditorApp {
         frame: &mut Frame,
     ) -> Result<(), HandlerError> {
         frame.set_key_capture(KeyCapture::IgnoreAll);
+        self.probe = guard("build", || {
+            plugin_log::Probe::start(frame.baseview_window())
+        })
+        .ok()
+        .flatten();
         // egui's repaint requests go through the clock, not egui-baseview's waker (RepaintClock)
         let clock = RepaintClock::start({
             let n = self.notifier.clone();
@@ -435,6 +449,9 @@ impl NiceEguiApp for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut Frame) {
+        if let Some(p) = &mut self.probe {
+            p.frame(ui.ctx().content_rect().size(), ui.ctx().pixels_per_point());
+        }
         if let Some(app) = &mut self.app
             && guard("frame", || app.show(ui)).is_err()
         {
@@ -474,8 +491,9 @@ impl NiceEguiApp for EditorApp {
     }
 
     fn editor_closed(&mut self) {
-        // the clock's thread ends (dropping it stops it)
+        // the clock's thread ends (dropping it stops it), and the probe's
         self.clock = None;
+        self.probe = None;
         // dropping the panel; a panic in its drop is logged
         let app = self.app.take();
         let _ = guard("editor_closed", move || drop(app));

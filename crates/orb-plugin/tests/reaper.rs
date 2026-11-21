@@ -13,8 +13,9 @@
 //! <scratch>/reaper.ini` moves the whole resource folder, the plugin caches included). Its
 //! plugin paths list only `target/bundled`, where `cargo xtask bundle orb-plugin --release` has
 //! just put the bundles; nothing is installed, and the user's REAPER configuration and caches
-//! are never read or written. The plugin's activation log (`ORB_PLUGIN_LOAD_LOG`) must name only
-//! the fresh bundle's library, so a test that ran some other copy fails.
+//! are never read or written. The plugin log (`ORB_PLUGIN_LOG`, set to a scratch file) has a
+//! line per activation naming the library that runs; they must name only the fresh bundle's
+//! library, so a test that ran some other copy fails.
 
 #[path = "reaper/cases.rs"]
 mod cases;
@@ -28,7 +29,7 @@ use cases::{CASES, Case, DEVICE_TRACKS, Format, Timing};
 use orb_player::midi::Message;
 use orb_plugin::core::{AuxOut, DEVICE_OUTPUTS, HostEvent, HostTransport};
 use orb_plugin::instance::{self, Mode, OrbParams};
-use orb_plugin::load_log::LOAD_LOG_VAR;
+use orb_plugin::plugin_log::{LOG_VAR, parse_loaded_from};
 
 /// One LSB of the int16 output.
 const LSB: f32 = 1.0 / 32768.0;
@@ -204,14 +205,14 @@ fn render(exe: &Path, bundles: &Path, k: &Keys, c: &Case, f: Format) -> Render {
     std::fs::write(&ini, reaper_ini(bundles, k)).unwrap();
     let rpp = proj.join(format!("{}.RPP", c.name));
     std::fs::copy(cases::fixture_path(c, f), &rpp).unwrap();
-    let log = dir.join("load.log");
+    let log = dir.join("plugin.log");
     let t0 = Instant::now();
     let mut child = Command::new(exe)
         .args(["-newinst", "-nosplash", "-ignoreerrors", "-cfgfile"])
         .arg(&ini)
         .arg("-renderproject")
         .arg(&rpp)
-        .env(LOAD_LOG_VAR, &log)
+        .env(LOG_VAR, &log)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -237,20 +238,20 @@ fn render(exe: &Path, bundles: &Path, k: &Keys, c: &Case, f: Format) -> Render {
     let lib = bundles
         .join(format!("OpenRB-338.{}", f.ext()))
         .join("Contents/MacOS/OpenRB-338");
-    let lines = std::fs::read_to_string(&log).unwrap_or_default();
+    let text = std::fs::read_to_string(&log).unwrap_or_default();
+    let activations: Vec<(&str, u32)> = text.lines().filter_map(parse_loaded_from).collect();
     assert!(
-        !lines.is_empty(),
-        "{id}: the plugin was never activated (no {})",
+        !activations.is_empty(),
+        "{id}: the plugin was never activated (no activation line in {})",
         log.display()
     );
-    for l in lines.lines() {
-        let (path, rate) = l.split_once('\t').unwrap();
+    for (path, rate) in activations {
         assert_eq!(
             Path::new(path).canonicalize().ok().as_deref(),
             Some(lib.as_path()),
             "{id}: REAPER ran another copy of the plugin: {path}"
         );
-        assert_eq!(rate, c.rate.to_string(), "{id}: the activation's rate");
+        assert_eq!(rate, c.rate, "{id}: the activation's rate");
     }
     // REAPER kept the scratch configuration's paths, and its scan found one OpenRB-338 of each
     // format (the caches name the files, not their folders)

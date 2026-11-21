@@ -30,7 +30,7 @@ GPL-3.0-only.
 | `src/resample.rs` | audio | the resampler for host rates other than 44.1 kHz |
 | `src/params.rs` | both | the parameter table (a constant) |
 | `src/editor.rs` | main | the editor: orb-ui's panel in the host's window (section 10) |
-| `src/load_log.rs` | main | the activation log (`ORB_PLUGIN_LOAD_LOG`) that names the library that runs (section 7.1) |
+| `src/plugin_log.rs` | main, the editor's | the diagnostic log (`ORB_PLUGIN_LOG`, section 10), whose activation lines name the library that runs (section 7.1), and the editor's wgpu adapter |
 
 The process side reuses orb-player's lock-free split (`crates/orb-player/src/lib.rs`): the
 UI half (`Player`) stays on the main thread behind a mutex that `process` never takes, the
@@ -395,9 +395,11 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
     0x1006EF298 wants `coreaudiobs` and both device names, `audioConfigInit` 0x1006EF33C reads
     them, and the streamer choice 0x1006EF538 takes `audioStreamer_dummy` when both are
     `<none>`). The evaluation license's nag does not stop `-renderproject`.
-  - **Which copy ran.** With `ORB_PLUGIN_LOAD_LOG` set to a file, every activation appends the
-    path of the library that runs (`dladdr` of the plugin's own code; `src/load_log.rs`) and
-    the rate. The test fails unless every line names `target/bundled/OpenRB-338.<format>/
+  - **Which copy ran.** The test sets `ORB_PLUGIN_LOG` (section 10) to a scratch file, and the
+    plugin log has a line per activation, `activate: loaded from <path> at <rate> Hz`, with the
+    path of the library that runs (`dladdr` of the plugin's own code;
+    `plugin_log::activated`, `parse_loaded_from`; task-244's `ORB_PLUGIN_LOAD_LOG` was folded
+    into it by task-260). The test fails unless every activation line names `target/bundled/OpenRB-338.<format>/
     Contents/MacOS/OpenRB-338` at the project's rate, REAPER kept the two paths, and each
     scratch cache lists one OpenRB-338.
   - A render that does not finish in 120 s (a dialog) fails the test, which stops only the
@@ -940,6 +942,104 @@ from a terminal with the variable, e.g. `ORB_PLUGIN_SIZE_LOG=$HOME/orb-sizes.log
 "/Applications/Ableton Live 12 Lite.app/Contents/MacOS/Live"`, or `open -a "Ableton Live 12
 Lite" --env ORB_PLUGIN_SIZE_LOG=$HOME/orb-sizes.log` with Live not running. The variable is
 read once per loaded copy of the library.
+
+**The diagnostic log (task-260).** `src/plugin_log.rs`, in release builds too. nice-plug's
+`NICE_LOG` does nothing in this plugin: nice-plug is built without its `tracing-subscriber`
+feature and the plugin's `Plugin::setup_logger` is nice-plug's default (`None`), so no logger
+exists (`nice-plug-0.4.2/src/wrapper/util.rs` `setup_logger`), whatever the host passes on;
+the `nice_warn!`/`nice_error!` lines of the plugin go nowhere. The plugin's own log is on when:
+- `ORB_PLUGIN_LOG` names a file (appended to), or is `stderr` (Bitwig copies its plugin host's
+  stderr into `~/.BitwigStudio/log/engine.log`: the `libEGL warning` lines of the user's first
+  Linux run are there);
+- or, with the variable unset or empty, the switch file `plugin.log` exists in orb-ui's log
+  folder (`orb_ui::crash::log_dir`, the crash logs' folder; `ORB_UI_LOG_DIR` moves it). Creating
+  the empty file turns the log on for a host that does not pass the environment on; the log is
+  appended to it. Delete the file to turn it off. The switch file is exactly:
+
+  | System | Switch file |
+  |---|---|
+  | Linux | `$XDG_STATE_HOME/OpenRB-338/plugin.log`, or `~/.local/state/OpenRB-338/plugin.log` |
+  | macOS | `~/Library/Logs/OpenRB-338/plugin.log` |
+  | Windows | `%LOCALAPPDATA%\OpenRB-338\logs\plugin.log` |
+
+  It is not in the settings folder (`ui.toml`'s: `~/.config/OpenRB-338`, `~/Library/Application
+  Support/OpenRB-338`, `%APPDATA%\OpenRB-338`): a `plugin.log` there does nothing.
+
+It is read once per loaded copy of the library, at the first activation or editor open. It has
+a first line with the version, the system, the process and the variables that choose the
+graphics (`XDG_SESSION_TYPE`, `DISPLAY`, `WAYLAND_DISPLAY`, `WGPU_BACKEND`, `WGPU_POWER_PREF`);
+a line per activation (`Plugin::activate`, main thread, never the audio thread): `activate:
+loaded from <library path> at <rate> Hz` (`dladdr` of the plugin's own code, `?` on Windows;
+the REAPER test reads it, section 7.1; it replaces task-244's `ORB_PLUGIN_LOAD_LOG`); the `log`
+records of wgpu and egui-wgpu at info and above (wgpu-core's `acquire error` and `present
+error`, egui-wgpu's software-rasterizer warning), egui-baseview at debug, and the other crates
+at info; every panic (a chained panic hook: wgpu's uncaptured validation errors panic); and the
+editor's lines: the adapter choice below, `editor: spawn` with the size and the parent,
+`editor: window built` with the window handle, the first five frames and each frame after a
+pause of over a second (size in pixels, the time since the last), the frame count 1, 2, 4, 8,
+16 and 32 s after the window was built, and `editor: closed after N frames`. At most 20000
+lines per process. `ORB_PLUGIN_LOG_LEVEL=debug` adds wgpu's and egui-wgpu's debug records (the
+instance's backends, each adapter's details, the swapchain configured at each resize, wgpu-core
+device resources, Metal's shader sources), which is why they are off by default: the macOS
+`clap_gui` test (seven editor opens) wrote 3,420 lines with them and 61 at the default level
+(task-260). What it cannot show: egui-baseview's renderer drops a surface acquire of
+`Timeout`, `Occluded`, `Outdated`, `Suboptimal` or `Lost` without a log of its own
+(`egui-baseview-0.9.0/src/renderer/wgpu/renderer.rs` 207-232); a frame counted but never
+presented shows as frames in the log and nothing on the screen.
+
+**The wgpu adapter (task-260).** egui-baseview makes the editor's wgpu instance itself, with
+all backends and no environment (`renderer.rs` 57, `InstanceDescriptor::new_with_display_handle`);
+the plugin cannot change it without patching egui-baseview. It chooses the adapter:
+`plugin_log::graphics_config` gives egui-baseview egui-wgpu's `WgpuSetup::CreateNew` with a
+`native_adapter_selector` and, as the backends to enumerate, those of `WGPU_BACKEND` when it
+is set (wgpu's names, comma-separated: `vulkan`, `gl`, `metal`, `dx12`), else all. The
+selector picks as wgpu-core 30's `request_adapter` does (`instance.rs` `get_order`): the
+adapters that can present to the window's surface, in wgpu's backend order (Vulkan, Metal,
+DX12, GL), stably sorted by device type for egui-wgpu's power preference (`WGPU_POWER_PREF`,
+default high performance: discrete, integrated, other, virtual, CPU), the first wins. So the
+default is the same as before task-260: all backends, wgpu's own choice (on a Linux VM with
+Mesa, the software Vulkan llvmpipe before the software GL llvmpipe, both CPU devices). Unlike
+the standalone app (docs/building.md, Linux runtime), the plugin's default on Windows is not
+DX12 only. The selector logs each adapter, whether it presents to the window, the one taken,
+the surface's formats, present modes and alpha modes, and the format and present mode egui
+takes (`AutoVsync`, frame latency 2: egui-wgpu's `SurfaceConfig::HIGH_THROUGHPUT`). The
+`libEGL warning: DRI3 error` lines when the editor opens come from wgpu making its GL backend
+(EGL) at instance creation, which it does for every backend; they do not show that GL was
+taken.
+
+**Linux: baseview paces every frame on the X server's Present extension (task-260).**
+baseview 0.4.2 on X11 draws (`handler.draw`, egui-baseview's frame and present) only when
+`PresentState::draw_now` is set (`src/platform/x11/present.rs` 72), and with the Present
+extension (`x11_connection.rs` 56) only a Present `CompleteNotify` sets it
+(`handle_present_complete_notify`, 134-158): it must answer baseview's last `PresentNotifyMSC`
+serial and its MSC must be past the last one received (a completion with an MSC that did not
+advance is recorded and draws nothing, 150-153). The next request asks for the last MSC + 2
+and is sent only after the previous one was answered (`handle_present_notify`, 192-226);
+a redraw request (egui's repaint, a mouse event: egui-baseview `window.rs` 520, 938) only asks
+for that notification. The 15 ms fallback timer (`setup_fallback_frame_timer`, 160) runs only
+when the server lacks the extension or refuses the request. So when the X server's MSC for
+the window does not advance (no vblank: a VM's display driver), or a notification is never
+answered, the editor draws its first frame and then no more, and no input brings it back.
+The log's Present probe (X11 only, 1 s after the window is built) asks the same of the X
+server from a connection of its own (six `PresentNotifyMSC` on baseview's window, the first
+for MSC 0, each next for the last MSC + 2, serials `0x4f524200` + n, which baseview ignores)
+and logs each answer's MSC, UST, kind, mode and delay, or that none came in 2 s.
+
+This is the cause of the black (VST3) or stale (CLAP) editor in Bitwig on the user's VM
+(task-260, confirmed 2026-11-21 with build 2026.1121.0857): Ubuntu, kernel 7.0.0-30, a VMware
+SVGA II adapter (VirtualBox VMSVGA), Xorg on modesetting with glamor refused on llvmpipe
+("Refusing to try glamor on llvmpipe"), Present 1.2 initialized, Xfce under gdm. The editor
+took Vulkan llvmpipe (Cpu) over GL llvmpipe, `WGPU_BACKEND` unset. Every probe
+`PresentNotifyMSC` on the editor's window, for MSC 0 and then for MSC 2, completed at once (0
+to 6 ms) with MSC 0 and UST 0 (kind `NOTIFY_MSC`, mode `COPY`): the MSC never advances, and
+the editor drew exactly one frame (the count stayed 1 at 1, 2, 4, 8 and 16 s, "closed after 1
+frames"), for the VST3 (parent none, waiting for it) and the CLAP (parent given) alike. The fix
+is a baseview patch (task-262, after Decide task-261). On closing, the same run logged
+baseview's `Error while closing window: Request to X11 thread failed: Could not receive
+response (X11 thread disconnected)` and then X11 `BadWindow` errors for Present
+`SelectInput` and `DestroyWindow` on the editor's window (destroyed already); whether that
+path causes another user's crash on closing the CLAP editor (Debian 13, Bitwig 6.1) is task-262's
+to check.
 
 **The panel's own resize.** The corner's request does not depend on `can_resize`: CLAP
 `gui.request_resize` and VST3 `IPlugFrame::resizeView` are the plugin's own resize in both APIs

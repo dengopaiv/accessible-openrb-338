@@ -249,7 +249,8 @@ and `OPENRB_` names are not read any more and have no deprecated alias.
 | `ORB_UI_START_STATS` | OpenRB-338 (`start_stats`, `crates/orb-ui/src/app.rs`, task-179) | `1` prints the ms from the process's start to the first complete frame, and to every end of a background rasterizing at full resolution | none |
 | `ORB_PLUGIN_SIZE_LOG` | the plugin (`editor::size_log`, `crates/orb-plugin/src/editor.rs`, task-234) | a file to which the editor appends the host's size calls (`adjust_size`/`checkSizeConstraint`, `set_size`/`onSize`, `size`/`getSize`, `resize_hint`/`canResize`, `set_parent`), egui's `resized` and the size requests, with ms; unset: no log (docs/plugin.md section 10) | none |
 | `ORB_REAPER` | `crates/orb-plugin/tests/reaper.rs` (task-244) | the REAPER executable (`/Applications/REAPER.app/Contents/MacOS/REAPER`): runs the REAPER render test, which skips when it is unset (docs/plugin.md 7.1) | none |
-| `ORB_PLUGIN_LOAD_LOG` | the plugin (`load_log::log_activation`, `crates/orb-plugin/src/load_log.rs`, task-244) | a file to which every activation appends the path of the plugin library that runs and the rate; the REAPER test sets it to check which copy REAPER loaded; unset: no log | none |
+| `ORB_PLUGIN_LOG` | the plugin (`crates/orb-plugin/src/plugin_log.rs`, task-260) | a file to which the plugin appends its diagnostic log, or `stderr`: each activation's `loaded from` line (the plugin library that runs, the rate; the REAPER test sets the variable to check which copy REAPER loaded, task-244), wgpu's adapters, surface and errors, panics, the editor's frames and, on X11, the Present probe; unset or empty: on only when `plugin.log` exists in the `ORB_UI_LOG_DIR`/platform log folder (docs/plugin.md section 10) | `ORB_PLUGIN_LOAD_LOG` (task-244, folded in by task-260) |
+| `ORB_PLUGIN_LOG_LEVEL` | the plugin (`plugin_log::level_for`, task-260) | `debug`: the plugin log takes wgpu's and egui-wgpu's DEBUG records too (instance, adapters, swapchain, shaders; thousands of lines per editor); unset or anything else: INFO and above for them (docs/plugin.md section 10) | none |
 | `ORB_BUILD_BRANCH` | `crates/orb-ui/build.rs`, `scripts/release-env.sh`, `scripts/build.sh` (passed into Docker), `release.yml` | `main` or `other`: makes the About box's hash the main form | `RB_BUILD_BRANCH` |
 | `ORB_UI_VERSION` | set by `crates/orb-ui/build.rs` for rustc (`env!`), never by hand | the version string of the About box | `RB_UI_VERSION` |
 | `ORB_APPIMAGE_EMULATED` | `scripts/package-appimage.sh`, `appimage-pack.sh`, `appimage-smoke.sh` | `1` on an x86_64 AppImage built or checked on a Mac (local only) | `OPENRB_APPIMAGE_EMULATED` |
@@ -262,7 +263,9 @@ Removed instead of renamed, because nothing reads them: `RB_RBM_DIR` (the deprec
 still set it, to check that it is ignored), `RB_MOD_ORIG_DIR`, `RB_CD_REBIRTH_EXE` and `RB_THIRDPARTY_DIR`
 (named in old notes only). Not renamed: `RBM_TEST_DAT` and `RBM_TEST_MODS` (a cargo test sets them
 for `tools/rbm_test.py` only; `RBM` is the mod format), and the variables of other tools
-(`SOURCE_DATE_EPOCH`, `GITHUB_REF_NAME`, `WGPU_BACKEND`). The settings folder is `OpenRB-338`
+(`SOURCE_DATE_EPOCH`, `GITHUB_REF_NAME`, `WGPU_BACKEND`; wgpu's `WGPU_BACKEND` and
+`WGPU_POWER_PREF` choose the standalone app's backends, below, and the plugin editor's adapter,
+docs/plugin.md section 10, task-260). The settings folder is `OpenRB-338`
 (`OpenRB-338/ui.toml`); settings of the old `rb/` folder are not carried over (no migration).
 
 ## Developer options hidden from the help (task-137)

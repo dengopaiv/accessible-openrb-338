@@ -7,11 +7,12 @@
 //! - [`core`]: the process side, the engine in 64-frame blocks for any host buffer size.
 //! - [`resample`]: the resampler for host rates other than 44.1 kHz.
 //! - [`params`]: the parameter table.
-//! - [`load_log`]: the activation log a test reads to tell which copy of the plugin runs.
 //!
 //! - [`editor`]: the editor, orb-ui's panel in the host's window (task-201).
 //! - [`clip`] and [`drag`]: the pattern drag-out, a pattern as a MIDI clip dragged to the host
 //!   (task-203).
+//! - [`plugin_log`]: the diagnostic log (task-260), with each activation's library that a test
+//!   reads to tell which copy of the plugin runs (task-244), and the editor's wgpu adapter.
 //!
 //! Host sync, pattern selection by notes and the Standard Mapping are task-198's ([`core`]),
 //! note mode task-200's. Not yet: packaging (task-204).
@@ -21,8 +22,8 @@ pub mod core;
 pub mod drag;
 pub mod editor;
 pub mod instance;
-pub mod load_log;
 pub mod params;
+pub mod plugin_log;
 pub mod resample;
 
 use std::num::NonZeroU32;
@@ -201,9 +202,9 @@ impl Plugin for OrbPlugin {
         context: &mut impl ActivateContext<Self>,
     ) -> bool {
         let rate = config.sample_rate.round() as u32;
-        // which library runs, for a test that drives a real host (off unless the variable is
-        // set; task-244)
-        load_log::log_activation(rate);
+        // which library runs, for a test that drives a real host (only with the plugin log on;
+        // task-244, task-260)
+        plugin_log::activated(rate);
         // the old player is dropped here, on the main thread
         self.core = None;
         let core = instance::core(&self.params, rate);
