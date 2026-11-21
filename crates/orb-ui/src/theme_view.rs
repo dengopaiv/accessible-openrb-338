@@ -266,11 +266,7 @@ pub fn knob_frame(n: u16, p: i32) -> u16 {
 pub fn digits(value: Option<i32>, n: usize) -> Vec<u16> {
     behavior::digit_frames(value, n)
         .into_iter()
-        .map(|f| {
-            f.strip_prefix("seg_")
-                .and_then(|d| d.parse::<u16>().ok())
-                .map_or(0, |d| d + 1)
-        })
+        .map(|d| d.map_or(0, |d| d as u16 + 1))
         .collect()
 }
 
@@ -293,12 +289,15 @@ pub const TRACK_LONG: (u16, i32) = (12032, 54);
 /// docs/ui_spec.md section 21).
 pub const TRACK_PCF: (u16, i32) = (12030, 45);
 
+/// The fader handle's height (12031): the original's.
+pub const HANDLE_H: i32 = 11;
+
 /// The handle's top (12031, 11 high) from the top of a track `track_h` high for the fader
 /// position `p` (0..=999): the top at 999, the bottom at 0, linear over the travel
 /// `track_h - 11` [G: the original's draw of CBitmapFaderView was not read; the ends follow
 /// docs/ui_spec.md section 2].
 pub fn handle_top(p: i32, track_h: i32) -> i32 {
-    let travel = (track_h - behavior::FADER_HANDLE) as f32;
+    let travel = (track_h - HANDLE_H) as f32;
     ((1.0 - p.clamp(0, behavior::FADER_MAX) as f32 / behavior::FADER_MAX as f32) * travel).round()
         as i32
 }

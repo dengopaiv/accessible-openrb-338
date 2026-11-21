@@ -26,7 +26,7 @@ pub fn generate() -> Vec<(String, String)> {
         .map(|p| (format!("{}.svg", p.name), p.to_svg()))
         .collect();
     files.push(("panel.svg".into(), layout::compose(&parts, &l)));
-    files.push(("layout.tsv".into(), layout::tsv(&l)));
+    files.push(("layout.tsv".into(), layout::tsv(&parts, &l)));
     files
 }
 

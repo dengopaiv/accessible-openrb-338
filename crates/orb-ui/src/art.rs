@@ -30,10 +30,78 @@ impl Part {
     }
 }
 
-/// The part called `name` (`PARTS` is sorted by name).
+/// The part called `name` of the embedded set (`PARTS` is sorted by name).
 pub fn part(name: &str) -> Option<Part> {
     let i = PARTS.binary_search_by(|p| p.0.cmp(name)).ok()?;
     Some(Part::from_row(&PARTS[i]))
+}
+
+/// A part set: the SVG parts one SVG skin draws with (docs/ui_spec.md section 22). The modern
+/// skin's is the embedded `assets/ui` ([`PartSet::embedded`]); another set is made at run time
+/// from SVG files ([`PartSet::from_svgs`]).
+pub struct PartSet {
+    /// Sorted by name.
+    parts: Vec<Part>,
+}
+
+impl PartSet {
+    /// The embedded parts of `assets/ui`.
+    pub fn embedded() -> &'static std::sync::Arc<PartSet> {
+        static SET: std::sync::OnceLock<std::sync::Arc<PartSet>> = std::sync::OnceLock::new();
+        SET.get_or_init(|| {
+            std::sync::Arc::new(PartSet {
+                parts: PARTS.iter().map(Part::from_row).collect(),
+            })
+        })
+    }
+
+    /// A set of the SVG files `files` (part name, SVG bytes) named `set` (for the parts'
+    /// URIs). Each part's rectangle and bleed are read from its `viewBox`
+    /// (`-b -b w+2b h+2b`, assets/ui/README.md), as `build.rs` reads the embedded ones. The
+    /// names and bytes live as long as the process (the part textures are keyed by them, as
+    /// the embedded parts' are): a set is made once per skin.
+    pub fn from_svgs(set: &str, files: Vec<(String, Vec<u8>)>) -> Result<PartSet, String> {
+        let mut parts = Vec::with_capacity(files.len());
+        for (name, svg) in files {
+            let text = std::str::from_utf8(&svg).map_err(|_| format!("{name}: not UTF-8"))?;
+            let vb: Vec<f32> = text
+                .split("viewBox=\"")
+                .nth(1)
+                .and_then(|s| s.split('"').next())
+                .ok_or_else(|| format!("{name}: no viewBox"))?
+                .split([' ', ','])
+                .filter(|v| !v.is_empty())
+                .map(|v| v.parse::<f32>())
+                .collect::<Result<_, _>>()
+                .map_err(|_| format!("{name}: a malformed viewBox"))?;
+            if vb.len() != 4 {
+                return Err(format!("{name}: a viewBox of {} numbers", vb.len()));
+            }
+            let b = -vb[0];
+            let uri = format!("bytes://orb-ui-{set}/{name}.svg");
+            parts.push(Part {
+                name: Box::leak(name.into_boxed_str()),
+                uri: Box::leak(uri.into_boxed_str()),
+                svg: Box::leak(svg.into_boxed_slice()),
+                bleed: b,
+                w: vb[2] - 2.0 * b,
+                h: vb[3] - 2.0 * b,
+            });
+        }
+        parts.sort_by(|a, b| a.name.cmp(b.name));
+        Ok(PartSet { parts })
+    }
+
+    /// The part called `name`.
+    pub fn part(&self, name: &str) -> Option<Part> {
+        let i = self.parts.binary_search_by(|p| p.name.cmp(name)).ok()?;
+        Some(self.parts[i])
+    }
+
+    /// Every part, by name.
+    pub fn all(&self) -> impl Iterator<Item = Part> + '_ {
+        self.parts.iter().copied()
+    }
 }
 
 /// The part names asked for that no art has, in this process.

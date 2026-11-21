@@ -1019,7 +1019,7 @@ read, and what it leaves out.
   `Panel::meters`). The main panel maps it to 11 states by the original's master meter
   (`model::meter_state` = `model::peak_meter_frame(byte, 11)`, section 2, "Meters"): the states
   step at the bytes 2, 3, 5, 7, 12, 19, 30, 49, 81 and 127, so byte 1 shows nothing. The header
-  meters light `model::header_meter_segments` of that state: one segment from byte 2, two from
+  meters light their `map` (`layout.tsv`, section 22) of that state: one segment from byte 2, two from
   7, three (amber) from 30, four (red) from 81 (section 19). The theme viewer draws the
   original's strips by `model::peak_meter_frame` over their own frame counts (section 21).
 - **Gain reduction [C] (task-252, decision task-251).** The panel keeps the compressor's gain
@@ -1690,7 +1690,7 @@ Propellerhead mark).
 **The header meters** (the mixer channels' and the effects') have four segments, green,
 yellow-green, amber and red from the bottom; the engine's meter has 11 states (0 to 10, the
 meter byte mapped as section 16 says). The app shows state s as `[0, 1, 1, 1, 2, 2, 2, 3, 3, 4,
-4][s]` lit segments (`model::header_meter_segments`): state 1 lights the first segment, the
+4][s]` lit segments (the header meters' `map` in `layout.tsv`, section 22): state 1 lights the first segment, the
 amber one lights from state 7 and the red one from 9, the states at which the master's 10-segment
 meters light their amber and red segments (on the original's scale, decision task-254: the
 meter bytes 2, 7, 30 and 81). The master's meters keep 10 segments and 11 states.
@@ -1999,3 +1999,79 @@ viewer window's own input, so it never reaches the main panel (no play or stop).
 `crates/orb-ui/tests/theme_view.rs` checks the composed frames, the fallback, the input, the
 cursor, the focus, Space and the mod window's link; with `ORB_THIRDPARTY_MODS_DIR` it composes
 every mod of the collection.
+
+## 22. The skin layer: one controller, any look (task-266)
+
+The main window's panel is drawn by a **skin** and driven by **one controller**, so that a
+control's behavior is written once whatever the panel looks like (the user, 2026-11-21: the
+modern theme and the mod's classic panel, tasks 267 and 268, must share every bit of input
+code). The modern panel is the first skin; it looks and behaves as before the layer: the
+standalone's screenshots (`--demo` at 624x510 and 1000x600 at 2x, 700x900, 1300x1062 at 1.5x,
+and a shipped song at 900x700) are pixel-identical to the build before task-266.
+
+**A skin** (`crates/orb-ui/src/skin/mod.rs`, the trait `Skin`) gives:
+- its **layout** (`skin::Layout`), all in the skin's own units:
+  - the panel's **size**; its aspect is the original's 624:510 (every skin keeps it, so the
+    window and the desk are the same for all);
+  - the **controls**: the id (the same ids for every skin, so the panel model, the keys and the
+    status line are shared), the kind (section 2's classes), the rectangle, and the kind's
+    geometry where it varies: a knob's drag `span`, a fader's track (the rectangle's height)
+    and `handle`;
+  - the areas the controller tests that are no single control's: the rows' focus areas
+    (`row`), the logo (`logo`, the startup sound), the drum machines' step strips (`strip`,
+    `cells` cells across) and instrument hit areas (`select`: `cells=x0:w:first,...`, `count`,
+    `open=1` for an area that also takes every point left of it as its first cell, as the
+    909's rows do: everything left of the section's x 26 is AC).
+- a **renderer** (`Skin::paint`) that draws the panel's state (`skin::Frame`: the model, which
+  controls show pressed, the time, the note-mode lights, the plugin flag and hidden controls,
+  the logo's animation time, the kit's name and splash) at the skin's screen rectangle.
+
+A skin may move controls, show one twice, and lack controls another has; a control's keyboard
+shortcuts work whatever the skin shows (the user, 2026-11-21). A control id the model does not
+know takes its clicks and changes nothing. The desk and the panel's shadows (section 19,
+`backdrop`) are drawn around any skin, in the panel's 624 x 510 proportions.
+
+**The controller** (`crates/orb-ui/src/controller.rs`) runs all the panel's input on the
+current skin's layout: the computer keyboard and its held buttons (section 10), the rows'
+focus and the logo click, the hit tests and gestures of every kind (mouse-down actions, repeat
+and wind schedules, knob drags with Shift fine and the double-click reset, the fader's jump and
+drag, the two-position switches), the step strips' paint drag and the instrument selection,
+the knobs' resize cursor and the plugin's pattern drag-out. All input runs before the skin
+draws, in the layout's order (the order egui hit-tests in). A control's egui ids hold its kind,
+its id and its place in the layout. `behavior.rs` is the interaction math on the skin's
+geometry (`Fader { track, handle }`: travel `track - handle`, `k = 10000 / travel`;
+`select_hit`; `strip_step`); the original's numbers (spans 62/36/41/64, the fader 54/11 and
+k 232, the 808's and 909's cells of sections 6 and 7, the rows' x 16..526) are the modern
+skin's data, and a test sweeps every quarter pixel of both drum machines (and 100 px around)
+to check that the modern skin's areas give the answers the constants gave.
+
+**The model's looks.** `Panel::look` gives each control's state as a `model::Look` (on/off,
+push rest/pressed, lit, a frame value, a meter byte); a skin names its parts from it. The model
+knows no part names.
+
+**The SVG skin** (`crates/orb-ui/src/skin/svg.rs`, `SvgSkin`) is the generic renderer over one
+layout table and one part set; the modern skin (`skin::svg::modern`) is
+`assets/ui/layout.tsv` (generated by orb-ui-art) and the embedded `assets/ui` parts. Another
+SVG theme is another table and another part set (`art::PartSet::from_svgs`, which reads each
+part's rectangle and bleed from its viewBox), no code. The renderer names no part itself:
+- the table's rows name the parts (backgrounds `bg`, with a `plugin=` variant; the wordmark
+  `logo`; the focus bars `focus` with `on=`; the foregrounds `fg`; the selection marks `mark`
+  with `lit=` and `litsel=`; a gain-reduction LED's `on=` and `off=`; the mod window's `glass=`,
+  `picture=`, `name=`, `font=` and `ink=` color);
+- a state part is the row's part's family and the state (`on`/`off`, `rest`/`pressed`, `lit`,
+  a value); a held key shows `<family><state>_pressed` where the set has it (the routing keys);
+  a meter maps its 11 states through its `map=`; a knob is `<part>_body` and `<part>_pointer`;
+  a fader `<part>` and `<family>handle`; a display `<prefix>0..9` and its blank part.
+
+assets/ui/README.md lists the table's columns, kinds and parameters. The layers are the
+backgrounds and the wordmark, the focus bars, the controls, the foregrounds, the step keys and
+the selection marks (section 19's order). Tests: `crates/orb-ui/tests/skin.rs` drives a skin
+with moved, doubled, missing and unknown controls and its own knob, fader, strip and hit-area
+geometry, and a second SVG skin of a dummy part set and table in half the panel's units,
+through the same controller and renderer.
+
+**The plugin.** The plugin's editor runs the modern skin. Its own parts over the panel (the
+Sync and MIDI LEDs, the Bar display, the mode selector, the format's logo, the resize grip;
+section 20) are the plugin's overlay in `embed.rs`, drawn from the embedded part set after the
+skin: they are plugin chrome, not part of a skin, as the plugin has no other skin (task-267).
+The About window's wordmark is drawn from the embedded set too.

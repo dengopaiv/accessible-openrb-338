@@ -18,6 +18,7 @@
 use egui::{self, Color32, Rect, Ui};
 
 use crate::app;
+use crate::art::PartSet;
 
 /// OPEN's slide: its duration.
 pub const SLIDE_S: f32 = 1.0;
@@ -99,17 +100,31 @@ pub fn time_now(now: f64, start: Option<f64>) -> Option<f32> {
 
 /// One piece (or the whole part) at `alpha`, through the app's capped part painter
 /// (`app::paint_part_tinted`, the texture-size cap of task-119).
-fn paint_piece(ui: &Ui, name: &str, rect: Rect, alpha: f32) {
+fn paint_piece(ui: &Ui, set: &PartSet, name: &str, rect: Rect, alpha: f32) {
     if alpha > 0.0 {
-        app::paint_part_tinted(ui, name, rect, Color32::WHITE.gamma_multiply(alpha));
+        let tint = Color32::WHITE.gamma_multiply(alpha);
+        app::paint_part_in(ui, set, name, rect, None, tint);
     }
 }
 
 /// Paints the logo into `rect` (the logo canvas scaled): the whole part when `t` is None (the
 /// final state), else the pieces at `t` seconds, and asks for the next frame.
 pub fn paint_logo(ui: &mut Ui, rect: Rect, t: Option<f32>) {
-    let Some(t) = t else {
-        paint_piece(ui, LOGO_PART, rect, 1.0);
+    paint_logo_in(ui, PartSet::embedded(), LOGO_PART, rect, t);
+}
+
+/// Whether the part set has the animation's pieces of the wordmark `base` (`<base>_open`,
+/// `<base>_rb338`, `<base>_line_0..3`, `<base>_sub`); without them the wordmark is drawn
+/// still.
+pub fn has_pieces(set: &PartSet, base: &str) -> bool {
+    set.part(&format!("{base}_open")).is_some()
+}
+
+/// [`paint_logo`] for the wordmark part `base` of `set` (a skin's logo row): its pieces are
+/// `<base>_rb338`, `<base>_open`, `<base>_line_N` and `<base>_sub`.
+pub fn paint_logo_in(ui: &mut Ui, set: &PartSet, base: &str, rect: Rect, t: Option<f32>) {
+    let Some(t) = t.filter(|_| has_pieces(set, base)) else {
+        paint_piece(ui, set, base, rect, 1.0);
         return;
     };
     if frozen_time().is_none() {
@@ -117,22 +132,23 @@ pub fn paint_logo(ui: &mut Ui, rect: Rect, t: Option<f32>) {
     }
     let k = rect.width() / LOGO_W;
     let f = Frame::at(t);
-    paint_piece(ui, "logo_rb338", rect, 1.0);
+    paint_piece(ui, set, &format!("{base}_rb338"), rect, 1.0);
     // OPEN, masked to the left of the R
     let old = ui.clip_rect();
     let mask = Rect::from_min_max(rect.min, egui::pos2(rect.min.x + RB_X * k, rect.max.y));
     ui.set_clip_rect(old.intersect(mask));
     paint_piece(
         ui,
-        "logo_open",
+        set,
+        &format!("{base}_open"),
         rect.translate(egui::vec2(f.open_dx * k, 0.0)),
         1.0,
     );
     ui.set_clip_rect(old);
     for (i, a) in f.seg.iter().enumerate() {
-        paint_piece(ui, &format!("logo_line_{i}"), rect, *a);
+        paint_piece(ui, set, &format!("{base}_line_{i}"), rect, *a);
     }
-    paint_piece(ui, "logo_sub", rect, f.sub);
+    paint_piece(ui, set, &format!("{base}_sub"), rect, f.sub);
 }
 
 #[cfg(test)]

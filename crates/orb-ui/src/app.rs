@@ -1,5 +1,6 @@
-//! The window: draws the panel from the SVG parts at the displayed size and runs the
-//! original's interaction (docs/ui_spec.md section 2) on the [`Panel`] model.
+//! The window: draws the panel with the current skin at the displayed size and runs the
+//! original's interaction (docs/ui_spec.md section 2) on the [`Panel`] model through the one
+//! controller (`controller`, task-266).
 //!
 //! Rendering follows decision task-040: every part is an `egui::Image` of its SVG, rasterized as
 //! egui_extras' SVG loader does it (usvg + resvg) at the displayed size in physical pixels; a
@@ -13,25 +14,25 @@ use std::time::Duration;
 use orb_engine::samples::SampleSet;
 
 use egui::{
-    self, Color32, Image, Key, Pos2, Rect, Response, Sense, Ui, Vec2, emath::GuiRounding,
+    self, Color32, Image, Pos2, Rect, Ui, Vec2, emath::GuiRounding,
     text_selection::LabelSelectionState,
 };
 
 use crate::art;
-use crate::behavior::{self, Mods};
 use crate::browser::{Browser, Mode, Poll};
 use crate::document::Document;
-use crate::embed::{LIT_808, LIT_909, Lit};
-use crate::keys::{self, Action, KeyMode};
-use crate::layout::{self, Ctl, PANEL_H, PANEL_W};
+use crate::keys::KeyMode;
+use crate::layout::{PANEL_H, PANEL_W};
 use crate::link::Link;
 use crate::logo_anim;
 use crate::menu::{Cmd, Job, MENU_H, ModEntry, Then};
 use crate::model::Panel;
 use crate::settings::Settings;
 use crate::shortcuts;
+use crate::skin::{Frame, Skin};
 
-/// Where the panel is on screen: the point of the panel's origin and points per panel pixel.
+/// Where the panel is on screen: the point of the panel's origin and points per panel pixel
+/// (per skin unit, for a skin whose units are not the panel's pixels).
 #[derive(Clone, Copy, Debug)]
 pub struct View {
     pub origin: Pos2,
@@ -44,12 +45,18 @@ impl View {
     /// gets a panel one point wide, so the scale stays positive and finite (`to_panel`
     /// divides by it).
     pub fn fit(avail: Rect, ppp: f32) -> Self {
-        let scale = (avail.width() / PANEL_W)
-            .min(avail.height() / PANEL_H)
-            .max(1.0 / PANEL_W);
-        let size = Vec2::new(PANEL_W, PANEL_H) * scale;
+        Self::fit_size(avail, ppp, Vec2::new(PANEL_W, PANEL_H))
+    }
+
+    /// [`View::fit`] for a skin of `size` units (its aspect is the panel's): the scale is
+    /// points per skin unit.
+    pub fn fit_size(avail: Rect, ppp: f32, size: Vec2) -> Self {
+        let scale = (avail.width() / size.x)
+            .min(avail.height() / size.y)
+            .max(1.0 / size.x);
+        let on_screen = size * scale;
         Self {
-            origin: (avail.center() - size / 2.0).round_to_pixels(ppp),
+            origin: (avail.center() - on_screen / 2.0).round_to_pixels(ppp),
             scale,
         }
     }
@@ -65,29 +72,6 @@ impl View {
     pub fn to_panel(&self, p: Pos2) -> Pos2 {
         ((p - self.origin) / self.scale).to_pos2()
     }
-}
-
-/// Per-control gesture state, kept in egui's memory.
-#[derive(Clone, Default)]
-struct Gesture {
-    down: bool,
-    p0: i32,
-    y0: f32,
-    fine: bool,
-    t0: f64,
-    taken: u32,
-    new_value: u8,
-    last_step: i32,
-}
-
-/// A computer key that is down: it acts as a mouse press on its button.
-struct Hold {
-    /// The physical key (`keys::position`).
-    key: Key,
-    /// The layout id of the button shown pressed.
-    id: Option<String>,
-    /// A repeat or wind button: its id, when the key went down, the steps taken.
-    arrow: Option<(&'static str, f64, u32)>,
 }
 
 /// The top-left corner that centers a block of `size` (a text galley, wrapped lines included)
@@ -218,8 +202,10 @@ pub struct App {
     pub(crate) allow_close: bool,
     /// The window title last sent (`App::update_title`).
     pub title: String,
-    holds: Vec<Hold>,
-    ctls: Vec<Ctl>,
+    /// The computer keys that are down (`controller`).
+    pub(crate) holds: Vec<crate::controller::Hold>,
+    /// The look of the main window's panel (task-266): the modern skin unless set.
+    skin: Arc<dyn Skin>,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
     pub frame_stats: Option<FrameStats>,
@@ -288,7 +274,7 @@ impl App {
             allow_close: false,
             title: String::new(),
             holds: Vec::new(),
-            ctls: layout::controls(),
+            skin: crate::skin::svg::modern(),
             shot,
             frame_stats: FrameStats::from_env(),
             last_px_scale: None,
@@ -296,6 +282,17 @@ impl App {
             shown: 0,
             plugin: None,
         }
+    }
+
+    /// The skin the main window's panel is drawn with.
+    pub fn skin(&self) -> &Arc<dyn Skin> {
+        &self.skin
+    }
+
+    /// Draws the panel with `skin` from the next frame on; the same controller takes its
+    /// input (task-266).
+    pub fn set_skin(&mut self, skin: Arc<dyn Skin>) {
+        self.skin = skin;
     }
 
     /// Opens the file browser for `mode` over the panel (the menu calls this). Ctrl/Cmd+O opens it
@@ -464,14 +461,15 @@ mod frame_stats_tests {
     }
 }
 
-/// An image of the part `name` painted into `rect`.
+/// An image of the embedded part `name` painted into `rect` (the windows and the plugin's
+/// own parts; a skin paints from its part set, [`paint_part_in`]).
 pub(crate) fn paint_part(ui: &Ui, name: &str, rect: Rect) {
     paint_part_rotated(ui, name, rect, None);
 }
 
 /// `paint_part` multiplied by `tint` (the logo's fades, task-114).
 pub(crate) fn paint_part_tinted(ui: &Ui, name: &str, rect: Rect, tint: Color32) {
-    paint_part_with(ui, name, rect, None, tint);
+    paint_part_in(ui, art::PartSet::embedded(), name, rect, None, tint);
 }
 
 /// The size to rasterize an image of `pixels` at when a side may be at most `max`: None when it
@@ -705,7 +703,14 @@ pub fn flush_part_textures(ctx: &egui::Context) {
 }
 
 pub(crate) fn paint_part_rotated(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>) {
-    paint_part_with(ui, name, rect, rot, Color32::WHITE);
+    paint_part_in(
+        ui,
+        art::PartSet::embedded(),
+        name,
+        rect,
+        rot,
+        Color32::WHITE,
+    );
 }
 
 /// The texture of `svg` (whose URI is `uri`) at `pixels`, from the context's map, or a new
@@ -785,10 +790,20 @@ fn first_frame_id() -> egui::Id {
     egui::Id::unique("orb-ui first frame")
 }
 
-fn paint_part_with(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>, tint: Color32) {
+/// The part `name` of `set` painted into `rect` (the control's rectangle; the art reaches its
+/// bleed beyond it), turned by `rot` (radians, pivot in the rectangle's fractions) and
+/// multiplied by `tint`.
+pub fn paint_part_in(
+    ui: &Ui,
+    set: &art::PartSet,
+    name: &str,
+    rect: Rect,
+    rot: Option<(f32, Vec2)>,
+    tint: Color32,
+) {
     // A part name no art has (a state the panel does not foresee) draws nothing: it must not
     // close the app (task-156). It is reported once per name.
-    let Some(part) = art::part(name) else {
+    let Some(part) = set.part(name) else {
         missing_part(name);
         return;
     };
@@ -855,15 +870,19 @@ impl App {
             avail.min.y += MENU_H;
         }
         let ppp = ui.ctx().pixels_per_point();
+        let skin = self.skin.clone();
+        let layout = skin.layout();
         // a plugin's panel keeps a margin of desk on each side (task-234)
-        let view = if self.is_plugin() {
-            View::fit(crate::embed::panel_area(ui.ctx().content_rect()), ppp)
+        let area = if self.is_plugin() {
+            crate::embed::panel_area(ui.ctx().content_rect())
         } else {
-            View::fit(avail, ppp)
+            avail
         };
+        let view = View::fit_size(area, ppp, layout.size);
         let now = ui.input(|i| i.time);
         self.track_resize(ui.ctx(), view.scale * ppp, now);
-        crate::backdrop::paint(ui, avail, &view);
+        // the desk and the panel's shadows, around any skin
+        crate::backdrop::paint(ui, avail, &view, layout.size);
         self.panel.held = None;
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
@@ -872,7 +891,7 @@ impl App {
             // a plugin's editor has no keyboard at all (task-201): the host keeps its keys
             self.holds.clear();
             if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
-                self.focus_click(ui, &view);
+                self.focus_click(ui, &view, layout);
             }
         } else if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
             if shortcuts::consume(ui, &shortcuts::NEW) {
@@ -897,55 +916,41 @@ impl App {
                     self.pattern_keys(ui);
                     self.keyboard(ui);
                 }
-                self.focus_click(ui, &view);
+                self.focus_click(ui, &view, layout);
             }
         } else {
             self.holds.clear();
         }
 
-        for (name, x, y) in layout::backgrounds() {
-            // the plugin's transport has its own background (task-201)
-            let name = if name == "bg_transport" && self.is_plugin() {
-                "bg_transport_plugin"
-            } else {
-                name
-            };
-            let (w, h) = part_size(name);
-            if name == logo_anim::LOGO_PART {
-                // once per app start, from the first frame the logo is drawn
-                if self.logo_anim && self.logo_start.is_none() {
-                    self.logo_start = Some(now);
-                }
-                let t = logo_anim::time_now(now, self.logo_start.filter(|_| self.logo_anim));
-                logo_anim::paint_logo(ui, view.rect(x, y, w, h), t);
-                continue;
-            }
-            paint_part(ui, name, view.rect(x, y, w, h));
-        }
-        for r in 0..4 {
-            let (x, y, w, h) = layout::focus_bar(r);
-            let name = if self.panel.focus == r {
-                "focus_on"
-            } else {
-                "focus_off"
-            };
-            paint_part(ui, name, view.rect(x, y, w, h));
-        }
-
-        let ctls = std::mem::take(&mut self.ctls);
-        for c in &ctls {
-            if self.hidden(&c.id) {
-                continue;
-            }
-            self.control(ui, &view, c, now);
-        }
-        self.ctls = ctls;
-        for (name, x, y, w, h) in layout::foregrounds() {
-            paint_part(ui, name, view.rect(x, y, w, h));
-        }
-        self.drum_strips(ui, &view);
+        // All the panel's input first, through the one controller on the skin's layout, then
+        // the skin draws the state (task-266).
+        let pressed = self.panel_input(ui, &view, layout);
         let lit = self.note_lights(ui, now);
-        self.instrument_selection(ui, &view, &lit);
+        if layout.logo.is_some() && self.logo_anim && self.logo_start.is_none() {
+            // once per app start, from the first frame the logo is drawn
+            self.logo_start = Some(now);
+        }
+        let logo_t = logo_anim::time_now(now, self.logo_start.filter(|_| self.logo_anim));
+        let splash = if layout.controls.iter().any(|c| c.kind == "modview") {
+            self.splash_texture(ui.ctx())
+        } else {
+            None
+        };
+        {
+            let hidden = |id: &str| self.hidden(id);
+            let frame = Frame {
+                panel: &self.panel,
+                pressed: &pressed,
+                now,
+                lit: &lit,
+                plugin: self.is_plugin(),
+                hidden: &hidden,
+                logo_t,
+                mod_name: &self.doc.mod_name,
+                splash: splash.as_ref(),
+            };
+            skin.paint(ui, &view, &frame);
+        }
         // a plugin's LEDs, menus and resize corner (task-201)
         self.plugin_ui(ui, &view, now);
 
@@ -1062,210 +1067,6 @@ impl App {
         }
     }
 
-    /// The computer keyboard (`keys`): a key press acts like a mouse press on its button, a
-    /// held repeat button keeps repeating, and the button shows pressed while the key is down.
-    /// Auto-repeat events and keys with Ctrl or Cmd (the menu's shortcuts) are ignored, as the
-    /// original's handlers do.
-    fn keyboard(&mut self, ui: &Ui) {
-        let (events, now, focused) = ui.input(|i| (i.events.clone(), i.time, i.focused));
-        if !focused {
-            self.holds.clear();
-        }
-        for ev in events {
-            let egui::Event::Key {
-                key,
-                physical_key,
-                pressed,
-                repeat,
-                modifiers,
-            } = ev
-            else {
-                continue;
-            };
-            let k = keys::position(key, physical_key);
-            if !pressed {
-                self.holds.retain(|h| h.key != k);
-                continue;
-            }
-            if repeat || modifiers.command || modifiers.ctrl {
-                continue;
-            }
-            if let Some(a) = keys::map(k, modifiers.shift, self.key_mode, self.panel.focus) {
-                self.act(k, a, now);
-            }
-        }
-        // The held repeat buttons: the held-button schedule of the mouse.
-        let mut holds = std::mem::take(&mut self.holds);
-        for h in &mut holds {
-            if let Some((id, t0, taken)) = &mut h.arrow {
-                let total = 1 + behavior::repeat_extra_steps(((now - *t0) * 1000.0) as u32);
-                while *taken < total {
-                    self.panel.arrow(id);
-                    *taken += 1;
-                }
-                ui.ctx().request_repaint_after(Duration::from_millis(16));
-            }
-        }
-        self.holds = holds;
-    }
-
-    fn act(&mut self, k: Key, action: Action, now: f64) {
-        // (a press without the release before it, e.g. after the window lost the focus)
-        self.holds.retain(|h| h.key != k);
-        let mut hold = Hold {
-            key: k,
-            id: None,
-            arrow: None,
-        };
-        match action {
-            Action::PlayStop => {
-                let id = if self.panel.transport.playing {
-                    "transport.stop"
-                } else {
-                    "transport.play"
-                };
-                self.panel.press(id, now);
-                hold.id = Some(id.into());
-            }
-            Action::Press(id) => {
-                self.panel.press(&id, now);
-                hold.id = Some(id);
-            }
-            Action::Arrow(id) => {
-                self.panel.arrow(id);
-                hold.id = Some(id.into());
-                hold.arrow = Some((id, now, 1));
-            }
-            Action::Locate(end) => self.panel.locate_loop(end),
-            // Up from row 1 goes to row 4 and Down from row 4 to row 1 (`sub_42D1D3`).
-            Action::Focus(d) => {
-                self.panel.focus = (self.panel.focus as i32 + d).rem_euclid(4) as usize
-            }
-            Action::Tap303(rest) => self.panel.tap_303(self.panel.focus, rest),
-            Action::TapDrum(i) => self.panel.tap_drum(self.panel.focus == 2, i),
-        }
-        self.holds.push(hold);
-    }
-
-    /// Whether a computer key that is down holds the button `id` pressed.
-    pub fn key_held(&self, id: &str) -> bool {
-        self.holds.iter().any(|h| h.id.as_deref() == Some(id))
-    }
-
-    /// A click anywhere inside a row gives the row the focus (`sub_42ADBB`).
-    fn focus_click(&mut self, ui: &Ui, view: &View) {
-        let pressed = ui.input(|i| {
-            i.pointer
-                .button_pressed(egui::PointerButton::Primary)
-                .then(|| i.pointer.press_origin())
-                .flatten()
-        });
-        if let Some(p) = pressed {
-            // A press on a window, a menu or any other layer over the panel is not the
-            // panel's (task-235): a window's close button over the logo played the startup
-            // sound, and a click on an Edit menu item moved the focus to the row under it.
-            if ui.ctx().layer_id_at(p).is_some_and(|l| l != ui.layer_id()) {
-                return;
-            }
-            let p = view.to_panel(p);
-            if let Some(r) = layout::row_at(p.x, p.y) {
-                self.panel.focus = r;
-            }
-            // the logo (`sub_42A799`) plays the mod's startup sound, whatever the preference
-            // (it sends msg 58 without testing it, 0x42A7D3..0x42A7F1)
-            if layout::on_logo(p.x, p.y)
-                && let Some(link) = &mut self.link
-            {
-                link.startup_sound();
-            }
-        }
-    }
-
-    fn control(&mut self, ui: &mut Ui, view: &View, c: &Ctl, now: f64) {
-        let rect = view.rect(c.x, c.y, c.w, c.h);
-        match c.kind.as_str() {
-            "area" | "steps" => {}
-            "modview" => {
-                paint_part(ui, &c.part, rect);
-                self.mod_view(ui, view, c);
-                // the standalone's link to the Theme Viewer (task-187, the user's review): a
-                // click opens it or brings the open one to the front, as the Mods menu's item
-                if !self.is_plugin() {
-                    let r = ui
-                        .interact(rect, egui::Id::unique(("hit", "modview")), Sense::click())
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if r.clicked() {
-                        self.show_theme_viewer();
-                    }
-                }
-            }
-            "knob" => self.knob(ui, view, c, rect),
-            "fader" => self.fader(ui, view, c, rect),
-            "display" => {
-                // n cells of 9 x 16, centered in the display's well
-                let n = (c.w / 9.0) as usize;
-                let frames = behavior::digit_frames(self.panel.display(&c.id), n);
-                let x0 = c.x + (c.w - 9.0 * n as f32) / 2.0;
-                for (i, f) in frames.into_iter().enumerate() {
-                    let x = x0 + 9.0 * i as f32;
-                    paint_part(ui, f, view.rect(x, c.y, 9.0, 16.0));
-                }
-            }
-            "led" | "meter" => {
-                let name = self.panel.part_name(c, false, now);
-                paint_part(ui, &name, rect);
-            }
-            kind => {
-                let r = self.hit(ui, c, rect);
-                let down = r.is_pointer_button_down_on() || self.key_held(&c.id);
-                match kind {
-                    "repeat" | "wind" => self.repeat(ui, c, &r),
-                    "switch" | "toggle" | "radio" | "trigger" | "grid" => {
-                        if self.first_press(ui, c, &r) {
-                            self.panel.press(&c.id, now);
-                        }
-                        // a plugin's pattern drag-out (task-203); nothing in the standalone app
-                        if kind == "grid" {
-                            self.drag_out(ui, c, &r);
-                        }
-                    }
-                    // A click anywhere on a two-position switch flips the position it shows.
-                    "hswitch" | "vswitch" if self.first_press(ui, c, &r) => {
-                        let v = 1 - self.panel.switch_position(&c.id);
-                        self.panel.set_switch(&c.id, v);
-                    }
-                    _ => {}
-                }
-                let name = self.panel.part_name(c, down, now);
-                paint_part(ui, &name, rect);
-            }
-        }
-    }
-
-    /// The 808's mod window: the current kit's `splash.jpg` (the embedded standard mod's for the
-    /// built-in kit) in the 76 x 76 square at the top under the window's glass, the song's mod
-    /// name under it.
-    fn mod_view(&mut self, ui: &Ui, view: &View, c: &Ctl) {
-        let (px, py, side) = MOD_PICTURE;
-        let r = view.rect(c.x + px, c.y + py, side, side);
-        if let Some(tex) = self.splash_texture(ui.ctx()) {
-            Image::new((tex.id(), r.size())).paint_at(ui, r);
-        }
-        paint_part(ui, "mod_view_glass", r);
-        let top = c.y + MOD_NAME_TOP;
-        let r = view.rect(c.x + 2.0, top, c.w - 4.0, c.y + c.h - top - 1.0);
-        let galley = ui.painter().layout(
-            self.doc.mod_name.clone(),
-            egui::FontId::proportional(6.6 * view.scale),
-            Color32::from_rgb(0xe8, 0xe2, 0xc2),
-            r.width(),
-        );
-        let pos = centered_in(r, galley.size());
-        ui.painter()
-            .with_clip_rect(r)
-            .galley(pos, galley, Color32::WHITE);
-    }
-
     /// The splash picture of the kit that plays, as a texture (cached per kit, shared by the
     /// 808's mod window and Mods > Info); None when there is none.
     pub(crate) fn splash_texture(&mut self, ctx: &egui::Context) -> Option<egui::TextureHandle> {
@@ -1275,321 +1076,6 @@ impl App {
             self.splash = Some((self.doc.kit.clone(), tex));
         }
         self.splash.as_ref().and_then(|(_, t)| t.clone())
-    }
-
-    fn hit(&self, ui: &mut Ui, c: &Ctl, rect: Rect) -> Response {
-        // The kind is part of the key: the 303's accent knob and accent flag button share
-        // the layout id `tb303_N.accent`.
-        ui.interact(
-            rect,
-            egui::Id::unique(("hit", &c.kind, &c.id)),
-            Sense::click_and_drag(),
-        )
-    }
-
-    fn gesture(ui: &Ui, c: &Ctl) -> (egui::Id, Gesture) {
-        let id = egui::Id::unique(("gesture", &c.kind, &c.id));
-        (id, ui.data(|d| d.get_temp(id)).unwrap_or_default())
-    }
-
-    /// True on the frame the mouse goes down on the control (the action runs at mouse down).
-    fn first_press(&self, ui: &Ui, c: &Ctl, r: &Response) -> bool {
-        let (id, mut g) = Self::gesture(ui, c);
-        let down = r.is_pointer_button_down_on();
-        let first = down && !g.down;
-        g.down = down;
-        ui.data_mut(|d| d.insert_temp(id, g));
-        first
-    }
-
-    /// Repeat and wind buttons: one step at mouse down, then the held-button schedule.
-    fn repeat(&mut self, ui: &Ui, c: &Ctl, r: &Response) {
-        let (id, mut g) = Self::gesture(ui, c);
-        let down = r.is_pointer_button_down_on();
-        let time = ui.input(|i| i.time);
-        if down && !g.down {
-            g.t0 = time;
-            g.taken = 0;
-        }
-        g.down = down;
-        if down {
-            let t = ((time - g.t0) * 1000.0) as u32;
-            let total = 1 + behavior::repeat_extra_steps(t);
-            while g.taken < total {
-                self.panel.arrow(&c.id);
-                g.taken += 1;
-            }
-            ui.ctx().request_repaint_after(Duration::from_millis(16));
-        }
-        ui.data_mut(|d| d.insert_temp(id, g));
-    }
-
-    /// Where the pointer is, in panel pixels.
-    fn pointer(ui: &Ui, view: &View) -> Option<Pos2> {
-        ui.input(|i| i.pointer.latest_pos())
-            .map(|p| view.to_panel(p))
-    }
-
-    fn press_origin(ui: &Ui, view: &View) -> Option<Pos2> {
-        ui.input(|i| i.pointer.press_origin().or(i.pointer.latest_pos()))
-            .map(|p| view.to_panel(p))
-    }
-
-    fn knob(&mut self, ui: &mut Ui, view: &View, c: &Ctl, rect: Rect) {
-        let r = self.hit(ui, c, rect);
-        let (id, mut g) = Self::gesture(ui, c);
-        let down = r.is_pointer_button_down_on();
-        if r.hovered() || down {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
-        }
-        if down {
-            self.panel.held = Some(c.id.clone());
-            if !g.down {
-                // Mouse down grabs the knob where it is (no jump); Shift now means fine.
-                g.p0 = self.panel.knob(&c.id);
-                g.y0 = Self::press_origin(ui, view).map_or(0.0, |p| p.y);
-                g.fine = ui.input(|i| i.modifiers.shift);
-            }
-            if let Some(p) = Self::pointer(ui, view) {
-                let v = behavior::knob_drag(g.p0, g.y0, p.y, behavior::knob_span(&c.id), g.fine);
-                self.panel.set_knob(&c.id, v);
-            }
-        }
-        g.down = down;
-        ui.data_mut(|d| d.insert_temp(id, g));
-        // A double click sets the knob to its value in a new empty song (docs/ui_spec.md
-        // section 2); the demo panel has no link and no such song.
-        if r.double_clicked()
-            && let Some(v) = self.link.as_ref().and_then(|l| l.knob_default(&c.id))
-        {
-            self.panel
-                .set_knob(&c.id, behavior::knob_from_engine(v as i32));
-        }
-
-        // the static body and the pointer turned to the value (no value arc since task-179)
-        let k = art::knob_design(&c.part);
-        let p = self.panel.knob(&c.id);
-        paint_part(ui, &format!("{}_body", k.name), rect);
-        let angle = behavior::knob_angle(p).to_radians();
-        let pivot = Vec2::new(k.cx / k.w, k.cy / k.h);
-        paint_part_rotated(
-            ui,
-            &format!("{}_pointer", k.name),
-            rect,
-            Some((angle, pivot)),
-        );
-    }
-
-    fn fader(&mut self, ui: &mut Ui, view: &View, c: &Ctl, rect: Rect) {
-        let r = self.hit(ui, c, rect);
-        let (id, mut g) = Self::gesture(ui, c);
-        let down = r.is_pointer_button_down_on();
-        if down {
-            self.panel.held = Some(c.id.clone());
-            if !g.down {
-                let y = Self::press_origin(ui, view).map_or(0.0, |p| p.y) - c.y;
-                let p = self.panel.fader(&c.id);
-                if !behavior::fader_on_handle(p, y) {
-                    self.panel.set_fader(&c.id, behavior::fader_jump(y));
-                }
-                g.p0 = self.panel.fader(&c.id);
-                g.y0 = y + c.y;
-            }
-            if let Some(p) = Self::pointer(ui, view) {
-                self.panel
-                    .set_fader(&c.id, behavior::fader_drag(g.p0, g.y0, p.y));
-            }
-        }
-        g.down = down;
-        ui.data_mut(|d| d.insert_temp(id, g));
-        paint_part(ui, "fader_track", rect);
-        let top = behavior::fader_handle_top(self.panel.fader(&c.id));
-        paint_part(ui, "fader_handle", view.rect(c.x, c.y + top, 15.0, 11.0));
-    }
-
-    /// The step strips of the two drum machines: press sets the step to the opposite (808)
-    /// or the cycled value (909) and a drag paints every crossed step with that value.
-    fn drum_strips(&mut self, ui: &mut Ui, view: &View) {
-        for is808 in [true, false] {
-            // the keys' row: 16 cells of 16 px from x 14 (808) and of 21 px from x 26 (909)
-            let (origin, x0, y0, w, h) = if is808 {
-                (layout::TR808_ORIGIN, 14.0, 90.0, 256.0, 20.0)
-            } else {
-                (layout::TR909_ORIGIN, 26.0, 85.0, 336.0, 18.0)
-            };
-            let rect = view.rect(origin.0 + x0, origin.1 + y0, w, h);
-            let name = if is808 { "strip808" } else { "strip909" };
-            let r = ui.interact(
-                rect,
-                egui::Id::unique(("hit", name)),
-                Sense::click_and_drag(),
-            );
-            let gid = egui::Id::unique(("gesture", name));
-            let mut g: Gesture = ui.data(|d| d.get_temp(gid)).unwrap_or_default();
-            let down = r.is_pointer_button_down_on();
-            if down {
-                let Some(p) = (if g.down {
-                    Self::pointer(ui, view)
-                } else {
-                    Self::press_origin(ui, view)
-                }) else {
-                    continue;
-                };
-                let x = p.x - origin.0;
-                let step = if is808 {
-                    behavior::tr808_step(x)
-                } else {
-                    behavior::tr909_step(x)
-                };
-                if let Some(step) = step {
-                    let step = step as i32;
-                    if !g.down {
-                        g.new_value = if is808 {
-                            u8::from(!self.panel.steps808[self.panel.inst808][step as usize])
-                        } else {
-                            let m = ui.input(|i| Mods {
-                                ctrl: i.modifiers.ctrl,
-                                alt: i.modifiers.alt,
-                            });
-                            self.panel.step909_new_value(step as usize, m)
-                        };
-                        g.last_step = step;
-                    }
-                    // Every step crossed since the last frame.
-                    let (a, b) = (g.last_step.min(step), g.last_step.max(step));
-                    for s in a..=b {
-                        if is808 {
-                            self.panel.set_step808(s as usize, g.new_value != 0);
-                        } else {
-                            self.panel.set_step909(s as usize, g.new_value);
-                        }
-                    }
-                    g.last_step = step;
-                }
-            }
-            g.down = down;
-            ui.data_mut(|d| d.insert_temp(gid, g));
-        }
-        // The step parts are drawn here, after the hit tests, so a press shows at once.
-        let ctls = std::mem::take(&mut self.ctls);
-        for c in ctls.iter().filter(|c| c.kind == "steps") {
-            let name = self.panel.part_name(c, false, 0.0);
-            paint_part(ui, &name, view.rect(c.x, c.y, c.w, c.h));
-        }
-        self.ctls = ctls;
-    }
-
-    /// The legends and name rows select the instrument; dragging keeps selecting.
-    /// Also draws the selection frames.
-    ///
-    /// `lit` are the voices lit in the plugin's note mode (task-202): a green ring on the
-    /// 808's chip of the sound played (the lower legend or the upper chip, by the voice and not
-    /// by the switch), replacing the orange one when it is the selected chip, and a green LED
-    /// on the 909's name row, replacing the red one on the selected instrument. AC is lit
-    /// the same way. Nothing is lit in the standalone app.
-    fn instrument_selection(&mut self, ui: &mut Ui, view: &View, lit: &Lit) {
-        let (o8, o9) = (layout::TR808_ORIGIN, layout::TR909_ORIGIN);
-        /// (is the 808, section origin, [x y w h] in the section, name)
-        type Area = (bool, (f32, f32), [f32; 4], &'static str);
-        let areas: [Area; 4] = [
-            (true, o8, [10.0, 71.0, 264.0, 14.0], "legend808"),
-            (true, o8, [78.0, 43.0, 106.0, 12.0], "upper808"),
-            (false, o9, [4.0, 4.0, 358.0, 14.0], "legend909"),
-            (false, o9, [26.0, 74.0, 336.0, 10.0], "names909"),
-        ];
-        for (is808, o, [x, y, w, h], name) in areas {
-            let rect = view.rect(o.0 + x, o.1 + y, w, h);
-            let r = ui.interact(
-                rect,
-                egui::Id::unique(("hit", name)),
-                Sense::click_and_drag(),
-            );
-            if !r.is_pointer_button_down_on() {
-                continue;
-            }
-            let Some(p) = Self::pointer(ui, view) else {
-                continue;
-            };
-            let (sx, sy) = (p.x - o.0, p.y - o.1);
-            let hit = if is808 {
-                behavior::tr808_hit(sx, sy)
-            } else {
-                behavior::tr909_hit(sx, sy)
-            };
-            if let Some(i) = hit {
-                self.panel.select_instrument(is808, i);
-            }
-        }
-        // The marks of the selected instruments (task-179): the 808's chip, lighter with an
-        // orange ring (the upper label's chip when the shared slot's switch is up), and the
-        // 909's chip label lit with its LED in the AC box or the name row.
-        let i = self.panel.inst808.min(11);
-        let upper = (3..=7).contains(&i)
-            && self.panel.switch_position(&format!("tr808.slot{i}_switch")) == 0;
-        let selected = (upper, if upper { i - 3 } else { i });
-        // the 808's chips lit in note mode, as (upper label, index): AC, then the sounds
-        let mut lit808 = Vec::new();
-        if lit.ac[LIT_808] {
-            lit808.push((false, 0));
-        }
-        for bit in (0..16).filter(|b| lit.mask[LIT_808] & 1 << b != 0) {
-            // the sounds are the legend's chips 1..=11, then the upper labels (LC..MA)
-            lit808.push(if bit <= 10 {
-                (false, bit + 1)
-            } else {
-                (true, bit - 11)
-            });
-        }
-        let chip = |(upper, k): (bool, usize)| {
-            let (names, (x, y, w, h)) = if upper {
-                (&UPPER_808[..], UPPER_CHIP_808)
-            } else {
-                (&NAMES_808[..], LEGEND_808)
-            };
-            let x = x + 22.0 * k as f32;
-            (names[k], view.rect(o8.0 + x, o8.1 + y, w, h))
-        };
-        let (name, r) = chip(selected);
-        if !lit808.contains(&selected) {
-            paint_part(ui, &format!("sel808_{name}"), r);
-        }
-        for c in lit808 {
-            let (name, r) = chip(c);
-            // the selected chip stays lighter; its green ring replaces the orange one
-            let prefix = if c == selected {
-                "litsel808_"
-            } else {
-                "lit808_"
-            };
-            paint_part(ui, &format!("{prefix}{name}"), r);
-        }
-        let i = self.panel.inst909.min(11);
-        let (x, w) = chip_909(i);
-        let r = view.rect(o9.0 + x, o9.1 + 4.6, w, 9.2);
-        paint_part(ui, &format!("sel909_{}", NAMES_909[i]), r);
-        // the 909's LEDs lit in note mode: the sounds are the name row's 1..=11, and AC's
-        let mut lit909 = Vec::new();
-        if lit.ac[LIT_909] {
-            lit909.push(0);
-        }
-        lit909.extend(
-            (0..11)
-                .filter(|b| lit.mask[LIT_909] & 1 << b != 0)
-                .map(|b| b + 1),
-        );
-        let led_rect = |i: usize| {
-            let (cx, cy) = led_909(i);
-            view.rect(o9.0 + cx - 2.5, o9.1 + cy - 2.5, 5.0, 5.0)
-        };
-        // the selection LED, unless the instrument is lit: the green LED replaces the red one
-        if !lit909.contains(&i) {
-            let led = if i == 0 { "led909ac_on" } else { "led909_on" };
-            paint_part(ui, led, led_rect(i));
-        }
-        for i in lit909 {
-            let led = if i == 0 { "led909ac_lit" } else { "led909_lit" };
-            paint_part(ui, led, led_rect(i));
-        }
     }
 
     /// With `--screenshot`: after a few frames (the SVGs are loaded and rasterized) save the
@@ -1608,79 +1094,6 @@ impl App {
                 std::process::exit(0);
             }));
         }
-    }
-}
-
-/// The size of a background part: its rectangle (a missing part has none and draws nothing).
-fn part_size(name: &str) -> (f32, f32) {
-    art::part(name).map_or((0.0, 0.0), |p| (p.w, p.h))
-}
-
-/// The 808's legend chips (the first's x, y, w, h; 22 px apart), its upper labels' chips, and
-/// its instruments' and upper labels' names: the parts `sel808_<name>` (task-179).
-const LEGEND_808: (f32, f32, f32, f32) = (11.6, 72.6, 17.8, 9.2);
-const UPPER_CHIP_808: (f32, f32, f32, f32) = (78.6, 44.4, 17.8, 8.8);
-const NAMES_808: [&str; 12] = [
-    "AC", "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CB", "CY", "OH", "CH",
-];
-const UPPER_808: [&str; 5] = ["LC", "MC", "HC", "CL", "MA"];
-/// The 909's instruments: the parts `sel909_<name>`.
-const NAMES_909: [&str; 12] = [
-    "AC", "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CH", "OH", "CC", "RC",
-];
-/// The mod window's picture square (x, y, side) and the top of its name, in the window.
-const MOD_PICTURE: (f32, f32, f32) = (4.2, 3.7, 76.0);
-const MOD_NAME_TOP: f32 = 86.0;
-
-/// A 909 instrument's label on the chips at the top (y 4.6, 9.2 high): (x, w) in the section.
-fn chip_909(i: usize) -> (f32, f32) {
-    match i {
-        0 => (6.4, 18.4),
-        1..=5 => (26.8 + 42.0 * (i - 1) as f32, 39.6),
-        _ => (
-            236.8 + 42.0 * ((i - 6) / 2) as f32 + 19.8 * (i % 2) as f32,
-            19.8,
-        ),
-    }
-}
-
-/// A 909 instrument's selection LED: its center in the section (the AC box's for AC, the name
-/// row's for the others).
-fn led_909(i: usize) -> (f32, f32) {
-    match i {
-        0 => (10.0, 53.8),
-        1..=5 => (32.0 + 42.0 * (i - 1) as f32, 78.3),
-        _ => (
-            238.4 + 42.0 * ((i - 6) / 2) as f32 + if i.is_multiple_of(2) { 3.6 } else { 32.8 },
-            78.3,
-        ),
-    }
-}
-
-#[cfg(test)]
-mod geometry_tests {
-    use super::*;
-
-    /// The selection marks' places are the art generator's.
-    #[test]
-    fn the_selection_marks_match_the_art() {
-        use orb_ui_art::parts as art;
-        assert_eq!(LEGEND_808, art::LEGEND_808);
-        assert_eq!(UPPER_CHIP_808, art::UPPER_CHIP_808);
-        assert_eq!(NAMES_808, art::NAMES_808);
-        assert_eq!(UPPER_808, art::UPPER_808);
-        assert_eq!(NAMES_909, art::NAMES_909);
-        assert_eq!(MOD_PICTURE, art::MOD_PICTURE);
-        for (i, name) in NAMES_909.into_iter().enumerate() {
-            let (x, w, _) = art::chip_909(i);
-            let close =
-                |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3;
-            assert!(close(chip_909(i), (x, w)), "chip {i}");
-            assert!(close(led_909(i), art::led_909(i)), "led {i}");
-            let sel = crate::art::part(&format!("sel909_{name}")).unwrap();
-            assert!((sel.w - w).abs() < 1e-3, "sel909 {i}");
-        }
-        assert_eq!(crate::model::GR_COLORS, art::GR_COLORS);
     }
 }
 

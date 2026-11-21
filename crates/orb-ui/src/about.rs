@@ -174,11 +174,9 @@ mod tests {
             format!("width=\"{LOGO_W}\" height=\"{LOGO_H}\" viewBox=\"0 0 {LOGO_W} {LOGO_H}\"");
         assert!(svg.contains(&want), "{want} in the part's header");
         // the panel draws the same part over its transport background
-        assert!(
-            crate::layout::backgrounds()
-                .iter()
-                .any(|b| b.0 == LOGO_PART)
-        );
+        let skin = crate::skin::svg::modern();
+        let logo = crate::skin::Skin::layout(&*skin).logo.clone();
+        assert_eq!(logo.map(|l| l.part), Some(LOGO_PART.to_string()));
     }
 
     /// The wordmark's plate (task-179) is the art generator's, under the logo at 2x, and the

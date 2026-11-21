@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::parts::{
     BANK_Y, BLACK_303, FG_PCF, FG_TR808, GR_COLORS, KEY_X, KEY_Y, KEYCAP, KNOB_SWEEP, KNOB_X_303,
     KNOBS, KNOBS_909, LEGEND_808, LOGO_X, LOGO_Y, MOD_PICTURE, MOD_VIEW_808, NAMES_808, NAMES_909,
-    SEAM, WHITE_303, chip_909, led_909,
+    SEAM, UPPER_808, UPPER_CHIP_808, WHITE_303, chip_909, led_909,
 };
 use crate::svg::{Part, Svg, defs_for, n};
 
@@ -38,11 +38,16 @@ pub struct Ctl {
     pub w: f32,
     pub h: f32,
     pub extra: Extra,
+    /// The row's parameters in `layout.tsv` (`key=value`, space-separated; empty for none):
+    /// the geometry and the state parts the app's skin reads (assets/ui/README.md).
+    pub params: String,
 }
 
 pub struct Layout {
     /// Section backgrounds: part name and panel position.
     pub backgrounds: Vec<(String, f32, f32)>,
+    /// The section of each background, in the same order (`logo` for the wordmark).
+    pub sections: Vec<String>,
     pub ctls: Vec<Ctl>,
     /// What the app lays over the controls in the demo state: the selected instruments' marks
     /// and the glass over the mod's picture (part, panel position).
@@ -65,6 +70,12 @@ impl Builder<'_> {
         self.ox = ox;
         self.oy = oy;
         self.layout.backgrounds.push((bg.to_string(), ox, oy));
+        self.layout.sections.push(name.to_string());
+    }
+
+    /// Sets the parameters of the control pushed last.
+    fn params(&mut self, params: String) {
+        self.layout.ctls.last_mut().expect("a control").params = params;
     }
 
     fn size(&self, part: &str) -> (f32, f32) {
@@ -89,6 +100,7 @@ impl Builder<'_> {
             w,
             h,
             extra,
+            params: String::new(),
         });
     }
 
@@ -105,10 +117,14 @@ impl Builder<'_> {
             y,
             Extra::Knob { design, v },
         );
+        let span = knob_span(&self.section);
+        self.params(format!("span={}", n(span)));
     }
 
     fn fader(&mut self, id: &str, x: f32, y: f32, v: f32) {
         self.push(id, "fader", "fader_track", x, y, Extra::Fader { v });
+        let (_, handle) = self.size("fader_handle");
+        self.params(format!("handle={}", n(handle)));
     }
 
     /// A seven-segment display: the rectangle holds `digits` cells of 9 x 16, centered.
@@ -126,6 +142,7 @@ impl Builder<'_> {
                 n: digits,
                 text: text.to_string(),
             },
+            params: String::new(),
         });
     }
 
@@ -149,6 +166,38 @@ pub const KNOB_808_WHITE: usize = 2;
 pub const KNOB_909: usize = 3;
 pub const KNOB_GRAY: usize = 4;
 
+/// The pixels of vertical drag for a knob's full range, by section: the original's (the
+/// knob ctor's fourth argument, docs/ui_spec.md section 2): TB-303 62, TR-808 36, TR-909 41,
+/// the others 64. Written to `layout.tsv` as the knobs' `span`.
+pub fn knob_span(section: &str) -> f32 {
+    match section {
+        "tb303_1" | "tb303_2" => 62.0,
+        "tr808" => 36.0,
+        "tr909" => 41.0,
+        _ => 64.0,
+    }
+}
+
+/// The header meters' part (0..=4 segments lit) for each of the meter's 11 states: state 1
+/// (byte 2) lights the first segment, the amber third from 7 and the red top one from 9, where
+/// the master's 10-segment meters light their amber and red segments (task-179; docs/ui_spec.md
+/// section 19). Written to `layout.tsv` as the header meters' `map`.
+pub const HEADER_METER_MAP: [u8; 11] = [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4];
+
+/// The mod window's name text, in the window: (x, top, w, h), its font size and color.
+pub const MOD_NAME: (f32, f32, f32, f32) = (2.0, 86.0, 80.4, 19.0);
+pub const MOD_NAME_FONT: f32 = 6.6;
+pub const MOD_NAME_INK: &str = "e8e2c2";
+
+/// The drum machines' step strips, the hit areas of the step keys' row (section pixels, x y w
+/// h): 16 cells of 16 px from x 14 (808) and of 21 px from x 26 (909), the original's
+/// (docs/ui_spec.md sections 6 and 7).
+pub const STRIP_808: (f32, f32, f32, f32) = (14.0, 90.0, 256.0, 20.0);
+pub const STRIP_909: (f32, f32, f32, f32) = (26.0, 85.0, 336.0, 18.0);
+
+/// The rows' focus click areas: x 16..526, y 50 + 115 r, 115 high (`sub_42ADBB`).
+pub const ROW_AREA: (f32, f32, f32, f32) = (16.0, 50.0, 510.0, 115.0);
+
 /// The control rectangles of the whole panel, with the demo state of the mockup (song mode,
 /// playing, loop on, tempo 140, bar 9; row 1 has the focus; README.md of assets/ui).
 pub fn layout(parts: &[Part]) -> Layout {
@@ -158,6 +207,7 @@ pub fn layout(parts: &[Part]) -> Layout {
         sizes: &sizes,
         layout: Layout {
             backgrounds: Vec::new(),
+            sections: Vec::new(),
             ctls: Vec::new(),
             overlays: Vec::new(),
             foregrounds: Vec::new(),
@@ -190,6 +240,7 @@ fn transport(b: &mut Builder) {
     b.layout
         .backgrounds
         .push(("logo".to_string(), LOGO_X, LOGO_Y));
+    b.layout.sections.push("logo".to_string());
     b.knob("shuffle", KNOB_GRAY, 11.0, 13.0, 0.35);
     b.display("tempo", 44.0, 27.0, 27.0, 3, "140");
     b.arrows("tempo", "repeat", 73.0, 26.0);
@@ -434,7 +485,20 @@ fn tr808(b: &mut Builder) {
         .push(("fg_tr808".into(), b.ox + fx, b.oy + fy));
     let (x, y, _, _) = MOD_VIEW_808;
     b.part("mod_view", "modview", "mod_view", x, y);
-    let (px, py, _) = MOD_PICTURE;
+    let (px, py, side) = MOD_PICTURE;
+    let (nx, ny, nw, nh) = MOD_NAME;
+    b.params(format!(
+        "glass=mod_view_glass picture={},{},{},{} name={},{},{},{} font={} ink={MOD_NAME_INK}",
+        n(px),
+        n(py),
+        n(side),
+        n(side),
+        n(nx),
+        n(ny),
+        n(nw),
+        n(nh),
+        n(MOD_NAME_FONT)
+    ));
     b.overlay("mod_view_glass", x + px, y + py);
     // BD selected: its legend chip's mark
     let (lx, ly, _, _) = LEGEND_808;
@@ -523,6 +587,7 @@ fn mixer(b: &mut Builder, c: usize) {
         51.0,
         4.0,
     );
+    b.params(header_meter_params());
     b.knob("pan", KNOB_GRAY, 10.0, 25.0, 0.5);
     b.knob("delay", KNOB_GRAY, 42.0, 79.0, 0.2);
     b.fader("level", 10.0, 59.0, 0.72);
@@ -551,6 +616,13 @@ fn fx_header(b: &mut Builder, y: f32, on: bool, level: u8) {
         63.0,
         y + 0.5,
     );
+    b.params(header_meter_params());
+}
+
+/// A header meter's `map` parameter ([`HEADER_METER_MAP`]).
+fn header_meter_params() -> String {
+    let map: Vec<String> = HEADER_METER_MAP.iter().map(|v| v.to_string()).collect();
+    format!("map={}", map.join(","))
 }
 
 fn effects(b: &mut Builder) {
@@ -600,26 +672,254 @@ fn effects(b: &mut Builder) {
             8.0 + 7.0 * i as f32,
             26.5,
         );
+        // lit in the color of its place (green, amber, red), or dark
+        let lit = match color {
+            "g" => "green",
+            "y" => "amber",
+            _ => "red",
+        };
+        b.params(format!("on=gr_led_{lit} off=gr_led_off_{color}"));
     }
     b.knob("ratio", KNOB_GRAY, 12.0, 57.0, 0.52);
     b.knob("threshold", KNOB_GRAY, 53.0, 57.0, 0.5);
 }
 
-/// The `layout.tsv` text: one control per line, panel pixel rectangles.
-pub fn tsv(l: &Layout) -> String {
-    let mut s = String::from("id\tsection\tkind\tpart\tx\ty\tw\th\n");
+/// The `layout.tsv` text, the modern skin's layout table (assets/ui/README.md): the panel's
+/// size, the backgrounds and the wordmark in drawing order, the row focus bars and click
+/// areas, one line per control, the foregrounds, the drum machines' step strips and
+/// instrument hit areas, and the selection marks; panel pixel rectangles.
+pub fn tsv(parts: &[Part], l: &Layout) -> String {
+    let size = |name: &str| {
+        let p = parts
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("missing part {name}"));
+        (p.w, p.h)
+    };
+    let mut s = String::from("id\tsection\tkind\tpart\tx\ty\tw\th\tparams\n");
+    let mut row =
+        |id: &str, sec: &str, kind: &str, part: &str, r: (f32, f32, f32, f32), p: &str| {
+            let (x, y, w, h) = r;
+            s.push_str(&format!(
+                "{id}\t{sec}\t{kind}\t{part}\t{}\t{}\t{}\t{}",
+                n(x),
+                n(y),
+                n(w),
+                n(h)
+            ));
+            if !p.is_empty() {
+                s.push('\t');
+                s.push_str(p);
+            }
+            s.push('\n');
+        };
+    row("panel", "-", "panel", "-", (0.0, 0.0, PANEL_W, PANEL_H), "");
+    // the backgrounds in the app's drawing order: the cheeks, the transport and the wordmark,
+    // then each row's pattern section, instrument and mixer channel, then the master and the
+    // effects
+    let mut order = vec!["wood_left", "wood_right", "transport", "logo"];
+    let rows: Vec<[String; 3]> = (0..4)
+        .map(|r| {
+            let synth = match r {
+                0 | 1 => format!("tb303_{}", r + 1),
+                2 => "tr808".into(),
+                _ => "tr909".into(),
+            };
+            [
+                format!("pattern{}", r + 1),
+                synth,
+                format!("mixer{}", r + 1),
+            ]
+        })
+        .collect();
+    for r in &rows {
+        order.extend(r.iter().map(String::as_str));
+    }
+    order.extend(["master", "pcf", "delay", "dist", "comp"]);
+    for sec in order {
+        let i = l
+            .sections
+            .iter()
+            .position(|s| s == sec)
+            .unwrap_or_else(|| panic!("no section {sec}"));
+        let (part, x, y) = &l.backgrounds[i];
+        let (w, h) = size(part);
+        if sec == "logo" {
+            row("logo", "transport", "logo", part, (*x, *y, w, h), "");
+        } else {
+            // the plugin's transport has its own background (task-201)
+            let p = if sec == "transport" {
+                "plugin=bg_transport_plugin"
+            } else {
+                ""
+            };
+            row(&format!("{sec}.bg"), sec, "bg", part, (*x, *y, w, h), p);
+        }
+    }
+    let (fw, fh) = size("focus_off");
+    let (ax, ay, aw, ah) = ROW_AREA;
+    for r in 0..4 {
+        let i = l
+            .sections
+            .iter()
+            .position(|s| *s == format!("focus{}", r + 1))
+            .expect("a focus bar");
+        let (_, x, y) = l.backgrounds[i];
+        let sec = format!("pattern{}", r + 1);
+        let p = format!("row={r} on=focus_on");
+        row(
+            &format!("{sec}.focus"),
+            &sec,
+            "focus",
+            "focus_off",
+            (x, y, fw, fh),
+            &p,
+        );
+        let rect = (ax, ay + ah * r as f32, aw, ah);
+        row(
+            &format!("{sec}.row"),
+            &sec,
+            "row",
+            "-",
+            rect,
+            &format!("row={r}"),
+        );
+    }
     for c in &l.ctls {
-        s.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
-            c.id,
-            c.section,
+        row(
+            &c.id,
+            &c.section,
             c.kind,
-            c.part,
-            n(c.x),
-            n(c.y),
-            n(c.w),
-            n(c.h)
-        ));
+            &c.part,
+            (c.x, c.y, c.w, c.h),
+            &c.params,
+        );
+    }
+    for (part, x, y) in &l.foregrounds {
+        let (w, h) = size(part);
+        let sec = part.strip_prefix("fg_").unwrap_or(part);
+        row(&format!("{sec}.fg"), sec, "fg", part, (*x, *y, w, h), "");
+    }
+    // the drum machines: their step strips, instrument hit areas and selection marks
+    let (o8, o9) = ((90.0, 280.0), (90.0, 395.0));
+    let at = |o: (f32, f32), (x, y, w, h): (f32, f32, f32, f32)| (o.0 + x, o.1 + y, w, h);
+    row(
+        "tr808.strip",
+        "tr808",
+        "strip",
+        "-",
+        at(o8, STRIP_808),
+        "cells=16",
+    );
+    row(
+        "tr909.strip",
+        "tr909",
+        "strip",
+        "-",
+        at(o9, STRIP_909),
+        "cells=16",
+    );
+    // the 808: the legend row (12 cells of 22 from x 10) and the upper labels (the slots 3..7
+    // from x 78); the 909: the legend row and the name row, AC to x 26, then BD..HT 42 apart
+    // and RS..RC 21 apart (docs/ui_spec.md sections 6 and 7)
+    let cells = |o: (f32, f32), segs: &[(f32, f32, u32)]| {
+        let v: Vec<String> = segs
+            .iter()
+            .map(|(x, w, first)| format!("{}:{}:{first}", n(o.0 + x), n(*w)))
+            .collect();
+        format!("cells={} count=12", v.join(","))
+    };
+    let legend808 = cells(o8, &[(10.0, 22.0, 0)]);
+    row(
+        "tr808.legend",
+        "tr808",
+        "select",
+        "-",
+        at(o8, (10.0, 71.0, 264.0, 14.0)),
+        &legend808,
+    );
+    let upper808 = cells(o8, &[(78.0, 22.0, 3)]);
+    row(
+        "tr808.upper",
+        "tr808",
+        "select",
+        "-",
+        at(o8, (78.0, 43.0, 106.0, 12.0)),
+        &upper808,
+    );
+    let segs909 = format!(
+        "{} open=1",
+        cells(o9, &[(4.0, 22.0, 0), (26.0, 42.0, 1), (236.0, 21.0, 6)])
+    );
+    row(
+        "tr909.legend",
+        "tr909",
+        "select",
+        "-",
+        at(o9, (4.0, 4.0, 358.0, 14.0)),
+        &segs909,
+    );
+    row(
+        "tr909.names",
+        "tr909",
+        "select",
+        "-",
+        at(o9, (26.0, 74.0, 336.0, 10.0)),
+        &segs909,
+    );
+    let (lx, ly, lw, lh) = LEGEND_808;
+    for (k, name) in NAMES_808.into_iter().enumerate() {
+        let r = at(o8, (lx + 22.0 * k as f32, ly, lw, lh));
+        let p = format!("slot={k} lit=lit808_{name} litsel=litsel808_{name}");
+        row(
+            &format!("tr808.mark_{name}"),
+            "tr808",
+            "mark",
+            &format!("sel808_{name}"),
+            r,
+            &p,
+        );
+    }
+    let (ux, uy, uw, uh) = UPPER_CHIP_808;
+    for (k, name) in UPPER_808.into_iter().enumerate() {
+        let r = at(o8, (ux + 22.0 * k as f32, uy, uw, uh));
+        let p = format!("slot={k} upper=1 lit=lit808_{name} litsel=litsel808_{name}");
+        row(
+            &format!("tr808.mark_{name}"),
+            "tr808",
+            "mark",
+            &format!("sel808_{name}"),
+            r,
+            &p,
+        );
+    }
+    // the 909's chip labels show the selection only; its LEDs the selection and the lit voices
+    for (i, name) in NAMES_909.into_iter().enumerate() {
+        let (x, w, _) = chip_909(i);
+        let sel = format!("sel909_{name}");
+        let p = format!("slot={i} lit=- litsel={sel}");
+        row(
+            &format!("tr909.mark_{name}"),
+            "tr909",
+            "mark",
+            &sel,
+            at(o9, (x, 4.6, w, 9.2)),
+            &p,
+        );
+    }
+    for (i, name) in NAMES_909.into_iter().enumerate() {
+        let (cx, cy) = led_909(i);
+        let led = if i == 0 { "led909ac" } else { "led909" };
+        let p = format!("slot={i} lit={led}_lit litsel={led}_lit");
+        let r = at(o9, (cx - 2.5, cy - 2.5, 5.0, 5.0));
+        row(
+            &format!("tr909.led_{name}"),
+            "tr909",
+            "mark",
+            &format!("{led}_on"),
+            r,
+            &p,
+        );
     }
     s
 }

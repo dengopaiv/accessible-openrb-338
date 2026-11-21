@@ -513,12 +513,13 @@ impl App {
             // 3 cells of 9 x 16, centered in the display, as the panel's displays
             let ((x, y, w, h), n) = (PLUGIN_BAR, 3);
             let x0 = x + (w - 9.0 * n as f32) / 2.0;
-            for (i, f) in crate::behavior::digit_frames(p.position, n)
+            for (i, d) in crate::behavior::digit_frames(p.position, n)
                 .into_iter()
                 .enumerate()
             {
                 let r = view.rect(x0 + 9.0 * i as f32, y, 9.0, h);
-                crate::app::paint_part(ui, f, r);
+                let f = d.map_or("seg_blank".to_string(), |d| format!("seg_{d}"));
+                crate::app::paint_part(ui, &f, r);
             }
         }
         if let Some(m) = midi {

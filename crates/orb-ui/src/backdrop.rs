@@ -27,8 +27,14 @@ pub const SEAM: Color32 = Color32::from_rgb(0x14, 0x18, 0x1b);
 pub const TILE: f32 = 256.0;
 
 /// Paints the desk over `avail` (the window below the menu bar) and the panel's seam color
-/// under the panel of `view`.
-pub fn paint(ui: &Ui, avail: Rect, view: &View) {
+/// under the panel of `view`, a skin `size` units wide and high (every skin keeps the panel's
+/// aspect, and the shadows are laid in the panel's 624 x 510 proportions around any skin).
+pub fn paint(ui: &Ui, avail: Rect, view: &View, size: Vec2) {
+    // the view in the panel's pixels (a skin in the panel's units: the same)
+    let view = &View {
+        origin: view.origin,
+        scale: view.scale / (PANEL_W / size.x),
+    };
     let painter = ui.painter();
     let mut m = Mesh::default();
     for (p, c) in [

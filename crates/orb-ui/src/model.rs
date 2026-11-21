@@ -307,8 +307,8 @@ impl Default for Panel {
 
 /// The main panel's meter state 0..=10 of a meter byte 0..=127: the original's 11-frame master
 /// meter ([`peak_meter_frame`] over 11 frames, decision task-254), so the states step at the
-/// bytes 2, 3, 5, 7, 12, 19, 30, 49, 81 and 127. The header meters show it through
-/// [`header_meter_segments`].
+/// bytes 2, 3, 5, 7, 12, 19, 30, 49, 81 and 127. The modern skin's header meters show it
+/// through their `map` (four segments; `layout.tsv`, task-179).
 pub fn meter_state(byte: u8) -> u8 {
     peak_meter_frame(byte, 11) as u8
 }
@@ -339,18 +339,24 @@ pub fn peak_meter_frame(byte: u8, frames: u16) -> u16 {
     (peak_meter_level(byte) as u32 * (frames.max(1) as u32 - 1) / 127) as u16
 }
 
-/// The lit segments (0..=4) of a header meter (the mixer channels' and the effects') for the
-/// meter's state 0..=10 ([`meter_state`], the 11 frames of the original's meter): state 1
-/// (byte 2) lights the first segment, the amber third segment lights from 7 and the red top one
-/// from 9, where the master's 10-segment meters light their amber and red segments
-/// (task-179; docs/ui_spec.md section 19).
-pub fn header_meter_segments(state: u8) -> u8 {
-    [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4][state.min(10) as usize]
+/// How a control looks in its current state, for a skin to draw (`skin::svg` names the part
+/// of each look; docs/ui_spec.md section 22).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Look {
+    /// The control's part as the table names it (no state: an area, the mod window).
+    Plain,
+    /// On or off: toggles, radios, LEDs, the pattern grids, the gain-reduction LEDs, the 808's
+    /// steps (the pressed look of a held key is the skin's).
+    OnOff(bool),
+    /// A push button: at rest, or pressed while held.
+    Push,
+    /// Lit: Play while playing, Record while recording.
+    Lit,
+    /// A frame by value: a switch's position, a 909 step's 0..=3.
+    Value(u8),
+    /// A peak meter with its meter byte (the skin maps it to its frames).
+    Meter(u8),
 }
-
-/// The color of each gain-reduction LED by its place, left to right, lit or not: three green,
-/// three amber, three red (decision task-251).
-pub const GR_COLORS: [&str; 9] = ["g", "g", "g", "y", "y", "y", "r", "r", "r"];
 
 /// How many of the compressor's nine gain-reduction LEDs the original lights for its gain
 /// byte, a bar from the left (docs/ui_spec.md section 2, "Gain-reduction meter") [C]. The comp
@@ -1093,78 +1099,56 @@ impl Panel {
         }
     }
 
-    /// The part to draw for a control in its current state. `pressed` is a mouse button held
-    /// on it, `now` the time in seconds.
-    pub fn part_name(&self, c: &crate::layout::Ctl, pressed: bool, now: f64) -> String {
-        let fam = c.family();
+    /// How the control `c` looks in its current state at `now` (seconds); a skin draws it
+    /// (docs/ui_spec.md section 22). Knobs, faders and displays are drawn from their values.
+    pub fn look(&self, c: &crate::skin::Ctl, now: f64) -> Look {
         let (sec, name) = (c.section.as_str(), c.name());
-        // A routing key (`mixsw_`) shows pressed while the mouse is down on it, never after:
-        // its lamp alone shows the state.
-        let held = if pressed && fam == "mixsw_" {
-            "_pressed"
-        } else {
-            ""
-        };
-        let on_off = |on: bool| format!("{fam}{}{held}", if on { "on" } else { "off" });
-        let push = || format!("{fam}{}", if pressed { "pressed" } else { "rest" });
         match c.kind.as_str() {
             "toggle" if c.id == "transport.record" => {
                 if self.transport.recording {
-                    format!("{fam}lit")
+                    Look::Lit
                 } else {
-                    push()
+                    Look::Push
                 }
             }
-            "toggle" if c.id == "tr909.flam_button" => on_off(self.flam_button),
-            "toggle" => on_off(self.toggle_on(&c.id)),
-            "radio" => on_off(self.toggle_on(&c.id)),
-            "switch" | "hswitch" | "vswitch" => format!("{fam}{}", self.switch_position(&c.id)),
+            "toggle" if c.id == "tr909.flam_button" => Look::OnOff(self.flam_button),
+            "toggle" | "radio" => Look::OnOff(self.toggle_on(&c.id)),
+            "switch" | "hswitch" | "vswitch" => Look::Value(self.switch_position(&c.id)),
             "trigger" if c.id == "transport.play" => {
                 if self.transport.playing {
-                    format!("{fam}lit")
+                    Look::Lit
                 } else {
-                    push()
+                    Look::Push
                 }
             }
-            "trigger" | "wind" | "repeat" => push(),
-            "led" => on_off(self.led_lit(&c.id, now)),
+            "trigger" | "wind" | "repeat" => Look::Push,
+            "led" => Look::OnOff(self.led_lit(&c.id, now)),
             "grid" => {
+                let r = index_of(sec, "pattern").unwrap_or(0).min(3);
                 if let Some(n) = name.strip_prefix("pattern") {
-                    let r = index_of(sec, "pattern").unwrap_or(0).min(3);
                     let n: u8 = n.parse().unwrap_or(1);
-                    on_off(self.rows[r].lit_button() == Some(n - 1))
+                    Look::OnOff(self.rows[r].lit_button() == Some(n.max(1) - 1))
                 } else {
-                    let r = index_of(sec, "pattern").unwrap_or(0).min(3);
                     let letter = name.strip_prefix("bank").unwrap_or("A").as_bytes()[0] - b'A';
-                    on_off(self.rows[r].bank == letter)
+                    Look::OnOff(self.rows[r].bank == letter)
                 }
             }
-            "steps" => self.step_part(c),
+            "steps" => self.step_look(c),
+            // the gain-reduction LEDs: a bar from the left
             "meter" if name.starts_with("gr") => {
                 let i: usize = name[2..].parse::<usize>().unwrap_or(1).clamp(1, 9);
-                // a bar from the left, each LED in the color of its place, lit or not
-                let color = GR_COLORS[i - 1];
-                if i <= gr_lit(self.gr_byte) {
-                    let lit = match color {
-                        "g" => "green",
-                        "y" => "amber",
-                        _ => "red",
-                    };
-                    format!("gr_led_{lit}")
-                } else {
-                    format!("gr_led_off_{color}")
-                }
+                Look::OnOff(i <= gr_lit(self.gr_byte))
             }
-            "meter" => {
-                let state = meter_state(self.meters.get(&c.id).copied().unwrap_or(0));
-                if fam == "meter_14x14_" {
-                    format!("{fam}{}", header_meter_segments(state))
-                } else {
-                    format!("{fam}{state}")
-                }
-            }
-            _ => c.part.clone(),
+            "meter" => Look::Meter(self.meters.get(&c.id).copied().unwrap_or(0)),
+            _ => Look::Plain,
         }
+    }
+
+    /// The part the modern skin draws for a control in its current state (`pressed`: a mouse
+    /// button or a computer key holds it; `now` the time in seconds): the modern skin's naming
+    /// of [`Panel::look`] (`skin::svg::SvgSkin::part_name`).
+    pub fn part_name(&self, c: &crate::skin::Ctl, pressed: bool, now: f64) -> String {
+        crate::skin::svg::modern().part_name(self, c, pressed, now)
     }
 
     /// The next time after `now` the panel's look changes by itself, not by input or the engine
@@ -1203,19 +1187,17 @@ impl Panel {
         }
     }
 
-    fn step_part(&self, c: &crate::layout::Ctl) -> String {
-        let step: usize = c
+    fn step_look(&self, c: &crate::skin::Ctl) -> Look {
+        let step = c
             .name()
             .strip_prefix("step")
-            .unwrap()
-            .parse::<usize>()
-            .unwrap()
+            .and_then(|n| n.parse::<usize>().ok())
+            .unwrap_or(1)
+            .clamp(1, 16)
             - 1;
         if c.section == "tr808" {
             let lit = self.steps808[self.inst808][step];
-            let on = lit != (self.playing_step808 == Some(step));
-            let color = ["red", "orange", "yellow", "white"][step / 4];
-            format!("step808_{color}_{}", if on { "on" } else { "off" })
+            Look::OnOff(lit != (self.playing_step808 == Some(step)))
         } else {
             let mut v = self.steps909[self.inst909][step];
             if self.playing_step909 == Some(step) {
@@ -1225,7 +1207,7 @@ impl Panel {
             // flam frame (0x444F0C..0x444F18, docs/ui_spec.md section 7), and that is what the
             // engine plays: the flam pass retriggers every value above 2 (tr909.rs, 0x1002B320),
             // so 4 is an accent with a flam and 5..=255 the flam hit alone.
-            format!("step909_{}", v.min(3))
+            Look::Value(v.min(3))
         }
     }
 }
@@ -1467,14 +1449,20 @@ mod tests {
     /// lights one and the red one lights where the master's red segments do (state 9).
     #[test]
     fn header_meters_map_the_11_states_to_4_segments() {
-        let seg: Vec<u8> = (0..=10).map(header_meter_segments).collect();
-        assert_eq!(seg, [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4]);
-        assert!(seg.windows(2).all(|w| w[0] <= w[1]));
         let mut p = Panel::new();
         let c = crate::layout::controls()
             .into_iter()
             .find(|c| c.id == "mixer2.meter")
             .unwrap();
+        // the map is the modern skin's data (the header meters' `map` in layout.tsv)
+        let seg = c.params.nums("map").unwrap();
+        assert_eq!(seg, [0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]);
+        assert!(seg.windows(2).all(|w| w[0] <= w[1]));
+        for c in crate::layout::controls() {
+            if c.family() == "meter_14x14_" {
+                assert_eq!(c.params.nums("map").as_ref(), Some(&seg), "{}", c.id);
+            }
+        }
         // the meter bytes on the original's scale (decision task-254): one segment from 2 (state
         // 1), two from 7 (state 4), three from 30 (state 7), four from 81 (state 9)
         for (byte, want) in [
