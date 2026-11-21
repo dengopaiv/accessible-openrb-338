@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@agent-complex'
 created_date: '2026-11-21T10:03:00Z'
-updated_date: '2026-11-21T11:35:00Z'
+updated_date: '2026-11-21T12:02:00Z'
 labels:
   - ui
 milestone: m-8
@@ -110,6 +110,8 @@ Builds for the user's review: target/OpenRB-338.app (scripts/macos-dev-app.sh, v
 Open point for the user (not changed): the plugin's overlay (Sync/MIDI LEDs, Bar display, mode selector, format logo, resize grip; embed.rs) still names embedded parts in code: it is plugin chrome over the modern skin, the only skin the plugin has (task-267). The About window's art likewise.
 
 User review (2026-11-21, relayed by the supervisor): the user tried the 2bb014f builds (the dev app target/OpenRB-338.app and the plugin bundles, rebuilt from 2bb014f and installed by the supervisor) in a DAW: "looks good". No code change after the review; main still 14f4aff, no rebase needed.
+
+User, 2026-11-21 (after merge): the plugin overlay (embed.rs), the About window and the desk tile naming their SVG parts in code is accepted as is for now; moving them into a theme's data is to be handled when a new SVG theme is added.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
