@@ -1,13 +1,11 @@
 ---
 id: TASK-268
-title: >-
-  Themes 3/3: the animated pixelating transition between the modern and classic
-  skins
+title: 'Themes 3/3: a crossfade between the modern and classic skins'
 status: To Do
 assignee:
-  - '@agent-complex'
+  - '@agent-worker'
 created_date: '2026-11-21T10:03:00Z'
-updated_date: '2026-11-21T10:08:00Z'
+updated_date: '2026-11-21T12:54:00Z'
 labels:
   - ui
 milestone: m-8
@@ -24,39 +22,38 @@ ordinal: 3000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Why.** Task 3 of the user's themes request (2026-11-21, milestone m-8), after task 2 (View > Themes > Classic / Modern).
+**Why.** Task 3 of the user's themes request (2026-11-21, milestone m-8), after task-267 (View > Classic / Modern, two radio items directly in View).
 
-**The animation (the user's words, 2026-11-21).**
-- **Modern → classic:** the classic panel is in place underneath. The modern panel starts pixelating, down to the classic theme's pixel density (one block per original panel pixel, 624 x 510 across the panel), while fading out by alpha, within about 500 ms.
-- **Classic → modern:** the reverse. The modern panel starts fully transparent and fully pixelated, and resolves while fading in.
-- The duration is a constant in the code, not a setting; the user may tune it during their review. Use an ease curve and the pixel-size steps the user finds pleasant.
+**The user's decision (2026-11-21).** The user first asked for a pixelating transition. They saw preview videos of three variants: pixelate-and-fade, pixelate-first-then-fade, and fade only. They chose the **plain crossfade**. The pixelation, the panel capture and the scaling are dropped.
 
-**How (the user's requirement).**
-- Pixelate by **scaling**, never by rasterizing the SVG parts again: rasterizing from SVG is expensive.
-  - Take the modern panel as an image once at the start of the transition.
-  - Make it smaller (box-filter it down to the step's resolution), then scale it back up with **nearest** filtering.
-  - Do this on the GPU or with cheap CPU scaling of one image, not per part.
-- Getting the modern panel as one image needs an offscreen render or a frame capture. Choose and document one, for example:
-  - egui's viewport screenshot of a frame (asynchronous: one frame of latency), or
-  - rendering the panel into an offscreen wgpu texture through a paint callback.
-  For classic → modern, the modern image must be made before it is shown.
-- Whether the modern panel may freeze (a still image) during the 500 ms, or must keep its lights and meters live, is the user's call at review. A still image is acceptable to start.
-- The desk and the shadows don't animate. Input is ignored, or goes to the target skin, during the transition; say which.
-- Standalone only.
+**The animation.**
+- Switching skins crossfades the panel over about 500 ms: a constant in the code, not a setting. The user may tune it at review.
+- The ease curve is smoothstep, `t*t*(3-2t)`, the one the user approved in the preview.
+- Both directions: Modern → Classic fades the classic panel in, and Classic → Modern fades it out.
+- The desk, the shadows and the menu bar don't animate.
+
+**How (cheap, no capture).** The classic skin is drawn as one opaque texture (skin/classic.rs). So:
+1. Draw the modern skin normally.
+2. Draw the classic texture over it with alpha going 0 → 1 (to Classic) or 1 → 0 (to Modern).
+
+That's an exact crossfade with no offscreen render. Both panels stay live during the fade: meters, lights and running steps. Don't fade the modern skin's many SVG parts one by one; their overlap would show lower parts through upper ones.
+
+**Input during the fade.** It goes to the target skin's layout as soon as the switch is made. Document that, or choose another rule and say why.
+
+**Standalone only.** The plugin has no classic skin.
 
 **Testing.**
-- The transition's pure parts (the step and alpha schedule, the downscale and upscale) are unit tested.
-- A test runs a switch both ways and checks the end states draw the target skin.
+- The alpha schedule is unit tested: start, end, monotonic, and the ease.
+- A test switches both ways and checks that the end state draws only the target skin, and that a switch during a fade reverses smoothly from the current alpha.
 
-The user is the first reviewer: give them a dev app and say where the duration and step constants are, before the agent review.
+The user is the first reviewer: give them a dev app (`scripts/macos-dev-app.sh`) and say where the duration constant is, before the agent review.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Switching modern to classic pixelates the modern panel to the classic pixel density while fading it out over about 500 ms (a code constant), and classic to modern runs in reverse
-- [ ] #2 Pixelation uses image downscale plus nearest upscale of one captured panel image, never SVG rasterization per step; the capture method is documented
-- [ ] #3 The desk and shadows stay still; input during the transition is defined and documented
-- [ ] #4 The schedule and scaling are unit tested and a both-way switch test passes; docs/ui_spec.md describes the transition
-- [ ] #5 The user reviewed the build (and tuned the constants if wanted) before the agent review
-- [ ] #6 The pixelation's target density is the active classic set's: 624*N blocks across for a set at scale N (task-267), not a fixed 624
+- [ ] #1 Switching View > Classic / Modern crossfades the panel over about 500 ms (a code constant) with smoothstep easing, both directions; the desk, shadows and menu bar stay still
+- [ ] #2 The fade draws the modern skin, then the classic texture over it with the fade's alpha (no capture, no per-part fading); both skins stay live during the fade
+- [ ] #3 Input during the fade is defined and documented, and a switch during a fade reverses from the current alpha
+- [ ] #4 The alpha schedule is unit tested and a both-way switch test passes; docs/ui_spec.md describes the transition
+- [ ] #5 The user reviewed the build (and tuned the duration if wanted) before the agent review
 <!-- AC:END -->
