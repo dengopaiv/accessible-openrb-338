@@ -76,11 +76,15 @@
     var file = decodeURIComponent(a.getAttribute("href").split("/").pop());
     var pkg = a.getAttribute("data-kind") === "pkg";
     warn.textContent = "";
-    warn.appendChild(el("h4", null, "macOS will not open " + file + " at first"));
-    warn.appendChild(el("p", null, "OpenRB-338 is not signed or notarized with an Apple " +
-      "developer certificate, so macOS refuses to open it the first time. The download " +
-      "has started; when it is done, allow the file to run, either in the interface or in " +
-      "Terminal."));
+    warn.appendChild(el("h4", null, pkg ? "macOS will not open " + file + " at first" :
+      "macOS will not start OpenRB-338.app at first"));
+    warn.appendChild(el("p", null, pkg ? "OpenRB-338 is not signed or notarized with an " +
+      "Apple developer certificate, so macOS refuses to open it the first time. The " +
+      "download has started; when it is done, allow the file to run, either in the " +
+      "interface or in Terminal." : "The disk image opens normally. OpenRB-338 is not " +
+      "signed or notarized with an Apple developer certificate, so macOS refuses the app " +
+      "copied from it the first time. The download has started; when it is done, open the " +
+      "image, copy the app, and allow it to run, either in the interface or in Terminal."));
     warn.appendChild(el("h5", null, "In the interface"));
     var ol = el("ol");
     if (pkg) {

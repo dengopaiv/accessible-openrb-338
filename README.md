@@ -30,6 +30,8 @@ and Windows.
   distortion, PCF and compressor, with pattern and song mode, the loop, shuffle and recording.
 - **A scalable vector-graphics panel** in the original's layout and look, drawn from scratch,
   that stays sharp at any window size and pixel density.
+- **A classic theme:** View > Classic / Modern switches the standalone's panel to the loaded
+  mod's original panel art, fully playable, with a short crossfade between the two.
 - **Songs:** opens ReBirth 2.x songs (`.rbs`, RBS 4.0 to 4.2) and ReBirth 1.x songs, and saves
   RBS 4.2 files that the original opens. File > Info shows and edits the song's title, text, web
   page and copyright.
@@ -40,6 +42,9 @@ and Windows.
   (Help > Keyboard Shortcuts).
 - **Pattern commands:** cut, copy, paste and duplicate a pattern, with one level of undo (the
   Edit menu).
+- **A VST 3 and CLAP instrument plugin** with the same engine and panel (see The plugin below).
+  Besides the Mix it has outputs for the 303-1, 303-2, 808 and 909, tapped like ReBirth's
+  ReWire channels, after each channel's effects and before its level and pan.
 - **`orb`, a command-line tool,** to work with songs and mods from the terminal:
   - `orb render`: render a song's loop to WAV, FLAC or Ogg, far faster than real time (a
     five-minute song takes about a second and a half);
@@ -53,7 +58,8 @@ and Windows.
 
 - ReWire, and MIDI input or sync in the standalone application (the VST 3/CLAP plugin below takes
   the MIDI of its host).
-- Mod themes: a mod changes the drum sounds, not the look of the panel.
+- Mod themes other than the classic panel: a mod's panel art is drawn as it is, with no
+  higher-resolution sets.
 - The original's other Edit menu functions on patterns (clear, shift, randomize and the like).
 - The original's preferences and its Windows menu.
 - Export to AIFF (use WAV, FLAC or Ogg).
@@ -84,7 +90,9 @@ in the plugin: Help > Plugin Usage), and docs/plugin.md describes how it works.
    a menu entry.
 
 2. **Install it.**
-   - macOS: open the `.dmg` and drag OpenRB-338 to Applications.
+   - macOS: open the `.dmg` and drag OpenRB-338 to Applications. The image opens normally;
+     macOS refuses the unsigned app the first time you start it (Open Anyway in System Settings >
+     Privacy & Security on macOS 15, or right-click > Open on macOS 14 and older).
      The plugin (a VST3/CLAP instrument) is a separate download,
      `OpenRB-338-Plugins-<version>-<target>.pkg`: open it (it is unsigned, so right-click >
      Open, or Open Anyway in System Settings > Privacy & Security on macOS 15). It installs
