@@ -248,6 +248,8 @@ and `OPENRB_` names are not read any more and have no deprecated alias.
 | `ORB_UI_FRAME_STATS` | OpenRB-338 (`FrameStats`, `crates/orb-ui/src/app.rs`, task-153) | `1` prints, every 2 s of frames, the frames drawn per second and eframe's mean CPU time of a frame | none |
 | `ORB_UI_START_STATS` | OpenRB-338 (`start_stats`, `crates/orb-ui/src/app.rs`, task-179) | `1` prints the ms from the process's start to the first complete frame, and to every end of a background rasterizing at full resolution | none |
 | `ORB_PLUGIN_SIZE_LOG` | the plugin (`editor::size_log`, `crates/orb-plugin/src/editor.rs`, task-234) | a file to which the editor appends the host's size calls (`adjust_size`/`checkSizeConstraint`, `set_size`/`onSize`, `size`/`getSize`, `resize_hint`/`canResize`, `set_parent`), egui's `resized` and the size requests, with ms; unset: no log (docs/plugin.md section 10) | none |
+| `ORB_REAPER` | `crates/orb-plugin/tests/reaper.rs` (task-244) | the REAPER executable (`/Applications/REAPER.app/Contents/MacOS/REAPER`): runs the REAPER render test, which skips when it is unset (docs/plugin.md 7.1) | none |
+| `ORB_PLUGIN_LOAD_LOG` | the plugin (`load_log::log_activation`, `crates/orb-plugin/src/load_log.rs`, task-244) | a file to which every activation appends the path of the plugin library that runs and the rate; the REAPER test sets it to check which copy REAPER loaded; unset: no log | none |
 | `ORB_BUILD_BRANCH` | `crates/orb-ui/build.rs`, `scripts/release-env.sh`, `scripts/build.sh` (passed into Docker), `release.yml` | `main` or `other`: makes the About box's hash the main form | `RB_BUILD_BRANCH` |
 | `ORB_UI_VERSION` | set by `crates/orb-ui/build.rs` for rustc (`env!`), never by hand | the version string of the About box | `RB_UI_VERSION` |
 | `ORB_APPIMAGE_EMULATED` | `scripts/package-appimage.sh`, `appimage-pack.sh`, `appimage-smoke.sh` | `1` on an x86_64 AppImage built or checked on a Mac (local only) | `OPENRB_APPIMAGE_EMULATED` |
@@ -379,8 +381,8 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     run `tools/*.py` with Python 3 (every runner has it): `ORB_PYTHON` if set, else the first of
     `python3`, `python`, `py -3` on PATH that is Python 3 (`tests/common/python.rs`); none found
     fails the test with a message naming `ORB_PYTHON`. The tests that need `ORB_CD_ISO`,
-    `ORB_THIRDPARTY_MODS_DIR` or `ORB_THIRDPARTY_SONGS_DIR` (the only external inputs of the
-    tests; AGENTS.md) skip when those are absent (checked locally with all of them unset). The
+    `ORB_THIRDPARTY_MODS_DIR`, `ORB_THIRDPARTY_SONGS_DIR` or `ORB_REAPER` (the only external
+    inputs of the tests; AGENTS.md) skip when those are absent (checked locally with all of them unset). The
     synthetic recrypt tests (`crates/rbm/tests/recrypt_python.rs`, which run `tools/rbm.py`)
     need none of them.
     Linux installs `libasound2-dev` first.

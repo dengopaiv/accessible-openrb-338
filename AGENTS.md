@@ -139,7 +139,8 @@ The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crate
   PATH/ReBirth.dll --rebirth-exe CD-Rebirth.exe -o assets/Standard.rbm` rebuilds it byte for
   byte (the one command that reads ReBirth.dll and Rebirth.exe; `--iso` reads them from the CD
   image, and the gated test takes them from it; docs/rbm.md 13).
-- External test inputs: the tests read exactly three variables, and every test that needs one
+- External test inputs: the tests read exactly four variables (`ORB_REAPER`, the REAPER
+  executable for the opt-in REAPER render test, docs/plugin.md 7.1, and the three below), and every test that needs one
   skips with a message when it is not set (CI sets none). `ORB_CD_ISO` is the ReBirth 2.01 CD
   image: the crate `orb-testkit` takes from it, once per test process, the DAT, `ReBirth.dll`,
   `Rebirth.exe` and the four shipped mods (each checked against its pinned SHA-256) and the four
@@ -158,7 +159,10 @@ The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crate
   rbhost's render in `tests/refs/thirdparty_songs.json`, failing on a song file it does not list;
   regenerate it on the test machine with `tools/rbhost/thirdparty_songs.py --songs SONGS --mods
   MODS --rb20ful RB20FUL.DAT` (batched and resumable; docs/rbm.md 11.5). Not test
-  inputs: `ORB_LIVE_OUT` (orb-player's live_messages: an output folder) and `RBM_TEST_DAT` /
-  `RBM_TEST_MODS` (set by a cargo test for its child process only, `tools/rbm_test.py`).
+  inputs: `ORB_LIVE_OUT` (orb-player's live_messages: an output folder), `RBM_TEST_DAT` /
+  `RBM_TEST_MODS` (set by a cargo test for its child process only, `tools/rbm_test.py`) and
+  `ORB_PLUGIN_LOAD_LOG` (set by the REAPER test for its REAPER child only). Cargo's own
+  `CARGO_TARGET_DIR` is read where set by the tests that find built files (`exports.rs`,
+  `reaper.rs`: the bundles and the scratch folders under the target folder).
 - Song metadata: `orb info SONG.rbs [--mod-dir DIR] [--json]` prints the facts File > Info shows (format and version, title, text, web page, copyright, the mod and whether it is the built-in kit, a file of `--mod-dir` / `ORB_MOD_DIR`, missing, or not checked, tempo, shuffle, mode, loop, synth sound) for an RBS 4.x or a ReBirth 1.x song; `--json` keys are in `orb info --help`. The code is `crates/orb-cli/src/info.rs`, shared with orb-ui.
 - Corpus summary: `cargo run --release -p orb-cli -- compare --manifest tests/refs/manifest.json [--mod-dir DIR] [--set diag,app,shipped] [NAME...]` (the 11 mod songs need `--mod-dir` with the four recrypted shipped mods; `orb mod recrypt --iso "$ORB_CD_ISO" -o DIR` makes them from the CD image) prints per song `EQUAL` or the first difference (frame, time, bar, channel, both values) and exits 1 on any difference. One song: `orb compare SONG.rbs --reference REF.flac|REF.wav [--idle-blocks N]`.

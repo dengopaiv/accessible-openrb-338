@@ -30,6 +30,7 @@ GPL-3.0-only.
 | `src/resample.rs` | audio | the resampler for host rates other than 44.1 kHz |
 | `src/params.rs` | both | the parameter table (a constant) |
 | `src/editor.rs` | main | the editor: orb-ui's panel in the host's window (section 10) |
+| `src/load_log.rs` | main | the activation log (`ORB_PLUGIN_LOAD_LOG`) that names the library that runs (section 7.1) |
 
 The process side reuses orb-player's lock-free split (`crates/orb-player/src/lib.rs`): the
 UI half (`Player`) stays on the main thread behind a mutex that `process` never takes, the
@@ -143,7 +144,8 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   a note fell before the play position, where the host drops it (task-226 round 3: a 909
   bass drum at frame 0 after 7777 stopped frames came 33 frames early). The output is a
   function of the events' frames alone: buffer sizes 1, 63, 64, 512 and 4096 give the same
-  samples (`tests/timing.rs`). A call of no frames takes no changes; they are seen at the next
+  samples (`tests/timing.rs`); not when a block starts exactly on a step's tick while the
+  plugin follows the host's position (section 7.1, task-263). A call of no frames takes no changes; they are seen at the next
   call.
 - **The mode** (task-217, task-218; a setting of the state, not a parameter, section 5) is
   read before each block and at each section note. In **Latch Pattern Mode** (task-217's
@@ -350,11 +352,117 @@ the process side's sources checked for lock types), and the exports (`exports.rs
 the library, loads it with the dynamic loader, checks the CLAP descriptor and the VST3 factory's
 class info, and runs a minimal CLAP host that restores a state with a song in pattern mode,
 activates at 44.1 kHz, processes with a CLAP transport that plays (no tempo, no position), and
-gets the same samples as the process side run directly. Loading in a real host (Reaper) has not
-been tried by the tests. `sync.rs` (task-198) runs a simulated host transport (section 8),
+gets the same samples as the process side run directly. A real host, REAPER, is the opt-in
+`reaper.rs` (task-244, section 7.1). `sync.rs` (task-198) runs a simulated host transport (section 8),
 `note_mode.rs` (task-200) note mode (section 9), `editor.rs` (task-201) the editor headless
 (section 10), `preview.rs` (task-217) the preview and its set through the process path
 (section 4.2).
+
+### 7.1 The REAPER render test (task-244)
+
+`cargo test -p orb-plugin --test reaper` renders committed REAPER projects through REAPER's
+command line and compares the WAVs with the plugin's process side driven in-process as REAPER
+drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP format, the
+`reaper.ini` keys and the command line differ between versions.
+
+- **Opt-in.** The render test runs only with `ORB_REAPER` set to the REAPER executable
+  (`/Applications/REAPER.app/Contents/MacOS/REAPER`); otherwise it prints `skipped: ...` and
+  passes, as the `ORB_CD_ISO` tests do. CI does not run it (REAPER is licensed software), and
+  it knows REAPER's settings for macOS only (elsewhere it skips with a message). It takes about
+  a minute: 20 renders of 1.5 to 5 s and the in-process references. The fixtures' freshness
+  test (`the_fixtures_are_current`) always runs.
+- **The fresh build only, nothing installed** (the user's decision, 2026-11-21). The test
+  builds the bundles (`cargo xtask bundle orb-plugin --release`, into `target/bundled`) and
+  runs each render as `REAPER -newinst -nosplash -ignoreerrors -cfgfile
+  target/reaper/<case>.<format>/resources/reaper.ini -renderproject <copy of the fixture>`:
+  - `-newinst` starts an instance of its own: a REAPER the user has open is neither used nor
+    disturbed (without it the render could go to the running instance).
+  - `-cfgfile` moves REAPER's whole resource folder to the ini's folder: the plugin caches
+    (`reaper-vstplugins_arm64.ini`, `reaper-clap-macos-aarch64.ini`), `reaper-fxtags.ini`,
+    `Scripts/` and the rest are written there, so the user's REAPER configuration and caches
+    are never read or written and no other resource folder is needed.
+  - The scratch `reaper.ini`: `vstpath_arm64` and `clap_path_macos-aarch64` (on x86_64
+    `vstpath64` and `clap_path_macos-x86_64`; the keys are strings of the executable) list only
+    `target/bundled`. `vstfullstate=33605`: without it REAPER's first start appends
+    `/Library/Audio/Plug-Ins/VST3;~/Library/Audio/Plug-Ins/VST3` to the VST path and scans
+    them (seen on an exploratory first try, which read the user's installed copies into its
+    scratch cache; nothing was written outside it). So the protection is these path settings
+    plus the test's check, after every render, that the scratch `reaper.ini` still lists only
+    `target/bundled` in both keys: the test fails if REAPER added its default folders.
+    `coreaudiobs=512`, `coreaudioindevnew=<none>`, `coreaudiooutdevnew=<none>`: REAPER's
+    dummy audio device; without them a new resource folder stops at the modal "You have not
+    yet selected an audio device" (in REAPER's arm64 code, `OSXhasAudioBeenConfigured`
+    0x1006EF298 wants `coreaudiobs` and both device names, `audioConfigInit` 0x1006EF33C reads
+    them, and the streamer choice 0x1006EF538 takes `audioStreamer_dummy` when both are
+    `<none>`). The evaluation license's nag does not stop `-renderproject`.
+  - **Which copy ran.** With `ORB_PLUGIN_LOAD_LOG` set to a file, every activation appends the
+    path of the library that runs (`dladdr` of the plugin's own code; `src/load_log.rs`) and
+    the rate. The test fails unless every line names `target/bundled/OpenRB-338.<format>/
+    Contents/MacOS/OpenRB-338` at the project's rate, REAPER kept the two paths, and each
+    scratch cache lists one OpenRB-338.
+  - A render that does not finish in 120 s (a dialog) fails the test, which stops only the
+    REAPER it started.
+- **Fixtures.** `crates/orb-plugin/tests/reaper/<case>.<vst3|clap>.RPP`, each case in both
+  formats, made by `cargo run -p orb-plugin --example reaper_fixtures` from
+  `tests/reaper/template.RPP` and the cases of `tests/reaper/cases.rs`. Rerun it when the
+  state format, a case or the template changes; the freshness test fails on a stale fixture.
+  A fixture holds the plugin's block as REAPER 7.86 saves it (from a project REAPER saved
+  through a ReaScript): for VST3 a header line (the class's REAPER id 1476801187 as a
+  little-endian u32, 0xFEED5EEE, 0 inputs, 10 outputs and their u64 pin masks), a line of
+  (data size, 1, 0xFFFF), the data (the component state's size and 1, nice-plug's JSON state,
+  then 8 zero bytes) and 6 zero bytes; for CLAP `CFG 4 0 0 ""`, an empty `OUT_PINS` and
+  `STATE`, the base64 of nice-plug's CLAP state (u64 length, JSON); base64 lines of 96 bytes.
+  The state's JSON holds the song, the patterns, the controls and the mode (section 5). A
+  MIDI item counts in frames (its division is a quarter note's frames), so a note plays at the
+  frame the case gives it. Renders are 32-bit float WAVs (`RENDER_CFG` `ZXZhdyAAAA==`);
+  `RENDER_STEMS 1` is the master mix and a stem per selected track.
+- **REAPER drives the plugin as the in-process host.** At 44.1 kHz REAPER's frame `j` is the
+  plugin's output frame `j + 64` (it compensates the reported latency), at 48 kHz `j + 105`;
+  with the in-process host rolling from beat 0 at the project's tempo and the item's notes at
+  their frames, the master render (the Mix) of every case, in both formats, is bit for bit the
+  in-process one (the in-process render is also checked bit for bit for calls of 64 and 1024
+  frames). The device outputs' tracks are compared with two REAPER exemptions (multi-output,
+  below).
+- **The cases**, all at 120 BPM (below), each also compared as follows:
+  - the 303's slide pattern (`303_slide`), and the 808's and 909's accent patterns
+    (`808_accent_level127`, `909_accent_level127`) with the PCF on their channel (wave 0),
+    dragged out (`clip::notes`, two loops) and played in note mode, against orb-player's
+    pattern-mode render (Latch Pattern Mode through the same process side, the host rolling
+    from beat 0), up to the block where the pattern starts the loop the clip does not have.
+    With each note moved to the first frame of the block where the pattern plays its step
+    (and the 303's first note-off to tick 25, where the pattern's clean start, stepping step 1
+    at tick 1, closes its gate), all three are within one LSB (task-243): the real check. The
+    moved note-off covers a real discrepancy: the clip closes the first gate at tick 24, the
+    pattern at 25, up to 0.0045 apart (task-265). At
+    the clip's own times the difference is task-227's gap (the same hits a block later, and
+    the 303's waveform, which depends on when a note starts); the bounds there are measured
+    ceilings, not a model, catching only gross changes: 0.1497 (303), 1.5874 (808), 1.7431
+    (909), the drums' equal to `tests/note_clock.rs`'s;
+  - `full_mix` at 48 kHz (the resampler, the 105-frame latency): bit-identical to the
+    in-process plugin (`Core`) at 48 kHz, not to orb-player's 44.1 kHz render;
+  - multi-output (section 13): the four device outputs routed (`NCHAN 10`, each device track
+    `AUXRECV` of channels 3/4 .. 9/10 before its fader, no master send) and rendered as stems.
+    The Mix is bit for bit the same project's with no outputs routed. Each device track is the
+    in-process plugin's (`Core`) bus bit for bit, except that REAPER 7.86's VST3 host writes 0
+    for a sample below about 1e-16 (the 909's decay tail, 3e-17; allowed for the VST3 tracks
+    only) and its CLAP host writes +0 for the plugin's -0 (the 909, frame 58965; the CLAP
+    tracks are compared as values, +0 = -0);
+  - `loop_ignored`, a limitation pin and not a matching case: Latch Pattern Mode of
+    `full_mix` with a looped time selection (bar 2 to 3, `LOOP 1`). **REAPER's command-line
+    render does not loop**: it renders the linear timeline, bit for bit the project's without
+    the loop (the master renders compared bit for bit), and the test fails once that changes. A looped host transport is not
+    covered (task-264).
+- **120 BPM, not 125** (found by this test): at 125 BPM a block starts exactly on bar 2's tick
+  768 (the host's tick at block `m` is `m * tempo * 512 / 110250`; block 1323), and the
+  plugin's position there, extrapolated from the start of the host's call, comes out as 768.0
+  or 767.9999999999999 by the call's start. The output then depends on the host's buffer size
+  from that bar line on: in-process, Latch Pattern Mode at 48 kHz differs between calls of 256
+  and 512 frames from output frame 92161 (up to 0.16), and the note-mode clock's PCF at
+  44.1 kHz (the 808 case) between calls of 64 and 1024 frames from frame 84608 (up to 0.12);
+  REAPER's VST3 and CLAP renders at 48 kHz matched different call sizes. Section 4's claim that
+  the output does not depend on the buffer sizes holds only away from such exact ticks
+  (task-263). At 120 BPM the first block that starts on a whole tick that is a multiple of 24
+  is 11025 (16 s), after every render's end.
 
 ## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
 
