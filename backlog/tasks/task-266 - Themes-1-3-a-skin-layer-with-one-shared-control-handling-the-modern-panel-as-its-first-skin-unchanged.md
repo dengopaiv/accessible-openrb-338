@@ -7,6 +7,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-21T10:03:00Z'
+updated_date: '2026-11-21T10:05:00Z'
 labels:
   - ui
 milestone: m-8
@@ -66,4 +67,6 @@ The user is the first reviewer: they try the standalone and the plugin by hand b
 - [ ] #3 The modern panel runs on the layer with no visible or behavioral change, in the standalone and the plugin; existing orb-ui and orb-plugin tests pass
 - [ ] #4 Tests drive the controller through a skin with moved, extra and missing controls
 - [ ] #5 docs/ui_spec.md describes the skin layer; the user reviewed the build before the agent review
+- [ ] #6 The modern skin is the generic SVG renderer plus one layout table plus one part set: no part or file name is hard-coded outside that set, and the colors of what the renderer draws itself (focus bar, shape-drawn lights and the like) come from the theme (user, 2026-11-21: another SVG-based theme should be easy to add)
+- [ ] #7 A test builds a second SVG skin from a tiny dummy part set and layout table and drives and draws it through the shared controller and renderer
 <!-- AC:END -->
