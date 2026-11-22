@@ -31,6 +31,7 @@ use orb_ui::embed::{
 };
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
 use orb_ui::menu::Cmd;
+use orb_ui::pattern_editor::Flag;
 use orb_ui::settings::Settings;
 
 use common::{song_bytes, test_mod};
@@ -81,6 +82,9 @@ struct Harness {
     cursor: egui::CursorIcon,
     /// The texts drawn in the last frame.
     texts: Vec<String>,
+    /// What the frames put on the system clipboard (`OutputCommand::CopyText`, which
+    /// egui-baseview writes to the clipboard).
+    copied: Vec<String>,
     playing: bool,
     beats: f64,
 }
@@ -114,6 +118,7 @@ impl Harness {
             commands: Vec::new(),
             cursor: egui::CursorIcon::Default,
             texts: Vec::new(),
+            copied: Vec::new(),
             playing: false,
             beats: 0.0,
         };
@@ -157,6 +162,11 @@ impl Harness {
         let mut out = self.ctx.run_ui(input, |ui| app.show(ui));
         out.textures_delta.clear();
         self.cursor = out.platform_output.cursor_icon;
+        for c in &out.platform_output.commands {
+            if let egui::OutputCommand::CopyText(t) = c {
+                self.copied.push(t.clone());
+            }
+        }
         self.texts = out
             .shapes
             .iter()
@@ -198,6 +208,21 @@ impl Harness {
         self.move_to(p);
         self.button(true);
         self.button(false);
+    }
+
+    /// Clicks along the menu bar from its left end until a menu with `item` is open (the
+    /// titles' places follow their texts); the x clicked.
+    fn open_menu_with(&mut self, item: &str) -> f32 {
+        for x in (6..300).step_by(4) {
+            egui::Popup::close_all(&self.ctx);
+            self.click(Pos2::new(x as f32, MENU_H / 2.0));
+            self.frame(vec![]);
+            self.frame(vec![]);
+            if egui::Popup::is_any_open(&self.ctx) && self.texts.iter().any(|t| t == item) {
+                return x as f32;
+            }
+        }
+        panic!("no menu has {item}");
     }
 
     fn value(&self, id: &str) -> i32 {
@@ -332,11 +357,8 @@ fn the_play_light_is_the_preview_not_the_hosts_transport() {
 #[test]
 fn the_options_menu_has_no_mode_items() {
     let mut h = Harness::new(with("303_accent0"));
-    // Options is the third title of the bar (File, Mods, Options, Help)
-    h.click(Pos2::new(104.0, MENU_H / 2.0));
-    h.frame(vec![]);
-    h.frame(vec![]);
-    assert!(egui::Popup::is_any_open(&h.ctx), "Options opened");
+    // the Options menu (File, Edit, Mods, Options, Help)
+    h.open_menu_with("Vintage ReBirth Synth Sound");
     let texts = h.texts.join("|");
     assert!(texts.contains("Vintage ReBirth Synth Sound"), "{texts}");
     assert!(texts.contains("Play Mod Startup Sound"), "{texts}");
@@ -354,11 +376,8 @@ fn the_plugin_has_no_themes() {
     h.frame(vec![]);
     let bar = h.texts.join("|");
     assert!(bar.contains("Mods") && !bar.contains("View"), "{bar}");
-    // Mods is the second title of the bar (File, Mods, Options, Help)
-    h.click(Pos2::new(56.0, MENU_H / 2.0));
-    h.frame(vec![]);
-    h.frame(vec![]);
-    assert!(egui::Popup::is_any_open(&h.ctx), "Mods opened");
+    // the Mods menu (File, Edit, Mods, Options, Help)
+    h.open_menu_with("Choose file...");
     let texts = h.texts.join("|");
     assert!(texts.contains("Refresh List"), "the Mods menu: {texts}");
     assert!(!texts.contains("Theme Viewer"), "{texts}");
@@ -369,6 +388,134 @@ fn the_plugin_has_no_themes() {
     h.frame(vec![]);
     assert_eq!(h.app.theme(), orb_ui::settings::Theme::Modern);
     assert!(std::sync::Arc::ptr_eq(h.app.skin(), &skin));
+}
+
+/// The Edit menu of the plugin: its item `text` clicked (the menu opened first).
+fn click_edit_item(h: &mut Harness, text: &str) {
+    h.open_menu_with("Cut Pattern");
+    let (r, enabled) = h.app.edit_item(text).expect("drawn");
+    assert!(enabled, "{text}");
+    h.click(r.center());
+    h.frame(vec![]);
+}
+
+/// task-274, the user's review, round 3: the plugin's Edit menu has every item of the
+/// standalone's, in its order and with its names, and no shortcut texts.
+#[test]
+fn the_edit_menu_has_the_standalones_items_without_shortcuts() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.open_menu_with("Cut Pattern");
+    let texts = h.texts.join("|");
+    let items = [
+        "Undo",
+        "Cut Pattern",
+        "Copy Pattern",
+        "Paste Pattern",
+        "Duplicate Pattern",
+        "303 Pattern Editor...",
+    ];
+    let ys: Vec<f32> = items
+        .iter()
+        .map(|t| h.app.edit_item(t).unwrap_or_else(|| panic!("{t}")).0.top())
+        .collect();
+    assert!(ys.windows(2).all(|w| w[0] < w[1]), "in order: {ys:?}");
+    assert_eq!(h.app.edit_item("Undo").map(|i| i.1), Some(false));
+    for key in ["Z", "X", "C", "V", "D", "E"] {
+        for m in ["Ctrl+", "Cmd+"] {
+            let k = format!("{m}{key}");
+            assert!(!h.texts.contains(&k), "{k} in {texts}");
+        }
+    }
+}
+
+/// task-274, round 3: Copy, Paste, Cut, Duplicate and Undo of the plugin's Edit menu work as
+/// the standalone's. Copy puts the marker on the system clipboard (egui-baseview writes
+/// `CopyText` to it); Paste takes the app's clipboard directly, as the plugin's window does
+/// not answer egui's paste request, and asks for none.
+#[test]
+fn the_edit_menus_pattern_commands_work_in_the_plugin() {
+    let mut h = Harness::new(with("303_accent0"));
+    let pattern = |h: &Harness, p: u8| h.app.link.as_ref().unwrap().pattern(0, p).to_vec();
+    let a1 = pattern(&h, 0);
+    assert!(
+        !orb_ui::link::is_empty_pattern(0, &a1),
+        "the song's A1 has steps"
+    );
+    h.app.panel.focus = 0;
+    click_edit_item(&mut h, "Copy Pattern");
+    let clip = h.app.clip.clone().expect("copied");
+    assert_eq!(clip.bytes, a1);
+    assert_eq!(
+        h.copied.last(),
+        Some(&clip.marker),
+        "the marker on the clipboard"
+    );
+    assert!(clip.marker.starts_with("OpenRB-338 pattern: TB-303 1 A1"));
+    // A3 selected; the paste
+    h.app.panel.press("pattern1.pattern3", 0.0);
+    h.frame(vec![]);
+    let a3 = pattern(&h, 2);
+    click_edit_item(&mut h, "Paste Pattern");
+    assert_eq!(pattern(&h, 2), a1);
+    assert!(
+        !h.commands
+            .iter()
+            .any(|c| matches!(c, ViewportCommand::RequestPaste)),
+        "{:?}",
+        h.commands
+    );
+    assert_eq!(h.app.undo_name(), Some("Paste Pattern"));
+    click_edit_item(&mut h, "Undo");
+    assert_eq!(pattern(&h, 2), a3);
+    // Cut empties A1 and Undo brings it back
+    h.app.panel.press("pattern1.pattern1", 0.0);
+    h.frame(vec![]);
+    click_edit_item(&mut h, "Cut Pattern");
+    assert!(orb_ui::link::is_empty_pattern(0, &pattern(&h, 0)));
+    click_edit_item(&mut h, "Undo");
+    assert_eq!(pattern(&h, 0), a1);
+    // Duplicate into the next empty pattern, which is selected
+    click_edit_item(&mut h, "Duplicate Pattern");
+    let to = h.app.panel.rows[0].pattern;
+    assert_ne!(to, 0);
+    assert_eq!(pattern(&h, to), a1);
+}
+
+/// task-274: the plugin's Edit menu opens the 303 pattern editor (no shortcut text); the item
+/// opens the editor's window on TB-303 1's pattern, an edit in it goes into the plugin's song,
+/// and Undo (the user's review, round 2) names the change and takes it back.
+#[test]
+fn the_edit_menu_opens_the_303_pattern_editor_and_undoes_its_changes() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.open_menu_with("303 Pattern Editor...");
+    assert_eq!(h.app.edit_item("Undo").map(|i| i.1), Some(false));
+    let (r, enabled) = h.app.edit_item("303 Pattern Editor...").expect("drawn");
+    assert!(enabled);
+    h.click(r.center());
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let e = h.app.pattern_editor();
+    assert!(e.open);
+    assert_eq!(e.synth, 0);
+    let (k, p) = (e.synth, e.pattern);
+    let before = h.app.link.as_ref().unwrap().pattern(k, p).to_vec();
+    let cell = h.app.pattern_editor_flag_cell(Flag::Accent, 15).unwrap();
+    h.click(cell.center());
+    let after = h.app.link.as_ref().unwrap().pattern(k, p).to_vec();
+    assert_ne!(after, before, "the click edits the pattern");
+    assert_eq!(
+        orb_ui::pattern_editor::flag(&after, 15, Flag::Accent),
+        !orb_ui::pattern_editor::flag(&before, 15, Flag::Accent)
+    );
+    // Edit > Undo Edit Pattern puts it back
+    h.open_menu_with("Undo Edit Pattern");
+    let (r, enabled) = h.app.edit_item("Undo").expect("drawn");
+    assert!(enabled);
+    h.click(r.center());
+    h.frame(vec![]);
+    assert_eq!(h.app.link.as_ref().unwrap().pattern(k, p), &before[..]);
+    assert_eq!(h.app.undo_name(), None);
 }
 
 /// task-267: the 808's mod window is no link (the Theme Viewer is gone): no hand cursor.
@@ -387,11 +534,8 @@ fn the_mod_window_is_no_link_in_the_plugin() {
 #[test]
 fn the_help_menu_opens_the_plugin_usage_page() {
     let mut h = Harness::new(with("303_accent0"));
-    // Help is the fourth title of the bar (File, Mods, Options, Help)
-    h.click(Pos2::new(150.0, MENU_H / 2.0));
-    h.frame(vec![]);
-    h.frame(vec![]);
-    assert!(egui::Popup::is_any_open(&h.ctx), "Help opened");
+    // the Help menu, last in the bar (File, Edit, Mods, Options, Help)
+    let x = h.open_menu_with("About OpenRB-338...");
     let texts = h.texts.join("|");
     assert!(texts.contains("Plugin Usage..."), "{texts}");
     assert!(texts.contains("About OpenRB-338..."), "{texts}");
@@ -399,7 +543,7 @@ fn the_help_menu_opens_the_plugin_usage_page() {
     assert!(!h.app.plugin_usage_is_open());
 
     // the item: the first of the menu, under the title
-    h.click(Pos2::new(190.0, MENU_H + 14.0));
+    h.click(Pos2::new(x + 40.0, MENU_H + 14.0));
     for _ in 0..30 {
         h.frame(vec![]);
     }

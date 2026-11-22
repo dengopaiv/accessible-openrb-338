@@ -9,7 +9,9 @@
 //!   ([`crate::error_box`]).
 //! - **Edit**: Undo (one level), Cut, Copy, Paste and Duplicate Pattern on the focused row's
 //!   selected pattern ([`App::undo`], [`App::copy_pattern`], [`App::paste_pattern`],
-//!   [`App::duplicate_pattern`]), orb's own commands.
+//!   [`App::duplicate_pattern`]), orb's own commands, and the 303 Pattern Editor... (Ctrl/Cmd+E,
+//!   [`crate::pattern_editor`], task-274); a plugin's Edit menu has the same items with no shortcut
+//!   texts.
 //! - **Mods**: "Standard ReBirth", the mods of the Mods folder (one entry per INFO menu name, as
 //!   the original's Mods menu: `sub_40C163`, docs/rbm.md section 14), and a file picked in the
 //!   browser. A choice is the original's `sub_42D80D` -> `sub_426FB3`: the song is marked modified,
@@ -113,6 +115,8 @@ pub enum Cmd {
     SetPluginMode(crate::embed::PluginMode),
     /// Edit > Undo ([`App::undo`]).
     Undo,
+    /// Edit > 303 Pattern Editor... ([`App::open_pattern_editor`], task-274).
+    PatternEditor,
     /// Edit > Cut Pattern ([`App::copy_pattern`]).
     CutPattern,
     CopyPattern,
@@ -139,19 +143,19 @@ pub struct Clip {
 #[derive(Clone, Debug)]
 pub struct Undo {
     what: &'static str,
-    row: usize,
-    pattern: u8,
+    pub(crate) row: usize,
+    pub(crate) pattern: u8,
     bytes: Vec<u8>,
     select: Option<u8>,
 }
 
 /// The names of the four rows on the status line.
-const ROW_NAMES: [&str; 4] = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"];
+pub(crate) const ROW_NAMES: [&str; 4] = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"];
 /// The kind of each row's patterns: a pattern pastes into a row of its kind.
 const ROW_KINDS: [&str; 4] = ["TB-303", "TB-303", "TR-808", "TR-909"];
 
 /// The name of pattern `p` (0..=31): bank and button, A1 to D8.
-fn pattern_name(p: u8) -> String {
+pub(crate) fn pattern_name(p: u8) -> String {
     format!("{}{}", (b'A' + p / 8) as char, p % 8 + 1)
 }
 
@@ -1044,6 +1048,7 @@ impl App {
                 }
             }
             Cmd::Undo => self.undo(),
+            Cmd::PatternEditor => self.open_pattern_editor(),
             Cmd::CutPattern => self.copy_pattern(true),
             Cmd::CopyPattern => self.copy_pattern(false),
             Cmd::PastePattern => self.paste_pattern(),
@@ -1066,7 +1071,13 @@ impl App {
     /// Writes `bytes` into pattern `p` of row `r` ([`crate::link::Link::set_pattern`]) for the
     /// command `what`: when the pattern changes the song is modified and Undo puts its former
     /// bytes back. False when it held `bytes` already.
-    fn write_pattern(&mut self, r: usize, p: u8, bytes: &[u8], what: &'static str) -> bool {
+    pub(crate) fn write_pattern(
+        &mut self,
+        r: usize,
+        p: u8,
+        bytes: &[u8],
+        what: &'static str,
+    ) -> bool {
         let Some(link) = &mut self.link else {
             return false;
         };
@@ -1125,9 +1136,14 @@ impl App {
     /// to the app's clipboard ([`Clip`]) and its marker to the system clipboard; Cut then
     /// empties its steps, the length and the shuffle flag stay.
     pub fn copy_pattern(&mut self, cut: bool) {
-        let Some((r, p)) = self.pattern_target() else {
-            return;
-        };
+        if let Some((r, p)) = self.pattern_target() {
+            self.copy_pattern_at(r, p, cut);
+        }
+    }
+
+    /// [`App::copy_pattern`] of pattern `p` of row `r` (the 303 pattern editor's Copy, after
+    /// the panel's events were sent).
+    pub(crate) fn copy_pattern_at(&mut self, r: usize, p: u8, cut: bool) {
         let Some(link) = &self.link else {
             return;
         };
@@ -1158,9 +1174,14 @@ impl App {
     /// Edit > Paste Pattern: the app's clipboard into the focused row's selected pattern, when
     /// the row is of its kind (a TB-303 pattern pastes into either 303).
     pub fn paste_pattern(&mut self) {
-        let Some((r, p)) = self.pattern_target() else {
-            return;
-        };
+        if let Some((r, p)) = self.pattern_target() {
+            self.paste_pattern_at(r, p);
+        }
+    }
+
+    /// [`App::paste_pattern`] into pattern `p` of row `r` (the 303 pattern editor's Paste,
+    /// after the panel's events were sent).
+    pub(crate) fn paste_pattern_at(&mut self, r: usize, p: u8) {
         let Some(clip) = &self.clip else {
             self.status = Some("The clipboard holds no pattern".into());
             return;
@@ -1241,7 +1262,7 @@ impl App {
 
     /// Selects pattern `p` of row `r` as a click on its button does (`Panel::press`): the bank
     /// shows it, the row takes the focus, the selection is sent with the panel's events.
-    fn select_pattern(&mut self, r: usize, p: u8) {
+    pub(crate) fn select_pattern(&mut self, r: usize, p: u8) {
         self.panel.rows[r].bank = p / 8;
         let button = format!("pattern{}.pattern{}", r + 1, p % 8 + 1);
         self.panel.press(&button, 0.0);
@@ -1453,8 +1474,11 @@ impl App {
                 });
             });
         match cmd {
-            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V
-            Some(Cmd::PastePattern) => {
+            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V. A
+            // plugin's window (egui-baseview 0.9) does not answer `RequestPaste` (it reads the
+            // clipboard only on a paste key, which the plugin leaves to the host), so there the
+            // item pastes the app's clipboard directly, without the marker check (task-274)
+            Some(Cmd::PastePattern) if !self.is_plugin() => {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
@@ -1469,8 +1493,8 @@ impl App {
 
     /// The menus of the bar: File, Edit, View, Mods, Options and Help; what is chosen goes to `cmd`
     /// (Edit > Paste Pattern as [`Cmd::PastePattern`], which `menu_bar` turns into a paste of
-    /// the system clipboard). A plugin's File menu has New, Open and Info only, and a plugin's
-    /// editor has no Edit menu (task-201).
+    /// the system clipboard in the standalone app). A plugin's File menu has New, Open and Info
+    /// only (task-201); its Edit menu is the standalone's without shortcut texts (task-274).
     fn menu_items(&mut self, ui: &mut Ui, cmd: &mut Option<Cmd>) {
         let plugin = self.is_plugin();
         // a plugin's editor has no keyboard shortcuts (task-201): no shortcut texts
@@ -1507,29 +1531,37 @@ impl App {
                 ui.close();
             }
         });
-        // the pattern commands paste through the system clipboard and its keys, which a
-        // plugin's editor does not take (task-201)
-        if !plugin {
-            ui.menu_button("Edit", |ui| {
-                let song = self.link.is_some();
-                self.edit_items.clear();
-                // "Undo Paste Pattern": the item names what it undoes
-                let what = self.undo_name().filter(|_| song);
-                let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
-                let r = item_if(ui, what.is_some(), &text, Some(&shortcuts::UNDO));
-                self.edit_items.push(("Undo", r.rect, what.is_some()));
+        ui.menu_button("Edit", |ui| {
+            let song = self.link.is_some();
+            self.edit_items.clear();
+            // "Undo Paste Pattern": the item names what it undoes (in a plugin's editor too,
+            // with no shortcut text: it takes no keys; task-274)
+            let what = self.undo_name().filter(|_| song);
+            let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
+            let r = item_if(ui, what.is_some(), &text, key(&shortcuts::UNDO));
+            self.edit_items.push(("Undo", r.rect, what.is_some()));
+            if r.clicked() {
+                *cmd = Some(Cmd::Undo);
+            }
+            ui.separator();
+            // the pattern commands, in a plugin's editor too (the user's review of task-274,
+            // round 3), there with no shortcut texts
+            for (text, sc, c) in EDIT_ITEMS {
+                let r = item_if(ui, song, text, key(sc));
+                self.edit_items.push((text, r.rect, song));
                 if r.clicked() {
-                    *cmd = Some(Cmd::Undo);
+                    *cmd = Some(c);
                 }
-                ui.separator();
-                for (text, sc, c) in EDIT_ITEMS {
-                    let r = item_if(ui, song, text, Some(sc));
-                    self.edit_items.push((text, r.rect, song));
-                    if r.clicked() {
-                        *cmd = Some(c);
-                    }
-                }
-            });
+            }
+            ui.separator();
+            let text = PATTERN_EDITOR_ITEM;
+            let r = item_if(ui, song, text, key(&shortcuts::PATTERN_EDITOR));
+            self.edit_items.push((text, r.rect, song));
+            if r.clicked() {
+                *cmd = Some(Cmd::PatternEditor);
+            }
+        });
+        if !plugin {
             // the main window's look (task-267): the standalone app's only
             ui.menu_button("View", |ui| {
                 // two radio items directly in View, no submenu (the user's review, 2026-11-21)
@@ -1667,6 +1699,10 @@ impl App {
         });
     }
 }
+
+/// The Edit menu's item that opens the 303 pattern editor (task-274; the ellipsis: it opens a
+/// window).
+pub const PATTERN_EDITOR_ITEM: &str = "303 Pattern Editor...";
 
 /// The pattern items of the Edit menu, in order.
 const EDIT_ITEMS: [(&str, &egui::KeyboardShortcut, Cmd); 4] = [

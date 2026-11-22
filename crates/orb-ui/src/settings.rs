@@ -6,7 +6,9 @@
 //! (paths, absent until a file is chosen: the folder of the last song chosen in Open, Save As
 //! or Export, and of the last mod; task-144), `startup_sound` (a bool), `theme` (`"modern"`,
 //! the default, or `"classic"`: the main window's skin, View > Classic / Modern, task-267; the old
-//! `theme_viewer_filter` of the removed Theme Viewer is ignored and dropped at the next save)
+//! `theme_viewer_filter` of the removed Theme Viewer is ignored and dropped at the next save),
+//! `pattern_editor_pos` (two integers, the 303 pattern editor window's left top in points,
+//! absent until the window is moved; the standalone app's only, task-274)
 //! and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
@@ -19,11 +21,11 @@
 //! last read or wrote it, so another instance's changes survive (task-229; saves in the same
 //! instant can still race, there is no lock). A change is recorded by the setters
 //! (`set_songs_dir`, `set_mods_dir`, `set_last_song_dir`, `set_last_mod_dir`,
-//! `set_startup_sound`, `set_theme`, `set_preferred_mod`), which win over the file even
-//! when the value equals what this instance last saw; a field assigned directly counts as changed
-//! when it differs from what was last read or written. The list `recent` is changed only through
-//! `note_recent` (a folder is pushed onto the file's list; a direct assignment is not
-//! merged unless nothing was noted). When the file is missing or damaged at save time, the
+//! `set_startup_sound`, `set_theme`, `set_pattern_editor_pos`, `set_preferred_mod`), which win over
+//! the file even when the value equals what this instance last saw; a field assigned directly
+//! counts as changed when it differs from what was last read or written. The list `recent` is
+//! changed only through `note_recent` (a folder is pushed onto the file's list; a direct assignment
+//! is not merged unless nothing was noted). When the file is missing or damaged at save time, the
 //! whole in-memory copy is written, so an unrelated save never resets this instance's values
 //! to the defaults; any other read error (not "not found") makes the save fail and leaves the
 //! file and these settings alone. The result is written through a unique temporary file in
@@ -98,6 +100,9 @@ pub struct Settings {
     /// The main window's skin (View > Classic / Modern, task-267). Stored as the string `theme`,
     /// `"modern"` (the default) or `"classic"`; another value is skipped.
     pub theme: Theme,
+    /// The 303 pattern editor window's left top in points (task-274), `None` until it is
+    /// moved. Stored as the array `pattern_editor_pos`; the plugin neither reads nor writes it.
+    pub pattern_editor_pos: Option<[i32; 2]>,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
     /// The values as last read from or written to the file: a save changes only what differs
@@ -127,6 +132,7 @@ pub struct Values {
     last_mod_dir: Option<PathBuf>,
     preferred_mods: BTreeMap<String, String>,
     theme: Theme,
+    pattern_editor_pos: Option<[i32; 2]>,
 }
 
 /// Equal when the public fields are (the save bookkeeping is not compared).
@@ -149,6 +155,7 @@ impl Default for Settings {
             last_mod_dir: None,
             preferred_mods: BTreeMap::new(),
             theme: Theme::Modern,
+            pattern_editor_pos: None,
             file: None,
             base: Box::new(Values {
                 startup_sound: true,
@@ -214,6 +221,8 @@ struct Stored<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     last_mod_dir: Option<&'a Path>,
     theme: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pattern_editor_pos: Option<[i32; 2]>,
     // a table, so last
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     preferred_mods: BTreeMap<&'a str, &'a str>,
@@ -269,6 +278,14 @@ impl Settings {
         s.mods_dir = table.get("mods_dir").and_then(path_of);
         s.last_song_dir = table.get("last_song_dir").and_then(path_of);
         s.last_mod_dir = table.get("last_mod_dir").and_then(path_of);
+        s.pattern_editor_pos = table
+            .get("pattern_editor_pos")
+            .and_then(|v| v.as_array())
+            .and_then(|a| match a.as_slice() {
+                [x, y] => Some([x.as_integer()?, y.as_integer()?]),
+                _ => None,
+            })
+            .and_then(|[x, y]| Some([i32::try_from(x).ok()?, i32::try_from(y).ok()?]));
         if let Some(t) = table
             .get("theme")
             .and_then(|v| v.as_str())
@@ -303,6 +320,7 @@ impl Settings {
             last_mod_dir: self.last_mod_dir.clone(),
             preferred_mods: self.preferred_mods.clone(),
             theme: self.theme,
+            pattern_editor_pos: self.pattern_editor_pos,
         }
     }
 
@@ -336,6 +354,9 @@ impl Settings {
         }
         if set("theme") || v.theme != b.theme {
             m.theme = v.theme;
+        }
+        if set("pattern_editor_pos") || v.pattern_editor_pos != b.pattern_editor_pos {
+            m.pattern_editor_pos = v.pattern_editor_pos;
         }
         if self.noted.is_empty() && v.recent != b.recent {
             // The list was assigned as a whole.
@@ -411,6 +432,13 @@ impl Settings {
         self.dirty.insert("theme".into());
     }
 
+    /// Sets the 303 pattern editor window's place (`pattern_editor_pos`); the next save writes
+    /// it whatever the file holds.
+    pub fn set_pattern_editor_pos(&mut self, pos: Option<[i32; 2]>) {
+        self.pattern_editor_pos = pos;
+        self.dirty.insert("pattern_editor_pos".into());
+    }
+
     /// The file preferred for the INFO name `name` (ignoring ASCII case), if one is set.
     pub fn preferred_mod(&self, name: &str) -> Option<&str> {
         self.preferred_mods
@@ -451,6 +479,7 @@ impl Settings {
             last_song_dir: m.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: m.last_mod_dir.as_deref().and_then(storable),
             theme: m.theme.name(),
+            pattern_editor_pos: m.pattern_editor_pos,
             preferred_mods: m
                 .preferred_mods
                 .iter()
@@ -487,6 +516,7 @@ impl Settings {
         self.last_mod_dir = m.last_mod_dir.clone();
         self.preferred_mods = m.preferred_mods.clone();
         self.theme = m.theme;
+        self.pattern_editor_pos = m.pattern_editor_pos;
         *self.base = m;
         self.noted.clear();
         self.dirty.clear();

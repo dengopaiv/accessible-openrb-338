@@ -299,6 +299,11 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                 menu_row(is_mac, &shortcuts::DUPLICATE, "Edit > Duplicate Pattern"),
                 menu_row(
                     is_mac,
+                    &shortcuts::PATTERN_EDITOR,
+                    "Edit > 303 Pattern Editor...",
+                ),
+                menu_row(
+                    is_mac,
                     &shortcuts::KEYS_SYNTH,
                     "Options > Program Synth from Keyboard",
                 ),
@@ -759,7 +764,7 @@ mod tests {
                 .map(|r| r.keys.clone())
                 .collect()
         };
-        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "F", "G"];
+        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "E", "F", "G"];
         assert_eq!(text(true), keys.map(|k| format!("Cmd+{k}")));
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
     }

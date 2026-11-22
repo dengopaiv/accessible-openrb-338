@@ -148,6 +148,8 @@ pub struct App {
     pub(crate) clip_count: u32,
     /// What Edit > Undo puts back (`App::undo`).
     pub(crate) undo: Option<crate::menu::Undo>,
+    /// The 303 pattern editor's window (Edit > 303 Pattern Editor..., task-274).
+    pub(crate) editor: crate::pattern_editor::Editor,
     /// Where the Edit menu drew its items last, and whether each was enabled
     /// (`App::edit_item`).
     pub(crate) edit_items: Vec<(&'static str, Rect, bool)>,
@@ -250,6 +252,7 @@ impl App {
             clip_text: None,
             clip_count: 0,
             undo: None,
+            editor: Default::default(),
             edit_items: Vec::new(),
             key_mode: KeyMode::default(),
             menu: false,
@@ -994,6 +997,10 @@ impl App {
                 if shortcuts::consume(ui, &shortcuts::KEYS_PATTERNS) {
                     self.key_mode = KeyMode::Patterns;
                 }
+                // Ctrl/Cmd+E: Edit > 303 Pattern Editor... (task-274)
+                if shortcuts::consume(ui, &shortcuts::PATTERN_EDITOR) {
+                    self.open_pattern_editor();
+                }
                 if ui.ctx().text_edit_focused() {
                     // typing in a text field (File > Info, task-117): the other keys are the
                     // field's, not the panel's
@@ -1107,6 +1114,7 @@ impl App {
         self.browse(&ctx);
         self.prompt_ui(&ctx);
         self.info_ui(&ctx);
+        self.pattern_editor_ui(&ctx);
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);
         self.plugin_usage_ui(&ctx);

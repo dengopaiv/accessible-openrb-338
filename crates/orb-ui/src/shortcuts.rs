@@ -17,6 +17,8 @@ pub const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key
 pub const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
 /// Edit > Duplicate Pattern.
 pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
+/// Edit > 303 Pattern Editor... (task-274).
+pub const PATTERN_EDITOR: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::E);
 /// "Program Synth from Keyboard".
 pub const KEYS_SYNTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);
 /// "Select Patterns from Keyboard".
@@ -55,11 +57,12 @@ mod tests {
             COPY,
             PASTE,
             DUPLICATE,
+            PATTERN_EDITOR,
             KEYS_SYNTH,
             KEYS_PATTERNS,
             EDIT_PATH,
         ];
-        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "F", "G", "L"];
+        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "E", "F", "G", "L"];
         for (sc, k) in all.iter().zip(keys) {
             assert_eq!(text_for(sc, true), format!("Cmd+{k}"));
             assert_eq!(text_for(sc, false), format!("Ctrl+{k}"));

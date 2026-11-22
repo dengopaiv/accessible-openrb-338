@@ -1074,7 +1074,10 @@ read, and what it leaves out.
   Ctrl/Cmd+X, C and V into egui's Cut, Copy and Paste events without a key event;
   `App::pattern_keys` takes them, and Ctrl/Cmd+D and Z, only where the panel takes keys (no text
   field focused, no browser, prompt or error box open), and leaves Cut and Copy to a window's
-  selected text. Edit > Paste Pattern asks for the system clipboard
+  selected text. Ctrl/Cmd+E (Edit > 303 Pattern Editor..., section 23) is taken in the
+  standalone app by `App::show` with Ctrl/Cmd+F and G: also while a text field has the focus,
+  but not while the browser, the prompt or the error box is open. Edit > Paste Pattern asks for
+  the system clipboard
   (`ViewportCommand::RequestPaste`), so it takes the path of Ctrl/Cmd+V. A press on an open menu
   or a window over the panel does not move the row focus (`App::focus_click`).
 - **Not done.** The logo click (msg 58), and the mod's panel art (not drawn by decision, section 18). The song's own mod
@@ -1171,6 +1174,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Edit | Copy Pattern (Ctrl+C, Cmd+C) | the focused row's selected pattern (steps, length, shuffle flag) to orb's clipboard; the song is not modified |
 | Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a TB-303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard stays |
+| Edit | 303 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating 303 pattern editor on the selected 303's active pattern, or brings it to the front and switches it to that pattern (section 23, task-274); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
 | View | Classic, Modern | two radio items directly in View, no submenu (the user's review of task-267, 2026-11-21): a radio choice of the main window's skin: Modern (the SVG panel, the default) or Classic (the original's panel from the kit's bitmaps, section 21); saved in the settings file at once (`theme`, section 17) and taken by the next run; the standalone app's only, a plugin's editor has no View menu (task-267) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
@@ -1196,8 +1200,9 @@ is one more entry.
     not empty: the shipped "ReBirth 1.0 Default Song" holds one in each of its 64 303 slots, so
     there a Duplicate on a 303 row finds no empty pattern.
   - There are no dialogs: a paste onto a used pattern overwrites it, and Undo brings it back.
-    Undo is forgotten by any other pattern edit (a step, the length, the shuffle flag, the
-    303's Clear), an open and File > New.
+    Undo is forgotten by any other pattern edit of the panel (a step, the length, the shuffle
+    flag, the 303's Clear), an open and File > New. Each change of the 303 pattern editor
+    (section 23) is undone the same way: it takes the place of the last command's Undo.
   - A Duplicate's selection is a click on the pattern button: the bank follows, in pattern mode
     the row changes at the next bar line, in song mode with record on the change is recorded.
     The pattern goes to the engine first, so it never plays the new pattern before it holds it.
@@ -1805,8 +1810,19 @@ The VST3/CLAP plugin (`docs/plugin.md` section 10) shows this panel, drawn by th
   the host position's bar while the plugin follows it, dark otherwise (no Beat display, the
   user's decision of 2026-11-16). The Sync LED
   lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
-- **The menus**: File has New, Open and Info only; nothing asks to save. There is no Edit menu
-  (section 18's pattern commands paste through the system clipboard's keys). There is no View
+- **The menus**: File has New, Open and Info only; nothing asks to save. The Edit menu is the
+  standalone's (section 18): Undo, Cut, Copy, Paste and Duplicate Pattern, and the 303 Pattern
+  Editor... (section 23), in the same order, with the same names and the same behavior, but no
+  shortcut texts (the user's review of task-274, rounds 2 and 3). Undo is the one-level Undo,
+  named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the app's
+  clipboard and the marker text on the system clipboard (egui-baseview 0.9 writes egui's
+  `CopyText` to it); as in the standalone, the pattern bytes stay in the editor's own app, so
+  another instance or the standalone app pastes nothing from it (section 16). **One
+  difference**: Paste Pattern cannot check the system clipboard for
+  the marker, because the plugin's window does not answer egui's `RequestPaste` (egui-baseview
+  reads the clipboard only on a paste key event, and the plugin leaves keys to the host). So
+  the plugin's Paste Pattern pastes the app's clipboard directly, as the 303 pattern editor's
+  Paste does: text copied elsewhere since the last Copy does not stop it. There is no View
   menu: the editor has the modern skin only (section 21, task-267). Options has no keyboard modes;
   Help no Keyboard Shortcuts.
 - **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
@@ -2151,3 +2167,124 @@ three variants (pixelate and fade, pixelate then fade, fade only).
   editor has no classic skin and no fade. Tests: `skin/fade.rs` (the alpha schedule: start,
   end, monotonic, the ease, the reversal) and `tests/classic.rs`
   `the_switch_crossfades_both_ways_and_reverses_from_the_current_alpha`.
+
+## 23. The 303 pattern editor (task-274)
+
+A floating editor for one TB-303 pattern, designed with the user on 2026-11-21: a step grid
+with a 13-key piano roll, like modern 303 pattern editors. It is orb's own (the original has
+none) and edits only what a song stores for a 303 pattern (`docs/RBS42.txt`, the "303 " chunk;
+the 98 bytes of `docs/song_load.md` section 4.6: the shuffle flag, the length, and per step
+note, slide, accent, up, down and rest). The 808 and 909 editors are later tasks of m-9. Code:
+`crates/orb-ui/src/pattern_editor.rs`; tests: `crates/orb-ui/tests/pattern_editor.rs`, the unit
+tests of the module, and `crates/orb-plugin/tests/editor.rs`
+`the_edit_menu_opens_the_303_pattern_editor`.
+
+**The window.** An `egui::Window` titled "303 Pattern Editor" inside the main window:
+draggable, closable (its title bar's close button), neither resizable nor collapsible; the same
+in the standalone app and the plugin's editor (no separate OS window).
+- **Opening**: Edit > 303 Pattern Editor... (the ellipsis: it opens a window; round 3 of
+  the user's review), and Ctrl+E (Cmd+E on macOS) in the standalone app;
+  the plugin's editor takes no keys (section 20), so there it is the menu only. It opens on the
+  selected 303's active pattern: the focused row when it is a 303, else the 303 the editor
+  showed last (TB-303 1 at first), and that row's selected pattern. When it is open, the item
+  and the key bring it to the front and switch it to that pattern. Disabled without a song.
+- **Its place**: the standalone app saves the window's left top in `ui.toml`
+  (`pattern_editor_pos = [x, y]`, points) when the user lets go of the window after moving it,
+  and opens it there; with no saved place it opens centered. Whether it is open is not saved.
+  The plugin neither reads nor writes the place. egui 0.37 places a window that moves by its
+  title bar from its stored place after the first frame (`Window::current_pos` holds only for
+  that frame), and its first frame measures it at a guessed 600 x 400 that pushes it left on a
+  small window; so an opening sets the area's place directly for its first three frames.
+
+**Layout, top to bottom** (the colors are the app's palette, `palette.rs`, not the skin's, so the
+editor looks the same in the Classic and Modern skins):
+- **The top row**, standard egui controls: the 303-1 / 303-2 switch; the bank buttons A B C D;
+  the pattern number 1-8 as a `DragValue` (drag up or down, or click to type; within the
+  bank) between a left and a right arrow button. The arrows step through one sequence of 64
+  patterns, 303-1 A1..A8, B1..D8, then 303-2 A1..D8 (`pattern_editor::step_pattern`): right
+  from 8 goes to the next bank's 1, right from 303-1 D8 to 303-2 A1, left the reverse. They
+  stop at the two ends, 303-1 A1 and 303-2 D8, where the arrow is disabled (no wrap). The 303
+  switch and the bank buttons follow, and in pattern mode the panel selects the pattern, also
+  the other 303's (the selection rules below). Copy, Paste (enabled while the
+  clipboard holds a 303 pattern) and Clear; Length 1-16, a `DragValue`; and the Shuffle toggle,
+  the pattern's own shuffle flag (byte 0), not the song's shuffle amount.
+- **The step numbers** 1 to 16 over the grid; the playing step's number is amber.
+- **The note grid**: the piano roll's 13 keys on the left, low C at the bottom to the C an
+  octave above at the top (pitch 0x0c is real data, so the 13th key is needed); every key is
+  the label column's full width (66 points), white light and black dark, and the note names
+  (15.5 points, as the flag rows' names; round 2 of the user's review) end at one right edge.
+  Every row, of the piano roll and of the flags, is 19 points high. The window stays inside
+  the smallest main window (624 x 532 points with the menu bar; the layout test checks it and
+  that the labels fit their column and rows). 16 step columns, a stronger line every four steps;
+  the columns widen to fill the window's width up to the Transpose column (at least 22 points
+  each). The rows of black keys (C#, D#, F#, G#, A#) are `palette::BG`, those of white keys
+  `palette::SLATE_DARK`, and a horizontal line separates the two places where white rows meet
+  (E-F and B-high C); a note is an amber cell. The step that plays is a lit column with an
+  amber outline, shown when the editor's pattern is the one its 303 plays
+  (`Panel::playing_step303`, from the engine). Steps beyond the length are dimmed and still
+  editable. A pause shows nothing in its column.
+- **Transpose** up and down buttons at the grid's right, the pair centered on the piano roll.
+- **A divider line** in a 9-point gap, then **the flag grid** right under the piano roll: four
+  rows, Up, Down, Accent and Slide, over the same 16 columns, nothing between it and the roll.
+- **Shift** left and right buttons at the bottom, centered under the step grid, with no label.
+  The four arrow buttons (Shift and Transpose) are one size, 24 x 20 points.
+
+Layout from the user's review, round 1 (2026-11-21): larger row labels, Shift moved from
+between the grids to the bottom and its label dropped, Transpose centered on the roll, one
+arrow size, the columns filling the width, the black keys' names right-aligned with the white
+keys', the white-pair lines, and the number's arrows (round 2 made them one sequence over
+both 303s with stops at the ends).
+
+**What the controls do.**
+- **Notes.** A click in a step's column at a pitch makes the step a note at that pitch (rest
+  off, the flags kept). A click on the step's lit cell makes it a pause: rest on, the stored
+  pitch kept and not shown.
+- **Flags.** A click toggles Up, Down, Accent or Slide of a step. Up and Down are independent,
+  as in the file; both set cancel each other (section 5, manual page 45).
+- **Drags.** On the piano roll a drag paints where the mouse points: each step it crosses
+  becomes a note at the pitch under the mouse (steps skipped between two frames take the pitch
+  on the straight line between the two points, `pattern_editor::crossed`). A drag that starts
+  on a lit cell paints notes too; only a click there (press and release on the same cell)
+  makes the pause. On a flag row a drag paints only in the row it started in, with the value
+  the first cell took (the first cell toggles), whatever row the mouse is over.
+- **Shift** rotates the steps by one, right (later) or left, wrapping within the pattern's
+  length; the steps beyond the length stay. A whole step moves (note, flags, rest).
+- **Transpose** moves every step's pitch (pauses too) by one semitone, wrapping over the 13
+  rows: 12 up is 0, 0 down is 12. The Up and Down flags do not change. A stored pitch above 12
+  (not one of the rows) is left alone.
+- **Copy and Paste** use the Edit menu's pattern clipboard (section 16, `App::clip`) on the
+  editor's pattern: Copy is Edit > Copy Pattern of it (the marker goes to the system
+  clipboard too, so the panel's Ctrl/Cmd+V pastes it), Paste takes the clipboard's pattern
+  directly (a TB-303 pattern only, into either 303; the status line reports as the menu's).
+- **Clear** leaves the emptied pattern Edit > Cut Pattern leaves (every step note 0, no flags,
+  rest on) with the pattern's length and shuffle flag kept, and does not touch the clipboard.
+- **The status line** says "TB-303 1: A1 copied", "TB-303 1: pasted into A2", "TB-303 1: A1
+  cleared".
+
+**One edit path, one Undo.** Every change of the editor is one whole-pattern write of its new 98
+bytes through `App::write_pattern` -> `Link::set_pattern`: the path of Edit > Paste Pattern and
+of the 303's Clear (msg 41 sub 44 `{p, bytes}`, `docs/song_load.md` 4.10, which the engine
+copies whole, `crates/orb-engine/src/frame/edit.rs` `pattern`; the link's pattern mirror; the
+panel's step views, so the panel's 303 LEDs and Steps display update). So an edit is heard the
+next time the step plays, marks the song modified and is saved. The panel's pending events are
+noted and sent first, so a panel edit made before forgets the Undo before the editor's change
+sets its own. The write sets the one-level Undo (section 18) with the pattern's former bytes,
+named after the change: "Edit Pattern" (notes, pauses and flags), "Shift Pattern", "Transpose
+Pattern", "Clear Pattern", "Paste Pattern", "Pattern Length", "Pattern Shuffle". A drag is one
+change: its later writes keep the Undo of its first (a drag of the Length value too). A change
+that leaves the bytes as they were writes nothing and keeps the Undo. The plugin's Edit menu
+has the same Undo item, with no shortcut (its editor takes no keys; section 20).
+
+**Pattern selection.**
+- **Pattern mode**: the editor and the panel follow each other both ways. A bank or a number
+  chosen in the editor selects that pattern of the editor's 303 on the panel as a click on its
+  pattern button does (`App::select_pattern`: the bank, the row's focus, the selection at the
+  next bar line). The 303 switch shows that 303's selected pattern. A new selection on the
+  panel of one 303 row (a click, a key of Select Patterns mode, the engine) moves the editor to
+  that 303 and pattern; a song open, which changes both rows at once, keeps the editor's 303.
+  The drum rows do not move it. On the switch into pattern mode the editor takes the panel's
+  selection of its 303.
+- **Song mode**: the two are independent. The editor's selector only chooses what the editor
+  shows (the 303 switch keeps the pattern number); it never changes the panel's selection and
+  never records. The pattern the panel plays does not move the editor.
+- There is no Follow button (dropped by the user).
