@@ -634,9 +634,8 @@ impl Main {
 
 /// One host parameter (task-275, `docs/plugin.md` section 3): a nice-plug `FloatParam` for a
 /// continuous one ([`Spec::continuous`]: linear over min..max, no step size, so no VST3 step
-/// count and no CLAP stepped flag), an `IntParam` for a discrete one. Both normalize a value
-/// `v` as `(v - min) / (max - min)`, as the released build's `IntParam`s did, and the forked
-/// nice-plug keeps a continuous one's CLAP range 0..127 (`clap_scale`), so a host's saved
+/// count), an `IntParam` for a discrete one. Both normalize a value `v` as
+/// `(v - min) / (max - min)`, as the released build's `IntParam`s did, so a host's saved
 /// automation and values keep their meaning. [`HostParam::value`] is the integer the engine
 /// gets.
 pub enum HostParam {

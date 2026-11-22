@@ -6,23 +6,11 @@ exclude = ["vendor"]
 
 # raw-window-metal 1.1.0 (MIT OR Apache-2.0, wgpu's macOS surface) with its layer class
 # registered under a name unique to the loaded image: with the fixed name
-# "RawWindowMetalLayer" the second plugin image in one process (the VST3 and the CLAP bundle,
-# or another wgpu plugin) panicked opening its editor and aborted the host (task-201,
+# "RawWindowMetalLayer" the second plugin image in one process (a second
+# wgpu plugin in the host) panicked opening its editor and aborted the host (task-201,
 # docs/plugin.md "The vendored raw-window-metal").
-#
-# nice-plug (ISC, the plugin framework) from the fork github.com/pingw33n/nice-plug, branch
-# OpenRB-338: upstream 91ba75d (the commit nice-plug 0.4.2, nice-plug-core 0.4.2 and
-# nice-plug-derive 0.1.2 were published from) plus a patch whose CLAP wrapper gives a
-# continuous FloatParam over 0..=max the CLAP range 0..=max (upstream 0..=1): the 0..127 knobs
-# became continuous for the host (task-275, Studio One's stepped automation) and keep the CLAP
-# values hosts saved when they were stepped IntParams (task-276; docs/plugin.md "The forked
-# nice-plug"). All three crates come from the fork: its nice-plug has path dependencies on
-# the other two. A new upstream: rebase the branch, push, bump the three revs.
 [patch.crates-io]
 raw-window-metal = { path = "vendor/raw-window-metal" }
-nice-plug = { git = "https://github.com/pingw33n/nice-plug", rev = "250daefd57cdc58d41ddb25f053f1a0589f44cad" }
-nice-plug-core = { git = "https://github.com/pingw33n/nice-plug", rev = "250daefd57cdc58d41ddb25f053f1a0589f44cad" }
-nice-plug-derive = { git = "https://github.com/pingw33n/nice-plug", rev = "250daefd57cdc58d41ddb25f053f1a0589f44cad" }
 
 [workspace.package]
 version = "0.1.0"

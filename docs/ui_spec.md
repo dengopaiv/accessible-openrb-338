@@ -1795,7 +1795,7 @@ plus one rasterizing of 63 and 128 ms when the size settles.
 
 ## 20. The panel as the plugin's editor (task-201)
 
-The VST3/CLAP plugin (`docs/plugin.md` section 10) shows this panel, drawn by the same code
+The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the same code
 (`crates/orb-ui/src/embed.rs`), with these differences; the standalone app is unchanged.
 
 - **The window** is the menu bar of section 18 (22 points, not scaled) and the panel under it,

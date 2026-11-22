@@ -7,8 +7,8 @@
 #
 # Builds the target with scripts/build.sh first; SKIP_BUILD=1 uses the binaries already in
 # dist/<target>/bin/ and the plugin bundles in dist/<target>/plugins/ (release.yml downloads
-# them from the package jobs; the plugins are the installer's two optional components). makensis runs on any
-# host (macOS: brew install makensis; Ubuntu: apt install nsis; Windows runners: choco install
+# them from the package jobs; the plugin is the installer's optional component). makensis runs
+# on any host (macOS: brew install makensis; Ubuntu: apt install nsis; Windows runners: choco install
 # nsis), so one script serves this Mac and CI. The installer itself is scripts/installer/
 # openrb.nsi; docs/building.md ("The Windows installer") describes it.
 # Environment as scripts/build.sh. MAKENSIS names the makensis to use; MAKENSIS_FLAGS replaces
@@ -38,9 +38,8 @@ for f in OpenRB-338.exe orb.exe; do
     [ -f "$bin/$f" ] || { echo "missing $bin/$f (run scripts/build.sh $target)" >&2; exit 1; }
 done
 plugins=$dist/$target/plugins
-for p in OpenRB-338.vst3 OpenRB-338.clap; do
-    [ -e "$plugins/$p" ] || { echo "missing $plugins/$p (run scripts/build.sh $target)" >&2; exit 1; }
-done
+p=OpenRB-338.vst3
+[ -e "$plugins/$p" ] || { echo "missing $plugins/$p (run scripts/build.sh $target)" >&2; exit 1; }
 
 # The license page and the readme are shown by Windows programs: CRLF line ends.
 stage=$dist/$target/installer-stage
@@ -65,12 +64,17 @@ Variables. The uninstaller (Settings > Apps) removes what the installer added; y
 settings file (%APPDATA%\OpenRB-338) are kept.
 
 The installer is for all users and asks for administrator rights: the program goes to Program
-Files, the optional PATH entry to the machine's PATH. The VST3 and CLAP plugins (components
-"VST3 plugin" and "CLAP plugin", on by default) go to the plugin folders every host scans:
-OpenRB-338.vst3 to %COMMONPROGRAMFILES%\VST3 and OpenRB-338.clap to %COMMONPROGRAMFILES%\CLAP.
-Rescan plugins in your host. The uninstaller removes the two plugin files and nothing else in
-these folders. An earlier per-user install (versions before the plugins) is not removed: take it
-out in Settings > Apps.
+Files, the optional PATH entry to the machine's PATH. The VST3 plugin (component "VST3 plugin",
+on by default) goes to the plugin folder every host scans: OpenRB-338.vst3 to
+%COMMONPROGRAMFILES%\VST3. Rescan plugins in your host. The uninstaller removes the plugin and
+nothing else in that folder.
+
+The CLAP plugin was dropped: this installer deletes the OpenRB-338.clap an earlier release put in
+%COMMONPROGRAMFILES%\CLAP (and nothing else there). A project saved with the CLAP plugin needs
+the plugin replaced by its VST3 by hand in the host.
+
+An earlier per-user install (versions before the plugins) is not removed: take it out in
+Settings > Apps.
 
 The installer and the programs are not signed, so Windows SmartScreen may say "Windows protected
 your PC": choose "More info", then "Run anyway".
@@ -81,11 +85,11 @@ rm "$stage/readme.in"
 # NSIS stores the time of every file it packs: copy all of them here and give them the build
 # time, so two runs of one build make the same installer (BSD date -r, GNU date -d)
 cp "$bin/OpenRB-338.exe" "$bin/orb.exe" "$root/scripts/installer/path.ps1" "$stage/"
-# the plugin bundles (task-237): a .vst3 folder and a .clap file on Windows
+# the plugin bundle (task-237): a .vst3 folder on Windows
 mkdir "$stage/plugins"
-cp -R "$plugins/OpenRB-338.vst3" "$plugins/OpenRB-338.clap" "$stage/plugins/"
-[ -d "$stage/plugins/OpenRB-338.vst3" ] && [ -f "$stage/plugins/OpenRB-338.clap" ] \
-    || { echo "OpenRB-338.vst3 must be a folder and OpenRB-338.clap a file" >&2; exit 1; }
+cp -R "$plugins/OpenRB-338.vst3" "$stage/plugins/"
+[ -d "$stage/plugins/OpenRB-338.vst3" ] \
+    || { echo "OpenRB-338.vst3 must be a folder" >&2; exit 1; }
 stamp=$(TZ=UTC date -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S 2>/dev/null \
     || TZ=UTC date -d "@$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)
 find "$stage" -exec touch -t "$stamp" {} +

@@ -1,5 +1,5 @@
 //! Writes the REAPER render test's projects (task-244, `docs/plugin.md` section 7):
-//! `crates/orb-plugin/tests/reaper/<case>.<vst3|clap>.RPP`, each made from
+//! `crates/orb-plugin/tests/reaper/<case>.vst3.RPP`, each made from
 //! `tests/reaper/template.RPP` with the case's plugin state and MIDI item
 //! (`tests/reaper/cases.rs`).
 //!

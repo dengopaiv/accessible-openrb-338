@@ -62,11 +62,16 @@ the developer cannot be verified"). Pick one:
   - Any version, in Terminal:
         xattr -dr com.apple.quarantine /Applications/OpenRB-338.app
 
-The plugin (a VST 3 and CLAP instrument for a DAW) is not in this image: it comes as a separate
+The plugin (a VST 3 instrument for a DAW) is not in this image: it comes as a separate
 installer, OpenRB-338-Plugins-$version-$target.pkg, from the same release. It is unsigned too
-(open it as the app above); it installs OpenRB-338.vst3 and OpenRB-338.clap for all users into
-/Library/Audio/Plug-Ins/VST3 and /CLAP, and its first page says how to open it and how to
-remove the plugins (delete those two bundles).
+(open it as the app above); it installs OpenRB-338.vst3 for all users into
+/Library/Audio/Plug-Ins/VST3, and its first page says how to open it and how to remove the
+plugin (delete that bundle).
+
+CLAP was dropped. This image cannot remove anything, so if you installed OpenRB-338.clap from an
+earlier release, delete it by hand from /Library/Audio/Plug-Ins/CLAP (or ~/Library/Audio/
+Plug-Ins/CLAP). The pkg above deletes the one in /Library. A project saved with the CLAP plugin
+needs the plugin replaced by its VST3 by hand in the host.
 
 The command line tool orb is inside the app. To use it from a terminal:
     sudo ln -s /Applications/OpenRB-338.app/Contents/MacOS/orb /usr/local/bin/orb

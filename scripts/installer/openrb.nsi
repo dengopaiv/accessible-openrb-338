@@ -7,7 +7,7 @@
 ;   BINDIR    the folder with OpenRB-338.exe and orb.exe (dist/<target>/bin)
 ;   STAGEDIR  the folder with LICENSE.txt and README.txt (CRLF)
 ;   PATHPS1   scripts/installer/path.ps1
-;   PLUGINDIR the folder with OpenRB-338.vst3 (a folder) and OpenRB-338.clap (a file)
+;   PLUGINDIR the folder with OpenRB-338.vst3 (a folder)
 ;   ICON      assets/app_icon.ico (the icon of the installer and the uninstaller)
 ;   OUTFILE   the installer to write
 ;
@@ -17,19 +17,24 @@
 ; starts, and none of the per-user layout of the versions before task-237 is used. The program
 ; goes to $PROGRAMFILES64\OpenRB-338, the shortcuts to the common Start menu and desktop, the
 ; uninstall entry and the install record to HKLM (64-bit view), the optional PATH change to the
-; machine's PATH, OpenRB-338.vst3 to $COMMONFILES64\VST3 and OpenRB-338.clap to
-; $COMMONFILES64\CLAP (both optional components, on by default). The uninstaller removes what
-; the record in HKLM names (InstallDir, Vst3Dir, ClapDir): the two bundles only, never the shared
-; plugin folders. A reinstall replaces the bundles.
+; machine's PATH, OpenRB-338.vst3 to $COMMONFILES64\VST3 (an optional component, on by default).
+; The uninstaller removes what the record in HKLM names (InstallDir, Vst3Dir): the bundle only,
+; never the shared plugin folder. A reinstall replaces the bundle.
+;
+; CLAP was dropped (task-278, the user's decision of 2026-11-22). The releases up to
+; v2026.1118.0919 installed OpenRB-338.clap to $COMMONFILES64\CLAP (a component "CLAP plugin",
+; the record ClapDir): the installer deletes that one file (and the one in ClapDir of the record),
+; whether or not the VST3 component is picked, and so does the uninstaller (RemoveOldClap).
+; Nothing else in a CLAP folder is touched.
 ;
 ; An earlier per-user install (HKCU, %LOCALAPPDATA%\Programs\OpenRB-338) is left as it is: the
 ; installer tells the user it is there and how to remove it (Settings > Apps).
 ;
 ; /D=DIR installs the program elsewhere, /S runs silently. Silent options (the checkboxes, for
-; /S): /STARTMENU=0|1 (default 1), /DESKTOP=0|1 (default 0), /PATH=0|1 (default 0), /VST3=0|1 and
-; /CLAP=0|1 (default 1); /VST3DIR=DIR and /CLAPDIR=DIR (quoted when they hold a space) choose
-; another plugin folder. Example:
-;   setup.exe /S /PATH=1 /CLAP=0 /D=C:\Tools\OpenRB-338
+; /S): /STARTMENU=0|1 (default 1), /DESKTOP=0|1 (default 0), /PATH=0|1 (default 0) and
+; /VST3=0|1 (default 1); /VST3DIR=DIR (quoted when it holds a space) chooses another plugin
+; folder. The options /CLAP= and /CLAPDIR= of the earlier installers are ignored. Example:
+;   setup.exe /S /PATH=1 /VST3=0 /D=C:\Tools\OpenRB-338
 
 Unicode true
 SetCompressor /SOLID lzma
@@ -46,9 +51,8 @@ ManifestDPIAware true
 !define VST3_NAME "${NAME}.vst3"
 !define CLAP_NAME "${NAME}.clap"
 
-; the plugin folders (set by .onInit; /VST3DIR= and /CLAPDIR= change them)
+; the plugin folder (set by .onInit; /VST3DIR= changes it)
 Var Vst3Dir
-Var ClapDir
 
 Name "${NAME}"
 OutFile "${OUTFILE}"
@@ -76,7 +80,7 @@ VIAddVersionKey "LegalCopyright" "GPL-3.0-only"
 !define MUI_UNICON "${ICON}"
 !define MUI_ABORTWARNING
 
-!define MUI_WELCOMEPAGE_TEXT "This installs ${NAME} ${VERSION} (${ARCH}), a reimplementation of the audio engine of Propellerhead ReBirth RB-338 2.01, and its command line tool orb, for all users of this computer, with the optional VST3 and CLAP plugins.$\r$\n$\r$\nIt needs no file of the original program: the standard drum kit is built in.$\r$\n$\r$\nThe installer is not signed, which is why Windows asks whether to run it. It needs administrator rights (the plugin folders are shared by all users), so Windows asks for your permission when it starts."
+!define MUI_WELCOMEPAGE_TEXT "This installs ${NAME} ${VERSION} (${ARCH}), a reimplementation of the audio engine of Propellerhead ReBirth RB-338 2.01, and its command line tool orb, for all users of this computer, with the optional VST3 plugin.$\r$\n$\r$\nIt needs no file of the original program: the standard drum kit is built in.$\r$\n$\r$\nThe installer is not signed, which is why Windows asks whether to run it. It needs administrator rights (the plugin folders are shared by all users), so Windows asks for your permission when it starts."
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_LICENSEPAGE_TEXT_TOP "${NAME} is free software under the GNU General Public License, version 3 only."
 !insertmacro MUI_PAGE_LICENSE "${STAGEDIR}\LICENSE.txt"
@@ -135,9 +139,40 @@ VIAddVersionKey "LegalCopyright" "GPL-3.0-only"
 !insertmacro LockFunctions ""
 !insertmacro LockFunctions "un."
 
+; The CLAP plugin of the earlier releases (task-278): the file OpenRB-338.clap in the common CLAP
+; folder and in the folder of the record's ClapDir, and nothing else. The record's value goes.
+; DetailPrint says what was found.
+!macro RemoveOldClap PFX
+  Function ${PFX}RemoveOldClap
+    ReadRegStr $2 HKLM "${APP_KEY}" "ClapDir"
+    ${If} $2 != ""
+    ${AndIf} ${FileExists} "$2\${CLAP_NAME}"
+      Delete "$2\${CLAP_NAME}"
+      ${If} ${FileExists} "$2\${CLAP_NAME}"
+        DetailPrint "The old $2\${CLAP_NAME} could not be removed (a host has it open?). Delete it by hand."
+      ${Else}
+        DetailPrint "Removed the old $2\${CLAP_NAME} (the CLAP plugin was dropped)."
+      ${EndIf}
+    ${EndIf}
+    ${If} ${FileExists} "$COMMONFILES64\CLAP\${CLAP_NAME}"
+      Delete "$COMMONFILES64\CLAP\${CLAP_NAME}"
+      ${If} ${FileExists} "$COMMONFILES64\CLAP\${CLAP_NAME}"
+        DetailPrint "The old $COMMONFILES64\CLAP\${CLAP_NAME} could not be removed (a host has it open?). Delete it by hand."
+      ${Else}
+        DetailPrint "Removed the old $COMMONFILES64\CLAP\${CLAP_NAME} (the CLAP plugin was dropped)."
+      ${EndIf}
+    ${EndIf}
+    DeleteRegValue HKLM "${APP_KEY}" "ClapDir"
+  FunctionEnd
+!macroend
+!insertmacro RemoveOldClap ""
+!insertmacro RemoveOldClap "un."
+
 Section "${NAME} and orb" SecApp
   SectionIn RO
   Call EnsureClosed
+  ; the old CLAP plugin goes whatever components are picked
+  Call RemoveOldClap
   ; An install before task-237 was per user (HKCU, %LOCALAPPDATA%\Programs\OpenRB-338). It is
   ; not touched (the HKCU of an elevated process is not always the user's, and its files are not
   ; ours to delete unasked): the user is told, and how to remove it.
@@ -192,8 +227,7 @@ SectionEnd
 
 ; The bundles are the program's own names: an earlier copy goes first (a folder that is not
 ; ours is never touched), so a reinstall or an upgrade leaves no stale file. VST3: a host that
-; holds the old folder open keeps it, and the installer says so (a message, then it aborts). CLAP:
-; the file is just overwritten (NSIS reports a copy that fails); there is no check of its own.
+; holds the old folder open keeps it, and the installer says so (a message, then it aborts).
 Section "VST3 plugin" SecVst3
   ; the folder of an earlier install is not ours any more when another one was chosen
   ReadRegStr $2 HKLM "${APP_KEY}" "Vst3Dir"
@@ -210,18 +244,6 @@ Section "VST3 plugin" SecVst3
   SetOutPath "$Vst3Dir\${VST3_NAME}"
   File /r "${PLUGINDIR}\${VST3_NAME}\*.*"
   WriteRegStr HKLM "${APP_KEY}" "Vst3Dir" "$Vst3Dir"
-SectionEnd
-
-Section "CLAP plugin" SecClap
-  ReadRegStr $2 HKLM "${APP_KEY}" "ClapDir"
-  ${If} $2 != ""
-  ${AndIf} $2 != $ClapDir
-    Delete "$2\${CLAP_NAME}"
-  ${EndIf}
-  CreateDirectory "$ClapDir"
-  SetOutPath "$ClapDir"
-  File "${PLUGINDIR}\${CLAP_NAME}"
-  WriteRegStr HKLM "${APP_KEY}" "ClapDir" "$ClapDir"
 SectionEnd
 
 Section /o "Add orb to the PATH" SecPath
@@ -243,11 +265,10 @@ SectionEnd
   !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} "A shortcut to ${NAME} in the Start menu of all users."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "A shortcut to ${NAME} on the desktop of all users."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecVst3} "The VST3 instrument ${VST3_NAME}, in the common VST3 folder (Program Files\Common Files\VST3). Rescan plugins in your host."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecClap} "The CLAP instrument ${CLAP_NAME}, in the common CLAP folder (Program Files\Common Files\CLAP). Rescan plugins in your host."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Adds the install folder to the PATH of all users, so orb works in any new terminal."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
-; /STARTMENU=, /DESKTOP=, /PATH=, /VST3= and /CLAP= set the checkboxes (for /S too)
+; /STARTMENU=, /DESKTOP=, /PATH= and /VST3= set the checkboxes (for /S too)
 !macro OptionSection NAME SEC
   ClearErrors
   ${GetOptions} $0 "/${NAME}=" $1
@@ -270,20 +291,12 @@ Function .onInit
   !insertmacro OptionSection "DESKTOP" ${SecDesktop}
   !insertmacro OptionSection "PATH" ${SecPath}
   !insertmacro OptionSection "VST3" ${SecVst3}
-  !insertmacro OptionSection "CLAP" ${SecClap}
   StrCpy $Vst3Dir "$COMMONFILES64\VST3"
-  StrCpy $ClapDir "$COMMONFILES64\CLAP"
   ClearErrors
   ${GetOptions} $0 "/VST3DIR=" $1
   ${IfNot} ${Errors}
   ${AndIf} $1 != ""
     StrCpy $Vst3Dir $1
-  ${EndIf}
-  ClearErrors
-  ${GetOptions} $0 "/CLAPDIR=" $1
-  ${IfNot} ${Errors}
-  ${AndIf} $1 != ""
-    StrCpy $ClapDir $1
   ${EndIf}
   ClearErrors
 FunctionEnd
@@ -305,8 +318,8 @@ Section "Uninstall"
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
   ${EndIf}
 
-  ; the plugins, from the folders the installer wrote down in HKLM; only our two names (the
-  ; shared folders stay)
+  ; the plugin, from the folder the installer wrote down in HKLM; only our name (the shared
+  ; folder stays)
   ReadRegStr $2 HKLM "${APP_KEY}" "Vst3Dir"
   ${If} $2 != ""
     RMDir /r "$2\${VST3_NAME}"
@@ -314,13 +327,8 @@ Section "Uninstall"
       DetailPrint "$2\${VST3_NAME} could not be removed (a host has it open?). Delete it by hand."
     ${EndIf}
   ${EndIf}
-  ReadRegStr $2 HKLM "${APP_KEY}" "ClapDir"
-  ${If} $2 != ""
-    Delete "$2\${CLAP_NAME}"
-    ${If} ${FileExists} "$2\${CLAP_NAME}"
-      DetailPrint "$2\${CLAP_NAME} could not be removed (a host has it open?). Delete it by hand."
-    ${EndIf}
-  ${EndIf}
+  ; an old CLAP plugin of an earlier release, if one is still there
+  Call un.RemoveOldClap
 
   Delete "$SMPROGRAMS\${NAME}.lnk"
   Delete "$DESKTOP\${NAME}.lnk"

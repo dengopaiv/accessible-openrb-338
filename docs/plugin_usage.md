@@ -1,6 +1,6 @@
 # Plugin Usage
 
-How to drive the OpenRB-338 instrument plugin from a DAW. It comes as a VST® 3 and as a CLAP plugin: one instance is the whole ReBirth (two ORB-303 bass lines, the ORB-808, the ORB-909, the effects and the mixer) with a stereo Mix output, four stereo outputs of the devices (section 6) and one MIDI input. This page is also in the plugin: Help > Plugin Usage.
+How to drive the OpenRB-338 instrument plugin from a DAW. It is a VST® 3 plugin: one instance is the whole ReBirth (two ORB-303 bass lines, the ORB-808, the ORB-909, the effects and the mixer) with a stereo Mix output, four stereo outputs of the devices (section 6) and one MIDI input. This page is also in the plugin: Help > Plugin Usage.
 
 ## 1. Modes
 
@@ -126,11 +126,9 @@ Besides its main output, **Mix**, the plugin has four stereo outputs, one per de
 2. Play the pattern notes of a section, 0 to 31, from a keyboard on that section's channel (a MIDI-learned pad row also works). The pattern changes at once, in time, and stays until the next note.
 3. Record the notes into a MIDI clip to keep the performance: the clip, not automation, is the record.
 
-<!-- vst3-only -->
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/steinberg/VST_Compatible_Logo_Steinberg_negative.svg">
   <img src="../assets/steinberg/VST_Compatible_Logo_Steinberg.svg" alt="VST Compatible" width="120">
 </picture>
 
 VST is a registered trademark of Steinberg Media Technologies GmbH.
-<!-- /vst3-only -->

@@ -93,7 +93,7 @@
         "Security and click \"Open Anyway\" next to " + file + ", then confirm. (On macOS 14 " +
         "and older: right-click the .pkg > Open > Open.)"));
       ol.appendChild(el("li", null, "The installer asks for an administrator password: it " +
-        "installs OpenRB-338.vst3 and OpenRB-338.clap for all users."));
+        "installs OpenRB-338.vst3 for all users (and removes the old OpenRB-338.clap)."));
     } else {
       ol.appendChild(el("li", null, "Open the downloaded " + file + " and drag " +
         "OpenRB-338.app to Applications."));

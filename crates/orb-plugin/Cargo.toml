@@ -4,17 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "OpenRB-338 as a VST3 and CLAP instrument plugin (nice-plug)"
+description = "OpenRB-338 as a VST3 instrument plugin (nice-plug)"
 
 [lib]
 name = "orb_plugin"
 # The plugin library the bundles hold (cdylib), and a lib for the tests.
 crate-type = ["cdylib", "lib"]
-
-# The CLAP editor in a minimal host on the main thread (AppKit needs it): no test harness.
-[[test]]
-name = "clap_gui"
-harness = false
 
 [dependencies]
 orb-engine = { path = "../orb-engine" }
@@ -62,23 +57,11 @@ objc2 = "0.6.4"
 x11rb = { version = "0.13.2", default-features = false, features = ["dri3", "present"] }
 
 [dev-dependencies]
-# tests/exports.rs loads the built plugin library as a host does: the CLAP and VST3 C APIs (the
+# tests/exports.rs loads the built plugin library as a host does: the VST3 C API (the
 # versions nice-plug uses; MIT OR Apache-2.0) and the dynamic loader (ISC).
-clap-sys = "0.5.0"
 vst3 = "0.3.0"
 libloading = "0.8.9"
 # examples/editor_preview.rs: the editor's panel in a window of its own, for screenshots.
 eframe = "0.37.0"
 # tests/editor.rs: a song and a mod file for File > Open and the Mods menu.
 tempfile = "3.27.0"
-
-# tests/clap_gui.rs: the host's window (NSWindow, NSView) the editor is parented to (task-224;
-# MIT; the versions baseview uses).
-[target.'cfg(target_os = "macos")'.dev-dependencies]
-objc2 = "0.6.5"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = [
-  "std", "NSGraphics", "NSResponder", "NSView", "NSWindow",
-] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = [
-  "std", "NSArray", "NSGeometry",
-] }

@@ -38,9 +38,8 @@ const LSB: f32 = 1.0 / 32768.0;
 const RENDER_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// REAPER 7.86's VST3 host writes 0 for an output sample below about 1e-16 in magnitude
-/// (-320 dB; seen on the 909's device output, whose decays reach 3e-17; the CLAP host passes
-/// them): a device output's sample counts as equal when REAPER's is 0 and the plugin's is below
-/// this.
+/// (-320 dB; seen on the 909's device output, whose decays reach 3e-17): a device output's sample
+/// counts as equal when REAPER's is 0 and the plugin's is below this.
 const FLUSHED: f32 = 1e-16;
 
 /// Ceilings, not a model: the largest differences measured (REAPER 7.86 and in-process alike;
@@ -99,13 +98,11 @@ fn bundles() -> PathBuf {
     dir.canonicalize().unwrap()
 }
 
-/// The `reaper.ini` keys of the VST and CLAP plugin paths of REAPER 7.86 on macOS (strings of
-/// its executable; `docs/plugin.md` section 7), and the plugin caches' file names.
+/// The `reaper.ini` key of the VST plugin path of REAPER 7.86 on macOS (a string of its
+/// executable; `docs/plugin.md` section 7), and the plugin cache's file name.
 struct Keys {
     vst_path: &'static str,
-    clap_path: &'static str,
     vst_cache: &'static str,
-    clap_cache: &'static str,
 }
 
 fn keys() -> Option<Keys> {
@@ -115,30 +112,26 @@ fn keys() -> Option<Keys> {
     Some(if cfg!(target_arch = "aarch64") {
         Keys {
             vst_path: "vstpath_arm64",
-            clap_path: "clap_path_macos-aarch64",
             vst_cache: "reaper-vstplugins_arm64.ini",
-            clap_cache: "reaper-clap-macos-aarch64.ini",
         }
     } else {
         Keys {
             vst_path: "vstpath64",
-            clap_path: "clap_path_macos-x86_64",
             vst_cache: "reaper-vstplugins64.ini",
-            clap_cache: "reaper-clap-macos-x86_64.ini",
         }
     })
 }
 
-/// The scratch `reaper.ini`: the plugin paths list only `bundles`; `vstfullstate` keeps REAPER
+/// The scratch `reaper.ini`: the plugin path lists only `bundles`; `vstfullstate` keeps REAPER
 /// from adding the default VST3 folders to them on its first start; the audio device is
 /// REAPER's dummy (no CoreAudio device in or out, after `coreaudiobs` marks the audio as
 /// configured), so REAPER neither asks for a device nor opens one.
 fn reaper_ini(bundles: &Path, k: &Keys) -> String {
     let b = bundles.display();
     format!(
-        "[REAPER]\n{}={b}\n{}={b}\nvstfullstate=33605\ncoreaudiobs=512\n\
+        "[REAPER]\n{}={b}\nvstfullstate=33605\ncoreaudiobs=512\n\
          coreaudioindevnew=<none>\ncoreaudiooutdevnew=<none>\n",
-        k.vst_path, k.clap_path
+        k.vst_path
     )
 }
 
@@ -253,29 +246,24 @@ fn render(exe: &Path, bundles: &Path, k: &Keys, c: &Case, f: Format) -> Render {
         );
         assert_eq!(rate, c.rate, "{id}: the activation's rate");
     }
-    // REAPER kept the scratch configuration's paths, and its scan found one OpenRB-338 of each
-    // format (the caches name the files, not their folders)
+    // REAPER kept the scratch configuration's path, and its scan found one OpenRB-338 (the cache
+    // names the file, not its folder)
     let kept = std::fs::read_to_string(&ini).unwrap();
-    for key in [k.vst_path, k.clap_path] {
-        let line = kept.lines().find(|l| l.starts_with(&format!("{key}=")));
-        let want = format!("{key}={}", bundles.display());
-        assert_eq!(line, Some(want.as_str()), "{}", ini.display());
-    }
-    // an entry: a VST cache line `<file>=<time>,<id>,<name>`, a CLAP cache section `[<file>]`
-    for (cache, entry) in [
-        (k.vst_cache, "OpenRB_338.vst3="),
-        (k.clap_cache, "[OpenRB-338.clap]"),
-    ] {
-        let text = std::fs::read_to_string(res.join(cache)).unwrap_or_default();
-        let found = text
-            .lines()
-            .filter(|l| l.starts_with("OpenRB") || l.starts_with("[OpenRB"))
-            .count();
-        assert!(
-            found == 1 && text.contains(entry),
-            "{id}: {cache} lists {found} OpenRB-338 entries"
-        );
-    }
+    let key = k.vst_path;
+    let line = kept.lines().find(|l| l.starts_with(&format!("{key}=")));
+    let want = format!("{key}={}", bundles.display());
+    assert_eq!(line, Some(want.as_str()), "{}", ini.display());
+    // an entry: a VST cache line `<file>=<time>,<id>,<name>`
+    let (cache, entry) = (k.vst_cache, "OpenRB_338.vst3=");
+    let text = std::fs::read_to_string(res.join(cache)).unwrap_or_default();
+    let found = text
+        .lines()
+        .filter(|l| l.starts_with("OpenRB") || l.starts_with("[OpenRB"))
+        .count();
+    assert!(
+        found == 1 && text.contains(entry),
+        "{id}: {cache} lists {found} OpenRB-338 entries"
+    );
     let mut files = BTreeMap::new();
     for e in std::fs::read_dir(proj.join("out")).unwrap() {
         let p = e.unwrap().path();
@@ -390,24 +378,17 @@ fn diff(a: &[f32], b: &[f32], tol: f32) -> (Option<usize>, usize, f32) {
 struct Allow {
     /// REAPER's 0 for a sample of the plugin's below [`FLUSHED`] (REAPER 7.86's VST3 host).
     flush: bool,
-    /// +0 for -0 (REAPER 7.86's CLAP host: the 909's device output, frame 58965).
-    zero_sign: bool,
 }
 
 /// Bit for bit.
-const EXACT: Allow = Allow {
-    flush: false,
-    zero_sign: false,
-};
+const EXACT: Allow = Allow { flush: false };
 
 /// Asserts `got` (REAPER's) is `want` (the in-process host's) bit for bit, except what `allow`
 /// lets differ.
 fn same(what: &str, got: &[f32], want: &[f32], allow: Allow) {
     assert_eq!(got.len(), want.len(), "{what}: the length");
     let bad = got.iter().zip(want).position(|(&g, &w)| {
-        g.to_bits() != w.to_bits()
-            && !(allow.zero_sign && g == 0.0 && w == 0.0)
-            && !(allow.flush && g.to_bits() == 0 && w.abs() < FLUSHED)
+        g.to_bits() != w.to_bits() && !(allow.flush && g.to_bits() == 0 && w.abs() < FLUSHED)
     });
     if let Some(i) = bad {
         panic!(
@@ -489,10 +470,9 @@ fn check(c: &Case, f: Format, r: &Render) {
         for (k, (name, _)) in DEVICE_TRACKS.iter().enumerate() {
             let stem = r.get(name);
             assert!(peak(stem) > 0.1, "{id}: the {name} track plays");
-            // the VST3 host flushes tiny samples, the CLAP host writes +0 for -0 ([`Allow`])
+            // the VST3 host flushes tiny samples ([`Allow`])
             let allow = Allow {
                 flush: f == Format::Vst3,
-                zero_sign: f == Format::Clap,
             };
             same(&format!("{id} {name}"), stem, &host.buses[k], allow);
         }

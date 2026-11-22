@@ -42,7 +42,7 @@ and Windows.
   (Help > Keyboard Shortcuts).
 - **Pattern commands:** cut, copy, paste and duplicate a pattern, with one level of undo (the
   Edit menu).
-- **A VST 3 and CLAP instrument plugin** with the same engine and panel (see The plugin below).
+- **A VST 3 instrument plugin** with the same engine and panel (see The plugin below).
   Besides the Mix it has outputs for the 303-1, 303-2, 808 and 909, tapped like ReBirth's
   ReWire channels, after each channel's effects and before its level and pan.
 - **`orb`, a command-line tool,** to work with songs and mods from the terminal:
@@ -56,7 +56,7 @@ and Windows.
 
 ## Not implemented
 
-- ReWire, and MIDI input or sync in the standalone application (the VST 3/CLAP plugin below takes
+- ReWire, and MIDI input or sync in the standalone application (the VST 3 plugin below takes
   the MIDI of its host).
 - Mod themes other than the classic panel: a mod's panel art is drawn as it is, with no
   higher-resolution sets.
@@ -66,10 +66,17 @@ and Windows.
 
 ## The plugin
 
-OpenRB-338 also comes as an instrument plugin in the VST 3 and CLAP formats (`OpenRB-338.vst3`
-and `OpenRB-338.clap`), with the same engine and panel inside a DAW. Quick start step 2 installs
-it; [docs/plugin_usage.md](docs/plugin_usage.md) is the guide to its modes and MIDI mappings (also
+OpenRB-338 also comes as an instrument plugin in the VST 3 format (`OpenRB-338.vst3`), with the
+same engine and panel inside a DAW. Quick start step 2 installs it;
+[docs/plugin_usage.md](docs/plugin_usage.md) is the guide to its modes and MIDI mappings (also
 in the plugin: Help > Plugin Usage), and docs/plugin.md describes how it works.
+
+**CLAP was dropped** (2026-11-22): the plugin is VST 3 only from the release after v2026.1118.0919.
+The Windows installer and the macOS plugin `.pkg` delete the old `OpenRB-338.clap` when you
+upgrade; with the `.dmg` or an archive, delete it by hand (`/Library/Audio/Plug-Ins/CLAP` or
+`~/Library/Audio/Plug-Ins/CLAP` on macOS, `~/.clap` or `/usr/lib/clap` on Linux, `Common Files\CLAP`
+on Windows). A project saved with the CLAP plugin needs the plugin replaced by its VST 3 by hand
+in the host (docs/plugin.md section 7.2).
 
 ## Quick start
 
@@ -93,12 +100,12 @@ in the plugin: Help > Plugin Usage), and docs/plugin.md describes how it works.
    - macOS: open the `.dmg` and drag OpenRB-338 to Applications. The image opens normally;
      macOS refuses the unsigned app the first time you start it (Open Anyway in System Settings >
      Privacy & Security on macOS 15, or right-click > Open on macOS 14 and older).
-     The plugin (a VST3/CLAP instrument) is a separate download,
+     The plugin (a VST3 instrument) is a separate download,
      `OpenRB-338-Plugins-<version>-<target>.pkg`: open it (it is unsigned, so right-click >
      Open, or Open Anyway in System Settings > Privacy & Security on macOS 15). It installs
      for all users (asks for an admin password) `OpenRB-338.vst3` into
-     `/Library/Audio/Plug-Ins/VST3` and `OpenRB-338.clap` into `/Library/Audio/Plug-Ins/CLAP`;
-     to remove them, delete those two bundles. The other systems' archives hold the bundles in
+     `/Library/Audio/Plug-Ins/VST3` (and removes the old `OpenRB-338.clap` of an earlier
+     release); to remove the plugin, delete that bundle. The other systems' archives hold the bundles in
      `plugins/`, and their `README.txt` lists the plugin folders.
    - Windows: run the installer. It can add `orb` to the PATH.
    - Linux: make the AppImage executable (`chmod +x OpenRB-338-*.AppImage`).

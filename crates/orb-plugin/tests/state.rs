@@ -104,7 +104,7 @@ fn a_restored_state_plays_as_the_saved_one() {
 }
 
 /// A new instance is in Note Mode, and each mode survives a save and a restore (the persisted
-/// fields are what CLAP and VST3 state both carry, through nice-plug).
+/// fields are what the VST3 state carries, through nice-plug).
 #[test]
 fn the_mode_defaults_to_note_and_is_kept_in_the_state() {
     use orb_plugin::instance::Mode;

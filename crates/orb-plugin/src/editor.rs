@@ -60,8 +60,8 @@ pub const DEFAULT_SIZE: (u32, u32) = (
 /// than any buffer a host uses (8192 frames, 186 ms).
 pub const FOLLOW_FRAMES: u64 = 8192;
 
-/// How the host may resize the editor, in both formats (CLAP `gui.can_resize` and
-/// `gui.get_resize_hints`, VST3 `IPlugView::canResize`) and for baseview's window: both ways,
+/// How the host may resize the editor (VST3 `IPlugView::canResize`; the CLAP format, dropped in
+/// task-278, had `gui.can_resize` and `gui.get_resize_hints`) and for baseview's window: both ways,
 /// to any size of at least half the panel (the standalone window's minimum) and its menu bar,
 /// with no aspect ratio. The editor takes any size the host gives ([`adjust_logical`]) and
 /// letterboxes the panel in it (task-234, the user's decision of 2026-11-17; `docs/plugin.md`
@@ -1306,14 +1306,13 @@ impl Embed for EditorEmbed {
         Some(self.params.previewing())
     }
 
-    /// The wrapper in use tells (both formats come from this one crate): nice-plug's
-    /// `GuiContext::plugin_api` is `Vst3` in the VST3 wrapper's editor and `Clap` in the CLAP
-    /// wrapper's (wrapper/vst3/context.rs, wrapper/clap/context.rs); no logo in a standalone.
+    /// The wrapper in use tells: nice-plug's
+    /// `GuiContext::plugin_api` is `Vst3` in the VST3 wrapper's editor (wrapper/vst3/context.rs);
+    /// no logo in a standalone.
     fn format(&self) -> Option<PluginFormat> {
         match self.gui.plugin_api() {
             PluginApi::Vst3 => Some(PluginFormat::Vst3),
-            PluginApi::Clap => Some(PluginFormat::Clap),
-            PluginApi::Standalone => None,
+            _ => None,
         }
     }
 

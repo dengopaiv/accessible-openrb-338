@@ -63,7 +63,7 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
   Standard Mapping (`StandardMapping`), which turns timed MIDI bytes into timed `Action`s, each
   with the player's `Command` (`Action::command`) or a view change (the shown bank, the focus,
   the selected drum instrument, the keyboard mode). It does not know where the bytes come from:
-  the VST3/CLAP plugin will feed it the host's events with their sample offsets, task-188 a MIDI
+  the VST3 plugin will feed it the host's events with their sample offsets, task-188 a MIDI
   port. Which 64-frame block applies an action is the caller's choice (the plugin: the first
   block that starts at or after its time, never an earlier one, task-227); the layer only
   keeps the time.
@@ -160,7 +160,7 @@ exe).
 
 ## 5. The plugin's note mapping (task-185, task-199)
 
-orb's own mapping of MIDI notes for the VST3/CLAP plugin (`docs/plugin.md`), decided in task-185
+orb's own mapping of MIDI notes for the VST3 plugin (`docs/plugin.md`), decided in task-185
 (2026-11-15/16; channels changed on 2026-11-16, task-207). It is not the original's: the
 original plays no device from notes (section 4), and its Standard Mapping
 (`docs/standard_midi_mapping.md`) stays as it is, on a channel of its own. Four features use

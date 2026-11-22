@@ -29,7 +29,7 @@ REPO = "https://github.com/pingw33n/OpenRB-338"
 # where the site is served: the canonical address, the link preview's and the sitemap's
 SITE_URL = "https://pingw33n.github.io/OpenRB-338/"
 DESCRIPTION = ("A free, open-source reimplementation of ReBirth RB-338 (two TB-303s, a TR-808 "
-               "and a TR-909): standalone app and VST 3/CLAP plugin for macOS, Windows and "
+               "and a TR-909): standalone app and VST 3 plugin for macOS, Windows and "
                "Linux.")
 SONGS_ZIP = "https://github.com/pingw33n/rb-songs/archive/refs/heads/main.zip"
 MODS_ZIP = "https://github.com/pingw33n/rb-mods/archive/refs/heads/main.zip"

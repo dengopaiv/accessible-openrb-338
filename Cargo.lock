@@ -2735,7 +2735,8 @@ dependencies = [
 [[package]]
 name = "nice-log"
 version = "0.3.1"
-source = "git+https://github.com/pingw33n/nice-plug?rev=250daefd57cdc58d41ddb25f053f1a0589f44cad#250daefd57cdc58d41ddb25f053f1a0589f44cad"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3921836d433fa74f9df4fbb56bddedb075a7689805135d10b614ffdf631be36c"
 dependencies = [
  "tracing-appender",
  "windows",
@@ -2744,7 +2745,8 @@ dependencies = [
 [[package]]
 name = "nice-plug"
 version = "0.4.2"
-source = "git+https://github.com/pingw33n/nice-plug?rev=250daefd57cdc58d41ddb25f053f1a0589f44cad#250daefd57cdc58d41ddb25f053f1a0589f44cad"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f47be74bed3e8aa17bb055d4ff89af1fb016aa0d2756cd9b6c029a3743676a5"
 dependencies = [
  "anyhow",
  "anymap3",
@@ -2774,7 +2776,8 @@ dependencies = [
 [[package]]
 name = "nice-plug-core"
 version = "0.4.2"
-source = "git+https://github.com/pingw33n/nice-plug?rev=250daefd57cdc58d41ddb25f053f1a0589f44cad#250daefd57cdc58d41ddb25f053f1a0589f44cad"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab8fe3f3e395c1140d7519a78069b59b2e3bf6da2b904d0c54ad7ab49a60ba09"
 dependencies = [
  "atomic_float",
  "atomic_refcell",
@@ -2794,7 +2797,8 @@ dependencies = [
 [[package]]
 name = "nice-plug-derive"
 version = "0.1.2"
-source = "git+https://github.com/pingw33n/nice-plug?rev=250daefd57cdc58d41ddb25f053f1a0589f44cad#250daefd57cdc58d41ddb25f053f1a0589f44cad"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2952ae91d0701916f887973dd0b84ac70007761872b7689395c7adc0e803b232"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3383,7 +3387,6 @@ name = "orb-plugin"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "clap-sys",
  "eframe",
  "egui",
  "egui-wgpu",
@@ -3394,8 +3397,6 @@ dependencies = [
  "nice-plug",
  "nice-plug-egui",
  "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
  "orb-cli",
  "orb-engine",
  "orb-player",

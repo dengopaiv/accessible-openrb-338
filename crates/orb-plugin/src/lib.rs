@@ -1,4 +1,4 @@
-//! OpenRB-338 as a VST3 and CLAP instrument plugin (milestone m-7; task-185's decisions, task-197
+//! OpenRB-338 as a VST3 instrument plugin (milestone m-7; task-185's decisions, task-197
 //! the core): the whole ReBirth (two 303s, 808, 909, effects, mixer) in one instance, on
 //! nice-plug. `docs/plugin.md` describes it.
 //!
@@ -41,8 +41,6 @@ use crate::instance::OrbParams;
 pub const NAME: &str = "OpenRB-338";
 /// The vendor, permanent.
 pub const VENDOR: &str = "OpenRB-338";
-/// The CLAP id, permanent.
-pub const CLAP_ID: &str = "io.github.pingw33n.openrb-338";
 /// The VST3 class id, the GUID EFAB08AF-B39D-4399-8A80-3DC1F84ED3D6 made once with `uuidgen`
 /// (2026-11-16, task-197). It never changes: hosts find the plugin in saved projects by it.
 pub const VST3_CLASS_ID: [u8; 16] = [
@@ -87,8 +85,8 @@ fn seven_bits(v: f32) -> u8 {
     (v * 127.0).round().clamp(0.0, 127.0) as u8
 }
 
-/// The MIDI message of a nice-plug note event; `None` for the events that are not MIDI (the
-/// CLAP voice and polyphonic expression events, a note of a wildcard channel or key).
+/// The MIDI message of a nice-plug note event; `None` for the events that are not MIDI (a
+/// note of a wildcard channel or key).
 pub fn midi_message(e: &NoteEvent<()>) -> Option<Message> {
     Some(match *e {
         NoteEvent::NoteOn {
@@ -275,23 +273,10 @@ impl Plugin for OrbPlugin {
     }
 }
 
-impl ClapPlugin for OrbPlugin {
-    const CLAP_ID: &'static str = CLAP_ID;
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("OpenRB-338");
-    const CLAP_MANUAL_URL: Option<&'static str> = Some(URL);
-    const CLAP_SUPPORT_URL: Option<&'static str> = Some(URL);
-    const CLAP_FEATURES: &'static [ClapFeature] = &[
-        ClapFeature::Instrument,
-        ClapFeature::Synthesizer,
-        ClapFeature::Stereo,
-    ];
-}
-
 impl Vst3Plugin for OrbPlugin {
     const VST3_CLASS_ID: [u8; 16] = VST3_CLASS_ID;
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Instrument, Vst3SubCategory::Synth];
 }
 
-nice_export_clap!(OrbPlugin);
 nice_export_vst3!(OrbPlugin);

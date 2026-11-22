@@ -24,16 +24,14 @@ pub const REAPER_VERSION: &str = "7.86";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Vst3,
-    Clap,
 }
 
 impl Format {
-    pub const ALL: [Format; 2] = [Format::Vst3, Format::Clap];
+    pub const ALL: [Format; 1] = [Format::Vst3];
 
     pub fn ext(self) -> &'static str {
         match self {
             Format::Vst3 => "vst3",
-            Format::Clap => "clap",
         }
     }
 }
@@ -59,7 +57,7 @@ pub enum Timing {
 /// One render case.
 #[derive(Clone, Copy, Debug)]
 pub struct Case {
-    /// The fixture's name: `tests/reaper/<name>.<vst3|clap>.RPP`.
+    /// The fixture's name: `tests/reaper/<name>.vst3.RPP`.
     pub name: &'static str,
     /// A diag song, `tests/songs/diag/songs/<song>.rbs`.
     pub song: &'static str,
@@ -376,7 +374,7 @@ pub fn notes(c: &Case, p: &OrbParams) -> (Vec<(usize, Message)>, usize) {
 }
 
 /// nice-plug's state of the instance: its parameters by id and its persisted fields, as JSON
-/// (`docs/plugin.md` section 5; the VST3 component state, and the CLAP state after its length).
+/// (`docs/plugin.md` section 5; the VST3 component state).
 pub fn state_json(p: &OrbParams) -> String {
     let params: std::collections::BTreeMap<String, serde_json::Value> = p
         .ids()
@@ -406,14 +404,12 @@ fn b64_lines(out: &mut String, indent: &str, data: &[u8]) {
 
 /// The plugin's block in a track's FX chain, as REAPER 7.86 saves it.
 ///
-/// - VST3: the line `<VST "VST3i: ..." OpenRB-338.vst3 0 "" <id>{<class id>} ""`, then base64
-///   lines: a header (the id as a little-endian u32, 0xFEED5EEE, the input count 0 with no pin
-///   masks, the output count 10 and each output's u64 pin mask, output n on track channel n), one
-///   line of the data's length, 1 and 0xFFFF (u32 each), the data (the component state's length and
-///   1, the state, then the controller state's length 0 and a 0, u32 each), and a trailer of six
-///   zero bytes.
-/// - CLAP: `<CLAP "CLAPi: ..." <clap id> ""`, `CFG 4 0 0 ""`, an empty `OUT_PINS` (the default
-///   routing) and `STATE`: base64 of the CLAP state, nice-plug's u64 length and the JSON.
+/// The VST3 form: the line `<VST "VST3i: ..." OpenRB-338.vst3 0 "" <id>{<class id>} ""`, then
+/// base64 lines: a header (the id as a little-endian u32, 0xFEED5EEE, the input count 0 with no
+/// pin masks, the output count 10 and each output's u64 pin mask, output n on track channel n),
+/// one line of the data's length, 1 and 0xFFFF (u32 each), the data (the component state's
+/// length and 1, the state, then the controller state's length 0 and a 0, u32 each), and a
+/// trailer of six zero bytes.
 pub fn fx_block(f: Format, json: &str) -> String {
     let mut s = String::new();
     match f {
@@ -446,20 +442,6 @@ pub fn fx_block(f: Format, json: &str) -> String {
             b64_lines(&mut s, "        ", &size);
             b64_lines(&mut s, "        ", &data);
             b64_lines(&mut s, "        ", &[0; 6]);
-            s.push_str("      >\n");
-        }
-        Format::Clap => {
-            s.push_str(concat!(
-                "      <CLAP \"CLAPi: OpenRB-338 (OpenRB-338)\" ",
-                "io.github.pingw33n.openrb-338 \"\"\n",
-            ));
-            s.push_str("        CFG 4 0 0 \"\"\n");
-            s.push_str("        <OUT_PINS\n        >\n");
-            s.push_str("        <STATE\n");
-            let mut data = (json.len() as u64).to_le_bytes().to_vec();
-            data.extend(json.as_bytes());
-            b64_lines(&mut s, "          ", &data);
-            s.push_str("        >\n");
             s.push_str("      >\n");
         }
     }

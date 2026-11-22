@@ -5,7 +5,6 @@
 pub mod font;
 pub mod layout;
 pub mod parts;
-pub mod plugin_logos;
 pub mod svg;
 pub mod text;
 

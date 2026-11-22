@@ -95,7 +95,7 @@
       songs, saves RBS 4.2, and plays the drum samples of ReBirth mods (<code>.rbm</code>). The
       standard kit is built in.</li>
     <li><b>Audio export</b> of the loop to WAV, FLAC or Ogg Vorbis.</li>
-    <li><b>A VST 3 and CLAP instrument plugin</b> with the same engine and panel, with three
+    <li><b>A VST 3 instrument plugin</b> with the same engine and panel, with three
       modes (Note, Latch Pattern, Gate Pattern) and MIDI mappings for the pattern selection.
       Besides the Mix it has outputs for the 303-1, 303-2, 808 and 909, tapped like ReBirth's
       ReWire channels, after each channel's effects and before its level and pan.</li>
@@ -108,6 +108,11 @@
 <section id="download" class="plate">
   <h2 class="hdr fx">Download</h2>
   <p class="release">Release <a class="lcd" href="{{RELEASE_URL}}">{{VERSION}}</a></p>
+  <div class="warn" id="clap-notice"><b>The CLAP plugin is no longer supported.</b> The Windows
+    installer and the macOS plugin .pkg delete the old <code>OpenRB-338.clap</code> when you
+    upgrade. With the .dmg or on Linux, delete it by hand: <code>/Library/Audio/Plug-Ins/CLAP</code>
+    (macOS), <code>~/.clap</code> or <code>/usr/lib/clap</code> (Linux). A project saved with the
+    CLAP plugin needs the VST3 loaded in its place.</div>
   <div class="tabs" role="tablist" aria-label="Operating system"></div>
   <div id="panels">
 {{PANELS}}

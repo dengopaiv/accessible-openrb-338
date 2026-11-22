@@ -150,7 +150,7 @@ The Windows build of OpenRB-338 is a GUI-subsystem exe (task-111), see "The Wind
 |---|---|
 | `scripts/build.sh TARGET` | builds `orb` and `OpenRB-338` (profile `dist`) for the target into `dist/<target>/bin/` |
 | `scripts/package.sh TARGET` | `build.sh`, then packs `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<target>.tar.gz|zip` (`SKIP_BUILD=1` packs the existing `bin/`) |
-| `scripts/validate-plugin.sh [DIR]` | downloads the pinned clap-validator and pluginval and runs them on `OpenRB-338.clap` and `OpenRB-338.vst3` in `DIR` (default `target/bundled`); exit 1 on any failure (below, "The plugin") |
+| `scripts/validate-plugin.sh [DIR]` | downloads the pinned pluginval and runs it on `OpenRB-338.vst3` in `DIR` (default `target/bundled`); exit 1 on a failure (below, "The plugin") |
 | `scripts/build-all.sh [TARGET...]` | packages every target practical from this machine, and lists the skipped and failed ones |
 | `scripts/package-dmg.sh` | `scripts/package-dmg.sh TARGET` (a macOS target) builds it, then `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<target>.dmg` (`SKIP_BUILD=1` uses the existing `bin/` folder) |
 | `scripts/package-installer.sh TARGET` | `build.sh` for a Windows target, then `dist/<target>/OpenRB-338-<YYYY.MMDD.HHMM>-<x64\|arm64>-setup.exe` with NSIS (`SKIP_BUILD=1` uses the existing `bin/`; `MAKENSIS` names makensis) |
@@ -392,7 +392,8 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     need none of them.
     Linux installs `libasound2-dev` first.
   - `plugin validators` (task-204) on `ubuntu-22.04` and `macos-latest`: bundles the plugin and
-    runs `scripts/validate-plugin.sh` (clap-validator, pluginval; see "The plugin").
+    runs `scripts/validate-plugin.sh` (pluginval) and `scripts/test-pkg-scripts.sh` (the macOS
+    plugin installer's preinstall script; see "The plugin").
 - `release.yml`, on a tag `v*` and by hand:
   - `prepare` computes one `SOURCE_DATE_EPOCH` and one `ORB_BUILD_BRANCH` (`scripts/release-env.sh`)
     so all packages agree. On a tag the build time is the tag's and a tag that is not
@@ -596,21 +597,20 @@ per user (no UAC prompt, `%LOCALAPPDATA%\Programs\OpenRB-338`, HKCU).
 | Shortcuts | the common Start menu and desktop (`SetShellVarContext all`) |
 | PATH | the machine's: `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\Path` |
 | VST3 | `$COMMONFILES64\VST3\OpenRB-338.vst3` (`C:\Program Files\Common Files\VST3`) |
-| CLAP | `$COMMONFILES64\CLAP\OpenRB-338.clap` |
 
 **What it installs.** `OpenRB-338.exe`, `orb.exe`, `LICENSE.txt` (the GPLv3, also the installer's
 license page) and `README.txt`, `Uninstall.exe`, and what the components below add. The pages:
 welcome, license, components, folder, install, finish (start the app, show the readme). The
-record in `HKLM\Software\OpenRB-338`: `InstallDir`, `Version`, `Vst3Dir` and `ClapDir` (the last
-two only when the component was installed); the uninstaller removes what it names.
+record in `HKLM\Software\OpenRB-338`: `InstallDir`, `Version` and `Vst3Dir` (the last
+only when the component was installed; the earlier releases also wrote `ClapDir`, which the
+installer deletes); the uninstaller removes what it names.
 
 | Component | Default | Does |
 |---|---|---|
-| OpenRB-338 and orb | required | the files above; the uninstaller; the entry in Settings > Apps > Installed apps (Add or remove programs) under `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338`: `DisplayName`, `DisplayVersion` = `YYYY.MMDD.HHMM`, `Publisher`, `DisplayIcon`, `InstallLocation`, `UninstallString`, `QuietUninstallString`, `EstimatedSize`, no Modify or Repair |
+| OpenRB-338 and orb | required | the files above; deletes the `OpenRB-338.clap` of an earlier release (task-278, below); the uninstaller; the entry in Settings > Apps > Installed apps (Add or remove programs) under `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenRB-338`: `DisplayName`, `DisplayVersion` = `YYYY.MMDD.HHMM`, `Publisher`, `DisplayIcon`, `InstallLocation`, `UninstallString`, `QuietUninstallString`, `EstimatedSize`, no Modify or Repair |
 | Start menu shortcut | on | `OpenRB-338` in the common Start menu |
 | Desktop shortcut | off | `OpenRB-338` on the common desktop |
 | VST3 plugin | on | the bundle folder `OpenRB-338.vst3` into the VST3 folder above |
-| CLAP plugin | on | the file `OpenRB-338.clap` into the CLAP folder above |
 | Add orb to the PATH | off | appends the folder to the machine's PATH (`path.ps1 ... machine`) |
 
 **An earlier per-user install (the choice of task-237).** The installer reads the `HKCU` record of
@@ -622,23 +622,32 @@ as another account, whose `HKCU` is not the user's (then there is no note), and 
 not ours to remove unasked. The cost: until the old copy is removed, its per-user PATH entry and
 shortcut remain beside the new ones.
 
-**The plugins (task-237).** The folders are written to HKLM (`Vst3Dir`, `ClapDir`); a
+**The plugin (task-237).** The folder is written to HKLM (`Vst3Dir`); a
 reinstall or an upgrade deletes the old `OpenRB-338.vst3` (and an earlier copy in another folder)
 and copies the new one, so no file of an old version stays; if a host holds the VST3 plugin open
-the copy stops with a message (close the host), while the CLAP file gives no message (task-240).
-The uninstaller deletes `OpenRB-338.vst3` (recursively, our own folder) and `OpenRB-338.clap` in
-the recorded folders and nothing else;
-`VST3` and `CLAP` themselves stay, other vendors' plugins live there. Unticking a plugin on a
-later install leaves the earlier copy (and the uninstaller still removes it). The installer job
+the copy stops with a message (close the host).
+The uninstaller deletes `OpenRB-338.vst3` (recursively, our own folder) in the recorded folder
+and nothing else; `VST3` itself stays, other vendors' plugins live there. Unticking the plugin on
+a later install leaves the earlier copy (and the uninstaller still removes it).
+
+**The old CLAP (task-278).** CLAP was dropped; the releases up to v2026.1118.0919 had a "CLAP
+plugin" component that put `OpenRB-338.clap` into `$COMMONFILES64\CLAP` (recorded as `ClapDir`).
+The required component of the new installer calls `RemoveOldClap` (`openrb.nsi`): it deletes
+that one file in `$COMMONFILES64\CLAP` and in the recorded `ClapDir` and the `ClapDir` value,
+whatever components are picked, and the uninstaller does the same (`un.RemoveOldClap`); nothing
+else in a CLAP folder is touched, and a file a host holds open is reported in the log. The
+options `/CLAP=` and `/CLAPDIR=` are ignored. Checked by building the installer with
+`makensis -WX` (the `installer` job of `release.yml` does it on every release); the install
+itself is not run here. The installer job
 gets the bundles from the `plugins-<target>` artifact (the package job uploads it for `dmg` too)
 into `dist/<target>/plugins`, which `package-installer.sh` stages; the listing (`7zz l`) shows
-`$_0_/OpenRB-338.vst3/Contents/<x86_64|arm64>-win/...` and `$_1_/OpenRB-338.clap` (NSIS names the
-output folders by the variable that holds them).
+`$_0_/OpenRB-338.vst3/Contents/<x86_64|arm64>-win/...` (NSIS names the output folders by the
+variable that holds them).
 
 Silent install (from an elevated prompt; the installer needs administrator rights):
-`setup.exe /S [/STARTMENU=0|1] [/DESKTOP=0|1] [/PATH=0|1] [/VST3=0|1] [/CLAP=0|1]
-[/VST3DIR=DIR] [/CLAPDIR=DIR] [/D=DIR]` (`/D=` must be the last argument and unquoted, an NSIS
-rule; `/VST3DIR=` and `/CLAPDIR=` take quotes). Silent uninstall: `Uninstall.exe /S`, which
+`setup.exe /S [/STARTMENU=0|1] [/DESKTOP=0|1] [/PATH=0|1] [/VST3=0|1]
+[/VST3DIR=DIR] [/D=DIR]` (`/D=` must be the last argument and unquoted, an NSIS
+rule; `/VST3DIR=` takes quotes). Silent uninstall: `Uninstall.exe /S`, which
 returns at once (it copies itself to a temporary folder to delete its own file); add `_?=DIR`
 (`Uninstall.exe /S _?=C:\dir`) to wait for it, which then leaves `Uninstall.exe` behind to
 delete by hand.
@@ -1011,8 +1020,8 @@ No framework, no build tool beyond `tools/build_site.py`.
 
 ## The plugin (task-204)
 
-The VST® 3 and CLAP instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundles
-`OpenRB-338.vst3` and `OpenRB-338.clap`. VST is a registered trademark of Steinberg Media Technologies GmbH.
+The VST® 3 instrument (`crates/orb-plugin`, docs/plugin.md) ships as the bundle
+`OpenRB-338.vst3` (CLAP was dropped, task-278; docs/plugin.md section 7.2). VST is a registered trademark of Steinberg Media Technologies GmbH.
 The attribution (Steinberg's logo and the trademark line) is in Help > Plugin Usage only, the VST3
 plugin's page (docs/plugin_usage.md, task-239): no README, package text or release note carries it.
 
@@ -1040,11 +1049,17 @@ same code path, run first by the release workflow.
 **Installing** by hand (copy the bundle, restart or rescan the host; the Windows installer always
 uses the machine-wide folders, the per-user ones below are for a manual install only):
 
-| OS | VST3 | CLAP |
-|---|---|---|
-| macOS | `~/Library/Audio/Plug-Ins/VST3/` (all users: `/Library/Audio/Plug-Ins/VST3/`) | `~/Library/Audio/Plug-Ins/CLAP/` (or `/Library/...`) |
-| Windows | `%COMMONPROGRAMFILES%\VST3\` (current user only: `%LOCALAPPDATA%\Programs\Common\VST3\`) | `%COMMONPROGRAMFILES%\CLAP\` (or `%LOCALAPPDATA%\Programs\Common\CLAP\`) |
-| Linux | `~/.vst3/` (or `/usr/lib/vst3/`) | `~/.clap/` (or `/usr/lib/clap/`) |
+| OS | VST3 |
+|---|---|
+| macOS | `~/Library/Audio/Plug-Ins/VST3/` (all users: `/Library/Audio/Plug-Ins/VST3/`) |
+| Windows | `%COMMONPROGRAMFILES%\VST3\` (current user only: `%LOCALAPPDATA%\Programs\Common\VST3\`) |
+| Linux | `~/.vst3/` (or `/usr/lib/vst3/`) |
+
+**Removing the old CLAP** (task-278): the Windows installer and the macOS pkg delete the
+`OpenRB-338.clap` of an earlier release; a `.dmg` or archive install cannot, so their READMEs say
+to delete it by hand: `/Library/Audio/Plug-Ins/CLAP` or `~/Library/Audio/Plug-Ins/CLAP` (macOS),
+`~/.clap` or `/usr/lib/clap` (Linux), `%COMMONPROGRAMFILES%\CLAP` or
+`%LOCALAPPDATA%\Programs\Common\CLAP` (Windows, a manual copy).
 
 **The macOS pkg** (task-238). The `.dmg` held links to the two system folders to drag the
 bundles onto; macOS creates neither folder (only plugin installers do), so a link was broken on
@@ -1059,11 +1074,11 @@ layout: none was ever made, see task-215.
 - The Installer's welcome page (`productbuild --resources`, `welcome.txt`) carries what the
   `.dmg` README cannot: how to open the unsigned pkg, what is installed where, the quarantine
   note and the removal (the README repeats it in short).
-- Two component packages, `net.emphased.openrb338.plugin.vst3` and `.clap`, each with
-  `--install-location /Library/Audio/Plug-Ins/VST3` or `/CLAP` (the Installer creates the
-  folder), owner root:wheel (`--ownership recommended`), version = the build time.
-- A Distribution with two choices, "VST3 plugin" and "CLAP plugin", both `start_selected` and
-  enabled, so Customize can drop one. Machine-wide only (`enable_localSystem`; the Installer asks
+- One component package, `net.emphased.openrb338.plugin.vst3`, with
+  `--install-location /Library/Audio/Plug-Ins/VST3` (the Installer creates the folder), owner
+  root:wheel (`--ownership recommended`), version = the build time. (Until task-278 a second
+  package, `.clap`, installed the CLAP bundle.)
+- A Distribution with one choice, "VST3 plugin" (`customize="never"`). Machine-wide only (`enable_localSystem`; the Installer asks
   for the admin password once). `hostArchitectures` is `arm64` in the aarch64 pkg, `x86_64,arm64`
   in the x86_64 one.
 - Upgrade: the component plist is an empty array, so `pkgbuild` records no bundle (the default
@@ -1071,8 +1086,16 @@ layout: none was ever made, see task-215.
   identifier, and both plugins have the same `CFBundleIdentifier`, `com.nice-plug.orb-plugin`; a
   relocatable bundle is also updated wherever the Installer finds it, say a build in a project
   folder). The package is plain files at the fixed install path, and a `preinstall` script
-  (`rm -rf "$3/Library/Audio/Plug-Ins/<VST3|CLAP>/OpenRB-338.<ext>"`, `$3` the target volume)
-  removes the old bundle first, so a file the new version no longer has is not left inside it.
+  (`scripts/pkg/preinstall`, `$3` the target volume) removes the old VST3 bundle first, so a file
+  the new version no longer has is not left inside it, and **removes the old CLAP** (task-278):
+  `rm -rf "$3/Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap"`, that one bundle and never the
+  folder, then `pkgutil --volume "$3" --forget net.emphased.openrb338.plugin.clap`, so the
+  receipt of the earlier release's CLAP package does not keep claiming the gone bundle. A copy in
+  `~/Library/Audio/Plug-Ins/CLAP` is not touched (the script runs as root); the welcome page says
+  to delete it. `scripts/test-pkg-scripts.sh` runs the script against a scratch volume with a
+  stand-in `pkgutil` (the bundles go, neighbors and the CLAP folder stay, the receipt is forgotten;
+  no `/Library`), in the `plugin validators` job of `ci.yml`; `package-pkg.sh` was also run on a
+  built bundle and the pkg expanded (`pkgutil --expand`) to see the script and the Distribution.
   Checked on the package (`pkgutil --expand`: `relocatable="false"`, no bundle entries, the
   scripts); the user then ran the Installer on macOS 15 (2026-11-17) and it worked (below).
 - Unsigned (no Developer ID), like the app: macOS blocks the downloaded pkg the first time;
@@ -1080,31 +1103,30 @@ layout: none was ever made, see task-215.
   (15 and newer). The files an Installer package writes are not quarantined (only the pkg is), so
   the bundles need no `xattr` command; they are signed ad hoc only. Verified on macOS 15 after
   the user's install of the pkg (2026-11-17): `xattr -lr` on the installed `OpenRB-338.vst3`
-  and `.clap` shows only `com.apple.provenance`, no `com.apple.quarantine`; `find -name '._*'`
+  and `.clap` (the CLAP bundle of that time) shows only `com.apple.provenance`, no `com.apple.quarantine`; `find -name '._*'`
   finds nothing in either; `pkgutil --pkgs` lists `net.emphased.openrb338.plugin.vst3` and
   `.clap`. Local builds on a Mac whose sandbox adds `com.apple.provenance` to every file show
   `._` entries in the pkg's Bom, but they did not land as files. The Destination page offers
   only the whole disk (machine-wide, as built); "for me only" and "specific disk" are greyed
   out, which is accepted.
-- No uninstaller: delete the two bundles from the two folders (`README.txt` says so).
+- No uninstaller: delete the bundle from its folder (`README.txt` says so).
 
 For a manual copy from a `.tar.gz` (which is quarantined when downloaded in a browser; with the
 ad hoc signature only, a host can refuse it), remove the flag from the copied bundles:
-`sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3 /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap`
-(the bundles copied into `/Library` with an admin password are owned by root), or without
-`sudo` for the ones in `~/Library/Audio/Plug-Ins/VST3/` and `/CLAP/`. Windows may show SmartScreen for the unsigned DLL the first
+`sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3`
+(a bundle copied into `/Library` with an admin password is owned by root), or without
+`sudo` for the one in `~/Library/Audio/Plug-Ins/VST3/`. Windows may show SmartScreen for the unsigned DLL the first
 time a host loads it. The dev tasks do not install into the user's plugin folders.
 
 **Validating.** `scripts/validate-plugin.sh` (after the bundling command above) runs, with
-downloaded release assets pinned by version and SHA-256:
-- clap-validator 0.3.2 (the release page of free-audio/clap-validator names it 0.4.1) on the
-  `.clap`;
+a downloaded release asset pinned by version and SHA-256:
 - pluginval 1.0.4 at strictness level 5, no GUI tests, on the `.vst3` (it runs VST3 plugins; it
   is used instead of Steinberg's validator, which has to be built from the SDK with CMake).
 It runs on macOS and Linux x86_64 (xvfb for pluginval there). `ci.yml`'s job `plugin validators`
 runs it on `ubuntu-22.04` and `macos-latest` on every push and pull request that is not
-docs-only, and fails on a validator error. The Windows bundles are not validated (neither tool
-has a script here; run `clap-validator.exe validate` and `pluginval.exe --validate` by hand).
+docs-only, and fails on a validator error. The Windows bundles are not validated (pluginval has no
+script here; run `pluginval.exe --validate` by hand). clap-validator was dropped with
+the CLAP format (task-278).
 
 ## What the system shows for an unsigned download
 

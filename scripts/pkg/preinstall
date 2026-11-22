@@ -1,0 +1,16 @@
+#!/bin/sh
+# The preinstall script of the plugin's .pkg (scripts/package-pkg.sh; tested by
+# scripts/test-pkg-scripts.sh). $3 is the target volume ("/" for the startup disk).
+#
+# 1. The old VST3 bundle goes, so an upgrade leaves no stale file inside it.
+# 2. CLAP was dropped (task-278, the user's decision of 2026-11-22): the OpenRB-338.clap of the
+#    earlier releases goes too, and ONLY that bundle: never the CLAP folder, which holds other
+#    vendors' plugins. The pkg of those releases (identifier ...plugin.clap) left a receipt; it
+#    is forgotten, so pkgutil does not keep claiming a bundle that is gone. A per-user copy in
+#    ~/Library/Audio/Plug-Ins/CLAP is not ours to touch (this script runs as root): the welcome
+#    text says to delete it.
+vol=${3:-/}
+rm -rf "$vol/Library/Audio/Plug-Ins/VST3/OpenRB-338.vst3"
+rm -rf "$vol/Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap"
+pkgutil --volume "$vol" --forget net.emphased.openrb338.plugin.clap >/dev/null 2>&1 || true
+exit 0

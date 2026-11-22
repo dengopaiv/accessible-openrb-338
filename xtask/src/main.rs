@@ -1,5 +1,5 @@
 //! `cargo xtask bundle orb-plugin [--release | --profile P] [--target T]`: the plugin's
-//! OpenRB-338.vst3 and OpenRB-338.clap under `target/bundled/` (task-197; `docs/plugin.md`
+//! OpenRB-338.vst3 under `target/bundled/` (task-197; `docs/plugin.md`
 //! section 7).
 //!
 //! nice-plug-xtask's own entry point looks for the workspace root as the topmost ancestor

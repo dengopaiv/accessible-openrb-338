@@ -26,13 +26,11 @@ rm -rf "$dist/$target/stage"
 mkdir -p "$stage"
 cp "$dist/$target/bin/"* "$stage/"
 cp "$root/LICENSE" "$stage/LICENSE"
-# the plugin bundles (task-204; scripts/build.sh made them): the folder holds both
-for p in OpenRB-338.vst3 OpenRB-338.clap; do
-    [ -e "$dist/$target/plugins/$p" ] || { echo "missing $dist/$target/plugins/$p" >&2; exit 1; }
-done
+# the plugin bundle (task-204; scripts/build.sh made it)
+p=OpenRB-338.vst3
+[ -e "$dist/$target/plugins/$p" ] || { echo "missing $dist/$target/plugins/$p" >&2; exit 1; }
 mkdir -p "$stage/plugins"
-cp -R "$dist/$target/plugins/OpenRB-338.vst3" "$dist/$target/plugins/OpenRB-338.clap" \
-    "$stage/plugins/"
+cp -R "$dist/$target/plugins/$p" "$stage/plugins/"
 
 case $target in
     *-linux-*)
@@ -64,23 +62,34 @@ Neither needs any file of the original program: the standard drum kit is built i
 The binaries are not signed (docs/building.md says what the system shows for that).
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE).
 
-Plugin (VST 3 and CLAP instrument)
-----------------------------------
+Plugin (VST 3 instrument)
+-------------------------
 
-plugins/ holds OpenRB-338.vst3 and OpenRB-338.clap. Copy the one your host loads (or both)
-into a plugin folder, then rescan plugins in the host:
+plugins/ holds OpenRB-338.vst3. Copy it into a plugin folder, then rescan plugins in the host:
 EOF
 case $target in
-    *-linux-*) plugin_dirs='  VST3: ~/.vst3/           CLAP: ~/.clap/        (or /usr/lib/vst3, /usr/lib/clap)' ;;
-    *-windows-*) plugin_dirs='  VST3: %COMMONPROGRAMFILES%\VST3\    CLAP: %COMMONPROGRAMFILES%\CLAP\
-  (or %LOCALAPPDATA%\Programs\Common\VST3\ and \CLAP\ for the current user only)
-  The installer (OpenRB-338-*-setup.exe) can do this for you: its "VST3 plugin" and "CLAP plugin"
-  components, on by default, copy the bundles to the %COMMONPROGRAMFILES% folders above (the
-  installer is for all users and asks for administrator rights); the uninstaller removes them.' ;;
-    *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/    CLAP: ~/Library/Audio/Plug-Ins/CLAP/
-  (or the same under /Library for all users). The bundles are signed ad hoc only; if the host
-  refuses them after a download, run in this folder (and again, with sudo, on the copies in
-  /Library if you installed them there): xattr -dr com.apple.quarantine OpenRB-338.vst3 OpenRB-338.clap' ;;
+    *-linux-*) plugin_dirs='  VST3: ~/.vst3/   (or /usr/lib/vst3)
+
+  CLAP was dropped. If you installed OpenRB-338.clap from an earlier release, delete it from
+  ~/.clap/ or /usr/lib/clap/. A project saved with the CLAP plugin needs the plugin replaced by
+  its VST3 by hand in the host.' ;;
+    *-windows-*) plugin_dirs='  VST3: %COMMONPROGRAMFILES%\VST3\
+  (or %LOCALAPPDATA%\Programs\Common\VST3\ for the current user only)
+  The installer (OpenRB-338-*-setup.exe) can do this for you: its "VST3 plugin" component, on by
+  default, copies the bundle to the %COMMONPROGRAMFILES% folder above (the installer is for all
+  users and asks for administrator rights); the uninstaller removes it.
+
+  CLAP was dropped. The installer deletes the OpenRB-338.clap of an earlier release from
+  %COMMONPROGRAMFILES%\CLAP\. If you copied it by hand, delete it. A project saved with the CLAP
+  plugin needs the plugin replaced by its VST3 by hand in the host.' ;;
+    *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/
+  (or the same under /Library for all users). The bundle is signed ad hoc only; if the host
+  refuses it after a download, run in this folder (and again, with sudo, on the copy in
+  /Library if you installed it there): xattr -dr com.apple.quarantine OpenRB-338.vst3
+
+  CLAP was dropped. If you installed OpenRB-338.clap from an earlier release, delete it from
+  ~/Library/Audio/Plug-Ins/CLAP/ or /Library/Audio/Plug-Ins/CLAP/. A project saved with the CLAP
+  plugin needs the plugin replaced by its VST3 by hand in the host.' ;;
 esac
 printf '%s\n' "$plugin_dirs" >> "$stage/README.txt"
 case $target in

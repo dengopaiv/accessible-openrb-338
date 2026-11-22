@@ -1,11 +1,11 @@
 ---
 id: TASK-278
 title: 'Plugin: drop the CLAP format, ship VST3 only, and return to stock nice-plug'
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-22T07:48:00Z'
-updated_date: '2026-11-22T07:59:00Z'
+updated_date: '2026-11-22T08:41:00Z'
 labels:
   - player
   - tests
@@ -66,10 +66,34 @@ The plugin uses no CLAP-only feature: no polyphonic modulation, no note expressi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The plugin builds and bundles as VST3 only; no CLAP export, CLAP code or CLAP bundle is left; the installers and release.yml ship only the VST3
-- [ ] #2 nice-plug comes from crates.io again: no [patch.crates-io] entry for nice-plug crates, cargo tree -d clean, and the VST3 behaves as with the fork (task-275's VST3 tests pass unchanged)
-- [ ] #3 The CLAP test cases and fixtures are removed and every VST3 test, including the REAPER test with ORB_REAPER set, passes as before
-- [ ] #4 docs/plugin.md, docs/building.md, README, the site and AGENTS.md describe a VST3-only plugin, say that CLAP was dropped and how a project saved with the CLAP version of the release is moved to the VST3; a release-note line is written
-- [ ] #5 The Windows installer and the macOS .pkg remove the earlier release's OpenRB-338.clap (only that bundle) on install, the Windows uninstaller removes it too, and the .dmg and Linux instructions tell the user to delete it; the installer scripts are checked without installing on this Mac
-- [ ] #6 cargo test --workspace passes, clippy -D warnings and nightly fmt clean
+- [x] #1 The plugin builds and bundles as VST3 only; no CLAP export, CLAP code or CLAP bundle is left; the installers and release.yml ship only the VST3
+- [x] #2 nice-plug comes from crates.io again: no [patch.crates-io] entry for nice-plug crates, cargo tree -d clean, and the VST3 behaves as with the fork (task-275's VST3 tests pass unchanged)
+- [x] #3 The CLAP test cases and fixtures are removed and every VST3 test, including the REAPER test with ORB_REAPER set, passes as before
+- [x] #4 docs/plugin.md, docs/building.md, README, the site and AGENTS.md describe a VST3-only plugin, say that CLAP was dropped and how a project saved with the CLAP version of the release is moved to the VST3; a release-note line is written
+- [x] #5 The Windows installer and the macOS .pkg remove the earlier release's OpenRB-338.clap (only that bundle) on install, the Windows uninstaller removes it too, and the .dmg and Linux instructions tell the user to delete it; the installer scripts are checked without installing on this Mac
+- [x] #6 cargo test --workspace passes, clippy -D warnings and nightly fmt clean
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Code: remove ClapPlugin/CLAP_ID/nice_export_clap, clap-sys, clap_gui test, CLAP editor-preview format, the CLAP logo part/svg/plugin_logos and PluginFormat::Clap, the vst3-only page markers. 2. Cargo: drop the three nice-plug [patch] entries, cargo update, check cargo tree -d. 3. Tests: drop CLAP cases in exports.rs, reaper.rs, cases.rs and the .clap.RPP fixtures (Format keeps Vst3 only). 4. Packaging: build.sh, package.sh, package-dmg.sh, package-pkg.sh (preinstall removes the old CLAP bundle), package-installer.sh, openrb.nsi (delete the old CLAP in install and uninstall), validate-plugin.sh, ci.yml, release.yml, changelog.sh. 5. Docs: plugin.md, building.md, README, site, AGENTS.md, assets/README.md; release note in changelog.sh. 6. Verify: cargo test --workspace, clippy, nightly fmt, bundle, pkg script dry run, makensis if available, grep clap.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-aa2c15431e5a63907
+
+User request (2026-11-22, via the supervisor): a short visible notice in the site's download section: CLAP is no longer supported; the Windows installer and the macOS .pkg remove it on upgrade; .dmg and Linux: delete by hand. Covered under criterion 4.
+
+Evidence: cargo test --workspace --locked: 1025 passed, 0 failed (VST3 tests the_vst3_parameters_are_continuous, the_vst3_factory_has_the_identity, a_note_at_frame_0_..._vst3_block_sounds all pass unchanged). ORB_REAPER=/Applications/REAPER.app/Contents/MacOS/REAPER cargo test -p orb-plugin --test reaper: ok, all 11 VST3 cases equal to the in-process host (REAPER started with -newinst by the test). clippy -D warnings and nightly fmt clean. cargo xtask bundle orb-plugin --release makes only OpenRB-338.vst3 (nm: GetPluginFactory, no clap_entry). cargo tree -d: no nice-plug duplicate; Cargo.lock nice-plug 0.4.2/core 0.4.2/derive 0.1.2 from crates.io. Packaging checks: scripts/test-pkg-scripts.sh passes (scratch volume, stand-in pkgutil, neighbors kept); package-pkg.sh run into a scratch DIST and pkgutil --expand shows one vst3.pkg with the preinstall script; makensis -WX builds openrb.nsi into an exe (no installer run). Not done: no installer was run on this Mac; the NSIS removal logic is checked by build only (the user runs installs). The site notice (user request) is in site/index.html in the download section. Left as history: CLAP mentions in docs/plugin.md sections 3-10 and editor.rs comments about host behavior found with the CLAP bundle.
+
+Review round 1 (sent back, fixed): docs/midi.md, standard_midi_mapping.md, ui_spec.md and plugin.md 227 say VST3 only; cases.rs doc comment rewrapped; stale CLAP comments in editor.rs, tests/editor.rs, tests/state.rs reworded; bare blocks in tests/reaper.rs are plain lets; ci.yml blank line, release.yml, package-installer.sh and README.md long lines wrapped (both workflows parse with ruby YAML); commit subject now names areas. Re-run: cargo test -p orb-plugin ok, clippy -D warnings and nightly fmt clean.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+CLAP dropped; the plugin is VST3 only and nice-plug 0.4.2 comes from crates.io again (the three patch entries and docs/plugin.md "The forked nice-plug" are gone). Code: ClapPlugin, CLAP_ID and the export, clap-sys, tests/clap_gui.rs, the .clap fixtures, the CLAP cases in exports.rs, reaper.rs, cases.rs, the CLAP logo (part, svg, plugin_logos.rs) and PluginFormat::Clap are removed; the Plugin Usage vst3-only markers are gone. Packaging: Windows openrb.nsi has no CLAP component; RemoveOldClap (install, always) and un.RemoveOldClap delete only OpenRB-338.clap in COMMONFILES64\CLAP and the recorded ClapDir. macOS pkg: one vst3 component; scripts/pkg/preinstall removes the old VST3 and only /Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap and runs pkgutil --forget of the old clap receipt id; scripts/test-pkg-scripts.sh checks it (also in ci.yml). dmg README, archive README.txt, build.sh, package.sh, validate-plugin.sh (clap-validator dropped), release.yml and ci.yml updated. Docs: plugin.md (intro, section 7.2), building.md, README, AGENTS.md, assets/README.md, the site (a visible notice in the download section, the user request), release note in the scripts/changelog.sh intro. Tests: cargo test --workspace 1025 pass, REAPER test with ORB_REAPER passes, clippy and nightly fmt clean. Branch worktree-agent-aa2c15431e5a63907, one commit.
+<!-- SECTION:FINAL_SUMMARY:END -->

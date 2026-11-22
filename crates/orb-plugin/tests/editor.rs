@@ -933,7 +933,7 @@ fn a_window_shorter_than_the_menu_bar_still_draws() {
 }
 
 /// task-234: the host may give the editor any size; the panel is letterboxed under the menu
-/// bar (the largest panel-shaped area within the margins, centered). REAPER (CLAP) keeps its
+/// bar (the largest panel-shaped area within the margins, centered). REAPER keeps its
 /// window at the size it asked for, e.g. 721 x 532: the panel fits inside it whole (no crop),
 /// at least MARGIN_X from the left and right edges. A click on the letterboxed panel hits the
 /// control under it, in a wide and in a tall window.
@@ -988,7 +988,7 @@ fn the_size_is_kept_in_the_state_and_the_host_gets_sizes_of_the_rule() {
     );
     p.set_editor_size((936, 787));
     assert_eq!(e.logical_size(), (936, 787));
-    // the host may resize the editor both ways, with no aspect ratio, in both formats
+    // the host may resize the editor both ways, with no aspect ratio
     // (task-234); the editor's hint is the window's
     let hint = editor::resize_hint();
     assert!(hint.can_resize && !hint.preserve_aspect_ratio);
@@ -1008,7 +1008,7 @@ fn the_size_is_kept_in_the_state_and_the_host_gets_sizes_of_the_rule() {
     assert_eq!(adjust_logical((10.0, 10.0)), (312.0, 255.0 + MENU_H as f64));
     assert_eq!(adjust_logical((500.0, 100.0)), (500.0, 277.0));
     assert_eq!(adjust_logical((f64::NAN, -5.0)), (312.0, 277.0));
-    // Live's (VST3) and Bitwig's (CLAP) corner drags: the cursor's size asked on each mouse
+    // Live's (VST3) corner drags: the cursor's size asked on each mouse
     // event and the answer made the window's size. The answer is the request, so it follows
     // the cursor; the rule before task-234 (the side that changed more relative to the
     // window's current size decides) went back on the same drag.
@@ -1552,12 +1552,11 @@ impl GuiContextInner for ApiHost {
     fn request_restart(&self) {}
 }
 
-/// task-231: the logo's format is the wrapper's: VST3, CLAP, and none in a standalone.
+/// task-231: the logo's format is the wrapper's: VST3, and none in a standalone.
 #[test]
 fn the_format_follows_the_wrappers_plugin_api() {
     for (api, want) in [
         (PluginApi::Vst3, Some(PluginFormat::Vst3)),
-        (PluginApi::Clap, Some(PluginFormat::Clap)),
         (PluginApi::Standalone, None),
     ] {
         let gui = GuiContext::new(Arc::new(ApiHost(api)));

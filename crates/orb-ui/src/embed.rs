@@ -73,7 +73,7 @@ pub trait Embed: Send {
         None
     }
     /// The resize corner: asks the host for a window of `size` points (VST3
-    /// `IPlugFrame::resizeView`, CLAP `gui.request_resize`); the host then sizes the window.
+    /// `IPlugFrame::resizeView`); the host then sizes the window.
     /// The plugin makes the request after the frame, not from this call (a host may resize the
     /// window at once, which must not happen inside the frame). `Some(_)` when the request
     /// goes to the host, `None` when the plugin has no way to it (the window then resizes
@@ -133,7 +133,6 @@ pub enum PluginMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginFormat {
     Vst3,
-    Clap,
 }
 
 /// The modes of [`PluginMode`] in the order of the mode selector's rows (top to bottom), with
@@ -563,7 +562,6 @@ impl App {
         if let Some(format) = p.embed.format() {
             let name = match format {
                 PluginFormat::Vst3 => "plugin_logo_vst3",
-                PluginFormat::Clap => "plugin_logo_clap",
             };
             let (x, y, w, h) = PLUGIN_LOGO;
             crate::app::paint_part(ui, name, view.rect(x, y, w, h));
@@ -933,10 +931,8 @@ mod tests {
         }
         let (x, y, w, h) = art::PLUGIN_LOGO;
         assert_eq!(PLUGIN_LOGO, (16.0 + x, y, w, h));
-        for name in ["plugin_logo_vst3", "plugin_logo_clap"] {
-            let p = crate::art::part(name).expect(name);
-            assert_eq!((p.w, p.h), (w, h), "{name}");
-        }
+        let p = crate::art::part("plugin_logo_vst3").expect("plugin_logo_vst3");
+        assert_eq!((p.w, p.h), (w, h));
         let led = crate::art::part("led_mode_on").expect("the lit mode LED");
         assert_eq!((led.w, led.h), (11.0, 11.0));
         for i in 0..3 {

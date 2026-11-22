@@ -14,7 +14,7 @@ section 10. Marks: [C] read in the disassembly, [G] guessed or inferred.
 orb: `crates/orb-player/src/midi.rs` (`StandardMapping`, `control_change`), tested in the module
 and in `crates/orb-ui/tests/midi.rs`.
 
-**The plugin's note mapping is a different one.** The VST3/CLAP plugin has orb's own note
+**The plugin's note mapping is a different one.** The VST3 plugin has orb's own note
 mapping (devices on MIDI channels 1..4, pattern notes 0..31, the 303 played by pitch, General
 MIDI drum notes, accent by velocity): `docs/midi.md` section 5. The two use different channels:
 the device channels are 1..4, and the Standard Mapping, off by default in the plugin, listens on

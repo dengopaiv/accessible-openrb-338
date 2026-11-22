@@ -1,6 +1,16 @@
-# The VST® 3/CLAP plugin (`crates/orb-plugin`)
+# The VST® 3 plugin (`crates/orb-plugin`)
 
 VST is a registered trademark of Steinberg Media Technologies GmbH.
+
+**CLAP was dropped** (the user's decision of 2026-11-22, task-278). The plugin ships as VST3
+only, from the release after v2026.1118.0919 (the last with a CLAP bundle). The plugin uses no
+CLAP-only feature, and the CLAP format cost a forked nice-plug (task-275, task-276: its wrapper
+gave a continuous `FloatParam` the CLAP range 0..1, so a patched copy kept the CLAP range 0..127
+of the released stepped parameters) and half the bundle tests. The workspace takes nice-plug
+0.4.2 from crates.io again. Sections 3 to 10 mention CLAP where they report what was found with
+the CLAP bundle (REAPER, Bitwig); that is history. What a user of the CLAP version does is in
+section 7.2: delete the old `OpenRB-338.clap` (the Windows installer and the macOS plugin
+installer do it on an upgrade) and replace the plugin by its VST3 by hand in each project.
 
 OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are task-185's final
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
@@ -24,7 +34,7 @@ GPL-3.0-only.
 
 | File | Thread | What |
 |---|---|---|
-| `src/lib.rs` | both | the nice-plug `Plugin`, `ClapPlugin` and `Vst3Plugin`, the exports |
+| `src/lib.rs` | both | the nice-plug `Plugin` and `Vst3Plugin`, the export |
 | `src/instance.rs` | main | the parameters, the document the state saves, the editor's calls, the engine build |
 | `src/core.rs` | audio | the 64-frame block scheduler, the parameter changes, the mode and the preview |
 | `src/resample.rs` | audio | the resampler for host rates other than 44.1 kHz |
@@ -74,12 +84,11 @@ Permanent after the first release (task-185):
 | | |
 |---|---|
 | Name, vendor | `OpenRB-338`, `OpenRB-338` |
-| CLAP id | `io.github.pingw33n.openrb-338`; features instrument, synthesizer (task-185's Instrument\|Synth) and stereo (the port layout) |
 | VST3 class id | `EFAB08AF-B39D-4399-8A80-3DC1F84ED3D6` (made once with `uuidgen`, 2026-11-16; `VST3_CLASS_ID` in `src/lib.rs`); category Instrument\|Synth |
 | URL | https://github.com/pingw33n/OpenRB-338 |
 | Ports | stereo out, no audio in, one MIDI input (`MidiConfig::MidiCCs`: notes and control changes, section 8) |
 
-`tests/exports.rs` loads the built library and checks them through the CLAP and VST3 C APIs.
+`tests/exports.rs` loads the built library and checks them through the VST3 C API.
 
 ## 3. Parameters
 
@@ -111,15 +120,14 @@ state (section 5), not parameters.
 - **Continuous and stepped** (task-275, GitHub issue 21: Studio One 7 drew and played the
   automation of a stepped parameter, "ORB-303 2 Cutoff", as a staircase and would not draw a
   ramp; REAPER and Ableton do not, which is why no test had caught it). Until task-275 every
-  parameter was a nice-plug `IntParam`, which gives VST3 a `stepCount` of `max - min` and CLAP
-  `CLAP_PARAM_IS_STEPPED`.
+  parameter was a nice-plug `IntParam`, which gives VST3 a `stepCount` of `max - min`.
   - **Continuous** (86): every value over 0..127 (`params::Spec::continuous`: `Kind::Value`,
     0..=127): the shuffle, the master level, the four channels' level, pan and delay send, the
     303s' tune, cutoff, resonance, env mod, decay and accent, the 808's and 909's knobs and
     levels (controllers 2.. other than the 808's voice switches), the delay's feedback and pan,
     the distortion's amount and shape, the PCF's frequency, resonance, amount and decay, the
     compressor's ratio and threshold. Each is a nice-plug `FloatParam`, linear over 0..127, with
-    no step size: VST3 `stepCount` 0, CLAP not stepped.
+    no step size: VST3 `stepCount` 0.
   - **Stepped** (33), `IntParam`s as before: the switches (`Kind::Switch`: the devices' and
     channels' on, the 303s' waveform, the 808's voice switches, the delay's sixteenths, the
     distortion switches of the channels; `Kind::PcfMode`), the patterns 0..31, the delay steps
@@ -135,19 +143,15 @@ state (section 5), not parameters.
     are unchanged; VST3's normalized value of an integer `v` is `(v - min) / (max - min)` in
     f32 for both (nice-plug's `IntRange::Linear` and `FloatRange::Linear::normalize`, bit for
     bit with min 0), and a host's normalized value `n` gives the integer the released build
-    made of it (`round(n * 127)`); CLAP's value stays the plain value 0..127 through the
-    forked nice-plug's `clap_scale` (section 10, "The forked nice-plug"; stock nice-plug
-    gives a continuous parameter the CLAP range 0..1). A plugin state of the released build
+    made of it (`round(n * 127)`); stock nice-plug 0.4.2 does this for VST3 (its VST3 wrapper
+    works in normalized values; its CLAP wrapper, no longer built, would have given the CLAP
+    range 0..1). A plugin state of the released build
     restores (section 5). Checked in REAPER 7.86 with the released bundles (task-275's notes):
     a project REAPER saved through the released build, with an envelope ramp on "ORB-303 1
     Cutoff" from 0 to its maximum, renders bit for bit the same through the new build, VST3
     (REAPER saves the envelope normalized, `<PARMENV 27:3029309 0 1 0.5`; 3 renders with each
-    build, all 9 pairs equal) and CLAP (REAPER saves the CLAP value, `<PARMENV 27:3029309 0
-    127 63.5`, points `PT 3.5 127`; with stock nice-plug the new build's CLAP range was 0..1
-    and the same project rendered differently in 383586 of 384000 samples). REAPER's CLAP
-    render of that enveloped project is not repeatable with either build: each run gives one of
-    two renders (135321 samples apart, from frame 37), the same two for both builds, and each
-    of the new build's renders is bit for bit one of the released build's.
+    build, all 9 pairs equal). (CLAP, history: REAPER saved the CLAP value, `<PARMENV
+    27:3029309 0 127 63.5`, and its CLAP render of that project was not repeatable.)
   - **The panel** sets a continuous parameter through `ParamSetter` to the float of its
     integer, and only when the parameter's rounded value differs (`editor::set_param`).
 - **Defaults** are the song constructor's values (`docs/song_load.md` section 4.9; the shuffle
@@ -220,7 +224,7 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   period) reach the gains' f32 fixed point; the song is stopped at the activation, so the
   settle plays nothing (state that runs free in silence, such as the 303s' voices, moves on as
   it would in any silent blocks). A note at frame 0 of the first call now sounds
-  as the same note later (`tests/first_note.rs`; through the CLAP and VST3 wrappers,
+  as the same note later (`tests/first_note.rs`; through the VST3 wrapper and, until task-278, the CLAP one,
   `tests/exports.rs`): for the drums at 44.1 kHz within one LSB, as two later notes differ
   from each other (engine state that runs on in silence shifts the int16 truncation of a
   sample now and then; the 303s' voices, for one, run free, their amp adding 1e-6 every block
@@ -318,7 +322,7 @@ saved every parameter as `{"i32": v}`, and nice-plug restores only an `F32` into
 would keep its default). The plugin's `Plugin::filter_state`, which nice-plug calls before the
 restore, turns a continuous id's `I32` into the `F32` of the same value
 (`instance::migrate_state`; task-275), so a released build's state restores the same values
-(`tests/continuous.rs`, and through the CLAP export `tests/exports.rs`). A state of this build
+(`tests/continuous.rs`, and through the VST3 export `tests/exports.rs`). A state of this build
 loaded by the released build loses its continuous values (they keep their defaults): no
 downgrade.
 
@@ -390,26 +394,24 @@ For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):
 ## 7. Building and testing
 
 `cargo xtask bundle orb-plugin --release` builds the library and lays out `OpenRB-338.vst3`
-and `OpenRB-338.clap` under `target/bundled/` (`xtask/` on nice-plug-xtask 0.1.1, `bundler.toml`
+under `target/bundled/` (`xtask/` on nice-plug-xtask 0.1.1, `bundler.toml`
 for the bundle name, the alias in `.cargo/config.toml`). The xtask finds the workspace from its
 own manifest: nice-plug-xtask's own entry point takes the topmost ancestor directory with a
 `Cargo.toml` as the workspace, which is the wrong one for a checkout inside another (the
 worktrees under `.claude/worktrees/`). Signing, the packages and the validators
-(clap-validator on the CLAP bundle, pluginval on the VST3 bundle) are task-204: docs/building.md,
+(pluginval on the VST3 bundle) are task-204: docs/building.md,
 "The plugin".
 
 The tests (`cargo test -p orb-plugin`; `tests/` and the resampler's unit tests): the buffer
 sizes and the 48 kHz path (`timing.rs`), the parameter list and defaults (`params.rs`), the
 continuous parameters, their rounding and the released build's mapping and states
-(`continuous.rs`, task-275; their VST3 and CLAP flags and CLAP values through the exports in
+(`continuous.rs`, task-275; their VST3 step counts and normalized values through the export in
 `exports.rs`), the state
 (`state.rs`, with a test mod made from the standard mod: renamed, the 808's and 909's bass drum
 and first snare swapped), no allocation in `process` (`no_alloc.rs`, a counting allocator, and
 the process side's sources checked for lock types), and the exports (`exports.rs`): it builds
-the library, loads it with the dynamic loader, checks the CLAP descriptor and the VST3 factory's
-class info, and runs a minimal CLAP host that restores a state with a song in pattern mode,
-activates at 44.1 kHz, processes with a CLAP transport that plays (no tempo, no position), and
-gets the same samples as the process side run directly. A real host, REAPER, is the opt-in
+the library, loads it with the dynamic loader, checks the VST3 factory's class info and
+plays a note at frame 0 of the first playing block (task-226) through the VST3 C API. A real host, REAPER, is the opt-in
 `reaper.rs` (task-244, section 7.1). `sync.rs` (task-198) runs a simulated host transport
 (section 8), `note_mode.rs` (task-200) note mode (section 9), `held_notes.rs` (task-258) the
 303's held notes with lost and stray note-offs, CC 123/120 and the host's stop (section 9.1),
@@ -436,11 +438,11 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
   - `-newinst` starts an instance of its own: a REAPER the user has open is neither used nor
     disturbed (without it the render could go to the running instance).
   - `-cfgfile` moves REAPER's whole resource folder to the ini's folder: the plugin caches
-    (`reaper-vstplugins_arm64.ini`, `reaper-clap-macos-aarch64.ini`), `reaper-fxtags.ini`,
+    (`reaper-vstplugins_arm64.ini`), `reaper-fxtags.ini`,
     `Scripts/` and the rest are written there, so the user's REAPER configuration and caches
     are never read or written and no other resource folder is needed.
-  - The scratch `reaper.ini`: `vstpath_arm64` and `clap_path_macos-aarch64` (on x86_64
-    `vstpath64` and `clap_path_macos-x86_64`; the keys are strings of the executable) list only
+  - The scratch `reaper.ini`: `vstpath_arm64` (on x86_64 `vstpath64`; the key is a string of
+    the executable) lists only
     `target/bundled`. `vstfullstate=33605`: without it REAPER's first start appends
     `/Library/Audio/Plug-Ins/VST3;~/Library/Audio/Plug-Ins/VST3` to the VST path and scans
     them (seen on an exploratory first try, which read the user's installed copies into its
@@ -462,16 +464,15 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
     scratch cache lists one OpenRB-338.
   - A render that does not finish in 120 s (a dialog) fails the test, which stops only the
     REAPER it started.
-- **Fixtures.** `crates/orb-plugin/tests/reaper/<case>.<vst3|clap>.RPP`, each case in both
-  formats, made by `cargo run -p orb-plugin --example reaper_fixtures` from
+- **Fixtures.** `crates/orb-plugin/tests/reaper/<case>.vst3.RPP`, made by `cargo run -p orb-plugin --example reaper_fixtures` from
   `tests/reaper/template.RPP` and the cases of `tests/reaper/cases.rs`. Rerun it when the
   state format, a case or the template changes; the freshness test fails on a stale fixture.
   A fixture holds the plugin's block as REAPER 7.86 saves it (from a project REAPER saved
   through a ReaScript): for VST3 a header line (the class's REAPER id 1476801187 as a
   little-endian u32, 0xFEED5EEE, 0 inputs, 10 outputs and their u64 pin masks), a line of
   (data size, 1, 0xFFFF), the data (the component state's size and 1, nice-plug's JSON state,
-  then 8 zero bytes) and 6 zero bytes; for CLAP `CFG 4 0 0 ""`, an empty `OUT_PINS` and
-  `STATE`, the base64 of nice-plug's CLAP state (u64 length, JSON); base64 lines of 96 bytes.
+  then 8 zero bytes) and 6 zero bytes; base64 lines of 96 bytes. (The CLAP fixtures went with
+  the format, task-278.)
   The state's JSON holds the song, the patterns, the controls and the mode (section 5). A
   MIDI item counts in frames (its division is a quarter note's frames), so a note plays at the
   frame the case gives it. Renders are 32-bit float WAVs (`RENDER_CFG` `ZXZhdyAAAA==`);
@@ -505,8 +506,7 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
     The Mix is bit for bit the same project's with no outputs routed. Each device track is the
     in-process plugin's (`Core`) bus bit for bit, except that REAPER 7.86's VST3 host writes 0
     for a sample below about 1e-16 (the 909's decay tail, 3e-17; allowed for the VST3 tracks
-    only) and its CLAP host writes +0 for the plugin's -0 (the 909, frame 58965; the CLAP
-    tracks are compared as values, +0 = -0);
+    only);
   - `loop_ignored`, a limitation pin and not a matching case: Latch Pattern Mode of
     `full_mix` with a looped time selection (bar 2 to 3, `LOOP 1`). **REAPER's command-line
     render does not loop**: it renders the linear timeline, bit for bit the project's without
@@ -535,6 +535,24 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
   the output does not depend on the buffer sizes holds only away from such exact ticks
   (task-263). At 120 BPM the first block that starts on a whole tick that is a multiple of 24
   is 11025 (16 s), after every render's end.
+
+### 7.2 CLAP was dropped: removing the old bundle (task-278)
+
+The user decided on 2026-11-22 to ship VST3 only. A user who installed the CLAP version
+(releases up to v2026.1118.0919) has an `OpenRB-338.clap` that a new release no longer
+replaces, so each way of installing deals with it:
+
+| Install | The old CLAP |
+|---|---|
+| Windows installer (`scripts/installer/openrb.nsi`) | deletes `%COMMONPROGRAMFILES%\CLAP\OpenRB-338.clap` (and the one in the folder the earlier install recorded as `ClapDir`) on every install, whether or not the VST3 component is picked; the uninstaller deletes it too; nothing else in a CLAP folder is touched; the options `/CLAP=` and `/CLAPDIR=` are ignored |
+| macOS plugin `.pkg` (`scripts/pkg/preinstall`) | removes only `/Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap` (never the folder) and forgets the old package's receipt (`pkgutil --forget net.emphased.openrb338.plugin.clap`); a copy in `~/Library/Audio/Plug-Ins/CLAP` is not touched; checked by `scripts/test-pkg-scripts.sh` against a scratch folder (no `/Library`) |
+| `.dmg`, the archives | nothing can run: the `.dmg`'s README and the archives' README.txt say to delete `OpenRB-338.clap` from `/Library/Audio/Plug-Ins/CLAP` or `~/Library/Audio/Plug-Ins/CLAP` (macOS), `~/.clap` or `/usr/lib/clap` (Linux), `%COMMONPROGRAMFILES%\CLAP` or `%LOCALAPPDATA%\Programs\Common\CLAP` (Windows) |
+
+**A project saved with the CLAP plugin** keeps a reference to the CLAP plugin id, which no
+longer exists: the host shows it as missing. Add the VST3 `OpenRB-338` in its place on the same
+track (the song, the patterns and the controls are plugin state: copy them by loading the song
+again, or keep the old project's plugin state by hand in a host that moves it). The two formats
+share the state's document (section 5), but a host does not move state between formats.
 
 ## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
 
@@ -1270,10 +1288,9 @@ are pixel-identical):
   with the guide to the modes, channels, pattern selection, note mappings, host parameters and
   recipes. The text is `docs/plugin_usage.md`, embedded with `include_str!` and drawn from its
   Markdown subset, so the page and the file are one (the README links the file, the release
-  notes can). The VST3 plugin's page ends with Steinberg's terms (assets/README.md, task-233);
-  the file marks that section with `<!-- vst3-only -->` and `<!-- /vst3-only -->` and the CLAP
-  plugin's page leaves it out (the editor knows its format, `Embed::format`; the file keeps it,
-  the user's decision of 2026-11-17). The section: the official VST
+  notes can). The page ends with Steinberg's terms (assets/README.md, task-233; until task-278
+  the file marked that section for the VST3 plugin only, the CLAP plugin's page left it out).
+  The section: the official VST
   Compatible Logo, the variant for the dark window (`VST_Compatible_Logo_Steinberg_negative.svg`,
   drawn unaltered from the file's bytes, 96 x 61.7 points: above 15 x 10 mm, 57 x 38 px at 1x),
   "VST®" at the first VST of the page and "VST is a registered trademark of Steinberg Media
@@ -1298,17 +1315,15 @@ are pixel-identical):
   the file browser, a prompt or the error box is open. The standalone app has none of it.
 - **The plugin format's mark**: one mark right of the selector, before the wordmark, right-aligned
   6 px before it, engraved (a dark copy at 0.38 opacity over a light copy 0.6 px lower): the
-  CLAP logo (MIT) in the CLAP plugin, and the plain text "VST3" in the panel's label font
-  (Inter bold, 28 px) in the VST3 plugin (parts `plugin_logo_vst3`, `plugin_logo_clap`, 112 x
-  50 at transport x 344; the CLAP data in `orb-ui-art/src/plugin_logos.rs`; sources and terms
-  in `assets/README.md`). The user's decision of 2026-11-17 (task-232): Steinberg's official
+  plain text "VST3" in the panel's label font (Inter bold, 28 px; part `plugin_logo_vst3`,
+  112 x 50 at transport x 344; the CLAP logo of the first releases went with the format,
+  task-278). The user's decision of 2026-11-17 (task-232): Steinberg's official
   VST Compatible Logo does not fit the panel, so the text names the format (the guidelines'
   section 2 allow "VST" in a standard font to denote compatibility); the logo and the
   attribution go to Help > Plugin Usage only (task-233; the README and the package texts dropped
   them, task-239). VST® is a registered trademark of Steinberg Media Technologies GmbH. The editor
-  knows its format from the wrapper in use: nice-plug's `GuiContext::plugin_api()` is `Vst3` or
-  `Clap` (`Embed::format`, `EditorEmbed::format`); the stand-in host of `editor_preview` takes
-  `--format vst3|clap`.
+  knows its format from the wrapper in use: nice-plug's `GuiContext::plugin_api()` is `Vst3`
+  (`Embed::format`, `EditorEmbed::format`); the stand-in host of `editor_preview` reports `Vst3`.
 - The Sync LED is lit while the snapshot's `host_sync` is; the MIDI LED for 0.1 s after the
   snapshot's `midi_in` count changes (art part `led_transport_on`), in the preview too. The editor redraws at least
   every 50 ms while open so that the LEDs follow.
@@ -1367,8 +1382,8 @@ egui has fonts.
 `raw_window_metal::Layer::from_ns_view`) puts a `CAMetalLayer` subclass into the editor's view.
 raw-window-metal 1.1.0 registers that class with objc2's `define_class!` under the fixed name
 `RawWindowMetalLayer` (`src/observer.rs`), and Objective-C classes are process-wide: the second
-image of the plugin in one process (Reaper loads the `.vst3` and the `.clap`, two copies of the
-same binary, when both formats are used; any other plugin linking raw-window-metal does the
+image of the plugin in one process (Reaper loaded the `.vst3` and the `.clap`, two copies of the
+same binary, when both formats were used; any other plugin linking raw-window-metal does the
 same) panicked opening its editor ("could not create new class \"RawWindowMetalLayer\",
 perhaps a class with that name already exists?"). The panic is inside the host's call (CLAP
 `gui.create`, VST3 `IPlugView::attached`), an `extern "C"` function of nice-plug, so it
@@ -1393,41 +1408,10 @@ class with a UUID already. The rest of the plugin's macOS dependency tree regist
 under a fixed name (searched for `define_class!`, `declare_class!`, `ClassBuilder::new` and
 `#[name = ...]` in the 277 crates; objc2-app-kit's `#[name]`s bind AppKit's own classes).
 Upstream issue text (not posted): "raw-window-metal: `RawWindowMetalLayer` has a fixed class
-name, so two dynamic libraries that each link raw-window-metal (audio plugins, e.g. a VST3 and
-a CLAP build of one plugin, or two wgpu plugins) cannot both create a layer in one process: the
+name, so two dynamic libraries that each link raw-window-metal (audio plugins, e.g. two wgpu plugins) cannot both create a layer in one process: the
 second `define_class!` registration panics. Please register the class under a name unique to
 the image (e.g. with a random or address suffix through `ClassBuilder`), as baseview does for
 its NSView subclass."
-
-**The forked nice-plug** (task-275, task-276). nice-plug 0.4.2's CLAP wrapper gives every parameter
-the CLAP range `0..=step_count().unwrap_or(1)` and converts between the normalized and the
-CLAP value with that factor (11 places in `src/wrapper/clap/wrapper.rs` and
-`src/wrapper/clap/context.rs`): a continuous `FloatParam` has the CLAP range 0..1. The 0..127
-parameters were stepped `IntParam`s, CLAP range 0..127, in the released build, and REAPER
-saves CLAP automation in the CLAP value (section 3), so the stock wrapper would turn a saved
-point 64 into 1 (clamped). The workspace takes nice-plug from a fork (the user's decision,
-task-276, 2026-11-22; ISC): `github.com/pingw33n/nice-plug`, branch `OpenRB-338`, commit
-`250daefd57cdc58d41ddb25f053f1a0589f44cad`. That commit is upstream 91ba75d, the commit
-nice-plug 0.4.2, nice-plug-core 0.4.2, nice-plug-derive 0.1.2 and nice-log 0.3.1 were
-published from (their `src` equal crates.io's), plus the patch, which changes only
-`crates/nice-plug/src/wrapper/clap/wrapper.rs` and `context.rs`. `[patch.crates-io]` of the
-workspace `Cargo.toml` takes nice-plug, nice-plug-core and nice-plug-derive from that `rev`;
-all three are needed, since the fork's nice-plug depends on the other two by path, so a
-crates.io nice-plug-core would otherwise be a second copy beside nice-plug-egui's (nice-log
-comes along through the same path; nice-plug-egui 0.6.0 and nice-plug-xtask 0.1.1 stay from
-crates.io). `cargo tree -d` shows no duplicate nice-plug crate, and `Cargo.lock` holds one
-copy of each. To move to a new upstream: rebase the branch `OpenRB-338` onto it, push, and
-set the new commit as the `rev` of the three entries. The patch (marked "OpenRB-338 patch"):
-`clap_scale` in `src/wrapper/clap/wrapper.rs` replaces `step_count().unwrap_or(1)` in all 11
-places; it is the step count of a stepped parameter (as upstream), `max` for a `FloatParam`
-over a linear `0..=max` with `max` a whole number of at least 1, and 1 for any other. Such a
-`FloatParam`'s CLAP value is therefore its plain value and its range 0..=max, while
-`CLAP_PARAM_IS_STEPPED` still follows `step_count` (not set). The arithmetic is upstream's with
-the factor replaced (`value as f32 / scale as f32`, `normalized as f64 * scale as f64`), so a
-0..127 parameter's CLAP values are bit for bit the released build's (`tests/exports.rs`
-`the_clap_parameters_are_continuous_and_keep_their_values`). The VST3 wrapper is unchanged
-(VST3 works in normalized values). The patch applies to every nice-plug user in the workspace,
-which is only orb-plugin.
 
 **No panic reaches the host.** Every method of `OrbEditor` (`spawn`, `size`, `resize_hint`)
 and of `OrbHandle` (`run_until_closed`, `set_parent`, `show`, `hide`, `set_size`,
@@ -1436,21 +1420,8 @@ callbacks), the egui app's `build`, frame, `resized` and `editor_closed`, and th
 resize request run under `editor::guard` (`catch_unwind`): a panic is logged (`nice_error!`)
 and becomes an error or a safe fallback (no adjustment, the default size, the default resize
 hint, the state's size unchanged), so the host gets no editor (`gui.create` false) or an
-empty window instead of an abort. nice-plug has no hook of its own for this. `tests/clap_gui.rs`
-(macOS, no test harness, on the main thread) loads the library twice as two files, as Reaper
-does, and in each makes instances that open their editor through CLAP `gui.create`, process
-audio while it is open and close it; with the old bundle's binary (`ORB_TEST_CLAP_LIBRARY`) it
-aborts on the class name as Reaper did. The VST3 path opens the same `OrbEditor`; a VST3 host
-with an `IPlugFrame` and a parent `NSView` is left to the Reaper check.
-
-**The audio thread's SIGSEGV in the first crash report.** The first report
-(`REAPER-2026-11-16-140356.ips`) also had Reaper's audio worker crashed at a byte write to
-`0x50` in `orb_engine::delay::Delay as SendEffect::process` (from the CLAP instance's
-`process`), while the main thread was still in the panic hook printing the backtrace before
-the abort. Delay's code is safe and the second report (`REAPER-2026-11-16-140655.ips`, same
-trigger) has no audio-thread fault, only the abort. Taken as a consequence of the process
-being torn down by the non-unwinding panic, not a defect of its own; not reproduced
-(`tests/clap_gui.rs` processes 200 blocks per instance with the editor open in both copies).
+empty window instead of an abort. nice-plug has no hook of its own for this. (The test of
+this, `tests/clap_gui.rs`, went with the CLAP format, task-278.)
 
 **The panel's commands** (`PluginPort`, orb-ui's `link::Port`): a control's message becomes its
 host parameter (`params::of_command`; `ParamSetter` begin, set, end), so the host records and
@@ -1474,7 +1445,7 @@ emptied on the main thread at every command and every editor frame (`OrbParams::
 
 **Screenshots without a host.** `cargo run --release -p orb-plugin --example editor_preview --
 [SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--mode latch|gate|note] [--preview]
-[--format vst3|clap] [--click X,Y]... [--scroll Y] [--screenshot OUT.png]` shows the editor in a window of its own with a
+[--click X,Y]... [--scroll Y] [--screenshot OUT.png]` shows the editor in a window of its own with a
 stand-in host that runs the process side (no sound) and applies parameter changes at once;
 `--preview` enters the preview, `--click` clicks a point of the window (one every 6 frames from
 frame 10: `--click 104,11` opens Options at 1:1; `--click 150,11 --click 190,39` opens Help >
@@ -1497,10 +1468,8 @@ asks nothing; a mod from the Mods menu goes into the state; the File menu opens 
 the corner asks for sizes of the rule, through the host's callbacks after the frame (a host
 that sizes the window inside its request finds the window's state free); a window
 1.5 times larger still hits the controls; the size rule of the host's resizing and the state's
-size. `tests/fonts.rs`: the plugin's normal build has egui's fonts. `tests/clap_gui.rs`: two
-copies of the library each open CLAP editors (above), and the corner's request posted to the
-main queue reaches the host once, after the event. The real-host checks (Reaper, VST3 and
-CLAP) are the user's (task-201's notes).
+size. `tests/fonts.rs`: the plugin's normal build has egui's fonts. The real-host checks
+(Reaper, VST3) are the user's (task-201's notes).
 
 ## 11. Gate Pattern Mode (task-218)
 
@@ -1674,7 +1643,7 @@ Per platform:
   - The source answers copy (`NSDragOperationCopy`) for any destination. Its class is registered
     at run time under a name unique to the loaded image (`OrbClipDragSource_<address>_<n>`,
     `ClassBuilder`), for the reason of the vendored raw-window-metal (section 10): the `.vst3`
-    and the `.clap` may be loaded in one process.
+    and another wgpu plugin may be loaded in one process.
   - The session takes the button's release from the view. When it ends
     (`draggingSession:endedAtPoint:operation:`), the source sends the view a made-up `mouseUp:`
     at the pointer, so that egui sees the release.
@@ -1737,8 +1706,7 @@ Per platform:
 ## 13. The per-device outputs (task-256)
 
 Besides the main stereo output, named **Mix**, the plugin has four stereo aux outputs named
-**303-1**, **303-2**, **808** and **909** (VST3 aux buses 1 to 4 after the main bus 0, CLAP
-output ports 1 to 4 after the main port 0; one layout, `AUDIO_IO_LAYOUTS` in `src/lib.rs`,
+**303-1**, **303-2**, **808** and **909** (VST3 aux buses 1 to 4 after the main bus 0; one layout, `AUDIO_IO_LAYOUTS` in `src/lib.rs`,
 names `OUTPUT_NAMES`). Requested by the user on 2026-11-20 (item 7, "multi-out", of task-196's
 deferred features). The tap point is the user's decision of 2026-11-21 (task-259): ReWire's.
 
@@ -1790,8 +1758,8 @@ written for it: no copy at 44.1 kHz, no interpolation when resampled (the per-fr
 copy of the block's taps into the ring, 1 KiB a block). The engine copies the taps whatever is
 connected (one block copy per channel). Nothing allocates in `process` (`tests/no_alloc.rs`
 connects the buses in every combination). One caveat of nice-plug 0.4.2: it calls the
-plugin's `process` only when every output bus has a buffer (`buffer_is_valid` in the CLAP and
-VST3 wrappers), so a host that passes a null buffer for an unconnected bus would get no
+plugin's `process` only when every output bus has a buffer (`buffer_is_valid` in the VST3
+wrapper), so a host that passes a null buffer for an unconnected bus would get no
 processing at all, the Mix included; and it reads one bus past the count a host passes when
 that count is lower than the plugin's (`aux_output_idx > numOutputs`, an off-by-one). Hosts
 pass every bus they are told of; whether REAPER and Ableton do is the user's check (task-256
@@ -1812,5 +1780,5 @@ AC 5). Also of nice-plug 0.4.2: the main output is named after `names.main_input
   (an idle 303 outputs about 3e-6); the 303-1's level, pan and on switch change the Mix and
   leave its bus bit-identical, and with the channel off the Mix is silent.
 - `src/resample.rs`: the buses are resampled as the main output, independent of the chunks.
-- `tests/exports.rs`: the CLAP audio ports and the VST3 buses (count, names, stereo, which is
-  main), and the CLAP and VST3 hosts pass all five buses.
+- `tests/exports.rs`: the VST3 buses (count, names, stereo, which is main), and the VST3 host
+  passes all five buses.
