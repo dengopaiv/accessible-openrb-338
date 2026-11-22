@@ -1,7 +1,7 @@
 //! The plugin's main-thread side (task-197): the parameters, the document the state saves, and
 //! the calls the editor uses (`docs/plugin.md` sections 3, 5 and 6).
 //!
-//! [`OrbParams`] is the plugin's `Params` object: the [`IntParam`]s of [`crate::params::SPECS`]
+//! [`OrbParams`] is the plugin's `Params` object: the [`HostParam`]s of [`crate::params::SPECS`]
 //! and, behind a mutex that only main-thread calls take (never `process`), the UI half of the
 //! player ([`orb_player::Player`]) and the [`Doc`]: the song as loaded, the patterns as edited,
 //! the Vintage sound model, the mod and the editor size. The controls are the parameters
@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
+use nice_plug::plugin::ParamValue;
 use nice_plug::prelude::*;
 use orb_engine::frame::Engine;
 use orb_engine::frame::edit::{PATTERNS, PatternShape};
@@ -631,9 +632,98 @@ impl Main {
     }
 }
 
+/// One host parameter (task-275, `docs/plugin.md` section 3): a nice-plug `FloatParam` for a
+/// continuous one ([`Spec::continuous`]: linear over min..max, no step size, so no VST3 step
+/// count and no CLAP stepped flag), an `IntParam` for a discrete one. Both normalize a value
+/// `v` as `(v - min) / (max - min)`, as the released build's `IntParam`s did, and the forked
+/// nice-plug keeps a continuous one's CLAP range 0..127 (`clap_scale`), so a host's saved
+/// automation and values keep their meaning. [`HostParam::value`] is the integer the engine
+/// gets.
+pub enum HostParam {
+    Stepped(IntParam),
+    Continuous(FloatParam, Spec),
+}
+
+impl HostParam {
+    fn new(s: &Spec) -> HostParam {
+        let spec = *s;
+        let parse_spec = *s;
+        let name = params::name(s.target);
+        if s.continuous() {
+            HostParam::Continuous(
+                FloatParam::new(
+                    name,
+                    s.default as f32,
+                    FloatRange::Linear {
+                        min: s.min as f32,
+                        max: s.max as f32,
+                    },
+                )
+                .with_value_to_string(Arc::new(move |x| {
+                    params::display(&spec, params::round(&spec, x))
+                }))
+                .with_string_to_value(Arc::new(move |t| {
+                    params::parse(&parse_spec, t).map(|v| v as f32)
+                })),
+                *s,
+            )
+        } else {
+            HostParam::Stepped(
+                IntParam::new(
+                    name,
+                    s.default as i32,
+                    IntRange::Linear {
+                        min: s.min as i32,
+                        max: s.max as i32,
+                    },
+                )
+                .with_value_to_string(Arc::new(move |v| params::display(&spec, v)))
+                .with_string_to_value(Arc::new(move |t| params::parse(&parse_spec, t))),
+            )
+        }
+    }
+
+    /// The integer the parameter's value stands for: a continuous one's host value rounded
+    /// ([`params::round`]), a stepped one's value. Atomics only.
+    pub fn value(&self) -> i32 {
+        match self {
+            HostParam::Stepped(p) => p.value(),
+            HostParam::Continuous(p, s) => params::round(s, p.value()),
+        }
+    }
+
+    /// Whether the host sees the parameter as continuous.
+    pub fn is_continuous(&self) -> bool {
+        matches!(self, HostParam::Continuous(..))
+    }
+
+    /// The host's (normalized) value of the integer `v`.
+    pub fn preview_normalized(&self, v: i32) -> f32 {
+        match self {
+            HostParam::Stepped(p) => p.preview_normalized(v),
+            HostParam::Continuous(p, _) => p.preview_normalized(v as f32),
+        }
+    }
+
+    /// The parameter's current normalized value, as the host sees it.
+    pub fn normalized_value(&self) -> f32 {
+        match self {
+            HostParam::Stepped(p) => p.unmodulated_normalized_value(),
+            HostParam::Continuous(p, _) => p.unmodulated_normalized_value(),
+        }
+    }
+
+    pub fn as_ptr(&self) -> ParamPtr {
+        match self {
+            HostParam::Stepped(p) => p.as_ptr(),
+            HostParam::Continuous(p, _) => p.as_ptr(),
+        }
+    }
+}
+
 /// The plugin's parameters and its main-thread state.
 pub struct OrbParams {
-    params: Vec<IntParam>,
+    params: Vec<HostParam>,
     ids: Vec<String>,
     main: Mutex<Main>,
     shared: Arc<Shared>,
@@ -654,23 +744,7 @@ impl Default for OrbParams {
 
 impl OrbParams {
     pub fn new() -> Self {
-        let params = SPECS
-            .iter()
-            .map(|s| {
-                let spec = *s;
-                let parse_spec = *s;
-                IntParam::new(
-                    params::name(s.target),
-                    s.default as i32,
-                    IntRange::Linear {
-                        min: s.min as i32,
-                        max: s.max as i32,
-                    },
-                )
-                .with_value_to_string(Arc::new(move |v| params::display(&spec, v)))
-                .with_string_to_value(Arc::new(move |t| params::parse(&parse_spec, t)))
-            })
-            .collect();
+        let params = SPECS.iter().map(HostParam::new).collect();
         OrbParams {
             params,
             ids: SPECS.iter().map(|s| params::id(s.target)).collect(),
@@ -887,7 +961,8 @@ impl OrbParams {
         })
     }
 
-    /// Every parameter's current value, in [`SPECS`] order (atomics only).
+    /// Every parameter's current value, in [`SPECS`] order (atomics only): the integers, a
+    /// continuous parameter's rounded ([`HostParam::value`]).
     pub fn values(&self) -> [i32; COUNT] {
         let mut v = [0; COUNT];
         for (x, p) in v.iter_mut().zip(&self.params) {
@@ -897,12 +972,12 @@ impl OrbParams {
     }
 
     /// The parameter at index `i` of [`SPECS`].
-    pub fn param_at(&self, i: usize) -> &IntParam {
+    pub fn param_at(&self, i: usize) -> &HostParam {
         &self.params[i]
     }
 
     /// The parameter of `id`.
-    pub fn param(&self, id: &str) -> Option<&IntParam> {
+    pub fn param(&self, id: &str) -> Option<&HostParam> {
         self.ids
             .iter()
             .position(|i| i == id)
@@ -1135,9 +1210,32 @@ pub fn core(params: &OrbParams, rate: u32) -> crate::core::Core {
 ///
 /// # Safety
 /// Not concurrently with the host setting it.
-pub unsafe fn set_param(p: &IntParam, v: i32) {
+pub unsafe fn set_param(p: &HostParam, v: i32) {
+    unsafe { set_normalized(p, p.preview_normalized(v)) }
+}
+
+/// Sets a parameter's normalized value as the host would (for tests: any value of a host's
+/// automation, a continuous parameter's between the integers too).
+///
+/// # Safety
+/// Not concurrently with the host setting it.
+pub unsafe fn set_normalized(p: &HostParam, normalized: f32) {
     unsafe {
-        p.as_ptr()
-            ._internal_set_normalized_value(p.preview_normalized(v));
+        p.as_ptr()._internal_set_normalized_value(normalized);
+    }
+}
+
+/// A plugin state's parameter values as the released build (v2026.1118.0919) saved them: every
+/// parameter an `IntParam`, `{"i32": v}`. nice-plug restores only an `F32` into a `FloatParam`
+/// (`wrapper/state.rs` `deserialize_object`), so a continuous parameter's `I32` becomes the
+/// `F32` of the same value before the restore ([`crate::OrbPlugin`]'s `filter_state`; task-275).
+/// A value that is neither is left to nice-plug.
+pub fn migrate_state(state: &mut PluginState) {
+    for s in SPECS.iter().filter(|s| s.continuous()) {
+        if let Some(v) = state.params.get_mut(&params::id(s.target))
+            && let ParamValue::I32(i) = *v
+        {
+            *v = ParamValue::F32(i as f32);
+        }
     }
 }

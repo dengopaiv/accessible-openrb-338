@@ -20,9 +20,9 @@ use std::sync::OnceLock;
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_ON, CLAP_EVENT_TRANSPORT, CLAP_TRANSPORT_HAS_TEMPO,
-    CLAP_TRANSPORT_IS_PLAYING, clap_event_header, clap_event_note, clap_event_transport,
-    clap_input_events, clap_output_events,
+    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_ON, CLAP_EVENT_PARAM_VALUE, CLAP_EVENT_TRANSPORT,
+    CLAP_TRANSPORT_HAS_TEMPO, CLAP_TRANSPORT_IS_PLAYING, clap_event_header, clap_event_note,
+    clap_event_param_value, clap_event_transport, clap_input_events, clap_output_events,
 };
 use clap_sys::ext::audio_ports::{
     CLAP_AUDIO_PORT_IS_MAIN, CLAP_EXT_AUDIO_PORTS, clap_audio_port_info, clap_plugin_audio_ports,
@@ -31,12 +31,13 @@ use clap_sys::ext::latency::{CLAP_EXT_LATENCY, clap_plugin_latency};
 use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::factory::plugin_factory::{CLAP_PLUGIN_FACTORY_ID, clap_plugin_factory};
 use clap_sys::host::clap_host;
+use clap_sys::plugin::clap_plugin;
 use clap_sys::process::{CLAP_PROCESS_ERROR, clap_process};
-use clap_sys::stream::clap_istream;
+use clap_sys::stream::{clap_istream, clap_ostream};
 use clap_sys::version::CLAP_VERSION;
 use common::{activate, host, with_song};
 use nice_plug::prelude::{Params, Vst3Plugin};
-use orb_plugin::OrbPlugin;
+use orb_plugin::{OrbPlugin, params};
 
 /// The plugin library, built once per test process.
 fn library() -> &'static PathBuf {
@@ -873,6 +874,281 @@ fn the_vst3_factory_has_the_identity() {
         assert_eq!(chars(&ci.subCategories), "Instrument|Synth");
         assert_eq!(chars(&ci.vendor), "OpenRB-338");
         ((*(*f2).vtbl).base.base.release)(f2 as *mut _);
+        (vt.base.release)(f as *mut _);
+    }
+}
+
+/// The spec of a parameter by its host name ([`params::name`]).
+fn spec_named(name: &str) -> &'static params::Spec {
+    let found: Vec<_> = params::SPECS
+        .iter()
+        .filter(|s| params::name(s.target) == name)
+        .collect();
+    assert_eq!(found.len(), 1, "{name}");
+    found[0]
+}
+
+/// The CLAP value of the integer `v` as the released build gave it (its `IntParam`: the f32
+/// normalized value times the step count, in f64), and as the new build gives it.
+fn clap_value(s: &params::Spec, v: i32) -> f64 {
+    let n = (s.max - s.min) as i32;
+    ((v - s.min as i32) as f32 / n as f32) as f64 * n as f64
+}
+
+/// A state blob being written by the plugin.
+unsafe extern "C" fn write(s: *const clap_ostream, buf: *const c_void, size: u64) -> i64 {
+    let w = unsafe { &mut *((*s).ctx as *mut Vec<u8>) };
+    w.extend_from_slice(unsafe { std::slice::from_raw_parts(buf as *const u8, size as usize) });
+    size as i64
+}
+
+/// One parameter change event for [`one_event`].
+struct OneEvent(clap_event_param_value);
+
+unsafe extern "C" fn one_size(_: *const clap_input_events) -> u32 {
+    1
+}
+unsafe extern "C" fn one_get(l: *const clap_input_events, _: u32) -> *const clap_event_header {
+    let e = unsafe { &*((*l).ctx as *const OneEvent) };
+    &e.0.header
+}
+
+/// task-275: through the CLAP export, the 0..127 values are not stepped and keep the CLAP range
+/// 0..127 (the released build's, as stepped `IntParam`s: a host's saved CLAP values and
+/// automation keep their meaning; the forked nice-plug's `clap_scale`); every other parameter
+/// stays stepped with the range it had. A state in the released build's form (every parameter
+/// `{"i32": v}`) restores its values; a fractional host value is shown as its integer, saved
+/// as an `f32` and restored.
+#[test]
+fn the_clap_parameters_are_continuous_and_keep_their_values() {
+    use clap_sys::ext::params::{
+        CLAP_EXT_PARAMS, CLAP_PARAM_IS_STEPPED, clap_param_info, clap_plugin_params,
+    };
+    use clap_sys::ext::state::clap_plugin_state;
+    let _entry = CLAP_ENTRY.lock().unwrap_or_else(|e| e.into_inner());
+    let lib = load();
+    let entry: libloading::Symbol<*const clap_plugin_entry> =
+        unsafe { lib.get(b"clap_entry\0") }.unwrap();
+    let entry = unsafe { &**entry };
+    let path = CString::new(library().to_string_lossy().as_bytes()).unwrap();
+    // an instance with a song and unusual knob values, saved as the released build saved it
+    let song = with_song("full_mix");
+    common::set(&song, "d1c3", 101);
+    common::set(&song, "d0c7", 3);
+    common::set(&song, "d5c1", 7);
+    let want: BTreeMap<String, i32> = song.ids().iter().cloned().zip(song.values()).collect();
+    unsafe {
+        assert!((entry.init.unwrap())(path.as_ptr()));
+        let factory = (entry.get_factory.unwrap())(CLAP_PLUGIN_FACTORY_ID.as_ptr())
+            as *const clap_plugin_factory;
+        let f = &*factory;
+        let d = &*(f.get_plugin_descriptor.unwrap())(factory, 0);
+        let host_info = clap_host {
+            clap_version: CLAP_VERSION,
+            host_data: null_mut(),
+            name: c"orb-plugin test".as_ptr(),
+            vendor: c"OpenRB-338".as_ptr(),
+            url: c"".as_ptr(),
+            version: c"0".as_ptr(),
+            get_extension: Some(host_extension),
+            request_restart: Some(host_request),
+            request_process: Some(host_request),
+            request_callback: Some(host_request),
+        };
+        let new = || {
+            let plugin = (f.create_plugin.unwrap())(factory, &host_info, d.id);
+            assert!(!plugin.is_null());
+            assert!(((*plugin).init.unwrap())(plugin));
+            plugin
+        };
+        let plugin = new();
+        let pl = &*plugin;
+        let ext = |plugin: *const clap_plugin, id: &CStr| {
+            ((*plugin).get_extension.unwrap())(plugin, id.as_ptr())
+        };
+        let prm = &*(ext(plugin, CLAP_EXT_PARAMS) as *const clap_plugin_params);
+        let st = &*(ext(plugin, CLAP_EXT_STATE) as *const clap_plugin_state);
+        let n = (prm.count.unwrap())(plugin);
+        assert_eq!(n as usize, params::COUNT);
+        // the id (CLAP's) and the spec of each parameter
+        let mut by_id = Vec::new();
+        let mut continuous = 0;
+        for i in 0..n {
+            let mut info: clap_param_info = std::mem::zeroed();
+            assert!((prm.get_info.unwrap())(plugin, i, &mut info));
+            let s = spec_named(&chars(&info.name));
+            let stepped = info.flags & CLAP_PARAM_IS_STEPPED != 0;
+            assert_eq!(stepped, !s.continuous(), "{}", chars(&info.name));
+            assert_eq!(info.min_value, 0.0);
+            assert_eq!(
+                info.max_value,
+                (s.max - s.min) as f64,
+                "{}",
+                chars(&info.name)
+            );
+            assert_eq!(info.default_value, clap_value(s, s.default as i32));
+            continuous += s.continuous() as usize;
+            by_id.push((info.id, s));
+        }
+        assert_eq!(continuous, 86);
+        let id_of = |pid: &str| {
+            by_id
+                .iter()
+                .find(|(_, s)| params::id(s.target) == pid)
+                .unwrap()
+                .0
+        };
+        let value = |plugin, cid| {
+            let mut v = 0.0;
+            assert!((prm.get_value.unwrap())(plugin, cid, &mut v));
+            v
+        };
+
+        // the released build's state
+        let mut reader = Reader {
+            data: state_blob(&song),
+            pos: 0,
+        };
+        let stream = clap_istream {
+            ctx: &mut reader as *mut Reader as *mut c_void,
+            read: Some(read),
+        };
+        assert!((st.load.unwrap())(plugin, &stream), "the state loads");
+        for (cid, s) in &by_id {
+            let v = want[&params::id(s.target)];
+            assert_eq!(value(plugin, *cid), clap_value(s, v), "{:?}", s.target);
+        }
+
+        // a host's value between two integers: shown as the nearest
+        let cutoff = id_of("d1c3");
+        let event = OneEvent(clap_event_param_value {
+            header: clap_event_header {
+                size: std::mem::size_of::<clap_event_param_value>() as u32,
+                time: 0,
+                space_id: CLAP_CORE_EVENT_SPACE_ID,
+                type_: CLAP_EVENT_PARAM_VALUE,
+                flags: 0,
+            },
+            param_id: cutoff,
+            cookie: null_mut(),
+            note_id: -1,
+            port_index: -1,
+            channel: -1,
+            key: -1,
+            value: 63.6,
+        });
+        let in_events = clap_input_events {
+            ctx: &event as *const OneEvent as *mut c_void,
+            size: Some(one_size),
+            get: Some(one_get),
+        };
+        let out_events = clap_output_events {
+            ctx: null_mut(),
+            try_push: Some(drop_event),
+        };
+        (prm.flush.unwrap())(plugin, &in_events, &out_events);
+        let got = value(plugin, cutoff);
+        assert!((got - 63.6).abs() < 1e-4, "{got}");
+        let mut text = [0 as c_char; 64];
+        assert!((prm.value_to_text.unwrap())(
+            plugin,
+            cutoff,
+            got,
+            text.as_mut_ptr(),
+            64
+        ));
+        assert_eq!(chars(&text), "64");
+
+        // the new build's state: the continuous values as f32, the rest as i32; it restores
+        let mut saved = Vec::<u8>::new();
+        let out = clap_ostream {
+            ctx: &mut saved as *mut Vec<u8> as *mut c_void,
+            write: Some(write),
+        };
+        assert!((st.save.unwrap())(plugin, &out));
+        let json: serde_json::Value = serde_json::from_slice(&saved[8..]).unwrap();
+        for s in &params::SPECS {
+            let v = &json["params"][params::id(s.target)];
+            let key = if s.continuous() { "f32" } else { "i32" };
+            assert!(v.get(key).is_some(), "{}: {v}", params::id(s.target));
+        }
+        let fresh = new();
+        let mut reader = Reader {
+            data: saved,
+            pos: 0,
+        };
+        let stream = clap_istream {
+            ctx: &mut reader as *mut Reader as *mut c_void,
+            read: Some(read),
+        };
+        let st2 = &*(ext(fresh, CLAP_EXT_STATE) as *const clap_plugin_state);
+        assert!((st2.load.unwrap())(fresh, &stream));
+        for (cid, s) in &by_id {
+            assert_eq!(value(fresh, *cid), value(plugin, *cid), "{:?}", s.target);
+        }
+        (pl.destroy.unwrap())(plugin);
+        ((*fresh).destroy.unwrap())(fresh);
+        (entry.deinit.unwrap())();
+    }
+}
+
+/// task-275: through the VST3 export, the 0..127 values have no step count and every other
+/// parameter its range's; the normalized value of every integer is `(v - min) / (max - min)`,
+/// as the released build's.
+#[test]
+fn the_vst3_parameters_are_continuous() {
+    use vst3::ComPtr;
+    use vst3::Steinberg::Vst::{IComponent, IEditController, IEditControllerTrait, ParameterInfo};
+    use vst3::Steinberg::{IPluginBaseTrait, IPluginFactory, kResultOk};
+    let lib = load();
+    let get: libloading::Symbol<unsafe extern "system" fn() -> *mut IPluginFactory> =
+        unsafe { lib.get(b"GetPluginFactory\0") }.unwrap();
+    unsafe {
+        let f = get();
+        let vt = &*(*f).vtbl;
+        let mut ci: vst3::Steinberg::PClassInfo = std::mem::zeroed();
+        assert_eq!((vt.getClassInfo)(f, 0, &mut ci), kResultOk);
+        let mut obj: *mut c_void = null_mut();
+        let iid = vst3::Steinberg::Vst::IComponent_iid;
+        assert_eq!(
+            (vt.createInstance)(f, ci.cid.as_ptr(), iid.as_ptr(), &mut obj),
+            kResultOk
+        );
+        let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
+        assert_eq!(component.initialize(null_mut()), kResultOk);
+        let ctl = component.cast::<IEditController>().unwrap();
+        let mut continuous = 0;
+        let mut seen = 0;
+        for i in 0..ctl.getParameterCount() {
+            let mut info: ParameterInfo = std::mem::zeroed();
+            assert_eq!(ctl.getParameterInfo(i, &mut info), kResultOk);
+            let n = info.title.iter().position(|&c| c == 0).unwrap();
+            let title = String::from_utf16(&info.title[..n]).unwrap();
+            // nice-plug's hidden MIDI CC parameters
+            let Some(s) = params::SPECS
+                .iter()
+                .find(|s| params::name(s.target) == title)
+            else {
+                continue;
+            };
+            seen += 1;
+            let want = if s.continuous() {
+                0
+            } else {
+                (s.max - s.min) as i32
+            };
+            assert_eq!(info.stepCount, want, "{title}");
+            continuous += s.continuous() as usize;
+            for v in s.min..=s.max {
+                let got = ctl.plainParamToNormalized(info.id, v as f64);
+                let old = (v - s.min) as f32 / (s.max - s.min) as f32;
+                assert_eq!(got, old as f64, "{title} {v}");
+            }
+        }
+        assert_eq!((seen, continuous), (params::COUNT, 86));
+        assert_eq!(component.terminate(), kResultOk);
+        drop(ctl);
+        drop(component);
         (vt.base.release)(f as *mut _);
     }
 }

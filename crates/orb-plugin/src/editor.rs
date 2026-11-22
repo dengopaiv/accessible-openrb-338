@@ -43,7 +43,7 @@ use orb_ui::settings::Settings;
 
 use crate::clip;
 use crate::drag::{self, Pending};
-use crate::instance::{self, Kit, Mode, OrbParams, ROWS};
+use crate::instance::{self, HostParam, Kit, Mode, OrbParams, ROWS};
 use crate::params::{self, SPECS, Target};
 use crate::plugin_log;
 
@@ -1010,17 +1010,26 @@ fn post(_id: u64) -> bool {
     false
 }
 
-/// Sets parameter `i` of [`SPECS`] to `v` through the host, as one gesture; nothing when it
-/// holds `v`.
+/// Sets parameter `i` of [`SPECS`] to `v` through the host, as one gesture (a continuous
+/// parameter to the float of the integer, task-275); nothing when it holds `v` (rounded).
 fn set_param(params: &OrbParams, gui: &GuiContext, i: usize, v: i32) {
     let p = params.param_at(i);
     if p.value() == v {
         return;
     }
     let s = gui.param_setter();
-    s.begin_set_parameter(p);
-    s.set_parameter(p, v);
-    s.end_set_parameter(p);
+    match p {
+        HostParam::Stepped(p) => {
+            s.begin_set_parameter(p);
+            s.set_parameter(p, v);
+            s.end_set_parameter(p);
+        }
+        HostParam::Continuous(p, _) => {
+            s.begin_set_parameter(p);
+            s.set_parameter(p, v as f32);
+            s.end_set_parameter(p);
+        }
+    }
 }
 
 /// The panel's player in the plugin.

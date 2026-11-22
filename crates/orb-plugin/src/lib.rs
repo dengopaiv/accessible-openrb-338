@@ -188,6 +188,12 @@ impl Plugin for OrbPlugin {
         self.params.clone()
     }
 
+    /// A state of the released build restores its 0..127 values into the continuous
+    /// parameters (task-275, [`instance::migrate_state`]).
+    fn filter_state(state: &mut PluginState) {
+        instance::migrate_state(state);
+    }
+
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         Some(editor::OrbEditor::new(self.params.clone()))
     }

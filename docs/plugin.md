@@ -83,7 +83,7 @@ Permanent after the first release (task-185):
 
 ## 3. Parameters
 
-One stepped integer parameter per control the plugin's panel shows (119): every controller of
+One parameter per control the plugin's panel shows (119; continuous or stepped, below): every controller of
 the 303s (0..8 each: on/off, pattern, tune, cutoff, resonance, env mod, decay, accent,
 waveform), the 808 (0..28, the voice switches 11, 14, 17, 19, 21 included), the 909 (0..29),
 the delay (0..4), the distortion (0..2), the PCF (0..6) and the compressor (0..2); the mixer's
@@ -108,6 +108,48 @@ state (section 5), not parameters.
 - **Ranges.** 0..127 for the knobs and faders; 0..1 for the switches; 0..31 the patterns (shown
   A1..D8), 1..32 the delay steps, 0..54 the PCF wave, 0..5 the compressor insert (off, master,
   channel 1..4), 0..4 the PCF insert (off, channel 1..4).
+- **Continuous and stepped** (task-275, GitHub issue 21: Studio One 7 drew and played the
+  automation of a stepped parameter, "ORB-303 2 Cutoff", as a staircase and would not draw a
+  ramp; REAPER and Ableton do not, which is why no test had caught it). Until task-275 every
+  parameter was a nice-plug `IntParam`, which gives VST3 a `stepCount` of `max - min` and CLAP
+  `CLAP_PARAM_IS_STEPPED`.
+  - **Continuous** (86): every value over 0..127 (`params::Spec::continuous`: `Kind::Value`,
+    0..=127): the shuffle, the master level, the four channels' level, pan and delay send, the
+    303s' tune, cutoff, resonance, env mod, decay and accent, the 808's and 909's knobs and
+    levels (controllers 2.. other than the 808's voice switches), the delay's feedback and pan,
+    the distortion's amount and shape, the PCF's frequency, resonance, amount and decay, the
+    compressor's ratio and threshold. Each is a nice-plug `FloatParam`, linear over 0..127, with
+    no step size: VST3 `stepCount` 0, CLAP not stepped.
+  - **Stepped** (33), `IntParam`s as before: the switches (`Kind::Switch`: the devices' and
+    channels' on, the 303s' waveform, the 808's voice switches, the delay's sixteenths, the
+    distortion switches of the channels; `Kind::PcfMode`), the patterns 0..31, the delay steps
+    1..32, the PCF wave 0..54, the compressor insert 0..5 and the PCF insert 0..4.
+  - **Into integers.** The engine, the panel, the display and `OrbParams::values` get a
+    continuous parameter's host value rounded to the nearest integer, a half away from zero
+    (`f32::round`), clamped to the range (NaN: the minimum; `params::round`,
+    `instance::HostParam::value`). The process side compares those integers with the ones of
+    the call before (`Core::apply`), so a host's ramp sends an engine message only when the
+    rounded integer changes, one per integer crossed (`tests/continuous.rs`). The text is the
+    integer's (`params::display` of the rounded value; `params::parse` gives the integer).
+  - **The same meaning as the released build's** (v2026.1118.0919, all `IntParam`s): the ids
+    are unchanged; VST3's normalized value of an integer `v` is `(v - min) / (max - min)` in
+    f32 for both (nice-plug's `IntRange::Linear` and `FloatRange::Linear::normalize`, bit for
+    bit with min 0), and a host's normalized value `n` gives the integer the released build
+    made of it (`round(n * 127)`); CLAP's value stays the plain value 0..127 through the
+    forked nice-plug's `clap_scale` (section 10, "The forked nice-plug"; stock nice-plug
+    gives a continuous parameter the CLAP range 0..1). A plugin state of the released build
+    restores (section 5). Checked in REAPER 7.86 with the released bundles (task-275's notes):
+    a project REAPER saved through the released build, with an envelope ramp on "ORB-303 1
+    Cutoff" from 0 to its maximum, renders bit for bit the same through the new build, VST3
+    (REAPER saves the envelope normalized, `<PARMENV 27:3029309 0 1 0.5`; 3 renders with each
+    build, all 9 pairs equal) and CLAP (REAPER saves the CLAP value, `<PARMENV 27:3029309 0
+    127 63.5`, points `PT 3.5 127`; with stock nice-plug the new build's CLAP range was 0..1
+    and the same project rendered differently in 383586 of 384000 samples). REAPER's CLAP
+    render of that enveloped project is not repeatable with either build: each run gives one of
+    two renders (135321 samples apart, from frame 37), the same two for both builds, and each
+    of the new build's renders is bit for bit one of the released build's.
+  - **The panel** sets a continuous parameter through `ParamSetter` to the float of its
+    integer, and only when the parameter's rounded value differs (`editor::set_param`).
 - **Defaults** are the song constructor's values (`docs/song_load.md` section 4.9; the shuffle
   64, the sequencer's ctor value): a new instance's parameters change nothing in a new song
   (`the_defaults_are_the_new_songs_values`).
@@ -263,10 +305,22 @@ field, `orb`, a JSON object (version 1):
 | `mode` | `"latch"`, `"gate"` or `"note"` (section 4; a new instance: note; task-217's `"pattern"` is no longer read) |
 | `preview` | the preview set (section 4.2): an object of parameter id to value, or null before the first preview; an id it lacks takes the parameter's value |
 
-The plugin is not released: no state of an earlier build is migrated, recognized or tested
-(the user, 2026-11-16: no compatibility work with old plugin states until the plugin is
-released on GitHub Releases; the format changes freely). A state from before task-217 lacks
-`mode` and does not parse (the restore gives a new song and `last_error`).
+Until the first release (v2026.1118.0919) no state of an earlier build was migrated,
+recognized or tested (the user, 2026-11-16: no compatibility work with old plugin states until
+the plugin is released on GitHub Releases). A state from before task-217 lacks `mode` and does
+not parse (the restore gives a new song and `last_error`).
+
+**The parameters in the state** (nice-plug's `PluginState.params`, by id) are nice-plug's
+externally tagged values: `{"i32": v}` for a stepped parameter, `{"f32": x}` for a continuous
+one (section 3; `x` the host's value, which may lie between two integers). The released build
+saved every parameter as `{"i32": v}`, and nice-plug restores only an `F32` into a `FloatParam`
+(`deserialize_object`, `src/wrapper/state.rs`: a mismatched pair is skipped, so the parameter
+would keep its default). The plugin's `Plugin::filter_state`, which nice-plug calls before the
+restore, turns a continuous id's `I32` into the `F32` of the same value
+(`instance::migrate_state`; task-275), so a released build's state restores the same values
+(`tests/continuous.rs`, and through the CLAP export `tests/exports.rs`). A state of this build
+loaded by the released build loses its continuous values (they keep their defaults): no
+downgrade.
 
 A restore (nice-plug sets the parameters, then calls `deserialize_fields`) replaces the
 document and, when the instance runs, builds the engine and sends it; otherwise the next
@@ -345,7 +399,10 @@ worktrees under `.claude/worktrees/`). Signing, the packages and the validators
 "The plugin".
 
 The tests (`cargo test -p orb-plugin`; `tests/` and the resampler's unit tests): the buffer
-sizes and the 48 kHz path (`timing.rs`), the parameter list and defaults (`params.rs`), the state
+sizes and the 48 kHz path (`timing.rs`), the parameter list and defaults (`params.rs`), the
+continuous parameters, their rounding and the released build's mapping and states
+(`continuous.rs`, task-275; their VST3 and CLAP flags and CLAP values through the exports in
+`exports.rs`), the state
 (`state.rs`, with a test mod made from the standard mod: renamed, the 808's and 909's bass drum
 and first snare swapped), no allocation in `process` (`no_alloc.rs`, a counting allocator, and
 the process side's sources checked for lock types), and the exports (`exports.rs`): it builds
@@ -1341,6 +1398,36 @@ a CLAP build of one plugin, or two wgpu plugins) cannot both create a layer in o
 second `define_class!` registration panics. Please register the class under a name unique to
 the image (e.g. with a random or address suffix through `ClassBuilder`), as baseview does for
 its NSView subclass."
+
+**The forked nice-plug** (task-275, task-276). nice-plug 0.4.2's CLAP wrapper gives every parameter
+the CLAP range `0..=step_count().unwrap_or(1)` and converts between the normalized and the
+CLAP value with that factor (11 places in `src/wrapper/clap/wrapper.rs` and
+`src/wrapper/clap/context.rs`): a continuous `FloatParam` has the CLAP range 0..1. The 0..127
+parameters were stepped `IntParam`s, CLAP range 0..127, in the released build, and REAPER
+saves CLAP automation in the CLAP value (section 3), so the stock wrapper would turn a saved
+point 64 into 1 (clamped). The workspace takes nice-plug from a fork (the user's decision,
+task-276, 2026-11-22; ISC): `github.com/pingw33n/nice-plug`, branch `OpenRB-338`, commit
+`250daefd57cdc58d41ddb25f053f1a0589f44cad`. That commit is upstream 91ba75d, the commit
+nice-plug 0.4.2, nice-plug-core 0.4.2, nice-plug-derive 0.1.2 and nice-log 0.3.1 were
+published from (their `src` equal crates.io's), plus the patch, which changes only
+`crates/nice-plug/src/wrapper/clap/wrapper.rs` and `context.rs`. `[patch.crates-io]` of the
+workspace `Cargo.toml` takes nice-plug, nice-plug-core and nice-plug-derive from that `rev`;
+all three are needed, since the fork's nice-plug depends on the other two by path, so a
+crates.io nice-plug-core would otherwise be a second copy beside nice-plug-egui's (nice-log
+comes along through the same path; nice-plug-egui 0.6.0 and nice-plug-xtask 0.1.1 stay from
+crates.io). `cargo tree -d` shows no duplicate nice-plug crate, and `Cargo.lock` holds one
+copy of each. To move to a new upstream: rebase the branch `OpenRB-338` onto it, push, and
+set the new commit as the `rev` of the three entries. The patch (marked "OpenRB-338 patch"):
+`clap_scale` in `src/wrapper/clap/wrapper.rs` replaces `step_count().unwrap_or(1)` in all 11
+places; it is the step count of a stepped parameter (as upstream), `max` for a `FloatParam`
+over a linear `0..=max` with `max` a whole number of at least 1, and 1 for any other. Such a
+`FloatParam`'s CLAP value is therefore its plain value and its range 0..=max, while
+`CLAP_PARAM_IS_STEPPED` still follows `step_count` (not set). The arithmetic is upstream's with
+the factor replaced (`value as f32 / scale as f32`, `normalized as f64 * scale as f64`), so a
+0..127 parameter's CLAP values are bit for bit the released build's (`tests/exports.rs`
+`the_clap_parameters_are_continuous_and_keep_their_values`). The VST3 wrapper is unchanged
+(VST3 works in normalized values). The patch applies to every nice-plug user in the workspace,
+which is only orb-plugin.
 
 **No panic reaches the host.** Every method of `OrbEditor` (`spawn`, `size`, `resize_hint`)
 and of `OrbHandle` (`run_until_closed`, `set_parent`, `show`, `hide`, `set_size`,

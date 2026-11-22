@@ -210,6 +210,8 @@ struct Engine {
     /// and finds the garbage queue full (`Audio::room_for`), and the process side sends none,
     /// so this stays 0 (task-225); a diagnostic.
     dropped: u64,
+    /// The parameter messages sent ([`Engine::apply_one`]); a diagnostic (task-275).
+    param_messages: u64,
     /// The host rate.
     rate: u32,
     /// The blocks rendered.
@@ -275,6 +277,7 @@ impl Engine {
             return;
         }
         if let Some(c) = params::command(s, v) {
+            self.param_messages += 1;
             self.send(c);
         }
     }
@@ -730,6 +733,7 @@ impl Core {
                 host: *values,
                 shown: *values,
                 dropped: 0,
+                param_messages: 0,
                 rate,
                 blocks: 0,
                 records: vec![Record::default(); RECORDS].into_boxed_slice(),
@@ -772,6 +776,12 @@ impl Core {
     /// and only such a command is refused when the garbage queue is full (task-225).
     pub fn dropped_events(&self) -> u64 {
         self.engine.dropped
+    }
+
+    /// The parameter messages sent to the engine since the activation (for tests: a host's
+    /// changes that keep a continuous parameter's rounded integer send none, task-275).
+    pub fn param_messages(&self) -> u64 {
+        self.engine.param_messages
     }
 
     /// Whether the last block followed the host's position (the Sync LED).
