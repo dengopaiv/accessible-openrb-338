@@ -5,12 +5,13 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-22T09:49:00Z'
+updated_date: '2026-11-22T16:51:00Z'
 labels:
   - ui
   - docs
 milestone: m-9
 dependencies:
-  - TASK-281
+  - TASK-284
 references:
   - crates/orb-ui/src/key_help.rs
   - crates/orb-ui/src/keys.rs
@@ -56,3 +57,15 @@ ordinal: 260300
 - [ ] #4 docs/ui_spec.md describes the help's groups; cargo test --workspace passes, clippy -D warnings and nightly fmt clean
 - [ ] #5 The user reviewed the help window in the app and the plugin before the agent review
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-22, supervisor: the user's review of the help (task-284) set rules this audit keeps:
+- no menu shortcut repeated in a context group (Cmd+E, Cmd+Z);
+- no 808 or 909 Pattern Editor group;
+- no group for the panel's 909 step buttons;
+- no rows for egui's DragValue behavior or for modifiers that do nothing;
+- no TR-/TB- names.
+Where this audit would add a row of a kind task-284 removed, it does not; raise it with the user in the notes instead.
+<!-- SECTION:NOTES:END -->
