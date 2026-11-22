@@ -429,11 +429,11 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
   (`/Applications/REAPER.app/Contents/MacOS/REAPER`); otherwise it prints `skipped: ...` and
   passes, as the `ORB_CD_ISO` tests do. CI does not run it (REAPER is licensed software), and
   it knows REAPER's settings for macOS only (elsewhere it skips with a message). It takes about
-  a minute: 20 renders of 1.5 to 5 s and the in-process references. The fixtures' freshness
+  a minute: 11 renders of a few seconds each and the in-process references. The fixtures' freshness
   test (`the_fixtures_are_current`) always runs.
 - **The fresh build only, nothing installed** (the user's decision, 2026-11-21). The test
   builds the bundles (`cargo xtask bundle orb-plugin --release`, into `target/bundled`) and
-  runs each render as `REAPER -newinst -nosplash -ignoreerrors -cfgfile
+  runs each render (through `open`, see "Hidden" below) as `REAPER -newinst -nosplash -ignoreerrors -cfgfile
   target/reaper/<case>.<format>/resources/reaper.ini -renderproject <copy of the fixture>`:
   - `-newinst` starts an instance of its own: a REAPER the user has open is neither used nor
     disturbed (without it the render could go to the running instance).
@@ -462,8 +462,55 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
     into it by task-260). The test fails unless every activation line names `target/bundled/OpenRB-338.<format>/
     Contents/MacOS/OpenRB-338` at the project's rate, REAPER kept the two paths, and each
     scratch cache lists one OpenRB-338.
-  - A render that does not finish in 120 s (a dialog) fails the test, which stops only the
-    REAPER it started.
+  - **Hidden, no focus change** (task-277, macOS only; the test is macOS-only anyway, and
+    nothing here is done for Windows, where the test skips). The test starts REAPER through
+    `open -n -g -j -W -a REAPER.app --env ORB_PLUGIN_LOG=<log> --args <the arguments above>`:
+    `-n` a new instance, `-g` not activated, `-j` hidden, `-W` waits for exit, `--env` because
+    `open` does not pass the test's environment. Measured on REAPER 7.86 (arm64, macOS 15.6)
+    with a 20 ms sampler of the on-screen windows (CGWindowList) and the front app
+    (NSWorkspace) while REAPER renders `latch_48k`: started directly, REAPER showed its main
+    window and the render dialog in 52 of 155 samples; through `open -g -j` still in 15 of
+    117, so **`-j` does not keep the windows hidden** (REAPER unhides itself when it opens
+    them; the front app stayed the user's in all runs, so `-g` works). The scratch `reaper.ini`
+    with `wnd_x`/`wnd_y` far off-screen was no fallback: macOS clamps the window back
+    (`wnd_x=68`, `wnd_y=0` were written back). So the test also runs a hider, a JXA loop of
+    `osascript` (started before REAPER, as its start-up takes 0.3 s) that waits for the pid on
+    its standard input and then calls `NSRunningApplication.hide` whenever the app is not
+    hidden (every 5 ms, until the process is gone; no Accessibility permission needed, unlike
+    System Events). The hider keeps looping while the lookup is nil (REAPER not yet known to
+    NSWorkspace) and ends when the app is terminated, or gone after it was seen. With it,
+    over the whole test (11 renders plus the hang test, about 2100 samples in 55 s) REAPER was
+    never the front app in any of 12 runs, and no REAPER window was on screen in 8 of them;
+    the other 4 saw windows in 14, 58, 59 and 131 samples (the last: 3 s in one render). So
+    it is a race, not a guarantee, and a window can show for a few hundred ms. The 3 s case
+    was not reproduced in 4 later runs with the hider logging (each: the hider had the pid
+    and saw REAPER within about 70 ms, and the 48 hiders hid REAPER 160 to 210 times).
+  - **Lifecycle.** `Started` (a `Drop` guard) stops the hider, `open` and the REAPERs found
+    by the scratch `-cfgfile` on every exit, a panic included, and after a timeout looks again
+    three times over 1 s for a REAPER LaunchServices starts late. A Ctrl-C kills the test
+    process without running it, and REAPER (started by launchd) survives. Clean up by the
+    scratch path, never by name. The scratch folder is `<target dir>/reaper/<case>.vst3/`
+    (the target dir is `CARGO_TARGET_DIR` if set, else the workspace's `target`; the test
+    prints it in a failure, and a REAPER's command line shows it). List the processes with a
+    fixed-string match (not `pkill -f`, whose pattern is a regex, so a path with regex
+    characters would need escaping): `ps -axww -o pid=,command= | grep -F -- '-cfgfile
+    <target dir>/reaper/'`, check that each line is a REAPER of the test (or its `open`), and
+    `kill -KILL <pid>` them. The hider is an `osascript -l JavaScript -e ObjC.import(...)`
+    process (its command line has no path: `grep -F 'ObjC.import(' ` on the same list); it ends by itself once its REAPER is gone. The plugin
+    variables `ORB_PLUGIN_LOG_LEVEL` and `ORB_PLUGIN_SIZE_LOG` are passed on by `--env` when
+    set (checked with several `--env` flags: all reach REAPER, task-277 notes).
+  - **The exit status.** `open -W` exits 0 whatever REAPER's status, and REAPER's own is not
+    available, so a render counts only when `project/out/Master.wav` exists, and the plugin-log
+    and length checks below follow as before.
+  - **The timeout.** A render that does not finish in 120 s (a dialog) fails the test. The
+    child is `open`, not REAPER, so the test finds the REAPER it started by its command line in
+    `ps`: the exact pair `-cfgfile <its scratch reaper.ini> -renderproject ` on a process that
+    is an app's executable (not `open`, which carries the same arguments), and kills only it
+    (`reapers_of`, unit-tested on sample `ps` lines with another REAPER, `open`, and a path
+    that only ends like the scratch path; `a_hung_reaper_is_killed_and_fails_the_run` hangs a
+    real REAPER with an unreadable project for 15 s, and checks that it fails and that no
+    process of that scratch configuration is left). A REAPER on any other configuration, the
+    user's included, never matches.
 - **Fixtures.** `crates/orb-plugin/tests/reaper/<case>.vst3.RPP`, made by `cargo run -p orb-plugin --example reaper_fixtures` from
   `tests/reaper/template.RPP` and the cases of `tests/reaper/cases.rs`. Rerun it when the
   state format, a case or the template changes; the freshness test fails on a stale fixture.

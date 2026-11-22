@@ -16,11 +16,20 @@
 //! are never read or written. The plugin log (`ORB_PLUGIN_LOG`, set to a scratch file) has a
 //! line per activation naming the library that runs; they must name only the fresh bundle's
 //! library, so a test that ran some other copy fails.
+//!
+//! REAPER has no headless mode; the test keeps it out of the user's sight (task-277, macOS):
+//! it starts it through `open -n -g -j -W` (a new instance, not activated, hidden, waited for;
+//! `--env` passes `ORB_PLUGIN_LOG`), and a hider (`osascript` running a JXA loop, [`HIDER`])
+//! hides the app again whenever REAPER unhides itself to open its windows, which `-j` alone
+//! does not prevent. `open` exits 0 whatever REAPER's status, so a render counts when it wrote
+//! its files. A REAPER that hangs is found by its scratch `-cfgfile` path in `ps` and killed,
+//! and only that one ([`reapers_of`]). The measurements are in `docs/plugin.md` section 7.1.
 
 #[path = "reaper/cases.rs"]
 mod cases;
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -29,7 +38,7 @@ use cases::{CASES, Case, DEVICE_TRACKS, Format, Timing};
 use orb_player::midi::Message;
 use orb_plugin::core::{AuxOut, DEVICE_OUTPUTS, HostEvent, HostTransport};
 use orb_plugin::instance::{self, Mode, OrbParams};
-use orb_plugin::plugin_log::{LOG_VAR, parse_loaded_from};
+use orb_plugin::plugin_log::{LEVEL_VAR, LOG_VAR, parse_loaded_from};
 
 /// One LSB of the int16 output.
 const LSB: f32 = 1.0 / 32768.0;
@@ -184,6 +193,213 @@ impl Render {
     }
 }
 
+/// The pids of the REAPERs `ps` lists (`ps -axww -o pid=,command=`) that run with `ini` as
+/// their `-cfgfile` and `-renderproject` after it. The match is the exact argument pair, and
+/// the process must be an app's executable (`.../Contents/MacOS/...`), so neither `open` (whose
+/// command line carries the same arguments) nor a REAPER on another configuration, the user's
+/// included, can match.
+fn reapers_of(ps: &str, ini: &Path) -> Vec<u32> {
+    let pair = format!(" -cfgfile {} -renderproject ", ini.display());
+    ps.lines()
+        .filter_map(|l| {
+            let (pid, cmd) = l.trim_start().split_once(' ')?;
+            // what precedes the pair: the executable path (it may contain " -") and the
+            // arguments before `-cfgfile`
+            let before = &cmd[..cmd.find(&pair)?];
+            before
+                .contains(".app/Contents/MacOS/")
+                .then(|| pid.parse().ok())
+                .flatten()
+        })
+        .collect()
+}
+
+/// The pids of the REAPERs this test started on `ini` (see [`reapers_of`]); none when `ps`
+/// cannot run (this is also called while unwinding, so it must not panic).
+fn find_reapers(ini: &Path) -> Vec<u32> {
+    Command::new("ps")
+        .args(["-axww", "-o", "pid=,command="])
+        .output()
+        .map(|o| reapers_of(&String::from_utf8_lossy(&o.stdout), ini))
+        .unwrap_or_default()
+}
+
+/// Everything one hidden run starts, stopped when it goes out of scope, on every exit path
+/// including a panic: the hider, `open`, and the REAPERs found by the scratch `ini` (REAPER is
+/// started by LaunchServices, not by this process, so it would outlive both). A Ctrl-C kills
+/// the test process without running this; see docs/plugin.md 7.1 for the cleanup by hand.
+struct Started<'a> {
+    ini: &'a Path,
+    hider: std::process::Child,
+    open: Option<std::process::Child>,
+    /// `open` was killed before REAPER may have been started: look again after a while.
+    settle: bool,
+}
+
+impl Started<'_> {
+    fn kill_reapers(&self) {
+        for pid in find_reapers(self.ini) {
+            let _ = Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .status();
+        }
+    }
+}
+
+impl Drop for Started<'_> {
+    fn drop(&mut self) {
+        if let Some(open) = &mut self.open {
+            let _ = open.kill();
+            let _ = open.wait();
+        }
+        self.kill_reapers();
+        if self.settle {
+            // LaunchServices may still start the REAPER `open` asked for
+            for _ in 0..3 {
+                std::thread::sleep(Duration::from_millis(300));
+                self.kill_reapers();
+            }
+        }
+        let _ = self.hider.kill();
+        let _ = self.hider.wait();
+    }
+}
+
+/// The hider: a JXA script that waits for a pid on its standard input (started before REAPER,
+/// so that its start-up, 0.3 s, is not spent after the first window) and then keeps that app
+/// hidden until it is gone: `open -j` starts REAPER hidden, but REAPER unhides itself when it
+/// opens its windows, so the loop (5 ms) hides it again whenever it is not hidden.
+const HIDER: &str = "\
+ObjC.import('AppKit');
+const text = $.NSString.alloc.initWithDataEncoding(
+  $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile, $.NSUTF8StringEncoding);
+const pid = parseInt(ObjC.unwrap(text));
+// The lookup is nil until the process is known to NSWorkspace: keep looping then; the end is
+// isTerminated, or nil again after it was seen (a gone process), or 60 s of nil.
+// (a nil lookup is an object whose properties are undefined).
+let seen = false;
+const t0 = Date.now();
+for (;;) {
+  const a = $.NSRunningApplication.runningApplicationWithProcessIdentifier(pid);
+  const nil = a.isTerminated === undefined;
+  if (!nil && a.isTerminated) break;
+  if (nil && (seen || Date.now() - t0 > 60000)) break;
+  if (!nil) {
+    seen = true;
+    if (!a.isHidden) a.hide;
+  }
+  $.NSThread.sleepForTimeInterval(0.005);
+}
+";
+
+/// Starts the hider ([`HIDER`]); the pid goes to its standard input.
+fn start_hider() -> std::process::Child {
+    Command::new("osascript")
+        .args(["-l", "JavaScript", "-e", HIDER])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("osascript runs")
+}
+
+/// Runs REAPER on macOS through `open`, so that it neither shows a window nor takes the focus:
+/// `-n` a new instance, `-g` not activated, `-j` hidden, `-W` waits for it to exit; `--env`
+/// because `open` does not pass this process's environment; [`HIDER`] keeps its windows
+/// hidden. `open` exits 0 whatever REAPER's status, so the caller checks the render. A REAPER
+/// that does not finish in `timeout` is killed, found by its scratch `ini` ([`find_reapers`]):
+/// the child here is `open`, and no other REAPER is touched.
+fn run_hidden(
+    exe: &Path,
+    ini: &Path,
+    rpp: &Path,
+    log: &Path,
+    timeout: Duration,
+) -> Result<(), String> {
+    let app = exe
+        .ancestors()
+        .nth(3)
+        .filter(|a| a.extension().is_some_and(|e| e == "app"))
+        .ok_or_else(|| format!("{} is not inside a .app bundle", exe.display()))?;
+    let mut st = Started {
+        ini,
+        hider: start_hider(),
+        open: None,
+        settle: false,
+    };
+    // let it get to its read before REAPER starts
+    std::thread::sleep(Duration::from_millis(500));
+    let mut cmd = Command::new("open");
+    cmd.args(["-n", "-g", "-j", "-W", "-a"]).arg(app);
+    // `open` does not pass this process's environment: the plugin's variables go by `--env`
+    cmd.arg("--env").arg(format!("{LOG_VAR}={}", log.display()));
+    for var in [LEVEL_VAR, orb_plugin::editor::SIZE_LOG_VAR] {
+        if let Some(v) = std::env::var_os(var) {
+            let mut kv = std::ffi::OsString::from(format!("{var}="));
+            kv.push(v);
+            cmd.arg("--env").arg(kv);
+        }
+    }
+    cmd.args([
+        "--args",
+        "-newinst",
+        "-nosplash",
+        "-ignoreerrors",
+        "-cfgfile",
+    ])
+    .arg(ini)
+    .arg("-renderproject")
+    .arg(rpp)
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
+    st.open = Some(cmd.spawn().map_err(|e| format!("open: {e}"))?);
+    let t0 = Instant::now();
+    let mut found = false;
+    loop {
+        match st.open.as_mut().unwrap().try_wait() {
+            Ok(Some(s)) if s.success() => return Ok(()),
+            Ok(Some(s)) => return Err(format!("open {s}")),
+            Ok(None) => {}
+            Err(e) => return Err(format!("waiting for open: {e}")),
+        }
+        if !found && let Some(&pid) = find_reapers(ini).first() {
+            // closing the pipe ends the pid for the hider
+            let mut stdin = st.hider.stdin.take().unwrap();
+            let _ = write!(stdin, "{pid}");
+            found = true;
+        }
+        if t0.elapsed() > timeout {
+            // `Started` kills `open` and the REAPER, looking again for a late one
+            st.settle = true;
+            return Err(format!("REAPER did not finish in {timeout:?} (a dialog?)"));
+        }
+        // fast until REAPER is found, so that the hider has it before its first window
+        std::thread::sleep(Duration::from_millis(if found { 100 } else { 10 }));
+    }
+}
+
+/// [`reapers_of`] matches only the REAPER on the given scratch configuration.
+#[test]
+fn only_the_reaper_of_the_scratch_configuration_matches() {
+    let ini = Path::new("/w/target/reaper/a.vst3/resources/reaper.ini");
+    let ps = "\
+  101 /Applications/REAPER.app/Contents/MacOS/REAPER
+  102 /Applications/REAPER.app/Contents/MacOS/REAPER -newinst -nosplash -ignoreerrors \\
+ -cfgfile /w/target/reaper/b.vst3/resources/reaper.ini -renderproject /w/b.RPP
+  103 open -n -g -j -W -a /Applications/REAPER.app --args -newinst -nosplash -ignoreerrors \\
+ -cfgfile /w/target/reaper/a.vst3/resources/reaper.ini -renderproject /w/a.RPP
+  104 /Applications/REAPER.app/Contents/MacOS/REAPER -newinst -nosplash -ignoreerrors \\
+ -cfgfile /x/w/target/reaper/a.vst3/resources/reaper.ini -renderproject /w/a.RPP
+  105 /Applications/REAPER.app/Contents/MacOS/REAPER -newinst -nosplash -ignoreerrors \\
+ -cfgfile /w/target/reaper/a.vst3/resources/reaper.ini -renderproject /w/a.RPP
+  106 /Apps/My -x/REAPER.app/Contents/MacOS/REAPER -newinst -nosplash -ignoreerrors \\
+ -cfgfile /w/target/reaper/a.vst3/resources/reaper.ini -renderproject /w/a.RPP
+";
+    // the two-line entries above are one line each in the real `ps` output
+    let ps = ps.replace("\\\n", "");
+    assert_eq!(reapers_of(&ps, ini), [105, 106]);
+}
+
 /// Renders the fixture of `c` for `f` with REAPER (`exe`) on a scratch resource folder,
 /// `target/reaper/<case>.<format>/`, and checks that it ran the fresh bundle.
 fn render(exe: &Path, bundles: &Path, k: &Keys, c: &Case, f: Format) -> Render {
@@ -200,32 +416,15 @@ fn render(exe: &Path, bundles: &Path, k: &Keys, c: &Case, f: Format) -> Render {
     std::fs::copy(cases::fixture_path(c, f), &rpp).unwrap();
     let log = dir.join("plugin.log");
     let t0 = Instant::now();
-    let mut child = Command::new(exe)
-        .args(["-newinst", "-nosplash", "-ignoreerrors", "-cfgfile"])
-        .arg(&ini)
-        .arg("-renderproject")
-        .arg(&rpp)
-        .env(LOG_VAR, &log)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap_or_else(|e| panic!("{}: {e}", exe.display()));
-    let status = loop {
-        if let Some(s) = child.try_wait().unwrap() {
-            break s;
-        }
-        if t0.elapsed() > RENDER_TIMEOUT {
-            // only the REAPER this test started
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!(
-                "{id}: REAPER did not finish in {RENDER_TIMEOUT:?} (a dialog?); {}",
-                dir.display()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    };
-    assert!(status.success(), "{id}: REAPER {status}");
+    if let Err(e) = run_hidden(exe, &ini, &rpp, &log, RENDER_TIMEOUT) {
+        panic!("{id}: {e}; {}", dir.display());
+    }
+    let out = proj.join("out");
+    assert!(
+        out.join("Master.wav").is_file(),
+        "{id}: REAPER exited without rendering (no {}; `open` reports 0 whatever REAPER's status)",
+        out.join("Master.wav").display()
+    );
     eprintln!("{id}: rendered in {:.1} s", t0.elapsed().as_secs_f64());
     // the copy that ran: every activation is the fresh bundle's library, at the project's rate
     let lib = bundles
@@ -523,4 +722,47 @@ fn reaper_renders_as_the_plugin_plays_in_process() {
             EXACT,
         );
     }
+}
+
+/// The timeout path: a REAPER that does not finish (an unreadable project leaves it waiting)
+/// fails the run, and the REAPER it started, found by its scratch configuration, is gone.
+#[test]
+fn a_hung_reaper_is_killed_and_fails_the_run() {
+    let Some(exe) = std::env::var_os("ORB_REAPER").filter(|v| !v.is_empty()) else {
+        eprintln!("skipped: set ORB_REAPER to the REAPER executable to run the REAPER renders");
+        return;
+    };
+    let Some(k) = keys() else {
+        eprintln!("skipped: the REAPER render test knows REAPER's settings on macOS only");
+        return;
+    };
+    let dir = target_dir().join("reaper/timeout");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("resources")).unwrap();
+    let dir = dir.canonicalize().unwrap();
+    let ini = dir.join("resources/reaper.ini");
+    std::fs::write(&ini, reaper_ini(&dir, &k)).unwrap();
+    let rpp = dir.join("garbage.RPP");
+    std::fs::write(&rpp, "not a project\n").unwrap();
+    let t0 = Instant::now();
+    let err = run_hidden(
+        Path::new(&exe),
+        &ini,
+        &rpp,
+        &dir.join("plugin.log"),
+        Duration::from_secs(15),
+    )
+    .expect_err("the garbage project does not render");
+    eprintln!(
+        "hung REAPER: {err} after {:.1} s",
+        t0.elapsed().as_secs_f64()
+    );
+    assert!(err.contains("did not finish"), "{err}");
+    assert!(!dir.join("out").exists(), "nothing rendered");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(
+        find_reapers(&ini).is_empty(),
+        "the REAPER of {} is still running",
+        ini.display()
+    );
 }
