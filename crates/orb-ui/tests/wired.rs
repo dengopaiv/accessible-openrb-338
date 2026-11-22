@@ -851,10 +851,10 @@ fn the_909_step_buttons_send_the_values_of_the_modifiers_and_clear_the_other_hih
         h.take_log(),
         [1, 2, 0].map(|v| dev(Device::Tr909, 79, &[0, 0, 1, v]))
     );
-    // Ctrl: 1, Alt: 2, Ctrl+Alt: flam 3
-    click_mods(&mut h, strip(1), Modifiers::CTRL);
+    // the command key (Cmd on macOS, Ctrl elsewhere; task-281): 1, Alt: 2, both: flam 3
+    click_mods(&mut h, strip(1), Modifiers::COMMAND);
     click_mods(&mut h, strip(2), Modifiers::ALT);
-    click_mods(&mut h, strip(3), Modifiers::CTRL | Modifiers::ALT);
+    click_mods(&mut h, strip(3), Modifiers::COMMAND | Modifiers::ALT);
     assert_eq!(
         h.take_log(),
         [(1, 1), (2, 2), (3, 3)].map(|(s, v)| dev(Device::Tr909, 79, &[0, s, 1, v]))

@@ -644,6 +644,14 @@ not read].
   Dragging with the button held sets every crossed step to v. When the instrument is CH or OH,
   every step it sets also clears the other hi-hat on that step (`sub_447153(9 or 8, step, 0)`).
   Observed: one click 0 -> 1, two clicks -> 2, Ctrl+Alt -> 3, Ctrl -> 1, Alt on a 2 -> 0.
+  **orb's keys** (task-281, the user's decision of 2026-11-22: one rule across the app, the
+  panel and the 909 editor of section 25): the original's Ctrl is the command key, Cmd on macOS
+  and Ctrl on Windows and Linux, and its Alt is Alt (Option on macOS):
+  `behavior::step_mods` reads egui's `modifiers.command` and `modifiers.alt` (before task-281
+  the panel read the physical Ctrl on every platform). macOS's Ctrl and Shift do nothing.
+  Tests: `behavior.rs` `the_909_step_modifiers_are_cmd_and_option_on_macos`,
+  `tests/interaction.rs` `tr909_step_click_cycles_and_modifiers_pick_the_value`; Help >
+  Keyboard Shortcuts lists them (section 18, the group "The panel's TR-909 step buttons").
 - Display: each cell's LED is 14 x 8 at `x = 30 + 21 i`, y 86 of the 909 section, frame
   `value - 1` of resource 12566 for values 1 and 2 and frame 3 for 3: value 1 orange, value 2
   red, flam green (observed). A step byte above 3 (a song may hold any) is drawn as the flam
@@ -1075,7 +1083,8 @@ read, and what it leaves out.
   `App::pattern_keys` takes them, and Ctrl/Cmd+D and Z, only where the panel takes keys (no text
   field focused, no browser, prompt or error box open), and leaves Cut and Copy to a window's
   selected text. Ctrl/Cmd+E (the focused row's pattern editor: Edit > 808 Pattern Editor...
-  with the TR-808 focused, section 24, else Edit > 303 Pattern Editor..., section 23) is taken in the
+  with the TR-808 focused, section 24, Edit > 909 Pattern Editor... with the TR-909 focused,
+  section 25, else Edit > 303 Pattern Editor..., section 23) is taken in the
   standalone app by `App::show` with Ctrl/Cmd+F and G: also while a text field has the focus,
   but not while the browser, the prompt or the error box is open. Edit > Paste Pattern asks for
   the system clipboard
@@ -1176,7 +1185,8 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a TB-303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard stays |
 | Edit | 303 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating 303 pattern editor on the selected 303's active pattern, or brings it to the front and switches it to that pattern (section 23, task-274); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
-| Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303's: opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 808's with the TR-808 focused, else the 303's (with the TR-909 focused too, until its editor, task-281) |
+| Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303's: opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 808's with the TR-808 focused, the 909's with the TR-909 focused, else the 303's (tasks 280 and 281) |
+| Edit | 909 Pattern Editor... (Ctrl+E, Cmd+E) | under the 808's: opens the floating 909 pattern editor on the TR-909's active pattern, or brings it to the front and switches it to that pattern (section 25, task-281); disabled without a song; the shortcut text is on it with the TR-909 focused |
 | View | Classic, Modern | two radio items directly in View, no submenu (the user's review of task-267, 2026-11-21): a radio choice of the main window's skin: Modern (the SVG panel, the default) or Classic (the original's panel from the kit's bitmaps, section 21); saved in the settings file at once (`theme`, section 17) and taken by the next run; the standalone app's only, a plugin's editor has no View menu (task-267) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
@@ -1240,8 +1250,19 @@ is one more entry.
   are `drum_editor::Input::ALL` with the platform's names (Cmd/Option on macOS, Ctrl/Alt
   elsewhere); the unit test `the_808_editor_group_lists_every_input_of_the_editor` requires each
   input once, and `tests/drum_editor.rs` `every_input_of_the_help_does_what_it_says` runs each
-  (a match on every `Input`, so a new input does not compile untested). The help window is the
-  standalone app's only (section 20).
+  (a match on every `Input`, so a new input does not compile untested). The group "909 Pattern
+  Editor" (task-281, section 25) is the same for the 909 editor (`Machine::Tr909.inputs()`:
+  besides the 808's, the entry switch and the held Low, High and Flam keys, "Hold Cmd",
+  "Hold Option", "Hold Cmd+Option" on macOS and "Hold Ctrl", "Hold Alt", "Hold Ctrl+Alt"
+  elsewhere); the unit test is now `each_drum_editor_group_lists_every_input_of_its_editor`
+  (both editors' groups, `Machine::inputs`) and `every_input_of_the_help_does_what_it_says`
+  runs the inputs of both. The group "The panel's TR-909 step buttons" (task-281,
+  `key_help::Step909`) lists the panel's 909 step clicks: click (cycle), Cmd/Ctrl+click (low),
+  Option/Alt+click (high), Cmd+Option / Ctrl+Alt+click (flam, as the Flam button), the AC row
+  and the drag (section 7); the unit test `the_panels_909_step_group_names_the_keys_that_do_it`
+  runs each line's modifiers, as egui reports them on each platform, through
+  `behavior::step_mods` and `tr909_step_value`. The help window is the standalone app's only
+  (section 20).
 
 - **Help > About and the version string** (task-102; `crates/orb-ui/src/about.rs`, `version.rs`,
   `build.rs`). The window is centered as File > Info is (pivot CENTER_CENTER, `default_pos` at
@@ -1825,7 +1846,7 @@ The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the sam
   lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
 - **The menus**: File has New, Open and Info only; nothing asks to save. The Edit menu is the
   standalone's (section 18): Undo, Cut, Copy, Paste and Duplicate Pattern, and the 303 Pattern
-  Editor... (section 23) and 808 Pattern Editor... (section 24), in the same order, with the same names and the same behavior, but no
+  Editor... (section 23), 808 Pattern Editor... (section 24) and 909 Pattern Editor... (section 25), in the same order, with the same names and the same behavior, but no
   shortcut texts (the user's review of task-274, rounds 2 and 3). Undo is the one-level Undo,
   named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the app's
   clipboard and the marker text on the system clipboard (egui-baseview 0.9 writes egui's
@@ -2188,7 +2209,7 @@ with a 13-key piano roll, like modern 303 pattern editors. It is orb's own (the 
 none) and edits only what a song stores for a 303 pattern (`docs/RBS42.txt`, the "303 " chunk;
 the 98 bytes of `docs/song_load.md` section 4.6: the shuffle flag, the length, and per step
 note, slide, accent, up, down and rest). The 808 editor is section 24 (task-280); the 909's
-is task-281. The window's frame is shared with them (`crates/orb-ui/src/editor_frame.rs`:
+is section 25 (task-281). The window's frame is shared with them (`crates/orb-ui/src/editor_frame.rs`:
 the placing, the header's controls, the grid's geometry and painting). Code:
 `crates/orb-ui/src/pattern_editor.rs`; tests: `crates/orb-ui/tests/pattern_editor.rs`, the unit
 tests of the module, and `crates/orb-plugin/tests/editor.rs`
@@ -2318,7 +2339,7 @@ editor's frame (section 23). It edits only what a song stores for an 808 pattern
 shuffle flag, the length, and 16 steps of 12 bytes, one per instrument in RBS order AC, BD, SD,
 LT/LC, MT/MC, HT/HC, RS/CL, CP/MA, CB, CY, OH, CH, each 0 or 1). Code:
 `crates/orb-ui/src/drum_editor.rs` (the drum-grid editor, `Machine::Tr808`; the 909's,
-task-281, is another `Machine` on it) on `crates/orb-ui/src/editor_frame.rs`; tests:
+task-281, is `Machine::Tr909` on it, section 25) on `crates/orb-ui/src/editor_frame.rs`; tests:
 `crates/orb-ui/tests/drum_editor.rs`, the unit tests of the module, `key_help.rs`
 `the_808_editor_group_lists_every_input_of_the_editor`, and `crates/orb-plugin/tests/editor.rs`
 `the_edit_menu_opens_the_808_pattern_editor_and_undoes_its_changes`.
@@ -2380,3 +2401,72 @@ records. No Follow button.
 click, drag, the modifiers (none), the pattern number's and Length's drag, Shift+drag (slower),
 click-type-Enter and Escape, and Ctrl/Cmd+Z, each with what it does and its plugin difference
 (the plugin takes no keys: the menu opens the editor and undoes).
+
+## 25. The 909 pattern editor (task-281)
+
+A floating editor for one TR-909 pattern, designed by the user on 2026-11-22 on the 808 editor's
+drum-grid frame (section 24). It edits only what a song stores for a 909 pattern
+(`docs/RBS42.txt`, the "909 " chunk; the 194 bytes of `docs/song_load.md` section 4.8: the
+shuffle flag, the length, and 16 steps of 12 bytes in RBS order AC, BD, SD, LT, MT, HT, RS, CP,
+CH, OH, CC, RC). A drum byte is 0 off, 1 low, 2 high, 3 flam (a low hit plus the flam
+retrigger); the AC byte is on/off with the stored "on" 2, as the panel writes it (section 7).
+Code: `crates/orb-ui/src/drum_editor.rs`, `Machine::Tr909` (with `Entry`, the entry switch);
+tests: `crates/orb-ui/tests/drum_editor.rs` (the `909` tests and
+`every_input_of_the_help_does_what_it_says`), the unit tests of the module, `key_help.rs`
+`each_drum_editor_group_lists_every_input_of_its_editor`, and `crates/orb-plugin/tests/editor.rs`
+`the_edit_menu_opens_the_909_pattern_editor_and_undoes_its_changes`.
+
+**The window.** "909 Pattern Editor", its own window, separate from the 808's (the user's
+decision: both can be open), otherwise as the 808's: the same in the standalone app and the
+plugin, opened by Edit > 909 Pattern Editor... (under the 808's) and Ctrl/Cmd+E with the TR-909
+row focused (the standalone app; task-280 had the key open the 303 editor there until this
+editor), on the TR-909's active pattern, brought to the front and switched to it when open.
+In the plugin, which takes no keys (section 20), the menu item opens it. Its place is saved
+under `pattern_editor_909_pos` in `ui.toml` (the standalone app's only, section 17).
+
+**Layout**: the 808 editor's (section 24): the top row (bank, the pattern number between its
+arrows A1..D8, Copy, Paste, Clear, Length, Shuffle), then a second header row with the **entry
+switch**, the segments Cycle | Low | High | Flam with no label in front (the user's review;
+on a row of its own: the top row has no room left on the smallest panel, 624 points), the
+step numbers, **11 drum rows** BD SD LT MT HT RS CP CH
+OH CC RC (step bytes 1 to 11; tooltips with the full names, "Crash Cymbal", "Ride Cymbal"),
+a divider and **the AC row** (byte 0, tooltip "Accent: every drum on this step louder"), and
+Shift at the bottom. No slot switches (the 909 has none).
+- **Cells** draw as the panel's step LEDs (the modern skin's `step909_1` .. `step909_3`): low
+  orange `#ff9a30`, high red `#ff4a36`, flam green `#5cff4a` (`drum_editor::LOW`, `HIGH`,
+  `FLAM`). A byte above 3 is drawn as flam, as the original and the panel draw it (section 7,
+  0x444F0C), and kept until the user edits that cell; the editor never writes a value above 3.
+  The AC row's cells are drawn by their byte too: "on" (2) is red, as the panel's AC steps.
+- The playing step is `Panel::playing_step909`, the steps beyond the length dimmed, as on the
+  808.
+
+**The entry switch** (Cycle at the start of the app; not saved; the switch's labels Low, High
+and Flam in their colors). Its tooltips are the user's text (`drum_editor::entry_tip`, the key
+names by platform): Cycle "Click sets cell off -> low -> high -> off", Low "Click sets cell to
+low. Hold Cmd to activate", High "Click sets cell to high. Hold Option to activate", Flam
+"Click sets cell to flam. Hold Cmd+Option to activate" (Ctrl, Alt and Ctrl+Alt on Windows and
+Linux).
+- **Cycle**: a click on a drum cell goes off -> low -> high -> off, the panel's plain click
+  (flam, and a byte above 3, shown as flam, go to low).
+- **Low / High / Flam**: a click sets that value; a cell that holds it is cleared; a cell that
+  holds another value is replaced in one click (the panel's modifier rule).
+- **Modifiers held** switch it while held, and it returns to its own setting on release; the
+  switch shows the held entry: the command key (Cmd on macOS, Ctrl on Windows and Linux) Low,
+  Alt (Option) High, both Flam (`Entry::held`, through `behavior::step_mods`: the same keys as
+  the panel's 909 step buttons, section 7). Shift and macOS's Ctrl do nothing.
+- The value comes from the panel's own rule, `behavior::tr909_step_value` with the entry as its
+  modifiers, on the value the cell shows (`min(v, 3)`); the editor does not read the panel's
+  Flam button.
+- **The AC row** toggles 0 <-> 2 whatever the switch (a non-zero byte counts as on).
+- **A drag** paints the first cell's new value along the row it started in only.
+- **CH and OH**: entering a value (non-zero) on CH clears OH on that step and the other way
+  round, for each step a drag paints too, as the panel does (`sub_447153(9 or 8, step, 0)`,
+  section 7; `Machine::put`). Clearing one leaves the other. A song that holds both on a step is
+  shown as is and keeps them until one is entered.
+- **One edit path, one Undo**: every change is one whole-pattern write through
+  `App::write_pattern` and undone by Edit > Undo, as in section 24 (a drag is one change).
+
+**Keyboard Shortcuts** (section 18, Help): the group "909 Pattern Editor" lists Ctrl/Cmd+E,
+click, drag, the entry switch, Hold Cmd / Option / Cmd+Option (Ctrl / Alt / Ctrl+Alt
+elsewhere), the other modifiers (none), the pattern number's and Length's drag, Shift+drag,
+click-type-Enter and Escape, and Ctrl/Cmd+Z.

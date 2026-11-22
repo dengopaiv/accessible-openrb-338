@@ -1,21 +1,24 @@
-//! The drum pattern editors (task-280, docs/ui_spec.md section 24): a floating window that
-//! edits one drum machine pattern on a step grid of 11 drum rows and the AC row. The TR-808's
-//! is [`Machine::Tr808`]; the TR-909's (task-281) is another [`Machine`] on the same frame,
-//! which adds only its cell values, colors and entry switch.
+//! The drum pattern editors (task-280 and task-281, docs/ui_spec.md sections 24 and 25): a
+//! floating window that edits one drum machine pattern on a step grid of 11 drum rows and the
+//! AC row. The TR-808's is [`Machine::Tr808`]; the TR-909's is [`Machine::Tr909`] on the same
+//! frame, which adds only its cell values, colors and entry switch ([`Entry`]).
 //!
 //! A drum pattern is the 194 bytes of `docs/RBS42.txt`'s "808 " and "909 " chunks
 //! (`docs/song_load.md` sections 4.7 and 4.8): the shuffle flag, the length, and 16 steps of 12
 //! bytes, one per instrument in RBS order with the accent (AC) first. The grid's drum rows are
-//! bytes 1..=11 top to bottom, the AC row byte 0. On the 808 every byte is 0 or 1.
+//! bytes 1..=11 top to bottom, the AC row byte 0. On the 808 every byte is 0 or 1; on the 909 a
+//! drum byte is 0 off, 1 low, 2 high, 3 flam, and the AC byte 0 or 2 (a song may hold any byte:
+//! the editor draws one above 3 as flam and keeps it until that cell is edited).
 //!
 //! Every change is one whole-pattern write through [`App::write_pattern`] (the Edit menu's
 //! path, `crate::link::Link::set_pattern`), as in the 303 editor (`crate::pattern_editor`): it
 //! is heard, marks the song modified, shows on the panel and is undone by the one-level Undo. A
 //! drag is one change. The window's frame is `crate::editor_frame`, shared with the 303 editor.
 
-use egui::{Color32, Context, CornerRadius, Rect, Sense, Ui, Vec2, pos2, vec2};
+use egui::{Color32, Context, CornerRadius, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
 use crate::app::App;
+use crate::behavior::{self, Mods};
 use crate::editor_frame::{
     self as frame, ARROW, CELL_H, HEAD_H, KEY_W, LABEL_SIZE, Number, Placing, Press, SPLIT_H,
     STEPS, cell_rect, dimmed, paint_columns,
@@ -34,10 +37,92 @@ pub const DRUMS: usize = 11;
 /// The step byte of the accent.
 pub const AC: usize = 0;
 
+/// The step bytes of the TR-909's hi-hats: entering one clears the other on that step.
+pub const CH909: usize = 8;
+pub const OH909: usize = 9;
+
+/// The colors of the TR-909's cell values 1 (low), 2 (high) and 3 (flam), as the panel's step
+/// LEDs draw them (the modern skin's `step909_1` .. `step909_3`; the original's orange, red and
+/// green, docs/ui_spec.md section 7).
+pub const LOW: Color32 = Color32::from_rgb(0xff, 0x9a, 0x30);
+pub const HIGH: Color32 = Color32::from_rgb(0xff, 0x4a, 0x36);
+pub const FLAM: Color32 = Color32::from_rgb(0x5c, 0xff, 0x4a);
+
 /// A drum machine with an editor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Machine {
     Tr808,
+    Tr909,
+}
+
+/// The TR-909's 11 drum rows, step bytes 1..=11.
+const LABELS_909: [&str; DRUMS] = [
+    "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CH", "OH", "CC", "RC",
+];
+
+/// What a click on a TR-909 drum cell enters (task-281): the editor's entry switch, or the
+/// modifiers held.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Entry {
+    /// Off -> low -> high -> off, as the panel's plain click.
+    #[default]
+    Cycle,
+    /// Set low (1), or clear a cell that holds low.
+    Low,
+    /// Set high (2), or clear a cell that holds high.
+    High,
+    /// Set flam (3), or clear a cell that holds flam.
+    Flam,
+}
+
+impl Entry {
+    pub const ALL: [Entry; 4] = [Entry::Cycle, Entry::Low, Entry::High, Entry::Flam];
+
+    /// The switch's text.
+    pub fn name(self) -> &'static str {
+        match self {
+            Entry::Cycle => "Cycle",
+            Entry::Low => "Low",
+            Entry::High => "High",
+            Entry::Flam => "Flam",
+        }
+    }
+
+    /// The entry the modifiers select while held, as on the panel's step buttons
+    /// ([`behavior::step_mods`]): the command key (Cmd on macOS, Ctrl elsewhere) Low, Alt
+    /// (Option) High, both Flam; `None` without them.
+    pub fn held(m: egui::Modifiers) -> Option<Entry> {
+        match behavior::step_mods(m) {
+            Mods {
+                ctrl: true,
+                alt: true,
+            } => Some(Entry::Flam),
+            Mods { ctrl: true, .. } => Some(Entry::Low),
+            Mods { alt: true, .. } => Some(Entry::High),
+            _ => None,
+        }
+    }
+
+    /// The panel's modifiers that enter the same ([`behavior::tr909_step_value`]).
+    fn mods(self) -> Mods {
+        let (ctrl, alt) = match self {
+            Entry::Cycle => (false, false),
+            Entry::Low => (true, false),
+            Entry::High => (false, true),
+            Entry::Flam => (true, true),
+        };
+        Mods { ctrl, alt }
+    }
+
+    /// Its value's color, `None` for Cycle.
+    fn color(self) -> Option<Color32> {
+        match self {
+            Entry::Cycle => None,
+            Entry::Low => Some(LOW),
+            Entry::High => Some(HIGH),
+            Entry::Flam => Some(FLAM),
+        }
+    }
 }
 
 /// The TR-808's switched slots 3..=7: the lower legend's sound (switch value non-zero, the
@@ -51,12 +136,13 @@ const SLOTS_808: [(&str, &str); 5] = [
 ];
 
 impl Machine {
-    pub const ALL: [Machine; 1] = [Machine::Tr808];
+    pub const ALL: [Machine; 2] = [Machine::Tr808, Machine::Tr909];
 
     /// Its place in `App`'s editors.
     pub fn index(self) -> usize {
         match self {
             Machine::Tr808 => 0,
+            Machine::Tr909 => 1,
         }
     }
 
@@ -64,6 +150,20 @@ impl Machine {
     pub fn row(self) -> usize {
         match self {
             Machine::Tr808 => 2,
+            Machine::Tr909 => 3,
+        }
+    }
+
+    /// The machine of panel row `row`, `None` for a 303's.
+    pub fn of_row(row: usize) -> Option<Machine> {
+        Machine::ALL.into_iter().find(|m| m.row() == row)
+    }
+
+    /// The panel's name of it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Machine::Tr808 => "TR-808",
+            Machine::Tr909 => "TR-909",
         }
     }
 
@@ -71,6 +171,7 @@ impl Machine {
     pub fn title(self) -> &'static str {
         match self {
             Machine::Tr808 => "808 Pattern Editor",
+            Machine::Tr909 => "909 Pattern Editor",
         }
     }
 
@@ -78,13 +179,28 @@ impl Machine {
     pub fn menu_item(self) -> &'static str {
         match self {
             Machine::Tr808 => "808 Pattern Editor...",
+            Machine::Tr909 => "909 Pattern Editor...",
         }
     }
 
     /// The salt of the window's ids.
-    fn salt(self) -> &'static str {
+    pub fn salt(self) -> &'static str {
         match self {
             Machine::Tr808 => "orb_drum_editor_808",
+            Machine::Tr909 => "orb_drum_editor_909",
+        }
+    }
+
+    /// Whether its editor has the entry switch (the 909's values).
+    pub fn has_entry(self) -> bool {
+        self == Machine::Tr909
+    }
+
+    /// Every input its editor handles, as Help > Keyboard Shortcuts lists them.
+    pub fn inputs(self) -> &'static [Input] {
+        match self {
+            Machine::Tr808 => &Input::ALL_808,
+            Machine::Tr909 => &Input::ALL_909,
         }
     }
 
@@ -116,21 +232,48 @@ impl Machine {
                     "CH",
                 ]
             }
+            Machine::Tr909 => LABELS_909,
         }
     }
 
-    /// The value a click writes into a cell of step byte `column` that holds `v`: on the 808 a
-    /// toggle, 0 <-> 1 (a stored byte above 1 counts as on).
-    pub fn clicked(self, _column: usize, v: u8) -> u8 {
+    /// The value a click with the entry `entry` writes into a cell of step byte `column` that
+    /// holds `v`.
+    /// - The 808: a toggle, 0 <-> 1 (a stored byte above 1 counts as on); `entry` is not read.
+    /// - The 909: the panel's rule ([`behavior::tr909_step_value`], the original's
+    ///   `CTR909PatternView`) with `entry` as its modifiers, on the value the cell shows (a byte
+    ///   above 3 shows and counts as flam): Cycle 0 -> 1 -> 2 -> 0 (flam -> 1), Low / High / Flam
+    ///   that value, or 0 when the cell holds it. The AC row toggles 0 <-> 2 whatever `entry`.
+    pub fn clicked(self, column: usize, v: u8, entry: Entry) -> u8 {
         match self {
             Machine::Tr808 => u8::from(v == 0),
+            Machine::Tr909 => {
+                behavior::tr909_step_value(v.min(3), column == AC, false, entry.mods())
+            }
         }
+    }
+
+    /// `bytes` with instrument `column` of step `s` set to `v`; on the 909 a non-zero CH clears
+    /// OH on that step and the other way round, as the panel's step buttons
+    /// (`sub_447153(9 or 8, step, 0)`, docs/ui_spec.md section 7; `Panel::set_step909`).
+    pub fn put(self, bytes: &[u8], s: usize, column: usize, v: u8) -> Vec<u8> {
+        let mut b = with_cell(bytes, s, column, v);
+        if self == Machine::Tr909 && v != 0 && (column == CH909 || column == OH909) {
+            b[at(s, CH909 + OH909 - column)] = 0;
+        }
+        b
     }
 
     /// The color of a cell that holds `v`, `None` for an empty cell.
     pub fn color(self, v: u8) -> Option<Color32> {
         match self {
             Machine::Tr808 => (v != 0).then_some(AMBER),
+            Machine::Tr909 => match v {
+                0 => None,
+                1 => Some(LOW),
+                2 => Some(HIGH),
+                // 3, and every byte above it, as the panel and the original draw it
+                _ => Some(FLAM),
+            },
         }
     }
 
@@ -138,12 +281,14 @@ impl Machine {
     fn saved(self, s: &Settings) -> Option<[i32; 2]> {
         match self {
             Machine::Tr808 => s.pattern_editor_808_pos,
+            Machine::Tr909 => s.pattern_editor_909_pos,
         }
     }
 
     fn save(self, s: &mut Settings, pos: [i32; 2]) {
         match self {
             Machine::Tr808 => s.set_pattern_editor_808_pos(Some(pos)),
+            Machine::Tr909 => s.set_pattern_editor_909_pos(Some(pos)),
         }
     }
 }
@@ -167,6 +312,8 @@ pub fn label_name(label: &str) -> &'static str {
         "CY" => "Cymbal",
         "OH" => "Open Hi-Hat",
         "CH" => "Closed Hi-Hat",
+        "CC" => "Crash Cymbal",
+        "RC" => "Ride Cymbal",
         "AC" => AC_TIP,
         _ => "",
     }
@@ -210,8 +357,9 @@ pub fn step_pattern(pattern: u8, next: bool) -> Option<u8> {
 }
 
 /// What the keys and the mouse do in a drum editor: each is a line of Help > Keyboard
-/// Shortcuts (`crate::key_help`, which lists every one) and a case of the tests
-/// (`tests/drum_editor.rs` `every_input_of_the_help_does_what_it_says`, a match on every one).
+/// Shortcuts (`crate::key_help`, which lists every one of [`Machine::inputs`]) and a case of
+/// the tests (`tests/drum_editor.rs` `every_input_of_the_help_does_what_it_says`, a match on
+/// every one).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Input {
     /// Ctrl/Cmd+E with the drum machine's row focused (the standalone app).
@@ -220,7 +368,13 @@ pub enum Input {
     Click,
     /// A drag from a cell.
     Drag,
-    /// A click or drag with a modifier held: the same as without.
+    /// The 909: a click on the entry switch.
+    EntrySwitch,
+    /// The 909: the modifiers of Low, High and Flam held.
+    HoldLow,
+    HoldHigh,
+    HoldFlam,
+    /// A click or drag with another modifier held: the same as without.
     Modified,
     /// A drag up or down on the pattern number or Length.
     ValueDrag,
@@ -235,7 +389,8 @@ pub enum Input {
 }
 
 impl Input {
-    pub const ALL: [Input; 9] = [
+    /// The 808 editor's inputs.
+    pub const ALL_808: [Input; 9] = [
         Input::OpenKey,
         Input::Click,
         Input::Drag,
@@ -247,17 +402,41 @@ impl Input {
         Input::Undo,
     ];
 
-    /// The keys or the mouse action, as the help writes them for a platform.
-    pub fn keys(self, is_mac: bool) -> String {
+    /// The 909 editor's inputs.
+    pub const ALL_909: [Input; 13] = [
+        Input::OpenKey,
+        Input::Click,
+        Input::Drag,
+        Input::EntrySwitch,
+        Input::HoldLow,
+        Input::HoldHigh,
+        Input::HoldFlam,
+        Input::Modified,
+        Input::ValueDrag,
+        Input::ValueFineDrag,
+        Input::ValueType,
+        Input::ValueCancel,
+        Input::Undo,
+    ];
+
+    /// The keys or the mouse action in machine `m`'s editor, as the help writes them for a
+    /// platform.
+    pub fn keys(self, m: Machine, is_mac: bool) -> String {
         let cmd = if is_mac { "Cmd" } else { "Ctrl" };
+        let alt = if is_mac { "Option" } else { "Alt" };
         match self {
             Input::OpenKey => format!("{cmd}+E"),
             Input::Click => "Click".into(),
             Input::Drag => "Drag".into(),
-            Input::Modified => if is_mac {
-                "Shift / Cmd / Option / Ctrl + click or drag"
-            } else {
-                "Shift / Ctrl / Alt + click or drag"
+            Input::EntrySwitch => "Click Cycle / Low / High / Flam".into(),
+            Input::HoldLow => format!("Hold {cmd}"),
+            Input::HoldHigh => format!("Hold {alt}"),
+            Input::HoldFlam => format!("Hold {cmd}+{alt}"),
+            Input::Modified => match (m.has_entry(), is_mac) {
+                (false, true) => "Shift / Cmd / Option / Ctrl + click or drag",
+                (false, false) => "Shift / Ctrl / Alt + click or drag",
+                (true, true) => "Shift / Ctrl + click or drag",
+                (true, false) => "Shift + click or drag",
             }
             .into(),
             Input::ValueDrag => "Drag up / down".into(),
@@ -268,24 +447,55 @@ impl Input {
         }
     }
 
-    /// What it does, as the help writes it.
-    pub fn what(self) -> &'static str {
-        match self {
-            Input::OpenKey => {
+    /// What it does in machine `m`'s editor, as the help writes it.
+    pub fn what(self, m: Machine) -> &'static str {
+        match (self, m) {
+            (Input::OpenKey, Machine::Tr808) => {
                 "Open the editor with the TR-808 row focused (Edit > 808 Pattern Editor...), \
                  or bring it to the front on the active pattern. Not in the plugin, which \
                  leaves keys to the host: there it is the menu"
             }
-            Input::Click => "Toggle a cell: a drum or AC on a step",
-            Input::Drag => {
+            (Input::OpenKey, Machine::Tr909) => {
+                "Open the editor with the TR-909 row focused (Edit > 909 Pattern Editor...), \
+                 or bring it to the front on the active pattern. Not in the plugin, which \
+                 leaves keys to the host: there it is the menu"
+            }
+            (Input::Click, Machine::Tr808) => "Toggle a cell: a drum or AC on a step",
+            (Input::Click, Machine::Tr909) => {
+                "Enter the entry switch's value in a drum cell: Cycle goes off, low (orange), \
+                 high (red), off; Low, High or Flam (green) sets that value, or clears a cell \
+                 that holds it. Entering CH clears OH on that step, and the other way round. \
+                 On the AC row: on or off, whatever the switch"
+            }
+            (Input::Drag, _) => {
                 "Paint the first cell's new value along its row (the drag stays in the row)"
             }
-            Input::Modified => "The same as without: the editor reads no modifier",
-            Input::ValueDrag => "On the pattern number or Length: change it",
-            Input::ValueFineDrag => "On the pattern number or Length: change it slower",
-            Input::ValueType => "On the pattern number or Length: type a value and set it",
-            Input::ValueCancel => "While typing a value: cancel it",
-            Input::Undo => {
+            (Input::EntrySwitch, _) => {
+                "Choose what a click on a drum cell enters (Cycle when the app starts)"
+            }
+            (Input::HoldLow, _) => {
+                "Low while held: the switch shows it and returns to its setting on release \
+                 (the panel's 909 step buttons take the same key for low)"
+            }
+            (Input::HoldHigh, _) => {
+                "High while held: the switch shows it and returns to its setting on release \
+                 (the panel's 909 step buttons take the same key for high)"
+            }
+            (Input::HoldFlam, _) => {
+                "Flam while held: the switch shows it and returns to its setting on release \
+                 (the panel's 909 step buttons take the same keys for flam)"
+            }
+            (Input::Modified, Machine::Tr808) => {
+                "The same as without: the editor reads no modifier"
+            }
+            (Input::Modified, Machine::Tr909) => {
+                "The same as without: the editor reads no other modifier"
+            }
+            (Input::ValueDrag, _) => "On the pattern number or Length: change it",
+            (Input::ValueFineDrag, _) => "On the pattern number or Length: change it slower",
+            (Input::ValueType, _) => "On the pattern number or Length: type a value and set it",
+            (Input::ValueCancel, _) => "While typing a value: cancel it",
+            (Input::Undo, _) => {
                 "Edit > Undo: take the editor's last change back (a drag is one change). In \
                  the plugin, the menu item"
             }
@@ -308,6 +518,8 @@ pub enum DrumAct {
         drag: bool,
     },
     Shuffle,
+    /// The 909's entry switch set to an entry.
+    Entry(Entry),
     /// Shift right (later) or left.
     Shift {
         right: bool,
@@ -342,6 +554,10 @@ pub struct DrumEditor {
     pub open: bool,
     /// The pattern shown (0..=31).
     pub pattern: u8,
+    /// The 909's entry switch as set (Cycle at start; not saved).
+    pub entry: Entry,
+    /// The entry the modifiers held at the last frame select (the 909's), over `entry`.
+    held: Option<Entry>,
     win: Placing,
     gesture: Option<Paint>,
     /// A drag of the Length value wrote already (it keeps the Undo of its first change).
@@ -361,6 +577,15 @@ struct Hits {
     buttons: Vec<(&'static str, Rect)>,
     playing: Option<usize>,
     dimmed: bool,
+    /// The entry the 909's switch showed (`None` for the 808, which has none).
+    entry: Option<Entry>,
+}
+
+impl DrumEditor {
+    /// The entry a click enters now: the one the modifiers held select, else the switch's.
+    pub fn entry_now(&self) -> Entry {
+        self.held.unwrap_or(self.entry)
+    }
 }
 
 /// The least width of a step column.
@@ -382,18 +607,18 @@ impl App {
         &self.drum_editors[m.index()]
     }
 
-    /// Ctrl/Cmd+E: the editor of the focused row, the 808's with the TR-808 focused, else the
-    /// 303 editor (with the TR-909 focused too, until its editor, task-281).
+    /// Ctrl/Cmd+E: the editor of the focused row, the 808's with the TR-808 focused, the 909's
+    /// with the TR-909 focused, else the 303 editor.
     pub fn open_focused_editor(&mut self) {
-        match self.panel.focus {
-            2 => self.open_drum_editor(Machine::Tr808),
-            _ => self.open_pattern_editor(),
+        match Machine::of_row(self.panel.focus) {
+            Some(m) => self.open_drum_editor(m),
+            None => self.open_pattern_editor(),
         }
     }
 
-    /// Edit > 808 Pattern Editor... (and Ctrl/Cmd+E with its row focused): opens the window on
-    /// the machine's active pattern, or brings it to the front and switches it to that pattern.
-    /// Nothing without a song.
+    /// Edit > 808 or 909 Pattern Editor... (and Ctrl/Cmd+E with its row focused): opens the
+    /// window on the machine's active pattern, or brings it to the front and switches it to that
+    /// pattern. Nothing without a song.
     pub fn open_drum_editor(&mut self, m: Machine) {
         if self.link.is_none() {
             return;
@@ -444,6 +669,11 @@ impl App {
     pub fn drum_editor_shown(&self, m: Machine) -> (Option<usize>, bool) {
         let h = &self.drum_editor(m).hits;
         (h.playing, h.dimmed)
+    }
+
+    /// The entry the 909's switch showed last (`None` for the 808 or before a frame).
+    pub fn drum_editor_entry_shown(&self, m: Machine) -> Option<Entry> {
+        self.drum_editor(m).hits.entry
     }
 
     /// The selection rule of pattern mode: the editor shows the machine's selected pattern (a
@@ -537,6 +767,7 @@ impl App {
                     crate::pattern_editor::with_shuffle(b, b[0] == 0)
                 });
             }
+            DrumAct::Entry(entry) => self.drum_editors[m.index()].entry = entry,
             DrumAct::Shift { right } => {
                 self.drum_edit(m, "Shift Pattern", false, |b| shifted(b, right));
             }
@@ -544,8 +775,9 @@ impl App {
                 let Some(bytes) = self.drum_bytes(m) else {
                     return;
                 };
-                let value = m.clicked(column, cell(&bytes, step, column));
-                let wrote = self.drum_edit(m, EDIT, false, |b| with_cell(b, step, column, value));
+                let entry = self.drum_editors[m.index()].entry_now();
+                let value = m.clicked(column, cell(&bytes, step, column), entry);
+                let wrote = self.drum_edit(m, EDIT, false, |b| m.put(b, step, column, value));
                 self.drum_editors[m.index()].gesture = Some(Paint {
                     column,
                     value,
@@ -562,7 +794,7 @@ impl App {
                 }
                 let changed = self.drum_edit(m, EDIT, g.wrote, |b| {
                     (g.last.min(step)..=g.last.max(step))
-                        .fold(b.to_vec(), |b, s| with_cell(&b, s, g.column, g.value))
+                        .fold(b.to_vec(), |b, s| m.put(&b, s, g.column, g.value))
                 });
                 self.drum_editors[m.index()].gesture = Some(Paint {
                     last: step,
@@ -597,6 +829,7 @@ impl App {
         let (r, p) = (m.row(), self.drum_editors[i].pattern);
         let playing = match m {
             Machine::Tr808 => self.panel.playing_step808,
+            Machine::Tr909 => self.panel.playing_step909,
         };
         let shown = Shown {
             m,
@@ -615,7 +848,7 @@ impl App {
             id: egui::Id::unique(m.salt()),
             title: m.title(),
             saved: (!plugin).then(|| m.saved(&self.settings)).flatten(),
-            guess: vec2(520.0, 360.0),
+            guess: vec2(520.0, if m.has_entry() { 385.0 } else { 360.0 }),
             keep: !plugin,
         };
         let out = frame::show_window(ctx, spec, &mut win, |ui| {
@@ -689,6 +922,33 @@ fn window_ui(ui: &mut Ui, e: &mut DrumEditor, s: &Shown, acts: &mut Vec<DrumAct>
             acts.push(DrumAct::Shuffle);
         }
     });
+    // ---- the 909's entry switch, a second header row (the top row has no room left on the
+    // smallest panel) ----
+    e.hits.entry = None;
+    if s.m.has_entry() {
+        e.held = Entry::held(ui.input(|i| i.modifiers));
+        let now = e.entry_now();
+        e.hits.entry = Some(now);
+        let is_mac = ui.ctx().os().is_mac();
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            frame::compact(ui);
+            // the segments alone, no label (the user's review)
+            for x in Entry::ALL {
+                let mut text = RichText::new(x.name());
+                if let Some(c) = x.color() {
+                    text = text.color(c);
+                }
+                let r = ui
+                    .selectable_label(now == x, text)
+                    .on_hover_text(entry_tip(x, is_mac));
+                e.hits.buttons.push((x.name(), r.rect));
+                if r.clicked() {
+                    acts.push(DrumAct::Entry(x));
+                }
+            }
+        });
+    }
     ui.add_space(6.0);
 
     let len = s.bytes[1].clamp(1, STEPS as u8) as usize;
@@ -750,6 +1010,24 @@ fn window_ui(ui: &mut Ui, e: &mut DrumEditor, s: &Shown, acts: &mut Vec<DrumAct>
         acts.push(DrumAct::Shift { right: true });
     }
     length_drag
+}
+
+/// The tooltip of an entry switch's button (the user's text, review of task-281), with the
+/// platform's key that holds it ("Hold Cmd" on macOS, "Hold Ctrl" elsewhere, ...).
+pub fn entry_tip(x: Entry, is_mac: bool) -> String {
+    let m = Machine::Tr909;
+    let hold = |i: Input, value: &str| {
+        format!(
+            "Click sets cell to {value}. {} to activate",
+            i.keys(m, is_mac)
+        )
+    };
+    match x {
+        Entry::Cycle => "Click sets cell off -> low -> high -> off".into(),
+        Entry::Low => hold(Input::HoldLow, "low"),
+        Entry::High => hold(Input::HoldHigh, "high"),
+        Entry::Flam => hold(Input::HoldFlam, "flam"),
+    }
 }
 
 /// A block of rows labeled `labels` (each with its full name as a tooltip) over the 16 step
@@ -828,13 +1106,129 @@ mod tests {
     #[test]
     fn a_click_on_the_808_toggles() {
         let m = Machine::Tr808;
-        assert_eq!(m.clicked(1, 0), 1);
-        assert_eq!(m.clicked(1, 1), 0);
-        assert_eq!(m.clicked(AC, 0), 1);
-        // a byte above 1 is on: a click clears it
-        assert_eq!(m.clicked(5, 7), 0);
+        for e in Entry::ALL {
+            assert_eq!(m.clicked(1, 0, e), 1);
+            assert_eq!(m.clicked(1, 1, e), 0);
+            assert_eq!(m.clicked(AC, 0, e), 1);
+            // a byte above 1 is on: a click clears it
+            assert_eq!(m.clicked(5, 7, e), 0);
+        }
         assert_eq!(m.color(0), None);
         assert_eq!(m.color(1), Some(AMBER));
+        // no hi-hat rule on the 808
+        let b = m.put(&with_cell(&empty(), 2, OH909, 1), 2, CH909, 1);
+        assert_eq!((cell(&b, 2, CH909), cell(&b, 2, OH909)), (1, 1));
+    }
+
+    #[test]
+    fn a_click_on_the_909_follows_the_entry() {
+        let m = Machine::Tr909;
+        // Cycle: off -> low -> high -> off; flam (and a byte above 3, shown as flam) -> low
+        let cycle: Vec<u8> = [0, 1, 2, 3, 4, 200]
+            .iter()
+            .map(|&v| m.clicked(1, v, Entry::Cycle))
+            .collect();
+        assert_eq!(cycle, [1, 2, 0, 1, 1, 1]);
+        // Low / High / Flam: set, clear the same, replace another in one click
+        for (e, v) in [(Entry::Low, 1), (Entry::High, 2), (Entry::Flam, 3)] {
+            for c in 0..=3 {
+                let want = if c == v { 0 } else { v };
+                assert_eq!(m.clicked(4, c, e), want, "{e:?} on {c}");
+            }
+        }
+        // a byte above 3 shows as flam: Flam clears it, Low replaces it
+        assert_eq!(m.clicked(4, 9, Entry::Flam), 0);
+        assert_eq!(m.clicked(4, 9, Entry::Low), 1);
+        // the AC row toggles 0 <-> 2 whatever the entry
+        for e in Entry::ALL {
+            assert_eq!(m.clicked(AC, 0, e), 2, "{e:?}");
+            assert_eq!(m.clicked(AC, 2, e), 0, "{e:?}");
+            assert_eq!(m.clicked(AC, 1, e), 0, "{e:?}");
+        }
+        // the colors; above 3 as flam
+        let colors: Vec<_> = [0, 1, 2, 3, 4, 255].iter().map(|&v| m.color(v)).collect();
+        assert_eq!(
+            colors,
+            [
+                None,
+                Some(LOW),
+                Some(HIGH),
+                Some(FLAM),
+                Some(FLAM),
+                Some(FLAM)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_909_hi_hat_entered_clears_the_other_on_its_step() {
+        let m = Machine::Tr909;
+        let b = with_cell(&with_cell(&empty(), 5, OH909, 2), 6, OH909, 1);
+        let b = m.put(&b, 5, CH909, 1);
+        assert_eq!((cell(&b, 5, CH909), cell(&b, 5, OH909)), (1, 0));
+        assert_eq!(cell(&b, 6, OH909), 1, "another step stays");
+        let b = m.put(&b, 6, CH909, 3);
+        let b = m.put(&b, 6, OH909, 2);
+        assert_eq!((cell(&b, 6, CH909), cell(&b, 6, OH909)), (0, 2));
+        // clearing one leaves the other; another row clears nothing
+        let both = with_cell(&with_cell(&empty(), 0, CH909, 1), 0, OH909, 1);
+        let c = m.put(&both, 0, CH909, 0);
+        assert_eq!(cell(&c, 0, OH909), 1);
+        let c = m.put(&both, 0, 10, 1);
+        assert_eq!((cell(&c, 0, CH909), cell(&c, 0, OH909)), (1, 1));
+    }
+
+    #[test]
+    fn the_modifiers_select_the_entry_while_held() {
+        use egui::Modifiers;
+        let mac_cmd = Modifiers {
+            mac_cmd: true,
+            command: true,
+            ..Modifiers::NONE
+        };
+        let win_ctrl = Modifiers {
+            ctrl: true,
+            command: true,
+            ..Modifiers::NONE
+        };
+        assert_eq!(Entry::held(Modifiers::NONE), None);
+        assert_eq!(Entry::held(mac_cmd), Some(Entry::Low));
+        assert_eq!(Entry::held(win_ctrl), Some(Entry::Low));
+        assert_eq!(Entry::held(Modifiers::ALT), Some(Entry::High));
+        assert_eq!(Entry::held(mac_cmd | Modifiers::ALT), Some(Entry::Flam));
+        assert_eq!(Entry::held(win_ctrl | Modifiers::ALT), Some(Entry::Flam));
+        // macOS's Ctrl and Shift select nothing
+        assert_eq!(Entry::held(Modifiers::CTRL), None);
+        assert_eq!(Entry::held(Modifiers::SHIFT), None);
+        // the held entry enters what the panel's step buttons enter with those keys
+        for mods in [mac_cmd, Modifiers::ALT, win_ctrl | Modifiers::ALT] {
+            let e = Entry::held(mods).unwrap();
+            for c in 0..=3 {
+                assert_eq!(
+                    Machine::Tr909.clicked(3, c, e),
+                    behavior::tr909_step_value(c, false, false, behavior::step_mods(mods))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_909_rows_are_its_instruments_in_rbs_order() {
+        let p = Panel::new();
+        assert_eq!(
+            Machine::Tr909.labels(&p),
+            [
+                "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CH", "OH", "CC", "RC"
+            ]
+        );
+        assert_eq!(Machine::Tr909.labels(&p)[CH909 - 1], "CH");
+        assert_eq!(Machine::Tr909.labels(&p)[OH909 - 1], "OH");
+        for l in Machine::Tr909.labels(&p) {
+            assert!(!label_name(l).is_empty(), "{l}");
+        }
+        assert_eq!(Machine::of_row(3), Some(Machine::Tr909));
+        assert_eq!(Machine::of_row(2), Some(Machine::Tr808));
+        assert_eq!(Machine::of_row(1), None);
     }
 
     #[test]
@@ -891,14 +1285,54 @@ mod tests {
     }
 
     #[test]
+    fn the_entry_switchs_tooltips_are_the_users_text_with_the_platforms_keys() {
+        let tips = |is_mac| Entry::ALL.map(|x| entry_tip(x, is_mac));
+        assert_eq!(
+            tips(true),
+            [
+                "Click sets cell off -> low -> high -> off",
+                "Click sets cell to low. Hold Cmd to activate",
+                "Click sets cell to high. Hold Option to activate",
+                "Click sets cell to flam. Hold Cmd+Option to activate",
+            ]
+        );
+        assert_eq!(
+            tips(false),
+            [
+                "Click sets cell off -> low -> high -> off",
+                "Click sets cell to low. Hold Ctrl to activate",
+                "Click sets cell to high. Hold Alt to activate",
+                "Click sets cell to flam. Hold Ctrl+Alt to activate",
+            ]
+        );
+    }
+
+    #[test]
     fn the_help_texts_name_the_platforms_keys() {
-        assert_eq!(Input::OpenKey.keys(true), "Cmd+E");
-        assert_eq!(Input::OpenKey.keys(false), "Ctrl+E");
-        assert_eq!(Input::Undo.keys(false), "Ctrl+Z");
-        assert!(Input::Modified.keys(true).contains("Option"));
-        assert!(Input::Modified.keys(false).contains("Alt"));
-        for i in Input::ALL {
-            assert!(!i.what().is_empty());
+        let (m8, m9) = (Machine::Tr808, Machine::Tr909);
+        assert_eq!(Input::OpenKey.keys(m8, true), "Cmd+E");
+        assert_eq!(Input::OpenKey.keys(m9, false), "Ctrl+E");
+        assert_eq!(Input::Undo.keys(m8, false), "Ctrl+Z");
+        assert!(Input::Modified.keys(m8, true).contains("Option"));
+        assert!(Input::Modified.keys(m8, false).contains("Alt"));
+        // the 909's held entries
+        assert_eq!(Input::HoldLow.keys(m9, true), "Hold Cmd");
+        assert_eq!(Input::HoldLow.keys(m9, false), "Hold Ctrl");
+        assert_eq!(Input::HoldHigh.keys(m9, true), "Hold Option");
+        assert_eq!(Input::HoldHigh.keys(m9, false), "Hold Alt");
+        assert_eq!(Input::HoldFlam.keys(m9, true), "Hold Cmd+Option");
+        assert_eq!(Input::HoldFlam.keys(m9, false), "Hold Ctrl+Alt");
+        // the other modifiers: no Cmd, Option or Alt (they are the entries')
+        assert_eq!(
+            Input::Modified.keys(m9, true),
+            "Shift / Ctrl + click or drag"
+        );
+        assert_eq!(Input::Modified.keys(m9, false), "Shift + click or drag");
+        assert!(Input::OpenKey.what(m9).contains("TR-909"));
+        for m in Machine::ALL {
+            for &i in m.inputs() {
+                assert!(!i.what(m).is_empty());
+            }
         }
     }
 }

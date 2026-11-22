@@ -151,8 +151,61 @@ pub struct Row {
     pub what: &'static str,
     /// The bindings the line stands for (empty for a menu shortcut and for a plain note).
     pub binds: Vec<Bind>,
-    /// The drum editor's input the line stands for (task-280; tests/drum_editor.rs runs each).
-    pub editor: Option<drum_editor::Input>,
+    /// The drum editor and its input the line stands for (tasks 280 and 281;
+    /// tests/drum_editor.rs runs each).
+    pub editor: Option<(drum_editor::Machine, drum_editor::Input)>,
+}
+
+/// The mouse on the panel's TR-909 step buttons (docs/ui_spec.md section 7; task-281 made the
+/// original's Ctrl the command key, Cmd on macOS): each is a line of the help, and its test runs
+/// each line's modifiers through the panel's rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Step909 {
+    Click,
+    Low,
+    High,
+    Flam,
+    Accent,
+    Drag,
+}
+
+impl Step909 {
+    pub const ALL: [Step909; 6] = [
+        Step909::Click,
+        Step909::Low,
+        Step909::High,
+        Step909::Flam,
+        Step909::Accent,
+        Step909::Drag,
+    ];
+
+    /// The keys and the mouse, with the platform's key names.
+    pub fn keys(self, is_mac: bool) -> String {
+        let (cmd, alt) = if is_mac {
+            ("Cmd", "Option")
+        } else {
+            ("Ctrl", "Alt")
+        };
+        match self {
+            Step909::Click => "Click".into(),
+            Step909::Low => format!("{cmd}+click"),
+            Step909::High => format!("{alt}+click"),
+            Step909::Flam => format!("{cmd}+{alt}+click"),
+            Step909::Accent => "Click, AC selected".into(),
+            Step909::Drag => "Drag".into(),
+        }
+    }
+
+    pub fn what(self) -> &'static str {
+        match self {
+            Step909::Click => "The selected instrument's step: off, low, high, off",
+            Step909::Low => "Set low, or clear a low step",
+            Step909::High => "Set high, or clear a high step",
+            Step909::Flam => "Set flam, or clear a flam step (so does a click with Flam on)",
+            Step909::Accent => "The accent on or off, whatever the modifiers",
+            Step909::Drag => "Set every step crossed to the first step's new value",
+        }
+    }
 }
 
 /// A titled block of lines.
@@ -175,12 +228,27 @@ fn row(keys: &str, what: &'static str, binds: Vec<Bind>) -> Row {
 }
 
 /// The line of a drum editor's input, with the platform's key names.
-fn editor_row(is_mac: bool, i: drum_editor::Input) -> Row {
+fn editor_row(is_mac: bool, m: drum_editor::Machine, i: drum_editor::Input) -> Row {
     Row {
-        keys: i.keys(is_mac),
-        what: i.what(),
+        keys: i.keys(m, is_mac),
+        what: i.what(m),
         binds: vec![],
-        editor: Some(i),
+        editor: Some((m, i)),
+    }
+}
+
+/// The group of a drum editor: every input it handles.
+fn editor_group(is_mac: bool, m: drum_editor::Machine) -> Group {
+    Group {
+        title: m.title(),
+        mode: None,
+        note: "Every key and mouse action of the editor's window; the panel's keys work as \
+               without it, except while a value is typed.",
+        rows: m
+            .inputs()
+            .iter()
+            .map(|&i| editor_row(is_mac, m, i))
+            .collect(),
     }
 }
 
@@ -315,7 +383,8 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                     is_mac,
                     &shortcuts::PATTERN_EDITOR,
                     "The focused row's pattern editor: Edit > 808 Pattern Editor... with the \
-                     TR-808 focused, else Edit > 303 Pattern Editor...",
+                     TR-808 focused, Edit > 909 Pattern Editor... with the TR-909 focused, \
+                     else Edit > 303 Pattern Editor...",
                 ),
                 menu_row(
                     is_mac,
@@ -527,15 +596,22 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
             ],
         },
         Group {
-            title: "808 Pattern Editor",
+            title: "The panel's TR-909 step buttons",
             mode: None,
-            note: "Every key and mouse action of the editor's window; the panel's keys work \
-                   as without it, except while a value is typed.",
-            rows: drum_editor::Input::ALL
+            note: "The mouse on the TR-909's 16 step buttons; the 909 Pattern Editor's entry \
+                   keys are the same.",
+            rows: Step909::ALL
                 .iter()
-                .map(|&i| editor_row(is_mac, i))
+                .map(|&s| Row {
+                    keys: s.keys(is_mac),
+                    what: s.what(),
+                    binds: vec![],
+                    editor: None,
+                })
                 .collect(),
         },
+        editor_group(is_mac, drum_editor::Machine::Tr808),
+        editor_group(is_mac, drum_editor::Machine::Tr909),
         Group {
             title: "Windows and the file browser",
             mode: None,
@@ -794,45 +870,128 @@ mod tests {
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
     }
 
-    /// The 808 editor's group lists every input the editor handles (`drum_editor::Input::ALL`,
-    /// each of which tests/drum_editor.rs runs), once each and in order, with the platform's
-    /// key names.
+    /// Each drum editor's group (808 and 909) lists every input the editor handles
+    /// (`Machine::inputs`, each of which tests/drum_editor.rs runs), once each and in order,
+    /// with the platform's key names.
     #[test]
-    fn the_808_editor_group_lists_every_input_of_the_editor() {
+    fn each_drum_editor_group_lists_every_input_of_its_editor() {
+        use drum_editor::{Input, Machine};
+        for is_mac in [false, true] {
+            let gs = groups(is_mac);
+            for m in Machine::ALL {
+                let g = gs.iter().find(|g| g.title == m.title()).expect("the group");
+                let listed: Vec<_> = g.rows.iter().map(|r| r.editor).collect();
+                let all: Vec<_> = m.inputs().iter().map(|&i| Some((m, i))).collect();
+                assert_eq!(listed, all);
+                for r in &g.rows {
+                    let (_, i) = r.editor.unwrap();
+                    assert_eq!(r.keys, i.keys(m, is_mac));
+                    assert_eq!(r.what, i.what(m));
+                }
+                let keys: Vec<&str> = g.rows.iter().map(|r| r.keys.as_str()).collect();
+                let (cmd, alt) = if is_mac {
+                    ("Cmd", "Option")
+                } else {
+                    ("Ctrl", "Alt")
+                };
+                assert!(keys.contains(&format!("{cmd}+E").as_str()), "{keys:?}");
+                assert!(keys.contains(&format!("{cmd}+Z").as_str()), "{keys:?}");
+                // the open key is the menu's shortcut
+                assert_eq!(
+                    Input::OpenKey.keys(m, is_mac),
+                    shortcuts::text_for(&shortcuts::PATTERN_EDITOR, is_mac)
+                );
+                assert_eq!(
+                    Input::Undo.keys(m, is_mac),
+                    shortcuts::text_for(&shortcuts::UNDO, is_mac)
+                );
+                // the 909's entry switch and its held keys, by the platform's names
+                if m == Machine::Tr909 {
+                    for k in [
+                        format!("Hold {cmd}"),
+                        format!("Hold {alt}"),
+                        format!("Hold {cmd}+{alt}"),
+                        "Click Cycle / Low / High / Flam".into(),
+                    ] {
+                        assert!(keys.contains(&k.as_str()), "{k}: {keys:?}");
+                    }
+                }
+            }
+            // no other group lists an editor input
+            let titles = Machine::ALL.map(|m| m.title());
+            let elsewhere = gs
+                .iter()
+                .filter(|o| !titles.contains(&o.title))
+                .flat_map(|o| &o.rows)
+                .any(|r| r.editor.is_some());
+            assert!(!elsewhere);
+        }
+    }
+
+    /// The panel's 909 step group lists each mouse action with the platform's key names, and
+    /// the modifiers each line names give, through the panel's reading of them
+    /// (`behavior::step_mods`, as egui reports the keys on that platform), what the line says.
+    #[test]
+    fn the_panels_909_step_group_names_the_keys_that_do_it() {
+        use crate::behavior::{step_mods, tr909_step_value};
         for is_mac in [false, true] {
             let gs = groups(is_mac);
             let g = gs
                 .iter()
-                .find(|g| g.title == "808 Pattern Editor")
+                .find(|g| g.title == "The panel's TR-909 step buttons")
                 .expect("the group");
-            let listed: Vec<_> = g.rows.iter().map(|r| r.editor).collect();
-            let all: Vec<_> = drum_editor::Input::ALL.iter().copied().map(Some).collect();
-            assert_eq!(listed, all);
-            for r in &g.rows {
-                let i = r.editor.unwrap();
-                assert_eq!(r.keys, i.keys(is_mac));
-                assert_eq!(r.what, i.what());
+            let keys: Vec<String> = g.rows.iter().map(|r| r.keys.clone()).collect();
+            let want: Vec<String> = Step909::ALL.iter().map(|s| s.keys(is_mac)).collect();
+            assert_eq!(keys, want);
+            // egui's modifiers of the command key on the platform, and of Alt / Option
+            let cmd = if is_mac {
+                Modifiers {
+                    mac_cmd: true,
+                    command: true,
+                    ..Modifiers::NONE
+                }
+            } else {
+                Modifiers {
+                    ctrl: true,
+                    command: true,
+                    ..Modifiers::NONE
+                }
+            };
+            let (cmd_name, alt_name) = if is_mac {
+                ("Cmd", "Option")
+            } else {
+                ("Ctrl", "Alt")
+            };
+            for s in Step909::ALL {
+                let k = s.keys(is_mac);
+                let mods = match s {
+                    Step909::Low => cmd,
+                    Step909::High => Modifiers::ALT,
+                    Step909::Flam => cmd | Modifiers::ALT,
+                    _ => Modifiers::NONE,
+                };
+                assert_eq!(k.contains(cmd_name), mods.command, "{k}");
+                assert_eq!(k.contains(alt_name), mods.alt, "{k}");
+                let m = step_mods(mods);
+                let toggle = |v: u8, c: u8| if c == v { 0 } else { v };
+                for c in 0..=3u8 {
+                    let got = tr909_step_value(c, s == Step909::Accent, false, m);
+                    let want = match s {
+                        Step909::Click | Step909::Drag => (c + 1) % 3,
+                        Step909::Low => toggle(1, c),
+                        Step909::High => toggle(2, c),
+                        Step909::Flam => toggle(3, c),
+                        Step909::Accent => {
+                            if c == 0 {
+                                2
+                            } else {
+                                0
+                            }
+                        }
+                    };
+                    assert_eq!(got, want, "{k} on {c}");
+                }
             }
-            let keys: Vec<&str> = g.rows.iter().map(|r| r.keys.as_str()).collect();
-            let cmd = if is_mac { "Cmd" } else { "Ctrl" };
-            assert!(keys.contains(&format!("{cmd}+E").as_str()), "{keys:?}");
-            assert!(keys.contains(&format!("{cmd}+Z").as_str()), "{keys:?}");
-            // the open key is the menu's shortcut
-            assert_eq!(
-                drum_editor::Input::OpenKey.keys(is_mac),
-                shortcuts::text_for(&shortcuts::PATTERN_EDITOR, is_mac)
-            );
-            assert_eq!(
-                drum_editor::Input::Undo.keys(is_mac),
-                shortcuts::text_for(&shortcuts::UNDO, is_mac)
-            );
-            // no other group lists an editor input
-            let elsewhere = gs
-                .iter()
-                .filter(|o| o.title != g.title)
-                .flat_map(|o| &o.rows)
-                .any(|r| r.editor.is_some());
-            assert!(!elsewhere);
         }
     }
 

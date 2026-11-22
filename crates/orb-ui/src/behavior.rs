@@ -118,16 +118,29 @@ pub fn switch_position(id: &str, v: u8) -> u8 {
     }
 }
 
-/// The modifier keys that matter for the TR-909's step buttons.
+/// The modifier keys that matter for the TR-909's step buttons: the original's Ctrl (`ctrl`)
+/// and Alt (`alt`).
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub struct Mods {
     pub ctrl: bool,
     pub alt: bool,
 }
 
+/// The [`Mods`] of the keys held, as orb reads them for the 909's step buttons and the 909
+/// editor (task-281, the user's decision: one rule across the app): the original's Ctrl is the
+/// command key (egui's `command`: Cmd on macOS, Ctrl on Windows and Linux) and its Alt is Alt
+/// (Option on macOS). macOS's Ctrl and Shift do nothing.
+pub fn step_mods(m: egui::Modifiers) -> Mods {
+    Mods {
+        ctrl: m.command,
+        alt: m.alt,
+    }
+}
+
 /// The new value of a TR-909 step on mouse down, from its value `c` (`CTR909PatternView`):
 /// accent: off <-> 2; Ctrl+Alt or the flam button: off <-> 3; Ctrl: off <-> 1; Alt: off <-> 2;
-/// otherwise off -> 1 -> 2 -> off.
+/// otherwise off -> 1 -> 2 -> off. (orb reads the original's Ctrl as Cmd on macOS,
+/// [`step_mods`].)
 pub fn tr909_step_value(c: u8, accent_row: bool, flam_on: bool, m: Mods) -> u8 {
     let toggle = |on_value: u8| if c == on_value { 0 } else { on_value };
     if accent_row {
@@ -378,6 +391,44 @@ mod tests {
         // The accent row is on/off with the stored "on" = 2.
         assert_eq!(tr909_step_value(0, true, false, none), 2);
         assert_eq!(tr909_step_value(1, true, false, none), 0);
+    }
+
+    /// task-281: the original's Ctrl is the command key (Cmd on macOS, where egui sets
+    /// `command` with `mac_cmd`; Ctrl elsewhere, where it sets it with `ctrl`), its Alt is Alt
+    /// (Option); macOS's Ctrl (`ctrl` without `command`) and Shift are no modifier.
+    #[test]
+    fn the_909_step_modifiers_are_cmd_and_option_on_macos() {
+        use egui::Modifiers;
+        let mac_cmd = Modifiers {
+            mac_cmd: true,
+            command: true,
+            ..Modifiers::NONE
+        };
+        let win_ctrl = Modifiers {
+            ctrl: true,
+            command: true,
+            ..Modifiers::NONE
+        };
+        let low = Mods {
+            ctrl: true,
+            alt: false,
+        };
+        let high = Mods {
+            ctrl: false,
+            alt: true,
+        };
+        let flam = Mods {
+            ctrl: true,
+            alt: true,
+        };
+        assert_eq!(step_mods(mac_cmd), low);
+        assert_eq!(step_mods(win_ctrl), low);
+        assert_eq!(step_mods(Modifiers::ALT), high);
+        assert_eq!(step_mods(mac_cmd | Modifiers::ALT), flam);
+        assert_eq!(step_mods(win_ctrl | Modifiers::ALT), flam);
+        // macOS's Ctrl, and Shift
+        assert_eq!(step_mods(Modifiers::CTRL), Mods::default());
+        assert_eq!(step_mods(Modifiers::SHIFT), Mods::default());
     }
 
     /// A drum machine's section origin and hit areas in the modern skin.

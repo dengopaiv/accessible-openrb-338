@@ -10,7 +10,7 @@ use std::time::Duration;
 use egui::{Key, Pos2, Response, Sense, Ui};
 
 use crate::app::{App, View};
-use crate::behavior::{self, Mods};
+use crate::behavior;
 use crate::keys::{self, Action};
 use crate::skin::{Ctl, Layout};
 
@@ -376,10 +376,8 @@ impl App {
                         g.new_value = if is808 {
                             u8::from(!self.panel.steps808[self.panel.inst808][step as usize])
                         } else {
-                            let m = ui.input(|i| Mods {
-                                ctrl: i.modifiers.ctrl,
-                                alt: i.modifiers.alt,
-                            });
+                            // Cmd and Option on macOS, Ctrl and Alt elsewhere (task-281)
+                            let m = ui.input(|i| behavior::step_mods(i.modifiers));
                             self.panel.step909_new_value(step as usize, m)
                         };
                         g.last_step = step;

@@ -414,6 +414,7 @@ fn the_edit_menu_has_the_standalones_items_without_shortcuts() {
         "Duplicate Pattern",
         "303 Pattern Editor...",
         "808 Pattern Editor...",
+        "909 Pattern Editor...",
     ];
     let ys: Vec<f32> = items
         .iter()
@@ -552,6 +553,48 @@ fn the_edit_menu_opens_the_808_pattern_editor_and_undoes_its_changes() {
     h.click(r.center());
     h.frame(vec![]);
     assert_eq!(h.app.link.as_ref().unwrap().pattern(2, p), &before[..]);
+}
+
+/// task-281: the plugin's Edit menu opens the 909 pattern editor (no shortcut text, with the
+/// TR-909 focused too; the plugin takes no keys, task-201, so the menu is its way in); its
+/// entry switch and a click edit the plugin's song, and Undo takes it back.
+#[test]
+fn the_edit_menu_opens_the_909_pattern_editor_and_undoes_its_changes() {
+    use orb_ui::drum_editor::{Entry, Machine, cell};
+    let m = Machine::Tr909;
+    let mut h = Harness::new(with("303_accent0"));
+    h.app.panel.focus = 3;
+    h.open_menu_with("909 Pattern Editor...");
+    for k in ["Ctrl+E", "Cmd+E"] {
+        assert!(!h.texts.iter().any(|t| t == k), "{k}");
+    }
+    let (r, enabled) = h.app.edit_item("909 Pattern Editor...").expect("drawn");
+    assert!(enabled);
+    h.click(r.center());
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let e = h.app.drum_editor(m);
+    assert!(e.open);
+    assert!(!h.app.drum_editor(Machine::Tr808).open);
+    let p = e.pattern;
+    assert_eq!(p, h.app.panel.rows[3].pattern);
+    let before = h.app.link.as_ref().unwrap().pattern(3, p).to_vec();
+    // the switch on Flam, then a click on BD of step 16
+    let flam = h.app.drum_editor_hit(m, "Flam").expect("the switch");
+    h.click(flam.center());
+    assert_eq!(h.app.drum_editor(m).entry, Entry::Flam);
+    let c = h.app.drum_editor_cell(m, 1, 15).unwrap();
+    h.click(c.center());
+    let after = h.app.link.as_ref().unwrap().pattern(3, p).to_vec();
+    let was = cell(&before, 15, 1);
+    assert_eq!(cell(&after, 15, 1), if was.min(3) == 3 { 0 } else { 3 });
+    h.open_menu_with("Undo Edit Pattern");
+    let (r, enabled) = h.app.edit_item("Undo").expect("drawn");
+    assert!(enabled);
+    h.click(r.center());
+    h.frame(vec![]);
+    assert_eq!(h.app.link.as_ref().unwrap().pattern(3, p), &before[..]);
 }
 
 /// task-267: the 808's mod window is no link (the Theme Viewer is gone): no hand cursor.

@@ -369,10 +369,23 @@ fn tr909_step_click_cycles_and_modifiers_pick_the_value() {
     h.down(Modifiers::NONE);
     h.up();
     assert_eq!(h.app.panel.steps909[1][0], 0);
+    // The original's Ctrl is the command key (Cmd on macOS, Ctrl elsewhere), its Alt is Alt
+    // (Option on macOS), task-281
     h.move_to(step(2));
-    h.down(Modifiers::CTRL | Modifiers::ALT);
+    h.down(Modifiers::COMMAND | Modifiers::ALT);
     h.up();
     assert_eq!(h.app.panel.steps909[1][2], 3);
+    h.move_to(step(3));
+    h.down(Modifiers::COMMAND);
+    h.up();
+    assert_eq!(h.app.panel.steps909[1][3], 1);
+    h.down(Modifiers::ALT);
+    h.up();
+    assert_eq!(h.app.panel.steps909[1][3], 2);
+    // macOS's Ctrl (no command key) is no modifier: the plain cycle, 2 -> 0
+    h.down(Modifiers::CTRL);
+    h.up();
+    assert_eq!(h.app.panel.steps909[1][3], 0);
     // A drag sets every crossed step to the new value.
     h.move_to(step(5));
     h.down(Modifiers::NONE);

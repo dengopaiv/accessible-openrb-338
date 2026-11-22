@@ -150,8 +150,8 @@ pub struct App {
     pub(crate) undo: Option<crate::menu::Undo>,
     /// The 303 pattern editor's window (Edit > 303 Pattern Editor..., task-274).
     pub(crate) editor: crate::pattern_editor::Editor,
-    /// The drum pattern editors' windows, by `drum_editor::Machine::index` (Edit > 808 Pattern
-    /// Editor..., task-280).
+    /// The drum pattern editors' windows, by `drum_editor::Machine::index` (Edit > 808 and 909
+    /// Pattern Editor..., tasks 280 and 281).
     pub(crate) drum_editors:
         [crate::drum_editor::DrumEditor; crate::drum_editor::Machine::ALL.len()],
     /// Where the Edit menu drew its items last, and whether each was enabled
@@ -1002,8 +1002,8 @@ impl App {
                 if shortcuts::consume(ui, &shortcuts::KEYS_PATTERNS) {
                     self.key_mode = KeyMode::Patterns;
                 }
-                // Ctrl/Cmd+E: the focused row's pattern editor, Edit > 303 or 808 Pattern
-                // Editor... (tasks 274 and 280)
+                // Ctrl/Cmd+E: the focused row's pattern editor, Edit > 303, 808 or 909 Pattern
+                // Editor... (tasks 274, 280 and 281)
                 if shortcuts::consume(ui, &shortcuts::PATTERN_EDITOR) {
                     self.open_focused_editor();
                 }

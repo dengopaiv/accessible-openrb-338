@@ -9,7 +9,8 @@
 //! `theme_viewer_filter` of the removed Theme Viewer is ignored and dropped at the next save),
 //! `pattern_editor_pos` (two integers, the 303 pattern editor window's left top in points,
 //! absent until the window is moved; the standalone app's only, task-274),
-//! `pattern_editor_808_pos` (the same of the 808 pattern editor, task-280)
+//! `pattern_editor_808_pos` (the same of the 808 pattern editor, task-280),
+//! `pattern_editor_909_pos` (the same of the 909 pattern editor, task-281)
 //! and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
@@ -23,7 +24,7 @@
 //! instant can still race, there is no lock). A change is recorded by the setters
 //! (`set_songs_dir`, `set_mods_dir`, `set_last_song_dir`, `set_last_mod_dir`,
 //! `set_startup_sound`, `set_theme`, `set_pattern_editor_pos`, `set_pattern_editor_808_pos`,
-//! `set_preferred_mod`), which win over
+//! `set_pattern_editor_909_pos`, `set_preferred_mod`), which win over
 //! the file even when the value equals what this instance last saw; a field assigned directly
 //! counts as changed when it differs from what was last read or written. The list `recent` is
 //! changed only through `note_recent` (a folder is pushed onto the file's list; a direct assignment
@@ -107,6 +108,8 @@ pub struct Settings {
     pub pattern_editor_pos: Option<[i32; 2]>,
     /// The same of the 808 pattern editor's window (task-280), `pattern_editor_808_pos`.
     pub pattern_editor_808_pos: Option<[i32; 2]>,
+    /// The same of the 909 pattern editor's window (task-281), `pattern_editor_909_pos`.
+    pub pattern_editor_909_pos: Option<[i32; 2]>,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
     /// The values as last read from or written to the file: a save changes only what differs
@@ -138,6 +141,7 @@ pub struct Values {
     theme: Theme,
     pattern_editor_pos: Option<[i32; 2]>,
     pattern_editor_808_pos: Option<[i32; 2]>,
+    pattern_editor_909_pos: Option<[i32; 2]>,
 }
 
 /// Equal when the public fields are (the save bookkeeping is not compared).
@@ -162,6 +166,7 @@ impl Default for Settings {
             theme: Theme::Modern,
             pattern_editor_pos: None,
             pattern_editor_808_pos: None,
+            pattern_editor_909_pos: None,
             file: None,
             base: Box::new(Values {
                 startup_sound: true,
@@ -231,6 +236,8 @@ struct Stored<'a> {
     pattern_editor_pos: Option<[i32; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pattern_editor_808_pos: Option<[i32; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pattern_editor_909_pos: Option<[i32; 2]>,
     // a table, so last
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     preferred_mods: BTreeMap<&'a str, &'a str>,
@@ -298,6 +305,7 @@ impl Settings {
         };
         s.pattern_editor_pos = pos("pattern_editor_pos");
         s.pattern_editor_808_pos = pos("pattern_editor_808_pos");
+        s.pattern_editor_909_pos = pos("pattern_editor_909_pos");
         if let Some(t) = table
             .get("theme")
             .and_then(|v| v.as_str())
@@ -334,6 +342,7 @@ impl Settings {
             theme: self.theme,
             pattern_editor_pos: self.pattern_editor_pos,
             pattern_editor_808_pos: self.pattern_editor_808_pos,
+            pattern_editor_909_pos: self.pattern_editor_909_pos,
         }
     }
 
@@ -373,6 +382,9 @@ impl Settings {
         }
         if set("pattern_editor_808_pos") || v.pattern_editor_808_pos != b.pattern_editor_808_pos {
             m.pattern_editor_808_pos = v.pattern_editor_808_pos;
+        }
+        if set("pattern_editor_909_pos") || v.pattern_editor_909_pos != b.pattern_editor_909_pos {
+            m.pattern_editor_909_pos = v.pattern_editor_909_pos;
         }
         if self.noted.is_empty() && v.recent != b.recent {
             // The list was assigned as a whole.
@@ -462,6 +474,13 @@ impl Settings {
         self.dirty.insert("pattern_editor_808_pos".into());
     }
 
+    /// Sets the 909 pattern editor window's place (`pattern_editor_909_pos`, task-281); the
+    /// next save writes it whatever the file holds.
+    pub fn set_pattern_editor_909_pos(&mut self, pos: Option<[i32; 2]>) {
+        self.pattern_editor_909_pos = pos;
+        self.dirty.insert("pattern_editor_909_pos".into());
+    }
+
     /// The file preferred for the INFO name `name` (ignoring ASCII case), if one is set.
     pub fn preferred_mod(&self, name: &str) -> Option<&str> {
         self.preferred_mods
@@ -504,6 +523,7 @@ impl Settings {
             theme: m.theme.name(),
             pattern_editor_pos: m.pattern_editor_pos,
             pattern_editor_808_pos: m.pattern_editor_808_pos,
+            pattern_editor_909_pos: m.pattern_editor_909_pos,
             preferred_mods: m
                 .preferred_mods
                 .iter()
@@ -542,6 +562,7 @@ impl Settings {
         self.theme = m.theme;
         self.pattern_editor_pos = m.pattern_editor_pos;
         self.pattern_editor_808_pos = m.pattern_editor_808_pos;
+        self.pattern_editor_909_pos = m.pattern_editor_909_pos;
         *self.base = m;
         self.noted.clear();
         self.dirty.clear();

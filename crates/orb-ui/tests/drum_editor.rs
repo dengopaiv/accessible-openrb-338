@@ -4,6 +4,11 @@
 //! Paste, Length and Shuffle; every change is one Undo and goes through the panel's pattern path
 //! (heard, shown); the selection rules of pattern and song mode; and every input the Keyboard
 //! Shortcuts help lists for it does what the help says.
+//!
+//! The 909 pattern editor (task-281, section 25) on the same frame: its own window, opened by
+//! its menu item and Ctrl/Cmd+E with the TR-909 focused; the entry switch and the modifiers
+//! held; the values low, high and flam, a byte above 3 kept until edited; the AC row 0/2; the
+//! hi-hats' rule; and every input its help lists.
 
 use std::sync::{Arc, OnceLock};
 
@@ -11,7 +16,7 @@ use eframe::egui::{self, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, 
 use orb_engine::tables::Tables;
 use orb_player::{Audio, CALL_FRAMES};
 use orb_ui::app::App;
-use orb_ui::drum_editor::{AC, DrumAct, Input, Machine, cell};
+use orb_ui::drum_editor::{AC, CH909, DrumAct, Entry, Input, Machine, OH909, cell};
 use orb_ui::layout::{PANEL_H, PANEL_W};
 use orb_ui::link::{self, Link};
 use orb_ui::menu::{Cmd, MENU_H};
@@ -34,11 +39,19 @@ struct Harness {
     time: f64,
     /// The modifiers held in the next frames.
     mods: Modifiers,
+    /// The machine whose editor the helpers drive.
+    m: Machine,
 }
 
 impl Harness {
-    /// The app with the menu bar and a new song, in a window as high as the panel and the bar.
+    /// The app with the menu bar and a new song, in a window as high as the panel and the bar;
+    /// the helpers drive the 808's editor.
     fn new() -> Self {
+        Self::on(M)
+    }
+
+    /// The same, the helpers driving machine `m`'s editor.
+    fn on(m: Machine) -> Self {
         let ctx = egui::Context::default();
         egui_extras::install_image_loaders(&ctx);
         let samples = rbm::standard::builtin_samples();
@@ -52,6 +65,7 @@ impl Harness {
             audio,
             time: 0.0,
             mods: Modifiers::NONE,
+            m,
         };
         h.calls(1);
         h
@@ -126,30 +140,43 @@ impl Harness {
 
     /// Opens the editor (the command of the menu item) and draws it.
     fn open_editor(&mut self) {
-        self.app.command(Cmd::DrumEditor(M));
+        self.app.command(Cmd::DrumEditor(self.m));
         for _ in 0..3 {
             self.frame(vec![]);
         }
-        assert!(self.app.drum_editor(M).open);
+        assert!(self.app.drum_editor(self.m).open);
     }
 
     /// The editor's pattern as the link holds it.
     fn bytes(&self) -> Vec<u8> {
-        let p = self.app.drum_editor(M).pattern;
-        self.app.link.as_ref().unwrap().pattern(ROW, p).to_vec()
+        let p = self.app.drum_editor(self.m).pattern;
+        self.app
+            .link
+            .as_ref()
+            .unwrap()
+            .pattern(self.m.row(), p)
+            .to_vec()
+    }
+
+    /// Puts `bytes` into the editor's pattern as a song would hold it (not through the editor).
+    fn set_bytes(&mut self, bytes: &[u8]) {
+        let p = self.app.drum_editor(self.m).pattern;
+        let link = self.app.link.as_mut().unwrap();
+        link.set_pattern(self.m.row(), p, bytes, &mut self.app.panel);
+        self.frame(vec![]);
     }
 
     /// The center of instrument `column`'s cell (0 the AC row) of step `step`.
     fn cell(&self, column: usize, step: usize) -> Pos2 {
         self.app
-            .drum_editor_cell(M, column, step)
+            .drum_editor_cell(self.m, column, step)
             .expect("the grid is drawn")
             .center()
     }
 
     fn hit(&self, name: &str) -> Pos2 {
         self.app
-            .drum_editor_hit(M, name)
+            .drum_editor_hit(self.m, name)
             .unwrap_or_else(|| panic!("{name} is drawn"))
             .center()
     }
@@ -186,7 +213,7 @@ impl Harness {
             egui::Popup::close_all(&self.ctx);
             self.click(Pos2::new(x as f32, MENU_H / 2.0));
             self.frame(vec![]);
-            if self.app.edit_item(M.menu_item()).is_some() {
+            if self.app.edit_item(self.m.menu_item()).is_some() {
                 return;
             }
         }
@@ -196,8 +223,13 @@ impl Harness {
 
 /// The engine's patterns of the TR-808.
 fn engine_808(audio: &mut Audio, p: u8) -> Vec<u8> {
+    engine(audio, ROW, p)
+}
+
+/// The engine's pattern `p` of drum row `row`.
+fn engine(audio: &mut Audio, row: usize, p: u8) -> Vec<u8> {
     let channels = &mut audio.current_mut().frame.devices.channels;
-    channels[ROW].patterns_mut().unwrap()[194 * p as usize..][..194].to_vec()
+    channels[row].patterns_mut().unwrap()[194 * p as usize..][..194].to_vec()
 }
 
 #[test]
@@ -592,117 +624,480 @@ fn its_place_is_kept_in_the_settings_file() {
     assert_eq!(w2.min, Pos2::new(want[0] as f32, want[1] as f32));
 }
 
-/// Every input Help > Keyboard Shortcuts lists for the 808 editor (`Input::ALL`, which the
-/// help's test requires it to list) does what the help says. A new input added to `Input`
-/// fails to compile here until it is tested.
+/// Every input Help > Keyboard Shortcuts lists for the 808 and the 909 editor
+/// (`Machine::inputs`, which the help's test requires it to list) does what the help says. A
+/// new input added to `Input` fails to compile here until it is tested.
 #[test]
 fn every_input_of_the_help_does_what_it_says() {
-    for i in Input::ALL {
-        let mut h = Harness::new();
-        h.open_editor();
-        match i {
-            Input::OpenKey => {
-                // song mode, the editor on another pattern than the 808's active one
-                h.song_mode();
-                h.app.panel.focus = ROW;
-                let active = h.app.panel.rows[ROW].pattern;
-                h.app.drum_editor_act(M, DrumAct::Select((active + 5) % 32));
-                h.frame(vec![]);
-                assert_ne!(h.app.drum_editor(M).pattern, active);
-                h.key(egui::Key::E, Modifiers::COMMAND);
-                assert_eq!(
-                    h.app.drum_editor(M).pattern,
-                    active,
-                    "switched to the active one"
-                );
-                // closed, the key opens it
-                let w = h.app.drum_editor_window(M).unwrap();
-                h.click(Pos2::new(w.right() - 14.0, w.top() + 12.0));
-                assert!(!h.app.drum_editor(M).open);
-                h.key(egui::Key::E, Modifiers::COMMAND);
-                assert!(h.app.drum_editor(M).open);
-            }
-            Input::Click => {
+    for m in Machine::ALL {
+        for &i in m.inputs() {
+            check_input(m, i);
+        }
+    }
+}
+
+/// The modifiers egui gives with the command key held (Cmd on macOS, Ctrl elsewhere).
+const CMD: Modifiers = Modifiers::COMMAND;
+
+fn check_input(m: Machine, i: Input) {
+    let mut h = Harness::on(m);
+    h.open_editor();
+    let row = m.row();
+    // a drum cell's value after one click: 1 on the 808 and on the 909 (Cycle: low)
+    let on = 1;
+    match i {
+        Input::OpenKey => {
+            // song mode, the editor on another pattern than the machine's active one
+            h.song_mode();
+            h.app.panel.focus = row;
+            let active = h.app.panel.rows[row].pattern;
+            h.app.drum_editor_act(m, DrumAct::Select((active + 5) % 32));
+            h.frame(vec![]);
+            assert_ne!(h.app.drum_editor(m).pattern, active);
+            h.key(egui::Key::E, CMD);
+            assert_eq!(
+                h.app.drum_editor(m).pattern,
+                active,
+                "switched to the active one"
+            );
+            // closed, the key opens it
+            let w = h.app.drum_editor_window(m).unwrap();
+            h.click(Pos2::new(w.right() - 14.0, w.top() + 12.0));
+            assert!(!h.app.drum_editor(m).open);
+            h.key(egui::Key::E, CMD);
+            assert!(h.app.drum_editor(m).open);
+        }
+        Input::Click => {
+            h.click(h.cell(4, 7));
+            assert_eq!(cell(&h.bytes(), 7, 4), on);
+            if m == Machine::Tr909 {
+                // Cycle: low, high, off
                 h.click(h.cell(4, 7));
-                assert_eq!(cell(&h.bytes(), 7, 4), 1);
-                h.click(h.cell(4, 7));
-                assert_eq!(cell(&h.bytes(), 7, 4), 0);
-            }
-            Input::Drag => {
-                h.drag(&[h.cell(6, 0), h.cell(7, 3)]);
+                assert_eq!(cell(&h.bytes(), 7, 4), 2);
+                // CH clears OH on its step and the other way round
+                h.click(h.cell(OH909, 2));
+                h.click(h.cell(CH909, 2));
                 let b = h.bytes();
-                assert!((0..4).all(|s| cell(&b, s, 6) == 1 && cell(&b, s, 7) == 0));
+                assert_eq!((cell(&b, 2, CH909), cell(&b, 2, OH909)), (1, 0));
+                // the AC row: on (2) and off, whatever the switch
+                h.press("Flam");
+                h.click(h.cell(AC, 3));
+                assert_eq!(cell(&h.bytes(), 3, AC), 2);
+                h.click(h.cell(AC, 3));
+                assert_eq!(cell(&h.bytes(), 3, AC), 0);
+                // Flam sets flam, again clears it
+                h.click(h.cell(4, 9));
+                assert_eq!(cell(&h.bytes(), 9, 4), 3);
+                h.click(h.cell(4, 9));
+                assert_eq!(cell(&h.bytes(), 9, 4), 0);
+                h.press("Cycle");
             }
-            Input::Modified => {
-                for mods in [
+            h.click(h.cell(4, 7));
+            assert_eq!(cell(&h.bytes(), 7, 4), 0);
+        }
+        Input::Drag => {
+            h.drag(&[h.cell(6, 0), h.cell(7, 3)]);
+            let b = h.bytes();
+            assert!((0..4).all(|s| cell(&b, s, 6) == on && cell(&b, s, 7) == 0));
+        }
+        Input::EntrySwitch => {
+            for (name, e, v) in [("Low", Entry::Low, 1), ("High", Entry::High, 2)] {
+                h.press(name);
+                assert_eq!(h.app.drum_editor(m).entry, e);
+                h.frame(vec![]);
+                assert_eq!(h.app.drum_editor_entry_shown(m), Some(e));
+                h.click(h.cell(5, 1));
+                assert_eq!(cell(&h.bytes(), 1, 5), v, "{name}: replaces, in one click");
+            }
+            h.press("Cycle");
+            assert_eq!(h.app.drum_editor(m).entry, Entry::Cycle);
+        }
+        Input::HoldLow | Input::HoldHigh | Input::HoldFlam => {
+            let (mods, e, v) = match i {
+                Input::HoldLow => (CMD, Entry::Low, 1),
+                Input::HoldHigh => (Modifiers::ALT, Entry::High, 2),
+                _ => (CMD | Modifiers::ALT, Entry::Flam, 3),
+            };
+            h.press("High");
+            h.mods = mods;
+            h.frame(vec![]);
+            assert_eq!(
+                h.app.drum_editor_entry_shown(m),
+                Some(e),
+                "shown while held"
+            );
+            h.click(h.cell(2, 4));
+            assert_eq!(cell(&h.bytes(), 4, 2), v);
+            // the same value again clears it
+            h.click(h.cell(2, 4));
+            assert_eq!(cell(&h.bytes(), 4, 2), 0);
+            // released: the switch's own setting again
+            h.mods = Modifiers::NONE;
+            h.frame(vec![]);
+            assert_eq!(h.app.drum_editor_entry_shown(m), Some(Entry::High));
+            assert_eq!(h.app.drum_editor(m).entry, Entry::High);
+        }
+        Input::Modified => {
+            let mods: &[Modifiers] = if m == M {
+                &[
                     Modifiers::SHIFT,
                     Modifiers::COMMAND,
                     Modifiers::ALT,
                     Modifiers::CTRL,
                     Modifiers::MAC_CMD,
-                ] {
-                    h.mods = mods;
-                    let before = h.bytes();
-                    h.click(h.cell(1, 5));
-                    assert_eq!(cell(&h.bytes(), 5, 1), 1 - cell(&before, 5, 1), "{mods:?}");
-                    let mut want = before.clone();
-                    want[2 + 12 * 5 + 1] ^= 1;
-                    assert_eq!(h.bytes(), want, "{mods:?}: the click alone");
-                    h.drag(&[h.cell(3, 8), h.cell(3, 10)]);
-                    let v = cell(&h.bytes(), 8, 3);
-                    assert!((8..=10).all(|s| cell(&h.bytes(), s, 3) == v), "{mods:?}");
-                    h.mods = Modifiers::NONE;
-                    h.frame(vec![]);
+                ]
+            } else {
+                // Shift, and macOS's Ctrl (no command key)
+                &[Modifiers::SHIFT, Modifiers::CTRL]
+            };
+            for &mods in mods {
+                h.mods = mods;
+                h.frame(vec![]);
+                if m == Machine::Tr909 {
+                    assert_eq!(h.app.drum_editor_entry_shown(m), Some(Entry::Cycle));
                 }
-            }
-            Input::ValueDrag | Input::ValueFineDrag => {
-                let fine = i == Input::ValueFineDrag;
-                let p = h.hit("Length");
-                if fine {
-                    h.mods = Modifiers::SHIFT;
-                }
-                // 60 points down: Length 16 goes down (a drag down lowers it)
-                let path: Vec<Pos2> = (0..=6)
-                    .map(|k| p + Vec2::new(0.0, 10.0 * k as f32))
-                    .collect();
-                h.drag(&path);
-                h.mods = Modifiers::NONE;
-                let n = h.bytes()[1];
-                if fine {
-                    assert!((14..16).contains(&n), "Shift: finer, {n}");
-                } else {
-                    assert!(n < 14, "{n}");
-                    // a drag is one change
-                    h.undo();
-                    assert_eq!(h.bytes()[1], 16);
-                }
-            }
-            Input::ValueType | Input::ValueCancel => {
-                let p = h.hit("Length");
-                h.click(p);
-                h.frame(vec![Event::Text("7".into())]);
-                assert_eq!(h.bytes()[1], 16, "not set while typing");
-                // the panel's keys rest while typing: Space does not play
-                h.key(egui::Key::Space, Modifiers::NONE);
-                if i == Input::ValueType {
-                    h.key(egui::Key::Enter, Modifiers::NONE);
-                    h.frame(vec![]);
-                    assert_eq!(h.bytes()[1], 7);
-                    assert_eq!(h.app.undo_name(), Some("Pattern Length"));
-                } else {
-                    h.key(egui::Key::Escape, Modifiers::NONE);
-                    h.frame(vec![]);
-                    assert_eq!(h.bytes()[1], 16, "cancelled");
-                }
-                h.calls(4);
-                assert!(!h.app.panel.transport.playing, "Space went to the field");
-            }
-            Input::Undo => {
                 let before = h.bytes();
-                h.click(h.cell(9, 9));
-                h.key(egui::Key::Z, Modifiers::COMMAND);
-                assert_eq!(h.bytes(), before);
+                h.click(h.cell(1, 5));
+                let want_v = if m == M {
+                    1 - cell(&before, 5, 1)
+                } else {
+                    (cell(&before, 5, 1) + 1) % 3
+                };
+                assert_eq!(cell(&h.bytes(), 5, 1), want_v, "{mods:?}");
+                let mut want = before.clone();
+                want[2 + 12 * 5 + 1] = want_v;
+                assert_eq!(h.bytes(), want, "{mods:?}: the click alone");
+                h.drag(&[h.cell(3, 8), h.cell(3, 10)]);
+                let v = cell(&h.bytes(), 8, 3);
+                assert!((8..=10).all(|s| cell(&h.bytes(), s, 3) == v), "{mods:?}");
+                h.mods = Modifiers::NONE;
+                h.frame(vec![]);
             }
         }
+        Input::ValueDrag | Input::ValueFineDrag => {
+            let fine = i == Input::ValueFineDrag;
+            let p = h.hit("Length");
+            if fine {
+                h.mods = Modifiers::SHIFT;
+            }
+            // 60 points down: Length 16 goes down (a drag down lowers it)
+            let path: Vec<Pos2> = (0..=6)
+                .map(|k| p + Vec2::new(0.0, 10.0 * k as f32))
+                .collect();
+            h.drag(&path);
+            h.mods = Modifiers::NONE;
+            let n = h.bytes()[1];
+            if fine {
+                assert!((14..16).contains(&n), "Shift: finer, {n}");
+            } else {
+                assert!(n < 14, "{n}");
+                // a drag is one change
+                h.undo();
+                assert_eq!(h.bytes()[1], 16);
+            }
+        }
+        Input::ValueType | Input::ValueCancel => {
+            let p = h.hit("Length");
+            h.click(p);
+            h.frame(vec![Event::Text("7".into())]);
+            assert_eq!(h.bytes()[1], 16, "not set while typing");
+            // the panel's keys rest while typing: Space does not play
+            h.key(egui::Key::Space, Modifiers::NONE);
+            if i == Input::ValueType {
+                h.key(egui::Key::Enter, Modifiers::NONE);
+                h.frame(vec![]);
+                assert_eq!(h.bytes()[1], 7);
+                assert_eq!(h.app.undo_name(), Some("Pattern Length"));
+            } else {
+                h.key(egui::Key::Escape, Modifiers::NONE);
+                h.frame(vec![]);
+                assert_eq!(h.bytes()[1], 16, "cancelled");
+            }
+            h.calls(4);
+            assert!(!h.app.panel.transport.playing, "Space went to the field");
+        }
+        Input::Undo => {
+            let before = h.bytes();
+            h.click(h.cell(9, 9));
+            assert_ne!(h.bytes(), before);
+            h.key(egui::Key::Z, Modifiers::COMMAND);
+            assert_eq!(h.bytes(), before);
+        }
     }
+}
+
+// ---- the 909 editor (task-281) ----
+
+const M9: Machine = Machine::Tr909;
+/// The TR-909's row.
+const ROW9: usize = 3;
+
+/// An empty 909 pattern of length 16 with `cells` (step, instrument, value) set.
+fn pattern909(cells: &[(usize, usize, u8)]) -> Vec<u8> {
+    let mut b = vec![0u8; 194];
+    b[1] = 16;
+    for &(s, c, v) in cells {
+        b[2 + 12 * s + c] = v;
+    }
+    b
+}
+
+#[test]
+fn the_909_menu_item_and_cmd_e_open_its_own_window() {
+    let mut h = Harness::on(M9);
+    h.select(ROW9, 4);
+    h.app.panel.focus = 0;
+    h.open_edit_menu();
+    // the items in order: 303's, 808's, 909's
+    let tops: Vec<f32> = [
+        "303 Pattern Editor...",
+        "808 Pattern Editor...",
+        "909 Pattern Editor...",
+    ]
+    .iter()
+    .map(|t| h.app.edit_item(t).unwrap().0.top())
+    .collect();
+    assert!(tops.windows(2).all(|w| w[0] < w[1]), "{tops:?}");
+    let (r, enabled) = h.app.edit_item(M9.menu_item()).unwrap();
+    assert!(enabled);
+    h.click(r.center());
+    h.frame(vec![]);
+    assert!(h.app.drum_editor(M9).open);
+    assert_eq!(h.app.drum_editor(M9).pattern, 4);
+    assert!(!h.app.drum_editor(M).open, "the 808's stays closed");
+    assert!(!h.app.pattern_editor().open);
+    // the 808's opens beside it: two windows
+    h.app.command(Cmd::DrumEditor(M));
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.drum_editor(M).open && h.app.drum_editor(M9).open);
+    assert!(h.app.drum_editor_window(M).is_some());
+    assert!(h.app.drum_editor_window(M9).is_some());
+
+    // Cmd/Ctrl+E with the TR-909 focused: the 909's, not the 303's (task-280's stopgap)
+    let mut h = Harness::on(M9);
+    h.select(ROW9, 9);
+    h.app.panel.focus = ROW9;
+    h.key(egui::Key::E, CMD);
+    h.frame(vec![]);
+    assert!(h.app.drum_editor(M9).open);
+    assert_eq!(h.app.drum_editor(M9).pattern, 9);
+    assert!(!h.app.pattern_editor().open);
+    assert!(!h.app.drum_editor(M).open);
+}
+
+#[test]
+fn the_909_header_rows_and_entry_switch() {
+    let mut h = Harness::on(M9);
+    h.open_editor();
+    for name in [
+        "A",
+        "B",
+        "C",
+        "D",
+        "number_prev",
+        "number",
+        "number_next",
+        "Copy",
+        "Paste",
+        "Clear",
+        "Length",
+        "Shuffle",
+        "shift_left",
+        "shift_right",
+        "Cycle",
+        "Low",
+        "High",
+        "Flam",
+    ] {
+        assert!(h.app.drum_editor_hit(M9, name).is_some(), "{name}");
+    }
+    assert_eq!(
+        h.app.drum_editor_labels(M9),
+        [
+            "BD", "SD", "LT", "MT", "HT", "RS", "CP", "CH", "OH", "CC", "RC", "AC"
+        ]
+    );
+    // Cycle at the start
+    assert_eq!(h.app.drum_editor(M9).entry, Entry::Cycle);
+    assert_eq!(h.app.drum_editor_entry_shown(M9), Some(Entry::Cycle));
+    // the switch under the top row, over the grid
+    let cycle = h.app.drum_editor_hit(M9, "Cycle").unwrap();
+    assert!(cycle.top() > h.app.drum_editor_hit(M9, "A").unwrap().bottom());
+    assert!(cycle.bottom() < h.app.drum_editor_cell(M9, 1, 0).unwrap().top());
+    let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(PANEL_W, PANEL_H + MENU_H));
+    let w = h.app.drum_editor_window(M9).unwrap();
+    assert!(screen.contains_rect(w), "{w:?}");
+    // the 808's has no switch
+    h.app.command(Cmd::DrumEditor(M));
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.drum_editor_hit(M, "Cycle").is_none());
+    assert_eq!(h.app.drum_editor_entry_shown(M), None);
+}
+
+#[test]
+fn the_909_switch_and_the_held_keys_enter_their_values() {
+    let mut h = Harness::on(M9);
+    h.open_editor();
+    // Cycle: off -> low -> high -> off
+    let mut seen = vec![];
+    for _ in 0..3 {
+        h.click(h.cell(1, 0));
+        seen.push(cell(&h.bytes(), 0, 1));
+    }
+    assert_eq!(seen, [1, 2, 0]);
+    // Low / High / Flam: set, the same again clears, another is replaced in one click
+    for (name, v) in [("Low", 1), ("High", 2), ("Flam", 3)] {
+        h.press(name);
+        h.click(h.cell(2, 0));
+        assert_eq!(cell(&h.bytes(), 0, 2), v, "{name}");
+        h.click(h.cell(2, 0));
+        assert_eq!(cell(&h.bytes(), 0, 2), 0, "{name} again");
+        h.click(h.cell(2, 0));
+    }
+    // the last left flam; Low replaces it in one click
+    h.press("Low");
+    h.click(h.cell(2, 0));
+    assert_eq!(cell(&h.bytes(), 0, 2), 1);
+    // held keys over the switch (Low): the command key + Alt is Flam while held
+    h.mods = CMD | Modifiers::ALT;
+    h.frame(vec![]);
+    assert_eq!(h.app.drum_editor_entry_shown(M9), Some(Entry::Flam));
+    h.click(h.cell(3, 0));
+    assert_eq!(cell(&h.bytes(), 0, 3), 3);
+    h.mods = Modifiers::ALT;
+    h.frame(vec![]);
+    assert_eq!(h.app.drum_editor_entry_shown(M9), Some(Entry::High));
+    h.mods = Modifiers::NONE;
+    h.frame(vec![]);
+    assert_eq!(h.app.drum_editor_entry_shown(M9), Some(Entry::Low));
+    // every edit was one Undo
+    assert_eq!(h.app.undo_name(), Some("Edit Pattern"));
+    let before = h.bytes();
+    h.click(h.cell(4, 4));
+    h.undo();
+    assert_eq!(h.bytes(), before);
+}
+
+#[test]
+fn a_909_byte_above_3_shows_as_flam_and_is_kept_until_its_cell_is_edited() {
+    let mut h = Harness::on(M9);
+    h.open_editor();
+    // BD 7 on step 0, SD 200 on step 1; CH and OH both on step 6 (a song may hold them)
+    let song = pattern909(&[(0, 1, 7), (1, 2, 200), (6, CH909, 1), (6, OH909, 2)]);
+    h.set_bytes(&song);
+    h.frame(vec![]);
+    assert_eq!(h.bytes(), song, "shown as is");
+    // an edit elsewhere keeps them all
+    h.click(h.cell(5, 9));
+    let mut want = song.clone();
+    want[2 + 12 * 9 + 5] = 1;
+    assert_eq!(h.bytes(), want);
+    // Shift moves them whole
+    h.press("shift_right");
+    assert_eq!(cell(&h.bytes(), 1, 1), 7);
+    assert_eq!(cell(&h.bytes(), 2, 2), 200);
+    h.undo();
+    assert_eq!(h.bytes(), want);
+    // edited: shown as flam, so Cycle goes on to low, Flam clears it
+    h.click(h.cell(1, 0));
+    assert_eq!(cell(&h.bytes(), 0, 1), 1);
+    h.press("Flam");
+    h.click(h.cell(2, 1));
+    assert_eq!(cell(&h.bytes(), 1, 2), 0);
+    // the editor never wrote a byte above 3
+    let b = h.bytes();
+    assert!(
+        b[2..]
+            .iter()
+            .zip(&song[2..])
+            .all(|(&v, &s)| v <= 3 || v == s),
+        "{b:?}"
+    );
+}
+
+#[test]
+fn a_909_drag_paints_its_value_along_the_row_and_clears_the_other_hat() {
+    let mut h = Harness::on(M9);
+    h.open_editor();
+    let song = pattern909(&(0..8).map(|s| (s, OH909, 1)).collect::<Vec<_>>());
+    h.set_bytes(&song);
+    h.press("High");
+    // CH from step 1 to 4, the mouse going down into other rows
+    h.drag(&[h.cell(CH909, 1), h.cell(10, 2), h.cell(AC, 4)]);
+    let b = h.bytes();
+    let ch: Vec<u8> = (0..8).map(|s| cell(&b, s, CH909)).collect();
+    let oh: Vec<u8> = (0..8).map(|s| cell(&b, s, OH909)).collect();
+    assert_eq!(ch, [0, 2, 2, 2, 2, 0, 0, 0]);
+    assert_eq!(oh, [1, 0, 0, 0, 0, 1, 1, 1]);
+    // one change
+    h.undo();
+    assert_eq!(h.bytes(), song);
+    // OH over CH: the other way round
+    h.drag(&[h.cell(CH909, 0), h.cell(CH909, 2)]);
+    h.press("Low");
+    h.drag(&[h.cell(OH909, 1), h.cell(OH909, 3)]);
+    let b = h.bytes();
+    let ch: Vec<u8> = (0..5).map(|s| cell(&b, s, CH909)).collect();
+    let oh: Vec<u8> = (0..5).map(|s| cell(&b, s, OH909)).collect();
+    assert_eq!(ch, [2, 0, 0, 0, 0]);
+    assert_eq!(oh, [0, 1, 1, 1, 1]);
+    // the AC row: 0 <-> 2 along the drag, whatever the switch
+    h.drag(&[h.cell(AC, 10), h.cell(AC, 12)]);
+    assert!((10..=12).all(|s| cell(&h.bytes(), s, AC) == 2));
+}
+
+#[test]
+fn the_909_edits_are_heard_and_shown_on_the_panel() {
+    let mut h = Harness::on(M9);
+    h.open_editor();
+    h.click(h.cell(1, 3));
+    h.click(h.cell(AC, 3));
+    h.calls(1);
+    let b = h.bytes();
+    assert_eq!(engine(&mut h.audio, ROW9, 0), b);
+    assert_eq!(h.app.panel.steps909[1][3], 1);
+    assert_eq!(h.app.panel.steps909[0][3], 2);
+    assert!(h.app.doc.modified);
+    // the playing step is shown
+    h.app.panel.press("transport.play", 0.0);
+    let mut seen = None;
+    for _ in 0..200 {
+        h.calls(4);
+        if let Some(s) = h.app.panel.playing_step909 {
+            seen = Some(s);
+            break;
+        }
+    }
+    let s = seen.expect("the 909 plays");
+    assert_eq!(h.app.drum_editor_shown(M9).0, Some(s));
+}
+
+#[test]
+fn the_909_editors_place_is_its_own_in_the_settings_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("ui.toml");
+    let mut h = Harness::on(M9);
+    h.app.settings = Settings::load_from(&file);
+    h.open_editor();
+    let w = h.app.drum_editor_window(M9).unwrap();
+    let title = Pos2::new(w.left() + 60.0, w.top() + 10.0);
+    h.drag(&[
+        title,
+        title + Vec2::new(-10.0, 15.0),
+        title + Vec2::new(-20.0, 30.0),
+    ]);
+    let moved = h.app.drum_editor_window(M9).unwrap();
+    let saved = Settings::load_from(&file);
+    let want = [moved.min.x.round() as i32, moved.min.y.round() as i32];
+    assert_eq!(saved.pattern_editor_909_pos, Some(want));
+    assert_eq!(saved.pattern_editor_808_pos, None, "the 808's is its own");
+    let mut h2 = Harness::on(M9);
+    h2.app.settings = Settings::load_from(&file);
+    h2.open_editor();
+    let w2 = h2.app.drum_editor_window(M9).unwrap();
+    assert_eq!(w2.min, Pos2::new(want[0] as f32, want[1] as f32));
 }
