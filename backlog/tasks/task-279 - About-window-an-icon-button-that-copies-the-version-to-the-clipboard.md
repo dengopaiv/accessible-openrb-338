@@ -1,10 +1,11 @@
 ---
 id: TASK-279
 title: 'About window: an icon button that copies the version to the clipboard'
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-22T08:25:00Z'
+updated_date: '2026-11-22T10:04:00Z'
 labels:
   - ui
 milestone: m-7
@@ -46,8 +47,32 @@ ordinal: 259800
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Help > About has a small icon-only copy button right after the version text, with a 'Copy version' tooltip, in both the standalone app and the plugin; the About layout is otherwise unchanged
-- [ ] #2 Clicking it copies exactly the version string (VERSION) via ctx.copy_text, with a brief visible confirmation; tested by driving a click and checking the CopyText output
-- [ ] #3 docs/ui_spec.md describes the button; cargo test --workspace passes, clippy -D warnings and nightly fmt clean
-- [ ] #4 The user checked the copy in the plugin and the standalone app before the agent review
+- [x] #1 Help > About has a small icon-only copy button right after the version text, with a 'Copy version' tooltip, in both the standalone app and the plugin; the About layout is otherwise unchanged
+- [x] #2 Clicking it copies exactly the version string (VERSION) via ctx.copy_text, with a brief visible confirmation; tested by driving a click and checking the CopyText output
+- [x] #3 docs/ui_spec.md describes the button; cargo test --workspace passes, clippy -D warnings and nightly fmt clean
+- [x] #4 The user checked the copy in the plugin and the standalone app before the agent review
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Painter-drawn copy glyph (two sheets) + check mark, button after the version in about.rs, tooltip, ctx.copy_text(VERSION), 1.5 s confirm. 2. Test driving a click and checking CopyText. 3. ui_spec.md. 4. test/clippy/fmt, build app and VST3.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-a625e4b1a912cc6a4
+
+Painter-drawn glyph (two sheets, check mark for 1.5 s, tooltip Copy version/Copied), 14 pt, in about.rs; test the_about_copy_button_copies_the_version (menu.rs). cargo test --workspace all pass, clippy -D warnings and nightly fmt clean (a deprecated Id::new fixed to Id::unique). AC 1 plugin part: the button is drawn by the shared about.rs; the actual clipboard write in REAPER is the user's check (AC 4, left unchecked). Built target/OpenRB-338.app and target/bundled/OpenRB-338.vst3.
+
+User sign-off 2026-11-22 ('looks good'): copied and pasted in the dev app and the plugin. Added plugin editor test the_about_window_has_a_copy_version_button (orb-plugin/tests/editor.rs).
+
+Review round 1: commit body Result now records the user's verification; added test the_about_copy_feedback_reverts_after_1_5_seconds (orb-ui/tests/menu.rs) with pub fn copy_confirmation_shows (a tooltip check was not reachable in the headless harness: a click suppresses it, so the test checks the shared state that picks the check mark and the tooltip text).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Help > About has a painter-drawn icon-only copy button after the version (14 pt, two sheets, check mark and 'Copied' tooltip for 1.5 s, tooltip 'Copy version'); a click calls ctx.copy_text(VERSION). Tests: an orb-ui menu test and a plugin editor test drive the click and check CopyText; workspace tests, clippy -D warnings, nightly fmt clean. User verified in dev app and plugin. Branch worktree-agent-a625e4b1a912cc6a4, one commit.
+<!-- SECTION:FINAL_SUMMARY:END -->

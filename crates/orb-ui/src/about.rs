@@ -49,6 +49,79 @@ pub const COLLECTIONS: [(&str, &str); 2] = [
 /// The version: `YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` (`src/version.rs`).
 pub const VERSION: &str = env!("ORB_UI_VERSION");
 
+/// The side of the copy button, a text line's height.
+const COPY_SIZE: f32 = 14.0;
+/// How long the check mark shows after a copy.
+const COPIED_FOR: f64 = 1.5;
+
+fn copy_data_id() -> egui::Id {
+    egui::Id::unique("orb_about_copy_version")
+}
+
+/// Where the copy button was drawn last frame (for tests to click it).
+pub fn copy_button_rect(ctx: &Context) -> Option<egui::Rect> {
+    ctx.data(|d| d.get_temp::<egui::Rect>(copy_data_id()))
+}
+
+/// Seconds since the last copy while its confirmation (the check mark, "Copied") still shows.
+fn copied_since(ctx: &Context, now: f64) -> Option<f64> {
+    let t = ctx.data(|d| d.get_temp::<f64>(copy_data_id().with("at")))?;
+    Some(now - t).filter(|s| (0.0..COPIED_FOR).contains(s))
+}
+
+/// Whether the copy button shows its confirmation now (for tests).
+pub fn copy_confirmation_shows(ctx: &Context) -> bool {
+    copied_since(ctx, ctx.input(|i| i.time)).is_some()
+}
+
+/// The icon-only copy button (task-279): two overlapping sheets, a check mark for 1.5 s after a
+/// click, a "Copy version" tooltip. A click copies `VERSION` through `ctx.copy_text`, which
+/// egui-baseview also writes to the system clipboard in the plugin.
+fn copy_button(ui: &mut egui::Ui) {
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(COPY_SIZE, COPY_SIZE), egui::Sense::click());
+    let ctx = ui.ctx().clone();
+    ctx.data_mut(|d| d.insert_temp(copy_data_id(), rect));
+    let now = ctx.input(|i| i.time);
+    let at_id = copy_data_id().with("at");
+    if resp.clicked() {
+        ctx.copy_text(VERSION.to_string());
+        ctx.data_mut(|d| d.insert_temp(at_id, now));
+    }
+    let since = copied_since(&ctx, now);
+    let copied = since.is_some();
+    if let Some(s) = since {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(COPIED_FOR - s));
+    }
+    let color = if resp.hovered() || copied {
+        egui::Color32::WHITE
+    } else {
+        INK_DIM
+    };
+    let p = ui.painter();
+    let stroke = egui::Stroke::new(1.2, color);
+    if copied {
+        let c = rect.center();
+        p.add(egui::Shape::line(
+            vec![
+                c + egui::vec2(-4.5, 0.5),
+                c + egui::vec2(-1.5, 3.5),
+                c + egui::vec2(4.5, -3.5),
+            ],
+            egui::Stroke::new(1.8, color),
+        ));
+    } else {
+        // the back sheet up left, the front one down right
+        let s = 8.5;
+        let back = egui::Rect::from_min_size(rect.min + egui::vec2(1.5, 1.5), egui::vec2(s, s));
+        let front = back.translate(egui::vec2(3.0, 3.0));
+        p.rect_stroke(back, 1.0, stroke, egui::StrokeKind::Inside);
+        p.rect_filled(front, 1.0, ui.visuals().window_fill);
+        p.rect_stroke(front, 1.0, stroke, egui::StrokeKind::Inside);
+    }
+    resp.on_hover_text(if copied { "Copied" } else { "Copy version" });
+}
+
 /// The id of the About window of an open (`App::about_serial`).
 pub fn about_window_id(serial: u32) -> egui::Id {
     egui::Id::unique(("orb_about_window", serial))
@@ -136,7 +209,11 @@ impl App {
                     line_at(ui, TEXT_X, y, f);
                 };
                 line(ui, ROW0, &|ui| {
-                    ui.label(RichText::new(format!("Version {VERSION}")).color(INK_DIM));
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.label(RichText::new(format!("Version {VERSION}")).color(INK_DIM));
+                        copy_button(ui);
+                    });
                 });
                 line(ui, ROW0 + 22.0, &|ui| {
                     ui.hyperlink_to(URL, URL);

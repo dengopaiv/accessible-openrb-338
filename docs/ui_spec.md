@@ -1184,7 +1184,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
-| Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
+| Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` with an icon-only copy button (task-279) and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
 
 The Help menu is last in the bar. Its items are the list `HELP_ITEMS` in `menu.rs`, so a new item
 is one more entry.
@@ -1244,7 +1244,13 @@ is one more entry.
   (92, 14) scaled 2.0 (the subtitle is part of it), and the version and the links left-aligned
   at x 108 (y 104, 126, 148 and 170; the last two are `Song collection:` and `Mod collection:`
   followed by their links, task-138); there is no separate name line (the title bar and the
-  wordmark say it). `OpenRB-338 --about` opens it at the start (for `--screenshot`). The version is
+  wordmark say it). The version line ends with a small icon-only copy button (task-279), 14 pt
+  square, 4 pt after the text: two overlapping sheets drawn with the painter (no font glyph,
+  no image), dim like the text and white on hover, with the tooltip "Copy version". A click
+  copies `VERSION` exactly (the text after `Version `) with `ctx.copy_text`, so the plugin
+  (egui-baseview writes `OutputCommand::CopyText` to the system clipboard) and the standalone
+  app both work; for 1.5 s the sheets turn into a white check mark and the tooltip says
+  "Copied" (the window repaints once at the end by itself). `OpenRB-338 --about` opens it at the start (for `--screenshot`). The version is
   `YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)`, computed by `build.rs` into `ORB_UI_VERSION` (the
   pure formatting is `version.rs`, unit-tested): the number is the build time in UTC to the
   minute (task-133), from `SOURCE_DATE_EPOCH` when set, else the time the script runs. The

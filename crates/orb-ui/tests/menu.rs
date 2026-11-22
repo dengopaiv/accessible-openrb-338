@@ -3880,3 +3880,49 @@ fn a_click_on_a_window_over_the_status_bar_keeps_the_status() {
     h.click(Pos2::new(5.0, h.height - 10.0));
     assert_eq!(h.app.status, None, "a click on the bar");
 }
+
+/// task-279: the About window's icon-only copy button puts exactly `VERSION` on the clipboard,
+/// once per click.
+#[test]
+fn the_about_copy_button_copies_the_version() {
+    let mut h = Harness::with_menu();
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let r = orb_ui::about::copy_button_rect(&h.ctx).expect("the button is drawn");
+    assert!(r.width() <= 16.0 && r.height() <= 16.0, "small: {r:?}");
+    assert!(h.copied.is_empty());
+    h.click(r.center());
+    assert_eq!(h.copied, vec![orb_ui::about::VERSION.to_string()]);
+    assert!(h.app.about_is_open());
+    h.frame(vec![]);
+    assert_eq!(h.copied.len(), 1, "one click, one copy");
+}
+
+/// task-279: the "Copied" feedback lasts 1.5 s; after that the tooltip reads "Copy version"
+/// again (and the sheets are drawn instead of the check mark).
+#[test]
+fn the_about_copy_feedback_reverts_after_1_5_seconds() {
+    let mut h = Harness::with_menu();
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let r = orb_ui::about::copy_button_rect(&h.ctx).expect("the button is drawn");
+    assert!(!orb_ui::about::copy_confirmation_shows(&h.ctx));
+    h.click(r.center());
+    h.time += 1.0;
+    h.frame(vec![]);
+    assert!(
+        orb_ui::about::copy_confirmation_shows(&h.ctx),
+        "the check mark and \"Copied\" show 1 s after the click"
+    );
+    h.time += 1.0;
+    h.frame(vec![]);
+    assert!(
+        !orb_ui::about::copy_confirmation_shows(&h.ctx),
+        "the sheets and \"Copy version\" are back after 1.5 s"
+    );
+    assert_eq!(h.copied.len(), 1);
+}

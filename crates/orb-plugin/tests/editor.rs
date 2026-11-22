@@ -1564,3 +1564,19 @@ fn the_format_follows_the_wrappers_plugin_api() {
         assert_eq!(Embed::format(&e), want, "{api:?}");
     }
 }
+
+/// task-279: the plugin editor shows the About window with the copy-version button, and a click
+/// on it puts the version on the clipboard (`CopyText`, which egui-baseview writes).
+#[test]
+fn the_about_window_has_a_copy_version_button() {
+    let mut h = Harness::new(with("303_accent0"));
+    h.app.show_about();
+    for _ in 0..6 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.about_is_open());
+    let r = orb_ui::about::copy_button_rect(&h.ctx).expect("the button is drawn");
+    assert!(h.copied.is_empty());
+    h.click(r.center());
+    assert_eq!(h.copied, vec![orb_ui::about::VERSION.to_string()]);
+}
