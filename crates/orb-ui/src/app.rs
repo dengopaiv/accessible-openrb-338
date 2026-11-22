@@ -150,6 +150,10 @@ pub struct App {
     pub(crate) undo: Option<crate::menu::Undo>,
     /// The 303 pattern editor's window (Edit > 303 Pattern Editor..., task-274).
     pub(crate) editor: crate::pattern_editor::Editor,
+    /// The drum pattern editors' windows, by `drum_editor::Machine::index` (Edit > 808 Pattern
+    /// Editor..., task-280).
+    pub(crate) drum_editors:
+        [crate::drum_editor::DrumEditor; crate::drum_editor::Machine::ALL.len()],
     /// Where the Edit menu drew its items last, and whether each was enabled
     /// (`App::edit_item`).
     pub(crate) edit_items: Vec<(&'static str, Rect, bool)>,
@@ -253,6 +257,7 @@ impl App {
             clip_count: 0,
             undo: None,
             editor: Default::default(),
+            drum_editors: Default::default(),
             edit_items: Vec::new(),
             key_mode: KeyMode::default(),
             menu: false,
@@ -997,9 +1002,10 @@ impl App {
                 if shortcuts::consume(ui, &shortcuts::KEYS_PATTERNS) {
                     self.key_mode = KeyMode::Patterns;
                 }
-                // Ctrl/Cmd+E: Edit > 303 Pattern Editor... (task-274)
+                // Ctrl/Cmd+E: the focused row's pattern editor, Edit > 303 or 808 Pattern
+                // Editor... (tasks 274 and 280)
                 if shortcuts::consume(ui, &shortcuts::PATTERN_EDITOR) {
-                    self.open_pattern_editor();
+                    self.open_focused_editor();
                 }
                 if ui.ctx().text_edit_focused() {
                     // typing in a text field (File > Info, task-117): the other keys are the
@@ -1115,6 +1121,7 @@ impl App {
         self.prompt_ui(&ctx);
         self.info_ui(&ctx);
         self.pattern_editor_ui(&ctx);
+        self.drum_editors_ui(&ctx);
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);
         self.plugin_usage_ui(&ctx);

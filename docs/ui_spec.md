@@ -1074,7 +1074,8 @@ read, and what it leaves out.
   Ctrl/Cmd+X, C and V into egui's Cut, Copy and Paste events without a key event;
   `App::pattern_keys` takes them, and Ctrl/Cmd+D and Z, only where the panel takes keys (no text
   field focused, no browser, prompt or error box open), and leaves Cut and Copy to a window's
-  selected text. Ctrl/Cmd+E (Edit > 303 Pattern Editor..., section 23) is taken in the
+  selected text. Ctrl/Cmd+E (the focused row's pattern editor: Edit > 808 Pattern Editor...
+  with the TR-808 focused, section 24, else Edit > 303 Pattern Editor..., section 23) is taken in the
   standalone app by `App::show` with Ctrl/Cmd+F and G: also while a text field has the focus,
   but not while the browser, the prompt or the error box is open. Edit > Paste Pattern asks for
   the system clipboard
@@ -1175,6 +1176,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a TB-303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard stays |
 | Edit | 303 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating 303 pattern editor on the selected 303's active pattern, or brings it to the front and switches it to that pattern (section 23, task-274); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
+| Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303's: opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 808's with the TR-808 focused, else the 303's (with the TR-909 focused too, until its editor, task-281) |
 | View | Classic, Modern | two radio items directly in View, no submenu (the user's review of task-267, 2026-11-21): a radio choice of the main window's skin: Modern (the SVG panel, the default) or Classic (the original's panel from the kit's bitmaps, section 21); saved in the settings file at once (`theme`, section 17) and taken by the next run; the standalone app's only, a plugin's editor has no View menu (task-267) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
@@ -1233,7 +1235,12 @@ is one more entry.
   prompt: S/Y/Enter save, D/N do not, Esc cancels; the browser's overwrite question: Y replaces,
   Enter/Esc/N go back) are listed by hand from `prompt_ui` (`menu.rs`) and the browser's key
   handler (`browser.rs`); no test checks them. The Theme Viewer's Space row is gone with the
-  viewer (task-267; the unit test `no_row_names_the_theme_viewer`). The help window is the
+  viewer (task-267; the unit test `no_row_names_the_theme_viewer`). The group "808 Pattern
+  Editor" (task-280, section 24) lists every key and mouse action of the 808 editor: its lines
+  are `drum_editor::Input::ALL` with the platform's names (Cmd/Option on macOS, Ctrl/Alt
+  elsewhere); the unit test `the_808_editor_group_lists_every_input_of_the_editor` requires each
+  input once, and `tests/drum_editor.rs` `every_input_of_the_help_does_what_it_says` runs each
+  (a match on every `Input`, so a new input does not compile untested). The help window is the
   standalone app's only (section 20).
 
 - **Help > About and the version string** (task-102; `crates/orb-ui/src/about.rs`, `version.rs`,
@@ -1818,7 +1825,7 @@ The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the sam
   lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
 - **The menus**: File has New, Open and Info only; nothing asks to save. The Edit menu is the
   standalone's (section 18): Undo, Cut, Copy, Paste and Duplicate Pattern, and the 303 Pattern
-  Editor... (section 23), in the same order, with the same names and the same behavior, but no
+  Editor... (section 23) and 808 Pattern Editor... (section 24), in the same order, with the same names and the same behavior, but no
   shortcut texts (the user's review of task-274, rounds 2 and 3). Undo is the one-level Undo,
   named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the app's
   clipboard and the marker text on the system clipboard (egui-baseview 0.9 writes egui's
@@ -2180,7 +2187,9 @@ A floating editor for one TB-303 pattern, designed with the user on 2026-11-21: 
 with a 13-key piano roll, like modern 303 pattern editors. It is orb's own (the original has
 none) and edits only what a song stores for a 303 pattern (`docs/RBS42.txt`, the "303 " chunk;
 the 98 bytes of `docs/song_load.md` section 4.6: the shuffle flag, the length, and per step
-note, slide, accent, up, down and rest). The 808 and 909 editors are later tasks of m-9. Code:
+note, slide, accent, up, down and rest). The 808 editor is section 24 (task-280); the 909's
+is task-281. The window's frame is shared with them (`crates/orb-ui/src/editor_frame.rs`:
+the placing, the header's controls, the grid's geometry and painting). Code:
 `crates/orb-ui/src/pattern_editor.rs`; tests: `crates/orb-ui/tests/pattern_editor.rs`, the unit
 tests of the module, and `crates/orb-plugin/tests/editor.rs`
 `the_edit_menu_opens_the_303_pattern_editor`.
@@ -2294,3 +2303,80 @@ has the same Undo item, with no shortcut (its editor takes no keys; section 20).
   shows (the 303 switch keeps the pattern number); it never changes the panel's selection and
   never records. The pattern the panel plays does not move the editor.
 - There is no Follow button (dropped by the user).
+
+**Typed values** (task-280, the shared frame): a value typed into the pattern number or Length
+is set by Enter (or a click elsewhere), not as each key is typed, so it is one change; Escape
+cancels it. egui 0.37's `DragValue` sets a typed value in the frame after an Escape (the field
+lost the focus and the Escape is no longer pressed), so `editor_frame::value_field` drops a
+change in the frames right after an Escape on the focused field.
+
+## 24. The 808 pattern editor (task-280)
+
+A floating editor for one TR-808 pattern, designed with the user on 2026-11-22 on the 303
+editor's frame (section 23). It edits only what a song stores for an 808 pattern
+(`docs/RBS42.txt`, the "808 " chunk; the 194 bytes of `docs/song_load.md` section 4.7: the
+shuffle flag, the length, and 16 steps of 12 bytes, one per instrument in RBS order AC, BD, SD,
+LT/LC, MT/MC, HT/HC, RS/CL, CP/MA, CB, CY, OH, CH, each 0 or 1). Code:
+`crates/orb-ui/src/drum_editor.rs` (the drum-grid editor, `Machine::Tr808`; the 909's,
+task-281, is another `Machine` on it) on `crates/orb-ui/src/editor_frame.rs`; tests:
+`crates/orb-ui/tests/drum_editor.rs`, the unit tests of the module, `key_help.rs`
+`the_808_editor_group_lists_every_input_of_the_editor`, and `crates/orb-plugin/tests/editor.rs`
+`the_edit_menu_opens_the_808_pattern_editor_and_undoes_its_changes`.
+
+**The window.** "808 Pattern Editor", an `egui::Window` like the 303's (draggable, closable,
+not resizable or collapsible; the same in the standalone app and the plugin), separate from it:
+both can be open.
+- **Opening**: Edit > 808 Pattern Editor..., and Ctrl/Cmd+E with the TR-808 row focused (the
+  standalone app; the key opens the focused row's editor, section 18). It opens on the TR-808's
+  active pattern; when it is open, the item and the key bring it to the front and switch it to
+  that pattern. Disabled without a song.
+- **Its place**: saved as the 303's, under its own key `pattern_editor_808_pos` in `ui.toml` (the
+  standalone app's only; section 17).
+
+**Layout, top to bottom** (the app's palette, the same in both skins):
+- **The top row**: the bank buttons A B C D; the pattern number 1-8 between its left and right
+  arrows, which step through A1..D8 (8 goes on to the next bank's 1) and stop at A1 and D8
+  (`drum_editor::step_pattern`; the 808 has no 1/2 switch); Copy, Paste (enabled while the
+  clipboard holds an 808 pattern) and Clear; Length 1-16; Shuffle (the pattern's flag, byte 0).
+- **The step numbers** 1 to 16; the playing step's is amber.
+- **11 drum rows**, top to bottom BD, SD, the five switched slots, CB, CY, OH, CH (step bytes 1
+  to 11), labeled in the 303 editor's label column (66 points, 15.5-point names). The labels of
+  the switched slots follow the panel's switches `tr808.slot3_switch` .. `tr808.slot7_switch`
+  (song controllers, not pattern data; section 6): non-zero (down) LT MT HT RS CP, 0 (up) LC MC
+  HC CL MA, updated as the panel changes. The editor has no such switches (the user's decision).
+  Each label's tooltip is the instrument's full name ("Low Conga").
+- **A divider**, then **the AC row** (step byte 0), tooltip "Accent: every drum on this step
+  louder".
+- **Shift** left and right at the bottom, centered under the grid. No Transpose.
+- The 16 step columns fill the width (at least 27 points each); rows alternate
+  `palette::SLATE_DARK` and `palette::BG`; a set cell is an amber cell. The playing step (from
+  `Panel::playing_step808`, when the editor's pattern is the one the 808 plays) is a lit column;
+  steps beyond the length are dimmed and still editable.
+
+**What the controls do.**
+- **A click** toggles the cell: 0 <-> 1 (a stored byte above 1 counts as set, and a click clears
+  it), as the panel's step buttons (section 6).
+- **A drag** paints the first cell's new value along the row it started in only, whatever row the
+  mouse goes over (steps skipped between frames are painted too), as on the panel.
+- **Modifiers**: none. Shift, Ctrl/Cmd, Alt/Option with a click or drag do the same as without.
+- **Shift** rotates the steps by one (whole 12-byte steps), wrapping within the length.
+- **Clear** leaves the emptied pattern Edit > Cut Pattern leaves (every byte 0) with the length
+  and shuffle kept, and leaves the clipboard. **Copy and Paste** use the Edit menu's pattern
+  clipboard (section 16); status lines "TR-808: A1 copied", "TR-808: pasted into A2",
+  "TR-808: A1 cleared".
+
+**One edit path, one Undo**, as the 303 editor's: every change is one whole-pattern write of 194
+bytes through `App::write_pattern` -> `Link::set_pattern` (msg 41 sub 61 `{p, bytes}`), heard at
+once, the song marked modified, the panel's step LEDs updated, and undone by Edit > Undo ("Edit
+Pattern", "Shift Pattern", "Clear Pattern", "Paste Pattern", "Pattern Length", "Pattern
+Shuffle"). A drag is one change.
+
+**Pattern selection.** Pattern mode: the editor shows the TR-808's selected pattern (a selection
+on the panel moves it, the switch into pattern mode too) and a bank, number or arrow in the
+editor selects it on the panel. Song mode: the two are independent, and the editor never
+records. No Follow button.
+
+**Keyboard Shortcuts** (section 18, Help): the group "808 Pattern Editor" lists Ctrl/Cmd+E,
+click, drag, the modifiers (none), the pattern number's and Length's drag, Shift+drag (slower),
+click-type-Enter and Escape, and Ctrl/Cmd+Z, each with what it does and its plugin difference
+(the plugin takes no keys: the menu opens the editor and undoes).

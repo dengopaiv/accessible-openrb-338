@@ -11,6 +11,7 @@
 use egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
 
 use crate::app::App;
+use crate::drum_editor;
 use crate::keys::{Action, KeyMode};
 use crate::palette::{INK, INK_DIM};
 use crate::shortcuts;
@@ -150,6 +151,8 @@ pub struct Row {
     pub what: &'static str,
     /// The bindings the line stands for (empty for a menu shortcut and for a plain note).
     pub binds: Vec<Bind>,
+    /// The drum editor's input the line stands for (task-280; tests/drum_editor.rs runs each).
+    pub editor: Option<drum_editor::Input>,
 }
 
 /// A titled block of lines.
@@ -167,6 +170,17 @@ fn row(keys: &str, what: &'static str, binds: Vec<Bind>) -> Row {
         keys: keys.into(),
         what,
         binds,
+        editor: None,
+    }
+}
+
+/// The line of a drum editor's input, with the platform's key names.
+fn editor_row(is_mac: bool, i: drum_editor::Input) -> Row {
+    Row {
+        keys: i.keys(is_mac),
+        what: i.what(),
+        binds: vec![],
+        editor: Some(i),
     }
 }
 
@@ -300,7 +314,8 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                 menu_row(
                     is_mac,
                     &shortcuts::PATTERN_EDITOR,
-                    "Edit > 303 Pattern Editor...",
+                    "The focused row's pattern editor: Edit > 808 Pattern Editor... with the \
+                     TR-808 focused, else Edit > 303 Pattern Editor...",
                 ),
                 menu_row(
                     is_mac,
@@ -510,6 +525,16 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                 patterns(2, "TR-808", "A S D F G H J K"),
                 patterns(3, "TR-909", "Z X C V B N M ,"),
             ],
+        },
+        Group {
+            title: "808 Pattern Editor",
+            mode: None,
+            note: "Every key and mouse action of the editor's window; the panel's keys work \
+                   as without it, except while a value is typed.",
+            rows: drum_editor::Input::ALL
+                .iter()
+                .map(|&i| editor_row(is_mac, i))
+                .collect(),
         },
         Group {
             title: "Windows and the file browser",
@@ -767,6 +792,48 @@ mod tests {
         let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "E", "F", "G"];
         assert_eq!(text(true), keys.map(|k| format!("Cmd+{k}")));
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
+    }
+
+    /// The 808 editor's group lists every input the editor handles (`drum_editor::Input::ALL`,
+    /// each of which tests/drum_editor.rs runs), once each and in order, with the platform's
+    /// key names.
+    #[test]
+    fn the_808_editor_group_lists_every_input_of_the_editor() {
+        for is_mac in [false, true] {
+            let gs = groups(is_mac);
+            let g = gs
+                .iter()
+                .find(|g| g.title == "808 Pattern Editor")
+                .expect("the group");
+            let listed: Vec<_> = g.rows.iter().map(|r| r.editor).collect();
+            let all: Vec<_> = drum_editor::Input::ALL.iter().copied().map(Some).collect();
+            assert_eq!(listed, all);
+            for r in &g.rows {
+                let i = r.editor.unwrap();
+                assert_eq!(r.keys, i.keys(is_mac));
+                assert_eq!(r.what, i.what());
+            }
+            let keys: Vec<&str> = g.rows.iter().map(|r| r.keys.as_str()).collect();
+            let cmd = if is_mac { "Cmd" } else { "Ctrl" };
+            assert!(keys.contains(&format!("{cmd}+E").as_str()), "{keys:?}");
+            assert!(keys.contains(&format!("{cmd}+Z").as_str()), "{keys:?}");
+            // the open key is the menu's shortcut
+            assert_eq!(
+                drum_editor::Input::OpenKey.keys(is_mac),
+                shortcuts::text_for(&shortcuts::PATTERN_EDITOR, is_mac)
+            );
+            assert_eq!(
+                drum_editor::Input::Undo.keys(is_mac),
+                shortcuts::text_for(&shortcuts::UNDO, is_mac)
+            );
+            // no other group lists an editor input
+            let elsewhere = gs
+                .iter()
+                .filter(|o| o.title != g.title)
+                .flat_map(|o| &o.rows)
+                .any(|r| r.editor.is_some());
+            assert!(!elsewhere);
+        }
     }
 
     /// The Theme Viewer and its Space key are gone (task-267): no row names them.

@@ -12,15 +12,20 @@
 //!
 //! The pure functions over a pattern's bytes ([`with_note`], [`shifted`], [`transposed`] and
 //! the like) are the edits; [`Act`] is what the window asks for, run by [`App::editor_act`].
+//! The window's frame (its placing, the header's controls, the grid's geometry and painting) is
+//! shared with the drum editors (`crate::editor_frame`, task-280).
 
-use egui::{Color32, Context, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{Color32, Context, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::app::App;
+pub use crate::editor_frame::STEPS;
+use crate::editor_frame::{
+    self as frame, ARROW, CELL_H, CELL_W, GAP, HEAD_H, KEY_W, LABEL_SIZE, Number, Placing, Press,
+    SPLIT_H, cell_rect, dimmed, paint_columns,
+};
 use crate::link::emptied_pattern;
 use crate::palette::{AMBER, BG, INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 
-/// The steps of a pattern.
-pub const STEPS: usize = 16;
 /// The pitches of the piano roll: C to the C an octave above (note bytes 0..=12).
 pub const PITCHES: u8 = 13;
 /// The bytes of a 303 pattern: the shuffle flag, the length, 16 steps of 6 bytes.
@@ -123,13 +128,7 @@ pub fn with_shuffle(bytes: &[u8], on: bool) -> Vec<u8> {
 /// `bytes` with the steps rotated by one step, right (later) or left, wrapping within the
 /// pattern's length; the steps beyond the length stay.
 pub fn shifted(bytes: &[u8], right: bool) -> Vec<u8> {
-    let n = length(bytes);
-    let mut b = bytes.to_vec();
-    for s in 0..n {
-        let from = if right { (s + n - 1) % n } else { (s + 1) % n };
-        b[step_at(s)..step_at(s) + 6].copy_from_slice(&bytes[step_at(from)..step_at(from) + 6]);
-    }
-    b
+    frame::shifted(bytes, 6, right)
 }
 
 /// `bytes` with every step's pitch moved by one semitone, up or down, wrapping over the 13
@@ -271,11 +270,8 @@ pub struct Editor {
     /// The 303 shown (0 or 1) and its pattern (0..=31).
     pub synth: usize,
     pub pattern: u8,
-    /// The window comes to the front in the next frame.
-    front: bool,
-    /// The frames left in which an opening places the window (the first frame of a window
-    /// only measures it, and its place is then held to the screen by a wrong size).
-    place: u8,
+    /// The window's placing and place.
+    win: Placing,
     gesture: Option<Gesture>,
     /// The 303 rows' selected patterns at the last frame (pattern mode follows a change).
     seen: [u8; 2],
@@ -288,15 +284,11 @@ pub struct Editor {
     flags_down: bool,
     /// Where the window drew its parts last (for tests and the pointer).
     hits: Hits,
-    /// The window's left top at the last frame, and whether it moved since the last save.
-    last_min: Option<Pos2>,
-    moved: bool,
 }
 
 /// Where the window drew its grids and buttons last.
 #[derive(Clone, Debug, Default)]
 struct Hits {
-    window: Option<Rect>,
     notes: Option<Rect>,
     flags: Option<Rect>,
     buttons: Vec<(&'static str, Rect)>,
@@ -305,26 +297,6 @@ struct Hits {
     dimmed: bool,
 }
 
-/// The frames in which an opening places the window: egui's first frame of a window measures
-/// it, the second still holds it to the screen by the size measured before its content was
-/// complete (seen: the place's x cut to 24 on a 624-point window), the third has its size.
-const PLACE_FRAMES: u8 = 3;
-
-/// The least width of a step column (the columns widen to fill the window), a row's height,
-/// the piano keys' and the flag labels' width, in points.
-const CELL_W: f32 = 22.0;
-const CELL_H: f32 = 19.0;
-const KEY_W: f32 = 66.0;
-/// The size of the Shift and Transpose arrow buttons (the same for all four), and the gap
-/// between the grid and the Transpose column.
-const ARROW: Vec2 = vec2(24.0, 20.0);
-const GAP: f32 = 6.0;
-/// The step numbers' row over the grid.
-const HEAD_H: f32 = 14.0;
-/// The gap between the piano roll and the flag rows (a divider line in its middle).
-const SPLIT_H: f32 = 9.0;
-/// The size of the row labels: the piano keys' note names and the flag rows' names.
-const LABEL_SIZE: f32 = 15.5;
 /// The pairs of white keys that meet (E-F, B-high C), lower pitch first: a line on the grid
 /// between their rows.
 const WHITE_PAIRS: [(u8, u8); 2] = [(4, 5), (11, 12)];
@@ -341,36 +313,6 @@ pub fn row_fill(pitch: u8) -> Color32 {
     } else {
         WHITE_ROW
     }
-}
-
-/// The step cell `(step, row)` of a grid at `rect` that holds `p`, `None` outside it.
-fn cell_at(rect: Rect, rows: usize, p: Pos2) -> Option<(usize, usize)> {
-    if !rect.contains(p) {
-        return None;
-    }
-    let s = ((p.x - rect.left()) / col_w(rect)).floor() as usize;
-    let r = ((p.y - rect.top()) / CELL_H).floor() as usize;
-    (s < STEPS && r < rows).then_some((s, r))
-}
-
-/// The width of a step column of a grid at `rect`: the grid's width over the 16 steps.
-fn col_w(rect: Rect) -> f32 {
-    rect.width() / STEPS as f32
-}
-
-/// The step column of a grid at `rect` under `x`, `None` outside its columns.
-fn column_at(rect: Rect, x: f32) -> Option<usize> {
-    let s = ((x - rect.left()) / col_w(rect)).floor();
-    (s >= 0.0 && (s as usize) < STEPS).then_some(s as usize)
-}
-
-/// The cell of step `s`, row `r` of a grid at `rect`.
-fn cell_rect(rect: Rect, s: usize, r: usize) -> Rect {
-    let w = col_w(rect);
-    Rect::from_min_size(
-        pos2(rect.left() + s as f32 * w, rect.top() + r as f32 * CELL_H),
-        vec2(w, CELL_H),
-    )
 }
 
 /// What the window shows of the song in a frame.
@@ -403,11 +345,8 @@ impl App {
         e.pattern = self.panel.rows[e.synth].pattern;
         e.seen = [self.panel.rows[0].pattern, self.panel.rows[1].pattern];
         e.was_song_mode = self.panel.transport.song_mode;
-        if !e.open {
-            e.place = PLACE_FRAMES;
-        }
+        e.win.open(e.open);
         e.open = true;
-        e.front = true;
         e.gesture = None;
     }
 
@@ -426,7 +365,7 @@ impl App {
 
     /// Where the window was drawn last (`None` before its first frame).
     pub fn pattern_editor_window(&self) -> Option<Rect> {
-        self.editor.hits.window.filter(|_| self.editor.open)
+        self.editor.win.window.filter(|_| self.editor.open)
     }
 
     /// The playing step the grid showed last, and whether it dimmed the steps beyond the
@@ -674,118 +613,39 @@ impl App {
         let saved = (!plugin)
             .then_some(self.settings.pattern_editor_pos)
             .flatten();
-        // the saved place, else centered (by the size it had, else about its size)
-        let size = self
-            .editor
-            .hits
-            .window
-            .map_or(vec2(530.0, 340.0), |r| r.size());
-        let place = match saved {
-            Some([x, y]) => pos2(x as f32, y as f32),
-            None => ctx.content_rect().center() - size / 2.0,
-        };
-        let mut open = true;
         let mut acts = Vec::new();
         let mut length_drag = false;
+        let mut win = std::mem::take(&mut self.editor.win);
         let editor = &mut self.editor;
-        let id = egui::Id::unique("orb_pattern_editor");
-        let mut window = egui::Window::new("303 Pattern Editor")
-            .id(id)
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false);
-        if editor.place > 0 {
-            editor.place -= 1;
-            // (`current_pos` sets the first frame's place only: a window moved by its title bar
-            // takes the stored place back after it, egui 0.37)
-            window = window.current_pos(place);
-            if let Some(mut s) = egui::AreaState::load(ctx, id) {
-                s.set_left_top_pos(place);
-                let layer = egui::LayerId::new(egui::Order::Middle, id);
-                ctx.memory_mut(|m| m.areas_mut().set_state(layer, s));
-            }
-        }
-        let resp = window.show(ctx, |ui| {
+        let spec = frame::Spec {
+            id: egui::Id::unique("orb_pattern_editor"),
+            title: "303 Pattern Editor",
+            saved,
+            guess: vec2(530.0, 340.0),
+            keep: !plugin,
+        };
+        let out = frame::show_window(ctx, spec, &mut win, |ui| {
             length_drag = window_ui(ui, editor, &shown, &mut acts);
         });
+        self.editor.win = win;
         if !length_drag {
             self.editor.length_wrote = false;
         }
         for a in acts {
             self.editor_act(a);
         }
-        if let Some(r) = resp {
-            if std::mem::take(&mut self.editor.front) {
-                ctx.move_to_top(r.response.layer_id);
-            }
-            self.editor.hits.window = Some(r.response.rect);
-            // a move by the mouse (not the window's own placing as it opens)
-            let min = r.response.rect.min;
-            let down = ctx.input(|i| i.pointer.any_down());
-            if down && self.editor.last_min.is_some_and(|m| m != min) {
-                self.editor.moved = true;
-            }
-            self.editor.last_min = Some(min);
-        }
         // the place is saved once the window is let go (the standalone app's only)
-        let down = ctx.input(|i| i.pointer.any_down());
-        if !plugin && self.editor.moved && !down {
-            self.editor.moved = false;
-            if let Some(m) = self.editor.last_min {
-                self.settings
-                    .set_pattern_editor_pos(Some([m.x.round() as i32, m.y.round() as i32]));
-                if let Err(e) = self.settings.save() {
-                    self.fail(e);
-                }
+        if let Some(pos) = out.save {
+            self.settings.set_pattern_editor_pos(Some(pos));
+            if let Err(e) = self.settings.save() {
+                self.fail(e);
             }
         }
-        if !open {
+        if !out.open {
             self.editor.open = false;
             self.editor.gesture = None;
-            self.editor.last_min = None;
         }
     }
-}
-
-/// A button with a triangle drawn on it, pointing `dir` (a unit vector); whether clicked.
-fn arrow_button(ui: &mut Ui, rect: Rect, dir: Vec2, hits: &mut Hits, name: &'static str) -> bool {
-    // (not `ui.put`, which would move the layout's cursor below the button)
-    let r = ui.interact(
-        rect,
-        egui::Id::unique(("orb_pattern_editor", name)),
-        Sense::click(),
-    );
-    hits.buttons.push((name, rect));
-    paint_arrow(ui, &r, dir);
-    r.clicked()
-}
-
-/// [`arrow_button`] laid out in the current row (the pattern number's arrows), `size` big.
-fn arrow_in_row(ui: &mut Ui, size: Vec2, dir: Vec2, hits: &mut Hits, name: &'static str) -> bool {
-    let (rect, r) = ui.allocate_exact_size(size, Sense::click());
-    hits.buttons.push((name, rect));
-    paint_arrow(ui, &r, dir);
-    r.clicked()
-}
-
-/// A button's frame in the style's look and a triangle pointing `dir`.
-fn paint_arrow(ui: &Ui, r: &egui::Response, dir: Vec2) {
-    let rect = r.rect;
-    let v = ui.style().interact(r);
-    ui.painter().rect(
-        rect,
-        v.corner_radius,
-        v.weak_bg_fill,
-        v.bg_stroke,
-        egui::StrokeKind::Inside,
-    );
-    let c = rect.center();
-    let a = 4.5;
-    let side = vec2(-dir.y, dir.x);
-    let pts = vec![c + dir * a, c - dir * a + side * a, c - dir * a - side * a];
-    let color = if r.hovered() { INK } else { INK_DIM };
-    ui.painter()
-        .add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
 }
 
 /// The window's content; what it asks for goes to `acts`. Whether the Length value is being
@@ -796,9 +656,7 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
     let bank = s.pattern / 8;
     // ---- the top row ----
     ui.horizontal(|ui| {
-        // compact, so the window fits the smallest panel (624 points wide)
-        ui.spacing_mut().item_spacing.x = 4.0;
-        ui.spacing_mut().button_padding = vec2(5.0, 1.0);
+        frame::compact(ui);
         for k in 0..2 {
             let name = ["303-1", "303-2"][k];
             let r = ui.selectable_label(s.synth == k, name);
@@ -808,82 +666,46 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
             }
         }
         ui.separator();
-        for b in 0..4u8 {
-            let name = ["A", "B", "C", "D"][b as usize];
-            let r = ui.selectable_label(bank == b, name);
-            e.hits.buttons.push((name, r.rect));
-            if r.clicked() && bank != b {
-                acts.push(Act::Select {
-                    synth: s.synth,
-                    pattern: b * 8 + s.pattern % 8,
-                });
-            }
+        if let Some(b) = frame::bank_buttons(ui, s.pattern, &mut e.hits.buttons) {
+            acts.push(Act::Select {
+                synth: s.synth,
+                pattern: b * 8 + s.pattern % 8,
+            });
         }
         // the number between its arrows, which step through 303-1 A1..D8 then 303-2 A1..D8
         // and stop at the two ends (`step_pattern`)
-        let small = vec2(16.0, ui.spacing().interact_size.y);
-        let k0 = s.pattern % 8;
         let prev = step_pattern(s.synth, s.pattern, false);
         let next = step_pattern(s.synth, s.pattern, true);
-        let hits = &mut e.hits;
-        let left = ui
-            .add_enabled_ui(prev.is_some(), |ui| {
-                arrow_in_row(ui, small, vec2(-1.0, 0.0), hits, "number_prev")
-            })
-            .inner;
-        if let (true, Some((synth, pattern))) = (left, prev) {
-            acts.push(Act::Select { synth, pattern });
-        }
-        let mut n = k0 + 1;
-        let r = ui.add(egui::DragValue::new(&mut n).range(1..=8).speed(0.05));
-        e.hits.buttons.push(("number", r.rect));
-        if r.changed() && n != k0 + 1 {
-            acts.push(Act::Select {
-                synth: s.synth,
-                pattern: bank * 8 + n.clamp(1, 8) - 1,
-            });
-        }
-        let hits = &mut e.hits;
-        let right = ui
-            .add_enabled_ui(next.is_some(), |ui| {
-                arrow_in_row(ui, small, vec2(1.0, 0.0), hits, "number_next")
-            })
-            .inner;
-        if let (true, Some((synth, pattern))) = (right, next) {
-            acts.push(Act::Select { synth, pattern });
-        }
-        ui.separator();
-        for (name, act) in [
-            ("Copy", Act::Copy),
-            ("Paste", Act::Paste),
-            ("Clear", Act::Clear),
-        ] {
-            let ok = name != "Paste" || s.paste;
-            let r = ui.add_enabled(ok, egui::Button::new(name));
-            e.hits.buttons.push((name, r.rect));
-            if r.clicked() {
-                acts.push(act);
-            }
-        }
-        ui.separator();
-        let mut len = length(&s.bytes) as u8;
-        let r = ui.add(
-            egui::DragValue::new(&mut len)
-                .range(1..=16)
-                .speed(0.1)
-                .prefix("Length "),
+        let n = frame::number_field(
+            ui,
+            s.pattern,
+            prev.is_some(),
+            next.is_some(),
+            &mut e.hits.buttons,
         );
-        e.hits.buttons.push(("Length", r.rect));
-        length_drag = r.dragged();
-        if r.changed() {
-            acts.push(Act::Length {
-                n: len.clamp(1, 16),
-                drag: r.dragged(),
-            });
+        let to = match n {
+            Some(Number::Prev) => prev,
+            Some(Number::Next) => next,
+            Some(Number::Set(n)) => Some((s.synth, bank * 8 + n)),
+            None => None,
+        };
+        if let Some((synth, pattern)) = to {
+            acts.push(Act::Select { synth, pattern });
         }
-        let r = ui.selectable_label(s.bytes[0] != 0, "Shuffle");
-        e.hits.buttons.push(("Shuffle", r.rect));
-        if r.clicked() {
+        ui.separator();
+        match frame::edit_buttons(ui, s.paste, &mut e.hits.buttons) {
+            Some("Copy") => acts.push(Act::Copy),
+            Some("Paste") => acts.push(Act::Paste),
+            Some(_) => acts.push(Act::Clear),
+            None => {}
+        }
+        ui.separator();
+        let h = frame::length_shuffle(ui, &s.bytes, &mut e.hits.buttons);
+        length_drag = h.length_drag;
+        if let Some((n, drag)) = h.length {
+            acts.push(Act::Length { n, drag });
+        }
+        if h.shuffle {
             acts.push(Act::Shuffle);
         }
     });
@@ -897,26 +719,7 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
     let block_w = KEY_W + grid_w + GAP + ARROW.x;
     // ---- the step numbers ----
     let (head, _) = ui.allocate_exact_size(vec2(block_w, HEAD_H), Sense::hover());
-    for st in 0..STEPS {
-        let c = pos2(
-            head.left() + KEY_W + (st as f32 + 0.5) * cw,
-            head.center().y,
-        );
-        let color = if s.playing == Some(st) {
-            AMBER
-        } else if st < len {
-            INK_DIM
-        } else {
-            SLATE_LINE
-        };
-        ui.painter().text(
-            c,
-            egui::Align2::CENTER_CENTER,
-            (st + 1).to_string(),
-            egui::FontId::proportional(10.0),
-            color,
-        );
-    }
+    frame::step_numbers(ui, head, head.left() + KEY_W, cw, len, s.playing);
 
     // ---- the piano roll ----
     let rows = PITCHES as usize;
@@ -969,46 +772,38 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
             painter.rect_filled(c, CornerRadius::same(2), dimmed(AMBER, st >= len));
         }
     }
-    let r = ui.interact(
-        grid,
-        egui::Id::unique("orb_pattern_editor_notes"),
-        Sense::click_and_drag(),
-    );
-    hover_cell(ui, &r, grid, rows);
-    let down = r.is_pointer_button_down_on();
-    if down {
-        let p = pointer_pos(ui, !e.notes_down);
-        if let Some((st, row)) = p.and_then(|p| cell_at(grid, rows, p)) {
-            let pitch = PITCHES - 1 - row as u8;
-            acts.push(if e.notes_down {
-                Act::NoteMove { step: st, pitch }
-            } else {
-                Act::NoteDown { step: st, pitch }
-            });
-        }
-    } else if e.notes_down {
-        acts.push(Act::Release);
+    let id = egui::Id::unique("orb_pattern_editor_notes");
+    match frame::grid_press(ui, id, grid, rows, &mut e.notes_down) {
+        Some(Press::Down(step, row)) => acts.push(Act::NoteDown {
+            step,
+            pitch: PITCHES - 1 - row as u8,
+        }),
+        Some(Press::Held {
+            cell: Some((step, row)),
+            ..
+        }) => acts.push(Act::NoteMove {
+            step,
+            pitch: PITCHES - 1 - row as u8,
+        }),
+        Some(Press::Release) => acts.push(Act::Release),
+        _ => {}
     }
-    e.notes_down = down;
     // Transpose up and down at the grid's right, the pair centered on the piano roll
     let mid_y = grid.center().y;
     let tx = grid.right() + GAP;
     let up = Rect::from_min_size(pos2(tx, mid_y - 2.0 - ARROW.y), ARROW);
     let dn = Rect::from_min_size(pos2(tx, mid_y + 2.0), ARROW);
-    if arrow_button(ui, up, vec2(0.0, -1.0), &mut e.hits, "transpose_up") {
+    let b = &mut e.hits.buttons;
+    if frame::arrow_button(ui, up, vec2(0.0, -1.0), b, SALT, "transpose_up") {
         acts.push(Act::Transpose { up: true });
     }
-    if arrow_button(ui, dn, vec2(0.0, 1.0), &mut e.hits, "transpose_down") {
+    if frame::arrow_button(ui, dn, vec2(0.0, 1.0), b, SALT, "transpose_down") {
         acts.push(Act::Transpose { up: false });
     }
 
     // ---- the divider between the piano roll and the flag rows ----
     let (split, _) = ui.allocate_exact_size(vec2(block_w, SPLIT_H), Sense::hover());
-    let y = split.center().y;
-    painter.line_segment(
-        [pos2(split.left(), y), pos2(grid.right(), y)],
-        Stroke::new(1.0, SLATE_LINE),
-    );
+    frame::divider(&painter, split, grid.right());
 
     // ---- the flag rows ----
     let frows = Flag::ALL.len();
@@ -1042,30 +837,19 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
             }
         }
     }
-    let r = ui.interact(
-        flags,
-        egui::Id::unique("orb_pattern_editor_flags"),
-        Sense::click_and_drag(),
-    );
-    hover_cell(ui, &r, flags, frows);
-    let down = r.is_pointer_button_down_on();
-    if down {
-        let p = pointer_pos(ui, !e.flags_down);
-        if e.flags_down {
-            // the drag stays in its row: only the column counts
-            if let Some(st) = p.and_then(|p| column_at(flags, p.x)) {
-                acts.push(Act::FlagMove { step: st });
-            }
-        } else if let Some((st, row)) = p.and_then(|p| cell_at(flags, frows, p)) {
-            acts.push(Act::FlagDown {
-                flag: Flag::ALL[row],
-                step: st,
-            });
-        }
-    } else if e.flags_down {
-        acts.push(Act::Release);
+    let id = egui::Id::unique("orb_pattern_editor_flags");
+    match frame::grid_press(ui, id, flags, frows, &mut e.flags_down) {
+        Some(Press::Down(step, row)) => acts.push(Act::FlagDown {
+            flag: Flag::ALL[row],
+            step,
+        }),
+        // the drag stays in its row: only the column counts
+        Some(Press::Held {
+            column: Some(step), ..
+        }) => acts.push(Act::FlagMove { step }),
+        Some(Press::Release) => acts.push(Act::Release),
+        _ => {}
     }
-    e.flags_down = down;
 
     // ---- Shift at the bottom, centered under the step grid ----
     ui.add_space(6.0);
@@ -1073,73 +857,18 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
     let mid = grid.center().x;
     let left = Rect::from_min_size(pos2(mid - 2.0 - ARROW.x, row.top()), ARROW);
     let right = Rect::from_min_size(pos2(mid + 2.0, row.top()), ARROW);
-    if arrow_button(ui, left, vec2(-1.0, 0.0), &mut e.hits, "shift_left") {
+    let b = &mut e.hits.buttons;
+    if frame::arrow_button(ui, left, vec2(-1.0, 0.0), b, SALT, "shift_left") {
         acts.push(Act::Shift { right: false });
     }
-    if arrow_button(ui, right, vec2(1.0, 0.0), &mut e.hits, "shift_right") {
+    if frame::arrow_button(ui, right, vec2(1.0, 0.0), b, SALT, "shift_right") {
         acts.push(Act::Shift { right: true });
     }
     length_drag
 }
 
-/// The pointer: where the press began on its first frame, else where it is.
-fn pointer_pos(ui: &Ui, first: bool) -> Option<Pos2> {
-    ui.input(|i| {
-        if first {
-            i.pointer.press_origin().or(i.pointer.latest_pos())
-        } else {
-            i.pointer.latest_pos()
-        }
-    })
-}
-
-/// The cell under the mouse, lit faintly.
-fn hover_cell(ui: &Ui, r: &egui::Response, rect: Rect, rows: usize) {
-    if let Some((s, row)) = r.hover_pos().and_then(|p| cell_at(rect, rows, p)) {
-        ui.painter()
-            .rect_filled(cell_rect(rect, s, row), 0.0, Color32::from_white_alpha(18));
-    }
-}
-
-/// The step columns' lines (a stronger one every four steps), the playing step's column and
-/// the dimmed steps beyond the length.
-fn paint_columns(painter: &egui::Painter, rect: Rect, len: usize, playing: Option<usize>) {
-    let cw = col_w(rect);
-    for st in 0..=STEPS {
-        let x = rect.left() + st as f32 * cw;
-        let color = if st % 4 == 0 {
-            SLATE_LINE
-        } else {
-            SLATE_LINE.gamma_multiply(0.4)
-        };
-        painter.line_segment(
-            [pos2(x, rect.top()), pos2(x, rect.bottom())],
-            Stroke::new(1.0, color),
-        );
-    }
-    if len < STEPS {
-        let dim = Rect::from_min_max(pos2(rect.left() + len as f32 * cw, rect.top()), rect.max);
-        painter.rect_filled(dim, 0.0, Color32::from_black_alpha(110));
-    }
-    if let Some(st) = playing {
-        let col = Rect::from_min_size(
-            pos2(rect.left() + st as f32 * cw, rect.top()),
-            vec2(cw, rect.height()),
-        );
-        painter.rect_filled(col, 0.0, Color32::from_white_alpha(30));
-        painter.rect_stroke(
-            col,
-            0.0,
-            Stroke::new(1.0, AMBER.gamma_multiply(0.6)),
-            egui::StrokeKind::Inside,
-        );
-    }
-}
-
-/// `c`, dimmed for a step beyond the length.
-fn dimmed(c: Color32, dim: bool) -> Color32 {
-    if dim { c.gamma_multiply(0.4) } else { c }
-}
+/// The salt of the window's arrow buttons' ids.
+const SALT: &str = "orb_pattern_editor";
 
 #[cfg(test)]
 mod tests {

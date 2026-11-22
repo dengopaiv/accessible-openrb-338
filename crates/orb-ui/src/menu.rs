@@ -117,6 +117,8 @@ pub enum Cmd {
     Undo,
     /// Edit > 303 Pattern Editor... ([`App::open_pattern_editor`], task-274).
     PatternEditor,
+    /// Edit > 808 Pattern Editor... ([`App::open_drum_editor`], task-280).
+    DrumEditor(crate::drum_editor::Machine),
     /// Edit > Cut Pattern ([`App::copy_pattern`]).
     CutPattern,
     CopyPattern,
@@ -1049,6 +1051,7 @@ impl App {
             }
             Cmd::Undo => self.undo(),
             Cmd::PatternEditor => self.open_pattern_editor(),
+            Cmd::DrumEditor(m) => self.open_drum_editor(m),
             Cmd::CutPattern => self.copy_pattern(true),
             Cmd::CopyPattern => self.copy_pattern(false),
             Cmd::PastePattern => self.paste_pattern(),
@@ -1554,11 +1557,23 @@ impl App {
                 }
             }
             ui.separator();
+            // the pattern editors; Ctrl/Cmd+E opens the focused row's, so its text is on that
+            // item (the 303's with a 303 or the TR-909 focused; task-280)
+            let on_808 = self.panel.focus == 2;
             let text = PATTERN_EDITOR_ITEM;
-            let r = item_if(ui, song, text, key(&shortcuts::PATTERN_EDITOR));
+            let sc = key(&shortcuts::PATTERN_EDITOR);
+            let r = item_if(ui, song, text, sc.filter(|_| !on_808));
             self.edit_items.push((text, r.rect, song));
             if r.clicked() {
                 *cmd = Some(Cmd::PatternEditor);
+            }
+            for m in crate::drum_editor::Machine::ALL {
+                let text = m.menu_item();
+                let r = item_if(ui, song, text, sc.filter(|_| on_808));
+                self.edit_items.push((text, r.rect, song));
+                if r.clicked() {
+                    *cmd = Some(Cmd::DrumEditor(m));
+                }
             }
         });
         if !plugin {

@@ -17,6 +17,8 @@ pub mod browser;
 pub mod controller;
 pub mod crash;
 pub mod document;
+pub mod drum_editor;
+pub mod editor_frame;
 pub mod embed;
 pub mod error_box;
 pub mod info;

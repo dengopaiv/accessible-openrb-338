@@ -413,6 +413,7 @@ fn the_edit_menu_has_the_standalones_items_without_shortcuts() {
         "Paste Pattern",
         "Duplicate Pattern",
         "303 Pattern Editor...",
+        "808 Pattern Editor...",
     ];
     let ys: Vec<f32> = items
         .iter()
@@ -516,6 +517,41 @@ fn the_edit_menu_opens_the_303_pattern_editor_and_undoes_its_changes() {
     h.frame(vec![]);
     assert_eq!(h.app.link.as_ref().unwrap().pattern(k, p), &before[..]);
     assert_eq!(h.app.undo_name(), None);
+}
+
+/// task-280: the plugin's Edit menu opens the 808 pattern editor (no shortcut text, with the
+/// TR-808 focused too); a click in it edits the plugin's song, and Undo takes it back.
+#[test]
+fn the_edit_menu_opens_the_808_pattern_editor_and_undoes_its_changes() {
+    use orb_ui::drum_editor::{Machine, cell};
+    let m = Machine::Tr808;
+    let mut h = Harness::new(with("303_accent0"));
+    h.app.panel.focus = 2;
+    h.open_menu_with("808 Pattern Editor...");
+    for k in ["Ctrl+E", "Cmd+E"] {
+        assert!(!h.texts.iter().any(|t| t == k), "{k}");
+    }
+    let (r, enabled) = h.app.edit_item("808 Pattern Editor...").expect("drawn");
+    assert!(enabled);
+    h.click(r.center());
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let e = h.app.drum_editor(m);
+    assert!(e.open);
+    let p = e.pattern;
+    assert_eq!(p, h.app.panel.rows[2].pattern);
+    let before = h.app.link.as_ref().unwrap().pattern(2, p).to_vec();
+    let c = h.app.drum_editor_cell(m, 1, 15).unwrap();
+    h.click(c.center());
+    let after = h.app.link.as_ref().unwrap().pattern(2, p).to_vec();
+    assert_eq!(cell(&after, 15, 1), 1 - cell(&before, 15, 1).min(1));
+    h.open_menu_with("Undo Edit Pattern");
+    let (r, enabled) = h.app.edit_item("Undo").expect("drawn");
+    assert!(enabled);
+    h.click(r.center());
+    h.frame(vec![]);
+    assert_eq!(h.app.link.as_ref().unwrap().pattern(2, p), &before[..]);
 }
 
 /// task-267: the 808's mod window is no link (the Theme Viewer is gone): no hand cursor.
