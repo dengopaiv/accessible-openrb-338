@@ -1054,8 +1054,10 @@ read, and what it leaves out.
   - **The engine's side.** After each frame's `Link::sync`, `Link::moving` decides: while the
     song plays, while a meter is lit (any of the ten meters above 0), while the compressor's
     gain-reduction LEDs differ from the frame before (they hold their last value in
-    silence), or while the snapshot does not yet show the last commands sent (the frame count
-    is not past the mark), the window repaints after `METER_FRAME`, 33 ms (about 28 frames a
+    silence), while the snapshot does not yet show the last commands sent (the frame count
+    is not past the mark), or for one more frame after the panel took the engine's first
+    values since a send (a frame draws the panel before it takes them, so File > New showed
+    the old values until input without this, task-186), the window repaints after `METER_FRAME`, 33 ms (about 28 frames a
     second, measured). A sixteenth note is 75 ms at 200 BPM, so the running lights and the
     song position still change on time. A loaded song that waits for Play is not followed,
     so it does not count. Without a working audio stream (none at the start, or one reported

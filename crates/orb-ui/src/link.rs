@@ -433,6 +433,11 @@ pub struct Link {
     backlog: VecDeque<Command>,
     /// The engine's frame count when the last commands were queued.
     mark: u64,
+    /// The `mark` whose engine values the panel took last ([`Link::follow`]).
+    taken: u64,
+    /// The panel took engine values this turn: the window draws the panel before it takes them,
+    /// so one more frame must show them ([`Link::moving`]).
+    fresh: bool,
     /// The messages sent so far, when turned on (`Some`).
     pub log: Option<Vec<Msg>>,
     /// The drum samples of the newest song (its mod's), whose startup sound
@@ -534,6 +539,8 @@ impl Link {
             shown: [None; 4],
             backlog: VecDeque::new(),
             mark: 0,
+            taken: u64::MAX,
+            fresh: false,
             log: None,
             kit,
             recorded_at: None,
@@ -605,10 +612,11 @@ impl Link {
 
     /// Whether what the panel shows of the engine can still change by itself, after
     /// [`Link::sync`] (task-153, the repaint rule of `docs/ui_spec.md` section 16): the song
-    /// plays, a meter is lit, the gain-reduction LEDs changed, or the snapshot does
-    /// not show the last commands sent yet. While this holds the window repaints at the meter
-    /// rate; otherwise only input (or an animation of its own) repaints it. A loaded song that
-    /// waits for Play is not followed (module doc), so it moves nothing.
+    /// plays, a meter is lit, the gain-reduction LEDs changed, the snapshot does
+    /// not show the last commands sent yet, or the panel took the engine's first values since
+    /// a send this turn (one more frame draws them, task-186). While this holds the window repaints
+    /// at the meter rate; otherwise only input (or an animation of its own) repaints it. A
+    /// loaded song that waits for Play is not followed (module doc), so it moves nothing.
     pub fn moving(&mut self, panel: &Panel) -> bool {
         let mark = self.mark;
         let s = self.player.snapshot();
@@ -617,7 +625,9 @@ impl Link {
         // changes
         let gr = crate::model::gr_lit(panel.gr_byte);
         let gr_moved = self.shown_gr.replace(gr) != Some(gr);
+        let fresh = std::mem::take(&mut self.fresh);
         playing
+            || fresh
             || frames <= mark
             || !self.backlog.is_empty()
             || self.deferred.is_some()
@@ -1277,6 +1287,13 @@ impl Link {
         // the values only from a call that ran the commands sent, and not of a waiting song
         if s.frames > self.mark && !s.pending {
             self.follow_values(panel, &s, &live);
+            // the first values after the commands sent: the frame has drawn the panel before
+            // this, so it is drawn once more with them (a File > New or Open of a stopped song
+            // would otherwise show the old values until the next input)
+            if self.taken != self.mark {
+                self.taken = self.mark;
+                self.fresh = true;
+            }
         }
         self.fill_views(panel);
     }
