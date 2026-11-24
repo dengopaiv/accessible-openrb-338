@@ -69,10 +69,6 @@ on by default) goes to the plugin folder every host scans: OpenRB-338.vst3 to
 %COMMONPROGRAMFILES%\VST3. Rescan plugins in your host. The uninstaller removes the plugin and
 nothing else in that folder.
 
-The CLAP plugin was dropped: this installer deletes the OpenRB-338.clap an earlier release put in
-%COMMONPROGRAMFILES%\CLAP (and nothing else there). A project saved with the CLAP plugin needs
-the plugin replaced by its VST3 by hand in the host.
-
 An earlier per-user install (versions before the plugins) is not removed: take it out in
 Settings > Apps.
 

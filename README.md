@@ -71,13 +71,6 @@ same engine and panel inside a DAW. Quick start step 2 installs it;
 [docs/plugin_usage.md](docs/plugin_usage.md) is the guide to its modes and MIDI mappings (also
 in the plugin: Help > Plugin Usage), and docs/plugin.md describes how it works.
 
-**CLAP was dropped** (2026-11-22): the plugin is VST 3 only from the release after v2026.1118.0919.
-The Windows installer and the macOS plugin `.pkg` delete the old `OpenRB-338.clap` when you
-upgrade; with the `.dmg` or an archive, delete it by hand (`/Library/Audio/Plug-Ins/CLAP` or
-`~/Library/Audio/Plug-Ins/CLAP` on macOS, `~/.clap` or `/usr/lib/clap` on Linux, `Common Files\CLAP`
-on Windows). A project saved with the CLAP plugin needs the plugin replaced by its VST 3 by hand
-in the host (docs/plugin.md section 7.2).
-
 ## Quick start
 
 1. **Download** the package for your system and CPU from
@@ -104,9 +97,8 @@ in the host (docs/plugin.md section 7.2).
      `OpenRB-338-Plugins-<version>-<target>.pkg`: open it (it is unsigned, so right-click >
      Open, or Open Anyway in System Settings > Privacy & Security on macOS 15). It installs
      for all users (asks for an admin password) `OpenRB-338.vst3` into
-     `/Library/Audio/Plug-Ins/VST3` (and removes the old `OpenRB-338.clap` of an earlier
-     release); to remove the plugin, delete that bundle. The other systems' archives hold the bundles in
-     `plugins/`, and their `README.txt` lists the plugin folders.
+     `/Library/Audio/Plug-Ins/VST3`; to remove the plugin, delete that bundle. The Linux and macOS
+     archives hold the bundle in `plugins/`, and their `README.txt` lists the plugin folders.
    - Windows: run the installer. It can add `orb` to the PATH.
    - Linux: make the AppImage executable (`chmod +x OpenRB-338-*.AppImage`).
      It holds its own icon and menu entry: for a menu item, open it with an AppImage tool such

@@ -31,7 +31,7 @@
 //! Info's Song Information window (task-117). `--play` presses Play once the song is open (CPU
 //! measurements, task-153).
 //! `--browse MODE` starts with the browser open for a mode. The browser's folders are kept in the
-//! settings file (`OpenRB-338/ui.toml` in the configuration folder, or `$ORB_UI_CONFIG`).
+//! settings file (`OpenRB-338/OpenRB-338.toml` in the configuration folder, or `$ORB_UI_CONFIG`).
 
 // The Windows release build is a GUI-subsystem program: no console window opens behind the
 // panel (task-111). `orb` is not affected (this attribute is in the UI binary only). A debug

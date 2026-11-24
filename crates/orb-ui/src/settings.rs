@@ -13,9 +13,22 @@
 //! `pattern_editor_909_pos` (the same of the 909 pattern editor, task-281)
 //! and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
-//! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
-//! `OpenRB-338/ui.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
-//! `~/.config` on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows).
+//! task-151), and the version strings `standalone_version` and `plugin_version` that the app and
+//! the plugin write on every save (each keeps the other's as it found it; the file is never
+//! blank), so it can be edited by hand. Where it lives (task-289):
+//! 1. `$ORB_UI_CONFIG` if set;
+//! 2. on Windows, `OpenRB-338.toml` in the program's folder when it is there (portable mode,
+//!    `portable.rs`): absent, the per-user file below; with settings in it, it alone is used, read
+//!    and written, and the per-user file is never touched; empty (no bytes, whitespace or comments
+//!    only), the per-user settings are read and written into it, and it is used from then on. A
+//!    local file that does not parse is an error ([`Settings::load_error`]). A folder that cannot
+//!    be written gives one notice ([`Settings::notice`]) and no per-user write;
+//! 3. `OpenRB-338/OpenRB-338.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
+//!    `~/.config` on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows). When
+//!    it is absent and `ui.toml` (its name before task-289) is in that folder, `ui.toml` is copied
+//!    to it once; `ui.toml` is never changed or deleted, so an older version still finds its
+//!    settings.
+//!
 //! Reading never fails: a missing or damaged file gives the defaults (a damaged file stays as
 //! it is until the next save), a key of the wrong type is skipped and the others kept, and
 //! unknown keys are
@@ -45,6 +58,18 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
+
+use crate::portable::FILE_NAME;
+
+/// Who writes the file: the key of the version it keeps is the writer's own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Role {
+    /// The standalone app: `standalone_version`.
+    #[default]
+    Standalone,
+    /// The plugin: `plugin_version`.
+    Plugin,
+}
 
 /// How many recent folders are kept.
 pub const MAX_RECENT: usize = 8;
@@ -112,6 +137,23 @@ pub struct Settings {
     pub pattern_editor_909_pos: Option<[i32; 2]>,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
+    /// Who saves: the version key written is the role's (`standalone_version` or
+    /// `plugin_version`), the other is kept as found.
+    pub role: Role,
+    /// Whether `file` is the portable `OpenRB-338.toml` next to the program (task-289): a
+    /// failed write is then one notice, not an error, and never goes to the per-user file.
+    #[doc(hidden)]
+    pub portable: bool,
+    /// Whether the notice of a failed portable write was given already.
+    #[doc(hidden)]
+    pub warned: bool,
+    /// A message for the status line, taken by `App::show`: the portable folder cannot be
+    /// written.
+    #[doc(hidden)]
+    pub notice: Option<String>,
+    /// A message for the error box, taken by `App::show`: the portable file does not parse.
+    #[doc(hidden)]
+    pub load_error: Option<String>,
     /// The values as last read from or written to the file: a save changes only what differs
     /// from them (task-229).
     /// Public only so `..Settings::default()` works outside the crate; not for use.
@@ -168,6 +210,11 @@ impl Default for Settings {
             pattern_editor_808_pos: None,
             pattern_editor_909_pos: None,
             file: None,
+            role: Role::Standalone,
+            portable: false,
+            warned: false,
+            notice: None,
+            load_error: None,
             base: Box::new(Values {
                 startup_sound: true,
                 ..Values::default()
@@ -215,12 +262,19 @@ pub fn default_file() -> Option<PathBuf> {
     } else {
         home().map(|h| h.join(".config"))
     };
-    base.map(|b| b.join("OpenRB-338").join("ui.toml"))
+    base.map(|b| b.join("OpenRB-338").join(FILE_NAME))
 }
+
+/// The name the settings file had before task-289, in the same folder.
+pub const LEGACY_FILE_NAME: &str = "ui.toml";
 
 /// What the file holds, in the file's order.
 #[derive(Serialize)]
 struct Stored<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    standalone_version: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plugin_version: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     songs_dir: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -257,9 +311,113 @@ fn path_of(v: &toml::Value) -> Option<PathBuf> {
 impl Settings {
     /// Reads the settings from the default file (the defaults when there is none).
     pub fn load() -> Self {
-        match default_file() {
-            Some(f) => Self::load_from(&f),
+        Self::load_for(Role::Standalone)
+    }
+
+    /// [`Settings::load`] for the plugin: it writes `plugin_version`.
+    pub fn load_plugin() -> Self {
+        Self::load_for(Role::Plugin)
+    }
+
+    fn load_for(role: Role) -> Self {
+        if std::env::var_os("ORB_UI_CONFIG").is_some_and(|p| !p.is_empty()) {
+            let mut s = default_file()
+                .map(|f| Self::load_from(&f))
+                .unwrap_or_default();
+            s.role = role;
+            return s;
+        }
+        Self::load_resolved(
+            role,
+            crate::portable::candidate().as_deref(),
+            default_file(),
+        )
+    }
+
+    /// The settings of the portable file `OpenRB-338.toml` in `local` when it is there, else of
+    /// `user`, the per-user file (the rules are in the module text). Public so the tests can
+    /// run on any system.
+    pub fn load_resolved(role: Role, local: Option<&Path>, user: Option<PathBuf>) -> Self {
+        let mut s = Self::load_resolved_inner(role, local, user);
+        s.role = role;
+        s
+    }
+
+    fn load_resolved_inner(role: Role, local: Option<&Path>, user: Option<PathBuf>) -> Self {
+        let load_user = |user: Option<PathBuf>| match user {
+            Some(f) => Self::load_user(&f, role),
             None => Self::default(),
+        };
+        let Some(dir) = local else {
+            return load_user(user);
+        };
+        let file = dir.join(FILE_NAME);
+        let problem = match std::fs::read_to_string(&file) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return load_user(user),
+            Ok(text) => match text.parse::<toml::Table>() {
+                Ok(t) if !t.is_empty() => {
+                    let mut s = Self::load_from(&file);
+                    s.portable = true;
+                    return s;
+                }
+                Ok(_) => {
+                    // empty: the per-user settings move in, read without writing any per-user
+                    // file (not even the copy of ui.toml)
+                    let mut s = match user {
+                        Some(f) => Self::read_user(&f),
+                        None => Self::default(),
+                    };
+                    s.file = Some(file);
+                    s.portable = true;
+                    s.role = role;
+                    // everything counts as changed, so the whole copy is written
+                    s.base = Self::default().base;
+                    if let Err(e) = s.save() {
+                        s.notice = Some(e);
+                    }
+                    return s;
+                }
+                Err(e) => format!("is damaged: {}", e.message().trim_end()),
+            },
+            Err(e) => format!("cannot be read: {e}"),
+        };
+        // Portable mode never falls back to the per-user file: defaults, and the file stays as
+        // it is until a save.
+        Self {
+            load_error: Some(format!("The settings file {} {problem}", file.display())),
+            file: Some(file),
+            portable: true,
+            ..Self::default()
+        }
+    }
+
+    /// Reads the per-user file `user`; when it is absent and `ui.toml` (its old name) is in the
+    /// same folder, its values are written to `user` first (a save: atomic, with the `role`'s
+    /// version key) and `ui.toml` stays
+    /// as it was. Without the write (an error) the old file's values are still used.
+    fn load_user(user: &Path, role: Role) -> Self {
+        let mut s = Self::read_user(user);
+        if s.file.as_deref() != Some(user) {
+            // from ui.toml: written to the new file at once (so it has the version key too);
+            // when that fails they are saved later
+            s.file = Some(user.to_path_buf());
+            s.role = role;
+            s.base = Self::default().base;
+            let _ = s.save();
+        }
+        s
+    }
+
+    /// The values of the per-user file `user`, else of `ui.toml` beside it (then `file` is
+    /// that one's path), else the defaults. Writes nothing.
+    fn read_user(user: &Path) -> Self {
+        let legacy = user
+            .parent()
+            .map(|d| d.join(LEGACY_FILE_NAME))
+            .filter(|l| l.is_file());
+        match legacy {
+            Some(legacy) if !user.exists() => Self::load_from(&legacy),
+            _ => Self::load_from(user),
         }
     }
 
@@ -504,16 +662,53 @@ impl Settings {
     /// Writes this instance's changes to the file (a no-op without one): the file is read
     /// again first and only what changed here since the last read or write is applied to it,
     /// so another instance's changes to other keys survive (task-229). These settings then
-    /// take the merged values.
+    /// take the merged values. The writer's version key is always written (so the file is never
+    /// blank) and the other writer's is kept. In portable mode a failure is not an error: it
+    /// sets [`Settings::notice`] once and the values stay unsaved.
     pub fn save(&mut self) -> Result<(), String> {
         let Some(file) = self.file.clone() else {
             return Ok(());
         };
-        let file = &file;
-        let m = self
-            .merged(file)
-            .map_err(|e| format!("{}: cannot read: {e}", file.display()))?;
+        match self.save_to(&file) {
+            Ok(()) => Ok(()),
+            Err(reason) if self.portable => {
+                if !self.warned {
+                    self.warned = true;
+                    let dir = file.parent().unwrap_or(Path::new("."));
+                    self.notice = Some(format!(
+                        "Settings cannot be saved in {}: {reason}",
+                        dir.display()
+                    ));
+                }
+                Ok(())
+            }
+            Err(reason) => Err(format!("{}: {reason}", file.display())),
+        }
+    }
+
+    fn save_to(&mut self, file: &Path) -> Result<(), String> {
+        let m = self.merged(file).map_err(|e| format!("cannot read: {e}"))?;
+        // the other writer's version, as found
+        let other_key = match self.role {
+            Role::Standalone => "plugin_version",
+            Role::Plugin => "standalone_version",
+        };
+        let other = std::fs::read_to_string(file)
+            .ok()
+            .and_then(|t| t.parse::<toml::Table>().ok())
+            .and_then(|t| {
+                t.get(other_key)
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            });
+        let own = Some(crate::about::VERSION);
+        let (standalone_version, plugin_version) = match self.role {
+            Role::Standalone => (own, other.as_deref()),
+            Role::Plugin => (other.as_deref(), own),
+        };
         let text = toml::to_string(&Stored {
+            standalone_version,
+            plugin_version,
             songs_dir: m.songs_dir.as_deref().and_then(storable),
             mods_dir: m.mods_dir.as_deref().and_then(storable),
             startup_sound: m.startup_sound,
@@ -530,28 +725,12 @@ impl Settings {
                 .map(|(n, f)| (n.as_str(), f.as_str()))
                 .collect(),
         })
-        .map_err(|e| format!("{}: cannot encode: {e}", file.display()))?;
+        .map_err(|e| format!("cannot encode: {e}"))?;
         if let Some(dir) = file.parent() {
             std::fs::create_dir_all(dir)
-                .map_err(|e| format!("{}: cannot create: {e}", dir.display()))?;
+                .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
         }
-        // Written next to the file and renamed over it, so a crash never leaves half a file.
-        // The name is unique per process and call, so two instances saving at once never
-        // share a temporary file.
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let mut tmp = file.as_os_str().to_owned();
-        tmp.push(format!(
-            ".{}.{}.tmp",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
-        let tmp = PathBuf::from(tmp);
-        std::fs::write(&tmp, text)
-            .and_then(|()| std::fs::rename(&tmp, file))
-            .map_err(|e| {
-                let _ = std::fs::remove_file(&tmp);
-                format!("{}: cannot write: {e}", file.display())
-            })?;
+        write_atomic(file, text.as_bytes()).map_err(|e| format!("cannot write: {e}"))?;
         self.startup_sound = m.startup_sound;
         self.songs_dir = m.songs_dir.clone();
         self.mods_dir = m.mods_dir.clone();
@@ -577,4 +756,29 @@ impl Settings {
         self.noted.retain(|d| d != dir);
         self.noted.push(dir.to_path_buf());
     }
+}
+
+/// Writes `bytes` to `file` through a temporary file in the same folder and a rename, so a
+/// crash or a full disk never leaves a short or empty file. The temporary name is unique per
+/// process and call, so two instances saving at once never share one.
+fn write_atomic(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let mut tmp = file.as_os_str().to_owned();
+    tmp.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let tmp = PathBuf::from(tmp);
+    // synced before the rename, so a power loss cannot leave a renamed but empty file
+    let write = || -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        std::io::Write::write_all(&mut f, bytes)?;
+        f.sync_all()
+    };
+    write()
+        .and_then(|()| std::fs::rename(&tmp, file))
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
 }

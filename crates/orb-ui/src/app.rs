@@ -964,6 +964,13 @@ impl App {
 
     /// Draws the whole panel in the free area of `ui` and handles the input.
     pub fn show(&mut self, ui: &mut Ui) {
+        // what the settings found when they were read or written (task-289)
+        if let Some(e) = self.settings.load_error.take() {
+            self.fail(e);
+        }
+        if let Some(n) = self.settings.notice.take() {
+            self.status = Some(n);
+        }
         self.check_audio();
         // The theme is always dark (task-127): the colors of the windows assume it. Set on
         // every frame, so a system theme that changes at run time cannot switch it back.

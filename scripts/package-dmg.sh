@@ -68,11 +68,6 @@ installer, OpenRB-338-Plugins-$version-$target.pkg, from the same release. It is
 /Library/Audio/Plug-Ins/VST3, and its first page says how to open it and how to remove the
 plugin (delete that bundle).
 
-CLAP was dropped. This image cannot remove anything, so if you installed OpenRB-338.clap from an
-earlier release, delete it by hand from /Library/Audio/Plug-Ins/CLAP (or ~/Library/Audio/
-Plug-Ins/CLAP). The pkg above deletes the one in /Library. A project saved with the CLAP plugin
-needs the plugin replaced by its VST3 by hand in the host.
-
 The command line tool orb is inside the app. To use it from a terminal:
     sudo ln -s /Applications/OpenRB-338.app/Contents/MacOS/orb /usr/local/bin/orb
     orb render SONG.rbs -o SONG.flac    render a song to FLAC, Ogg Vorbis or WAV

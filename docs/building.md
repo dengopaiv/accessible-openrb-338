@@ -242,7 +242,7 @@ and `OPENRB_` names are not read any more and have no deprecated alias.
 | `ORB_THIRDPARTY_SONGS_DIR` | `orb-testkit` | the user's folder of songs, read in place | `RB_THIRDPARTY_SONGS_DIR` |
 | `ORB_MOD_DIR` | `orb render`, `compare`, `play`, `info`; OpenRB-338 | the folder of recrypted `.rbm` mods (`--mod-dir` wins) | `RB_MOD_DIR` |
 | `ORB_RB20FUL` | `orb mod recrypt` | the path of `RB20FUL.DAT` (`--rb20ful` wins); also the default of `tools/rbcorpus.py` | `RB_RB20FUL` |
-| `ORB_UI_CONFIG` | OpenRB-338 | the settings file to use instead of `OpenRB-338/ui.toml` in the configuration folder | `RB_UI_CONFIG` |
+| `ORB_UI_CONFIG` | OpenRB-338 | the settings file to use instead of `OpenRB-338/OpenRB-338.toml` in the configuration folder (and instead of portable mode) | `RB_UI_CONFIG` |
 | `ORB_UI_LOG_DIR` | OpenRB-338 (`crates/orb-ui/src/crash.rs`, task-157) | the folder of the crash logs instead of the platform's (below); tests set it | none |
 | `ORB_UI_NO_CRASH_DIALOG` | OpenRB-338 | any non-empty value except `0` turns off the native box after a panic (the log and stderr stay); tests set `1` | none |
 | `ORB_LOGO_T` | OpenRB-338 | seconds: freezes the logo's startup animation at that time (pictures; task-114, `crates/orb-ui/src/logo_anim.rs`) | none |
@@ -268,7 +268,39 @@ for `tools/rbm_test.py` only; `RBM` is the mod format), and the variables of oth
 (`SOURCE_DATE_EPOCH`, `GITHUB_REF_NAME`, `WGPU_BACKEND`; wgpu's `WGPU_BACKEND` and
 `WGPU_POWER_PREF` choose the standalone app's backends, below, and the plugin editor's adapter,
 docs/plugin.md section 10, task-260). The settings folder is `OpenRB-338`
-(`OpenRB-338/ui.toml`); settings of the old `rb/` folder are not carried over (no migration).
+(`OpenRB-338/OpenRB-338.toml`, renamed from `ui.toml` in task-289, which is copied to the new name once when only it exists and is never changed; the portable Windows zip below); settings of the old `rb/` folder are not carried over (no migration).
+
+## The portable Windows zip (task-289, GitHub issue 19)
+
+The Windows `.zip` of `scripts/package.sh` unpacks to one folder with `OpenRB-338.exe`,
+`orb.exe`, the plugin as the single file `OpenRB-338.vst3` (the binary of the bundle,
+which Windows hosts accept as it is), `OpenRB-338.toml` (zero bytes), `LICENSE` and
+`README.txt`; the README explains it. The file turns portable mode on (Windows only, the
+standalone app and the plugin; `crates/orb-ui/src/portable.rs`, `settings.rs`):
+- the app looks for `OpenRB-338.toml` in the folder of its exe; the plugin in the folder that
+  holds its `.vst3` file, or, for the installer's bundle form, holds the bundle (never inside
+  it), found from the plugin binary's own path
+  (`GetModuleHandleExW` with the address of a function of orb-ui, then `GetModuleFileNameW`; the
+  plugin links orb-ui in, so the same code finds the exe's folder in the app). The host must be
+  pointed at that folder (its custom VST3 path) for the plugin to be portable; a copy in a
+  plugin folder (the installer's `%COMMONPROGRAMFILES%\VST3`) has no file beside it and is
+  per-user as before. App and plugin in one folder share the one file;
+- absent: the per-user file; with settings in it: that file alone, read and written there, the
+  per-user file never touched; empty (no bytes, white space or comments only): the per-user
+  settings (with the `ui.toml` fallback) are written into it at the start, and it is used from
+  then on; a file that does not parse is an error box and the defaults, never a fallback;
+- the crash logs, the plugin's log and its switch file `plugin.log` are in `logs\` there;
+- a folder that cannot be written (Program Files): the settings as read are used, the status
+  line says once `Settings cannot be saved in <folder>: <reason>`, and nothing goes per-user;
+- every save writes `standalone_version` (the app) or `plugin_version` (the plugin), keeps the
+  other's, and goes through a temporary file and a rename, so the file is never blank;
+- off: move the file to `%APPDATA%\OpenRB-338\OpenRB-338.toml`, replacing the one there (the
+  settings go with it); on: create an empty one next to the exe. macOS and Linux never look for one.
+
+The files the app and plugin write outside the settings and the logs are the system temporary
+folder's `OpenRB-338\clips` and `mods` (drag-out clips and a mod's unpacked copy, the plugin) and
+the drag's temporary file; they stay there in portable mode too, as temporary files that need a
+writable place whatever the folder is.
 
 ## Developer options hidden from the help (task-137)
 
@@ -671,7 +703,7 @@ whenever `path.ps1` is in the folder.
 **The uninstaller** removes the files, the shortcuts, the PATH entry, the two plugin bundles
 (above) and both registry keys, and
 the folder if it is empty. It keeps the user's own files in the folder, and the settings file
-(`%APPDATA%\OpenRB-338\ui.toml`) and songs.
+(`%APPDATA%\OpenRB-338\OpenRB-338.toml`, and the older `ui.toml`) and songs. The installer installs no `OpenRB-338.toml` in its folder, so an installed app and plugin are not portable.
 
 **Running programs, upgrades.** Before it changes anything, the installer and the uninstaller try
 to open `OpenRB-338.exe` and `orb.exe` of the folder for writing, which fails while one runs from

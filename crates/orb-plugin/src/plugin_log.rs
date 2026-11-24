@@ -5,8 +5,9 @@
 //! - It is on when `ORB_PLUGIN_LOG` names a file (appended to) or is `stderr` (Bitwig copies its
 //!   plugin host's stderr into its `engine.log`), or, with the variable unset, when the file
 //!   `plugin.log` exists in orb-ui's log folder (`~/.local/state/OpenRB-338` on Linux,
-//!   `~/Library/Logs/OpenRB-338` on macOS, `%LOCALAPPDATA%\OpenRB-338\logs` on Windows): that
-//!   switch works in a host that does not pass the environment on. Read once per process.
+//!   `~/Library/Logs/OpenRB-338` on macOS, `%LOCALAPPDATA%\OpenRB-338\logs` on Windows, or `logs`
+//!   next to the bundle in portable mode): that switch works in a host that does not pass the
+//!   environment on. Read once per process.
 //! - It takes the `log` records of wgpu (wgpu-core's acquire and present errors; info and above,
 //!   debug with `ORB_PLUGIN_LOG_LEVEL=debug`), egui-wgpu and egui-baseview, and every panic (wgpu's
 //!   uncaptured errors panic).

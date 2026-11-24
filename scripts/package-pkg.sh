@@ -78,11 +78,6 @@ This installs, for all users (it asks for an admin password once):
 The folder is created if it does not exist. Installing again replaces the old bundle. Rescan
 plugins in your host afterwards.
 
-CLAP was dropped. This installer deletes the OpenRB-338.clap of an earlier release from
-/Library/Audio/Plug-Ins/CLAP (only that bundle). If you put a copy in your own
-~/Library/Audio/Plug-Ins/CLAP, delete it by hand. A project saved with the CLAP plugin needs the
-plugin replaced by its VST3 by hand in the host.
-
 This installer is not signed or notarized, so macOS blocks it the first time you open it:
   - macOS 15 (Sequoia) and newer: open it once (it is refused), then System Settings >
     Privacy & Security, scroll to Security, click "Open Anyway" and confirm.

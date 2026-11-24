@@ -1251,11 +1251,16 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   folders do not change the songs and mods folders, which keep their meaning (the default
   place, the Mods menu's folder). "Use as songs/mods folder" in the dialog sets those to the
   folder shown. The last 8 folders a file was chosen in are the recent folders. All of it is a
-  TOML file (task-107) of `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
+  TOML file (task-107) of `standalone_version` and `plugin_version` (written by each on every
+  save, the other's kept; the file is never blank), `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
   (an array), `startup_sound` and `theme` (`"modern"`, the default, or `"classic"`: View >
   Classic / Modern, section 21; another value is skipped; the removed Theme Viewer's
   `theme_viewer_filter` of an older file is ignored and dropped at the next save, task-267) at
-  `$ORB_UI_CONFIG`, else `OpenRB-338/ui.toml` (task-068; settings of the old `rb/` folder are
+  `$ORB_UI_CONFIG`, else (Windows) `OpenRB-338.toml` next to the program when it is there
+  (portable mode, task-289, docs/building.md; turned off by moving the file to the per-user path,
+  replacing the one there), else `OpenRB-338/OpenRB-338.toml` (task-068; named
+  `ui.toml` before task-289, which is copied to the new name once when only it exists and is
+  never changed; settings of the old `rb/` folder are
   not carried over) in `$XDG_CONFIG_HOME` (Linux
   `~/.config`, macOS `~/Library/Application Support`, Windows `%APPDATA%`); it is rewritten
   written through a temporary file and a rename, when a path is chosen or a folder set. The
@@ -1490,7 +1495,7 @@ is one more entry.
   `dejenerate(b3).rbm` have different web URLs, so choosing the other one marks the song). The
   top-level item only opens the submenu; it is not clickable as a choice, so a shared name is
   never chosen "by name" from the menu. Clicking the active file makes it the **preferred file** of that name, stored in
-  `ui.toml` as the table `preferred_mods` (`"<INFO name>" = "<file name>"`, the name compared
+  `OpenRB-338.toml` as the table `preferred_mods` (`"<INFO name>" = "<file name>"`, the name compared
   ignoring ASCII case; written through the atomic save), and the status line says so. The
   preferred file shows `(preferred)` after its label. **Clearing**: clicking the active
   preferred file again clears it (status line: "No preferred file ...");
@@ -1501,7 +1506,7 @@ is one more entry.
   preference if its file is in the folder, else to the default (the first file by bytes); a
   preference whose file is gone is ignored silently and stays in the file (the submenu marks no
   file preferred). A file name that is not valid UTF-8 cannot be preferred (the message box
-  says so), as TOML cannot hold it. The CLI never reads `ui.toml`.
+  says so), as TOML cannot hold it. The CLI never reads `OpenRB-338.toml`.
 - **Demo Song** (task-094). Every shipped mod carries an embedded `Demo.rbs`, the standard mod
   and the built-in kit none (`docs/rbm.md` 13.1; the original only enables a button of the mod
   info dialog, `sub_417000` at 0x417000, `sub_41A0C5` (the instruction at
@@ -2335,7 +2340,7 @@ in the standalone app and the plugin's editor (no separate OS window).
   selected 303's active pattern: the focused row when it is a 303, else the 303 the editor
   showed last (303 1 at first), and that row's selected pattern. When it is open, the item
   and the key bring it to the front and switch it to that pattern. Disabled without a song.
-- **Its place**: the standalone app saves the window's left top in `ui.toml`
+- **Its place**: the standalone app saves the window's left top in `OpenRB-338.toml`
   (`pattern_editor_pos = [x, y]`, points) when the user lets go of the window after moving it,
   and opens it there; with no saved place it opens centered. Whether it is open is not saved.
   The plugin neither reads nor writes the place. egui 0.37 places a window that moves by its
@@ -2461,7 +2466,7 @@ both can be open.
   standalone app; the key opens the focused row's editor, section 18). It opens on the TR-808's
   active pattern; when it is open, the item and the key bring it to the front and switch it to
   that pattern. Disabled without a song.
-- **Its place**: saved as the 303's, under its own key `pattern_editor_808_pos` in `ui.toml` (the
+- **Its place**: saved as the 303's, under its own key `pattern_editor_808_pos` in `OpenRB-338.toml` (the
   standalone app's only; section 17).
 
 **Layout, top to bottom** (the app's palette, the same in both skins):
@@ -2530,7 +2535,7 @@ plugin, opened by Edit > 909 Pattern Editor... (under the 808's) and Ctrl/Cmd+E 
 row focused (the standalone app; task-280 had the key open the 303 editor there until this
 editor), on the TR-909's active pattern, brought to the front and switched to it when open.
 In the plugin, which takes no keys (section 20), the menu item opens it. Its place is saved
-under `pattern_editor_909_pos` in `ui.toml` (the standalone app's only, section 17).
+under `pattern_editor_909_pos` in `OpenRB-338.toml` (the standalone app's only, section 17).
 
 **Layout**: the 808 editor's (section 24): the top row (bank, the pattern number between its
 arrows A1..D8, Copy, Paste, Clear, Length, Shuffle), then a second header row with the **entry

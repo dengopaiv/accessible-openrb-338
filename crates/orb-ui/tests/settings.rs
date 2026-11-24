@@ -206,9 +206,10 @@ fn orb_ui_config_names_the_settings_file() {
     unsafe { std::env::set_var("ORB_UI_CONFIG", "") };
     assert_ne!(orb_ui::settings::default_file(), Some(PathBuf::new()));
     unsafe { std::env::remove_var("ORB_UI_CONFIG") };
-    // Without the variable the file is OpenRB-338/ui.toml (there is none when no home is known).
+    // Without the variable the file is OpenRB-338/OpenRB-338.toml (there is none when no home is
+    // known).
     if let Some(default) = orb_ui::settings::default_file() {
-        assert_eq!(default.file_name().unwrap(), "ui.toml");
+        assert_eq!(default.file_name().unwrap(), "OpenRB-338.toml");
         assert_eq!(default.parent().unwrap().file_name().unwrap(), "OpenRB-338");
     }
 }

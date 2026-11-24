@@ -32,9 +32,15 @@ pub const KEEP: usize = 20;
 /// The exit code after a panic (what Rust's own unhandled panic gives).
 pub const EXIT_CODE: i32 = 101;
 
-/// The folder of the logs, from the environment: `ORB_UI_LOG_DIR` if set (tests), else
-/// the platform's.
+/// The folder of the logs, from the environment: `ORB_UI_LOG_DIR` if set (tests); else, on
+/// Windows in portable mode, `logs` in the portable folder (`portable.rs`); else the platform's.
 pub fn log_dir() -> Option<PathBuf> {
+    // portable mode (task-289, Windows): `logs` next to `OpenRB-338.toml`
+    if std::env::var_os("ORB_UI_LOG_DIR").is_none_or(|v| v.is_empty())
+        && let Some(d) = crate::portable::folder()
+    {
+        return Some(d.join("logs"));
+    }
     platform_dir(std::env::consts::OS, |k| std::env::var_os(k))
 }
 

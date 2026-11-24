@@ -35,6 +35,7 @@ pub mod palette;
 pub mod pattern_editor;
 pub mod pattern_json;
 pub mod plugin_usage;
+pub mod portable;
 pub mod session;
 pub mod settings;
 pub mod shortcuts;

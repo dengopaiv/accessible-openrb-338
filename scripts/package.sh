@@ -29,8 +29,19 @@ cp "$root/LICENSE" "$stage/LICENSE"
 # the plugin bundle (task-204; scripts/build.sh made it)
 p=OpenRB-338.vst3
 [ -e "$dist/$target/plugins/$p" ] || { echo "missing $dist/$target/plugins/$p" >&2; exit 1; }
-mkdir -p "$stage/plugins"
-cp -R "$dist/$target/plugins/$p" "$stage/plugins/"
+case $target in
+    *-windows-*)
+        # portable by default (task-289): the app, the plugin as the single file (the binary
+        # of the bundle, which hosts on Windows accept as it is) and the empty settings file
+        # in one folder
+        cp "$dist/$target/plugins/$p"/Contents/*-win/"$p" "$stage/$p"
+        : > "$stage/OpenRB-338.toml"
+        ;;
+    *)
+        mkdir -p "$stage/plugins"
+        cp -R "$dist/$target/plugins/$p" "$stage/plugins/"
+        ;;
+esac
 
 case $target in
     *-linux-*)
@@ -65,33 +76,57 @@ Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see
 Plugin (VST 3 instrument)
 -------------------------
 
-plugins/ holds OpenRB-338.vst3. Copy it into a plugin folder, then rescan plugins in the host:
 EOF
 case $target in
-    *-linux-*) plugin_dirs='  VST3: ~/.vst3/   (or /usr/lib/vst3)
+    *-windows-*) ;;
+    *) cat >> "$stage/README.txt" <<'EOF'
+plugins/ holds OpenRB-338.vst3. Copy it into a plugin folder, then rescan plugins in the host:
+EOF
+    ;;
+esac
+case $target in
+    *-linux-*) plugin_dirs='  VST3: ~/.vst3/   (or /usr/lib/vst3)' ;;
+    *-windows-*) plugin_dirs='The plugin is the file OpenRB-338.vst3 in this same folder as OpenRB-338.exe. Point the host'"'"'s VST3
+plugin path (its custom VST3 folder setting) at this folder and rescan plugins; the plugin is then
+portable (see below). Or copy the file into a plugin folder, where it is not portable:
 
-  CLAP was dropped. If you installed OpenRB-338.clap from an earlier release, delete it from
-  ~/.clap/ or /usr/lib/clap/. A project saved with the CLAP plugin needs the plugin replaced by
-  its VST3 by hand in the host.' ;;
-    *-windows-*) plugin_dirs='  VST3: %COMMONPROGRAMFILES%\VST3\
+  VST3: %COMMONPROGRAMFILES%\VST3\
   (or %LOCALAPPDATA%\Programs\Common\VST3\ for the current user only)
   The installer (OpenRB-338-*-setup.exe) can do this for you: its "VST3 plugin" component, on by
   default, copies the bundle to the %COMMONPROGRAMFILES% folder above (the installer is for all
-  users and asks for administrator rights); the uninstaller removes it.
-
-  CLAP was dropped. The installer deletes the OpenRB-338.clap of an earlier release from
-  %COMMONPROGRAMFILES%\CLAP\. If you copied it by hand, delete it. A project saved with the CLAP
-  plugin needs the plugin replaced by its VST3 by hand in the host.' ;;
+  users and asks for administrator rights); the uninstaller removes it.' ;;
     *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/
   (or the same under /Library for all users). The bundle is signed ad hoc only; if the host
   refuses it after a download, run in this folder (and again, with sudo, on the copy in
-  /Library if you installed it there): xattr -dr com.apple.quarantine OpenRB-338.vst3
-
-  CLAP was dropped. If you installed OpenRB-338.clap from an earlier release, delete it from
-  ~/Library/Audio/Plug-Ins/CLAP/ or /Library/Audio/Plug-Ins/CLAP/. A project saved with the CLAP
-  plugin needs the plugin replaced by its VST3 by hand in the host.' ;;
+  /Library if you installed it there): xattr -dr com.apple.quarantine OpenRB-338.vst3' ;;
 esac
 printf '%s\n' "$plugin_dirs" >> "$stage/README.txt"
+case $target in
+    *-windows-*)
+        cat >> "$stage/README.txt" <<'EOF'
+
+Portable mode
+-------------
+This folder holds an empty file, OpenRB-338.toml, which makes OpenRB-338.exe and the plugin
+bundle next to it portable: they keep their settings in that file, and the crash logs and the
+plugin's log (turned on by a file plugin.log in logs\) in the logs\ folder here, and write
+nothing in your user profile. The app and the plugin share the one file. The file is empty at
+first: the first start copies your per-user settings (%APPDATA%\OpenRB-338\OpenRB-338.toml) into
+it, so the settings you have come along (from the older ui.toml there when there is no
+OpenRB-338.toml yet); the per-user files are not changed. The plugin is portable
+only when the host loads it from this folder (the host's custom VST3 path); a copy in a plugin
+folder uses the per-user settings.
+
+  To turn portable mode off: move OpenRB-338.toml to %APPDATA%\OpenRB-338\, replacing the
+  OpenRB-338.toml there. To turn it on again: create an empty OpenRB-338.toml next to
+  OpenRB-338.exe.
+
+If the folder cannot be written (for instance under Program Files), the app runs with the
+settings it read and says once that they cannot be saved; move the folder somewhere you can
+write, or turn portable mode off as above.
+EOF
+        ;;
+esac
 case $target in
     *-linux-*)
         cat >> "$stage/README.txt" <<'EOF'
