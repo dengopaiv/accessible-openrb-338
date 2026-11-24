@@ -166,7 +166,23 @@ fn freeing_after_the_submit_is_valid() {
     assert_eq!(error, None);
 }
 
-/// The source of the egui-baseview this workspace resolves (`cargo metadata`, offline).
+/// The host triple, from `cargo -vV`.
+fn host_triple() -> String {
+    let out = Command::new(env!("CARGO"))
+        .arg("-vV")
+        .output()
+        .expect("running cargo -vV");
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines()
+        .find_map(|l| l.strip_prefix("host: "))
+        .expect("cargo -vV names the host")
+        .trim()
+        .to_string()
+}
+
+/// The source of the egui-baseview this workspace resolves (`cargo metadata`, offline). The
+/// metadata is filtered to the host's platform: the packages of other targets (the Windows-only
+/// ASIO build's, task-193) are not downloaded on a machine that only builds for itself.
 fn resolved_egui_baseview_renderer() -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
     let out = Command::new(env!("CARGO"))
@@ -175,8 +191,10 @@ fn resolved_egui_baseview_renderer() -> PathBuf {
             "--offline",
             "--format-version",
             "1",
-            "--manifest-path",
+            "--filter-platform",
         ])
+        .arg(host_triple())
+        .arg("--manifest-path")
         .arg(&root)
         .output()
         .expect("running cargo metadata");
