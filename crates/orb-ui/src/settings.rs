@@ -7,8 +7,9 @@
 //! or Export, and of the last mod; task-144), `startup_sound` (a bool), `theme` (`"modern"`,
 //! the default, or `"classic"`: the main window's skin, View > Classic / Modern, task-267; the old
 //! `theme_viewer_filter` of the removed Theme Viewer is ignored and dropped at the next save),
-//! `pattern_editor_pos` (two integers, the 303 pattern editor window's left top in points,
-//! absent until the window is moved; the standalone app's only, task-274),
+//! `pattern_editor_303_1_pos` and `pattern_editor_303_2_pos` (two integers each, the 303-1 and
+//! 303-2 pattern editor windows' left top in points, absent until the window is moved; the
+//! standalone app's only, tasks 274 and 290),
 //! `pattern_editor_808_pos` (the same of the 808 pattern editor, task-280),
 //! `pattern_editor_909_pos` (the same of the 909 pattern editor, task-281)
 //! and the table
@@ -36,7 +37,8 @@
 //! last read or wrote it, so another instance's changes survive (task-229; saves in the same
 //! instant can still race, there is no lock). A change is recorded by the setters
 //! (`set_songs_dir`, `set_mods_dir`, `set_last_song_dir`, `set_last_mod_dir`,
-//! `set_startup_sound`, `set_theme`, `set_pattern_editor_pos`, `set_pattern_editor_808_pos`,
+//! `set_startup_sound`, `set_theme`, `set_pattern_editor_303_1_pos`,
+//! `set_pattern_editor_303_2_pos`, `set_pattern_editor_808_pos`,
 //! `set_pattern_editor_909_pos`, `set_preferred_mod`), which win over
 //! the file even when the value equals what this instance last saw; a field assigned directly
 //! counts as changed when it differs from what was last read or written. The list `recent` is
@@ -128,9 +130,12 @@ pub struct Settings {
     /// The main window's skin (View > Classic / Modern, task-267). Stored as the string `theme`,
     /// `"modern"` (the default) or `"classic"`; another value is skipped.
     pub theme: Theme,
-    /// The 303 pattern editor window's left top in points (task-274), `None` until it is
-    /// moved. Stored as the array `pattern_editor_pos`; the plugin neither reads nor writes it.
-    pub pattern_editor_pos: Option<[i32; 2]>,
+    /// The 303-1 pattern editor window's left top in points (tasks 274 and 290), `None` until
+    /// it is moved. Stored as the array `pattern_editor_303_1_pos`; the plugin neither reads
+    /// nor writes it.
+    pub pattern_editor_303_1_pos: Option<[i32; 2]>,
+    /// The same of the 303-2 pattern editor's window (task-290), `pattern_editor_303_2_pos`.
+    pub pattern_editor_303_2_pos: Option<[i32; 2]>,
     /// The same of the 808 pattern editor's window (task-280), `pattern_editor_808_pos`.
     pub pattern_editor_808_pos: Option<[i32; 2]>,
     /// The same of the 909 pattern editor's window (task-281), `pattern_editor_909_pos`.
@@ -181,7 +186,8 @@ pub struct Values {
     last_mod_dir: Option<PathBuf>,
     preferred_mods: BTreeMap<String, String>,
     theme: Theme,
-    pattern_editor_pos: Option<[i32; 2]>,
+    pattern_editor_303_1_pos: Option<[i32; 2]>,
+    pattern_editor_303_2_pos: Option<[i32; 2]>,
     pattern_editor_808_pos: Option<[i32; 2]>,
     pattern_editor_909_pos: Option<[i32; 2]>,
 }
@@ -206,7 +212,8 @@ impl Default for Settings {
             last_mod_dir: None,
             preferred_mods: BTreeMap::new(),
             theme: Theme::Modern,
-            pattern_editor_pos: None,
+            pattern_editor_303_1_pos: None,
+            pattern_editor_303_2_pos: None,
             pattern_editor_808_pos: None,
             pattern_editor_909_pos: None,
             file: None,
@@ -287,7 +294,9 @@ struct Stored<'a> {
     last_mod_dir: Option<&'a Path>,
     theme: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pattern_editor_pos: Option<[i32; 2]>,
+    pattern_editor_303_1_pos: Option<[i32; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pattern_editor_303_2_pos: Option<[i32; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pattern_editor_808_pos: Option<[i32; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -461,7 +470,8 @@ impl Settings {
                 })
                 .and_then(|[x, y]| Some([i32::try_from(x).ok()?, i32::try_from(y).ok()?]))
         };
-        s.pattern_editor_pos = pos("pattern_editor_pos");
+        s.pattern_editor_303_1_pos = pos("pattern_editor_303_1_pos");
+        s.pattern_editor_303_2_pos = pos("pattern_editor_303_2_pos");
         s.pattern_editor_808_pos = pos("pattern_editor_808_pos");
         s.pattern_editor_909_pos = pos("pattern_editor_909_pos");
         if let Some(t) = table
@@ -498,7 +508,8 @@ impl Settings {
             last_mod_dir: self.last_mod_dir.clone(),
             preferred_mods: self.preferred_mods.clone(),
             theme: self.theme,
-            pattern_editor_pos: self.pattern_editor_pos,
+            pattern_editor_303_1_pos: self.pattern_editor_303_1_pos,
+            pattern_editor_303_2_pos: self.pattern_editor_303_2_pos,
             pattern_editor_808_pos: self.pattern_editor_808_pos,
             pattern_editor_909_pos: self.pattern_editor_909_pos,
         }
@@ -535,8 +546,15 @@ impl Settings {
         if set("theme") || v.theme != b.theme {
             m.theme = v.theme;
         }
-        if set("pattern_editor_pos") || v.pattern_editor_pos != b.pattern_editor_pos {
-            m.pattern_editor_pos = v.pattern_editor_pos;
+        if set("pattern_editor_303_1_pos")
+            || v.pattern_editor_303_1_pos != b.pattern_editor_303_1_pos
+        {
+            m.pattern_editor_303_1_pos = v.pattern_editor_303_1_pos;
+        }
+        if set("pattern_editor_303_2_pos")
+            || v.pattern_editor_303_2_pos != b.pattern_editor_303_2_pos
+        {
+            m.pattern_editor_303_2_pos = v.pattern_editor_303_2_pos;
         }
         if set("pattern_editor_808_pos") || v.pattern_editor_808_pos != b.pattern_editor_808_pos {
             m.pattern_editor_808_pos = v.pattern_editor_808_pos;
@@ -618,11 +636,18 @@ impl Settings {
         self.dirty.insert("theme".into());
     }
 
-    /// Sets the 303 pattern editor window's place (`pattern_editor_pos`); the next save writes
-    /// it whatever the file holds.
-    pub fn set_pattern_editor_pos(&mut self, pos: Option<[i32; 2]>) {
-        self.pattern_editor_pos = pos;
-        self.dirty.insert("pattern_editor_pos".into());
+    /// Sets the 303-1 pattern editor window's place (`pattern_editor_303_1_pos`, task-290); the
+    /// next save writes it whatever the file holds.
+    pub fn set_pattern_editor_303_1_pos(&mut self, pos: Option<[i32; 2]>) {
+        self.pattern_editor_303_1_pos = pos;
+        self.dirty.insert("pattern_editor_303_1_pos".into());
+    }
+
+    /// Sets the 303-2 pattern editor window's place (`pattern_editor_303_2_pos`, task-290); the
+    /// next save writes it whatever the file holds.
+    pub fn set_pattern_editor_303_2_pos(&mut self, pos: Option<[i32; 2]>) {
+        self.pattern_editor_303_2_pos = pos;
+        self.dirty.insert("pattern_editor_303_2_pos".into());
     }
 
     /// Sets the 808 pattern editor window's place (`pattern_editor_808_pos`, task-280); the
@@ -716,7 +741,8 @@ impl Settings {
             last_song_dir: m.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: m.last_mod_dir.as_deref().and_then(storable),
             theme: m.theme.name(),
-            pattern_editor_pos: m.pattern_editor_pos,
+            pattern_editor_303_1_pos: m.pattern_editor_303_1_pos,
+            pattern_editor_303_2_pos: m.pattern_editor_303_2_pos,
             pattern_editor_808_pos: m.pattern_editor_808_pos,
             pattern_editor_909_pos: m.pattern_editor_909_pos,
             preferred_mods: m
@@ -739,7 +765,8 @@ impl Settings {
         self.last_mod_dir = m.last_mod_dir.clone();
         self.preferred_mods = m.preferred_mods.clone();
         self.theme = m.theme;
-        self.pattern_editor_pos = m.pattern_editor_pos;
+        self.pattern_editor_303_1_pos = m.pattern_editor_303_1_pos;
+        self.pattern_editor_303_2_pos = m.pattern_editor_303_2_pos;
         self.pattern_editor_808_pos = m.pattern_editor_808_pos;
         self.pattern_editor_909_pos = m.pattern_editor_909_pos;
         *self.base = m;

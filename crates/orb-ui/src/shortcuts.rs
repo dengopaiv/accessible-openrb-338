@@ -17,7 +17,8 @@ pub const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key
 pub const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
 /// Edit > Duplicate Pattern.
 pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
-/// Edit > 303 Pattern Editor... (task-274).
+/// Ctrl/Cmd+E: the focused row's pattern editor, Edit > 303-1, 303-2, 808 or 909 Pattern
+/// Editor... (tasks 274, 280, 281 and 290).
 pub const PATTERN_EDITOR: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::E);
 /// "Program Synth from Keyboard".
 pub const KEYS_SYNTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);

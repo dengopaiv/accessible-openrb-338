@@ -190,6 +190,10 @@ impl App {
                 return;
             }
             let p = view.to_panel(p);
+            // a press on the panel takes the focus from the pattern editors (task-290)
+            if p.x >= 0.0 && p.y >= 0.0 && p.x < layout.size.x && p.y < layout.size.y {
+                self.editor_focus = None;
+            }
             if let Some(r) = layout.row_at(p) {
                 self.panel.focus = r;
             }

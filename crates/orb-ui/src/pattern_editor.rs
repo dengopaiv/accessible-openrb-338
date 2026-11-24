@@ -1,6 +1,7 @@
-//! The 303 pattern editor (task-274, docs/ui_spec.md section 23): a floating window over the
-//! panel that edits one TB-303 pattern on a step grid with a 13-key piano roll and the Up,
-//! Down, Accent and Slide rows. It edits only what the song stores for a 303 pattern (the 98
+//! The 303 pattern editors (task-274, docs/ui_spec.md section 23): two floating windows over the
+//! panel, "303-1 Pattern Editor" and "303-2 Pattern Editor" (task-290), each fixed to its 303,
+//! that edit one 303 pattern on a step grid with a 13-key piano roll and the Up, Down, Accent
+//! and Slide rows. It edits only what the song stores for a 303 pattern (the 98
 //! bytes of `docs/RBS42.txt`'s "303 " chunk: the shuffle flag, the length and 16 steps of note,
 //! slide, accent, up, down and rest).
 //!
@@ -18,12 +19,11 @@
 use egui::{Color32, Context, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::app::App;
-pub use crate::editor_frame::STEPS;
 use crate::editor_frame::{
     self as frame, ARROW, CELL_H, CELL_W, GAP, HEAD_H, KEY_W, LABEL_SIZE, Number, Placing, Press,
     SPLIT_H, cell_rect, dimmed, paint_columns,
 };
-use crate::link::emptied_pattern;
+pub use crate::editor_frame::{STEPS, step_pattern};
 use crate::palette::{AMBER, BG, INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 
 /// The pitches of the piano roll: C to the C an octave above (note bytes 0..=12).
@@ -179,31 +179,12 @@ pub fn crossed(s0: usize, p0: u8, s1: usize, p1: u8) -> Vec<(usize, u8)> {
         .collect()
 }
 
-/// The pattern after (`next`) or before pattern `pattern` (0..=31) of 303 `synth` in the one
-/// sequence of the number's arrows, 303-1 A1..D8 then 303-2 A1..D8 (64 patterns): 8 goes on to
-/// the next bank's 1, 303-1 D8 to 303-2 A1. `None` past the ends (303-1 A1, 303-2 D8).
-pub fn step_pattern(synth: usize, pattern: u8, next: bool) -> Option<(usize, u8)> {
-    let i = synth.min(1) * 32 + pattern.min(31) as usize;
-    let j = if next {
-        i.checked_add(1)?
-    } else {
-        i.checked_sub(1)?
-    };
-    (j < 64).then_some((j / 32, (j % 32) as u8))
-}
-
 /// What the editor's window asks for; [`App::editor_act`] runs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Act {
-    /// The 303 switch: show 303 `synth` (0 or 1); in pattern mode its selected pattern, in song
-    /// mode the same pattern number as before.
-    Synth(usize),
-    /// A bank button or the pattern number: show pattern `pattern` (0..=31) of 303 `synth`,
+    /// A bank button or the pattern number: show this pattern (0..=31) of the editor's 303,
     /// selected on the panel too in pattern mode.
-    Select {
-        synth: usize,
-        pattern: u8,
-    },
+    Select(u8),
     Copy,
     Paste,
     Clear,
@@ -262,21 +243,17 @@ enum Gesture {
     },
 }
 
-/// The editor's state, kept by the app.
+/// An editor's state, kept by the app (one per 303, `App::editors`).
 #[derive(Clone, Debug, Default)]
 pub struct Editor {
     /// Whether the window is open.
     pub open: bool,
-    /// The 303 shown (0 or 1) and its pattern (0..=31).
+    /// The 303 it edits (0 or 1; fixed, task-290) and the pattern shown (0..=31).
     pub synth: usize,
     pub pattern: u8,
     /// The window's placing and place.
     win: Placing,
     gesture: Option<Gesture>,
-    /// The 303 rows' selected patterns at the last frame (pattern mode follows a change).
-    seen: [u8; 2],
-    /// Whether the last frame was in song mode.
-    was_song_mode: bool,
     /// A drag of the Length value wrote already (it keeps the Undo of its first change).
     length_wrote: bool,
     /// Whether the mouse was down on the piano roll and on the flag rows at the last frame.
@@ -315,6 +292,32 @@ pub fn row_fill(pitch: u8) -> Color32 {
     }
 }
 
+impl Editor {
+    /// The editor of 303 `synth` (0 or 1), closed.
+    pub fn new(synth: usize) -> Self {
+        Self {
+            synth: synth.min(1),
+            ..Self::default()
+        }
+    }
+}
+
+/// The window's title of 303 `k` (0 or 1).
+pub fn title(k: usize) -> &'static str {
+    ["303-1 Pattern Editor", "303-2 Pattern Editor"][k.min(1)]
+}
+
+/// The Edit menu's item that opens the editor of 303 `k` (the ellipsis: it opens a window).
+pub fn menu_item(k: usize) -> &'static str {
+    ["303-1 Pattern Editor...", "303-2 Pattern Editor..."][k.min(1)]
+}
+
+/// The salt of the ids of the window of 303 `k` (the window's id is
+/// `egui::Id::unique(salt(k))`).
+pub fn salt(k: usize) -> &'static str {
+    ["orb_pattern_editor_303_1", "orb_pattern_editor_303_2"][k.min(1)]
+}
+
 /// What the window shows of the song in a frame.
 struct Shown {
     bytes: Vec<u8>,
@@ -326,58 +329,58 @@ struct Shown {
 }
 
 impl App {
-    /// The editor's state.
-    pub fn pattern_editor(&self) -> &Editor {
-        &self.editor
+    /// The editor of 303 `k` (0 or 1).
+    pub fn pattern_editor(&self, k: usize) -> &Editor {
+        &self.editors[k.min(1)]
     }
 
-    /// Edit > 303 Pattern Editor... and Cmd/Ctrl+E: opens the window on the selected 303's active
-    /// pattern (the focused row when it is a 303, else the 303 the editor showed last), or
-    /// brings it to the front and switches it to that pattern. Nothing without a song.
-    pub fn open_pattern_editor(&mut self) {
+    /// Edit > 303-1 or 303-2 Pattern Editor... and Cmd/Ctrl+E with that 303 focused: opens the
+    /// window of 303 `k` on its selected pattern, or brings it to the front and switches it to
+    /// that pattern; the editor takes the focus (`App::editor_focus`). Nothing without a song.
+    pub fn open_pattern_editor(&mut self, k: usize) {
         if self.link.is_none() {
             return;
         }
-        let e = &mut self.editor;
-        if self.panel.focus < 2 {
-            e.synth = self.panel.focus;
-        }
-        e.pattern = self.panel.rows[e.synth].pattern;
-        e.seen = [self.panel.rows[0].pattern, self.panel.rows[1].pattern];
-        e.was_song_mode = self.panel.transport.song_mode;
+        let k = k.min(1);
+        let pattern = self.panel.rows[k].pattern;
+        let e = &mut self.editors[k];
+        e.pattern = pattern;
         e.win.open(e.open);
         e.open = true;
         e.gesture = None;
+        self.editor_focus = Some(k);
     }
 
-    /// Where the window drew step `step`'s cell at `pitch` of the piano roll last.
-    pub fn pattern_editor_note_cell(&self, step: usize, pitch: u8) -> Option<Rect> {
-        let r = self.editor.hits.notes?;
+    /// Where the window of 303 `k` drew step `step`'s cell at `pitch` of the piano roll last.
+    pub fn pattern_editor_note_cell(&self, k: usize, step: usize, pitch: u8) -> Option<Rect> {
+        let r = self.pattern_editor(k).hits.notes?;
         Some(cell_rect(r, step, (PITCHES - 1 - pitch) as usize))
     }
 
-    /// Where the window drew step `step`'s cell of flag row `flag` last.
-    pub fn pattern_editor_flag_cell(&self, flag: Flag, step: usize) -> Option<Rect> {
-        let r = self.editor.hits.flags?;
+    /// Where the window of 303 `k` drew step `step`'s cell of flag row `flag` last.
+    pub fn pattern_editor_flag_cell(&self, k: usize, flag: Flag, step: usize) -> Option<Rect> {
+        let r = self.pattern_editor(k).hits.flags?;
         let row = Flag::ALL.iter().position(|&f| f == flag)?;
         Some(cell_rect(r, step, row))
     }
 
-    /// Where the window was drawn last (`None` before its first frame).
-    pub fn pattern_editor_window(&self) -> Option<Rect> {
-        self.editor.win.window.filter(|_| self.editor.open)
+    /// Where the window of 303 `k` was drawn last (`None` when closed).
+    pub fn pattern_editor_window(&self, k: usize) -> Option<Rect> {
+        let e = self.pattern_editor(k);
+        e.win.window.filter(|_| e.open)
     }
 
-    /// The playing step the grid showed last, and whether it dimmed the steps beyond the
-    /// pattern's length.
-    pub fn pattern_editor_shown(&self) -> (Option<usize>, bool) {
-        (self.editor.hits.playing, self.editor.hits.dimmed)
+    /// The playing step the grid of 303 `k` showed last, and whether it dimmed the steps beyond
+    /// the pattern's length.
+    pub fn pattern_editor_shown(&self, k: usize) -> (Option<usize>, bool) {
+        let h = &self.pattern_editor(k).hits;
+        (h.playing, h.dimmed)
     }
 
-    /// Where the window drew its button or value `name` last ("303-1", "A", "number",
+    /// Where the window of 303 `k` drew its button or value `name` last ("A", "number",
     /// "Copy", "Length", "Shuffle", "shift_left", "transpose_up", ...).
-    pub fn pattern_editor_hit(&self, name: &str) -> Option<Rect> {
-        self.editor
+    pub fn pattern_editor_hit(&self, k: usize, name: &str) -> Option<Rect> {
+        self.pattern_editor(k)
             .hits
             .buttons
             .iter()
@@ -385,53 +388,40 @@ impl App {
             .map(|&(_, r)| r)
     }
 
-    /// The selection rules (docs/ui_spec.md section 23): in pattern mode the editor shows the
-    /// selected pattern of its 303, and a new selection of one 303 row moves it to that 303;
-    /// on the switch into pattern mode it takes the panel's selection. In song mode it keeps
-    /// its own pattern.
-    fn editor_follow(&mut self) {
-        let song = self.panel.transport.song_mode;
-        let now = [self.panel.rows[0].pattern, self.panel.rows[1].pattern];
-        let e = &mut self.editor;
-        if !song {
-            // one row's new selection (not both, as a song open makes) moves the editor to it
-            let changed: Vec<usize> = (0..2)
-                .filter(|&k| !e.was_song_mode && now[k] != e.seen[k])
-                .collect();
-            if let [k] = changed[..] {
-                e.synth = k;
-            }
-            e.pattern = now[e.synth];
+    /// The selection rule (docs/ui_spec.md section 23), the drum editors' (task-290): in
+    /// pattern mode the editor shows its 303's selected pattern (a selection on the panel moves
+    /// it; so does the switch into pattern mode). In song mode it keeps its own.
+    pub(crate) fn editor_follow(&mut self, k: usize) {
+        if !self.panel.transport.song_mode {
+            self.editors[k].pattern = self.panel.rows[k].pattern;
         }
-        e.seen = now;
-        e.was_song_mode = song;
     }
 
-    /// The editor's pattern as the link holds it, after the panel's pending events were noted
-    /// (an edit of the panel forgets the Undo first) and sent; `None` without a song.
-    fn editor_bytes(&mut self) -> Option<Vec<u8>> {
+    /// The pattern of the editor of 303 `k` as the link holds it, after the panel's pending
+    /// events were noted (an edit of the panel forgets the Undo first) and sent; `None` without
+    /// a song.
+    fn editor_bytes(&mut self, k: usize) -> Option<Vec<u8>> {
         self.link.as_ref()?;
         self.note_edits();
         let link = self.link.as_mut()?;
         link.forward(&mut self.panel);
-        Some(
-            link.pattern(self.editor.synth, self.editor.pattern)
-                .to_vec(),
-        )
+        Some(link.pattern(k, self.editors[k].pattern).to_vec())
     }
 
-    /// Writes `f` of the editor's pattern for the command `what`; with `keep` (a drag that
-    /// wrote already) the Undo stays the one of the drag's first write. Whether it changed.
+    /// Writes `f` of the pattern of the editor of 303 `k` for the command `what`; with `keep` (a
+    /// drag that wrote already) the Undo stays the one of the drag's first write. Whether it
+    /// changed.
     fn editor_edit(
         &mut self,
+        k: usize,
         what: &'static str,
         keep: bool,
         f: impl FnOnce(&[u8]) -> Vec<u8>,
     ) -> bool {
-        let Some(before) = self.editor_bytes() else {
+        let Some(before) = self.editor_bytes(k) else {
             return false;
         };
-        let (k, p) = (self.editor.synth, self.editor.pattern);
+        let p = self.editors[k].pattern;
         let after = f(&before);
         let prev = if keep { self.undo.clone() } else { None };
         let changed = self.write_pattern(k, p, &after, what);
@@ -445,93 +435,84 @@ impl App {
         changed
     }
 
-    /// Runs what the window asked for.
-    pub fn editor_act(&mut self, a: Act) {
+    /// Runs what the window of 303 `k` asked for.
+    pub fn editor_act(&mut self, k: usize, a: Act) {
         const EDIT: &str = "Edit Pattern";
         if self.link.is_none() {
             return;
         }
-        let (k, p) = (self.editor.synth, self.editor.pattern);
+        let k = k.min(1);
+        let p = self.editors[k].pattern;
         match a {
-            Act::Synth(synth) => {
-                let synth = synth.min(1);
-                let pattern = if self.panel.transport.song_mode {
-                    p
-                } else {
-                    self.panel.rows[synth].pattern
-                };
-                self.editor_select(synth, pattern);
-            }
-            Act::Select { synth, pattern } => self.editor_select(synth, pattern),
+            Act::Select(pattern) => self.editor_select(k, pattern),
             Act::Copy => {
-                if self.editor_bytes().is_some() {
+                if self.editor_bytes(k).is_some() {
                     self.copy_pattern_at(k, p, false);
                 }
             }
             Act::Paste => {
-                if self.editor_bytes().is_some() {
+                if self.editor_bytes(k).is_some() {
                     self.paste_pattern_at(k, p);
                 }
             }
             Act::Clear => {
-                if self.editor_edit("Clear Pattern", false, |b| emptied_pattern(k, b)) {
-                    let name = crate::menu::pattern_name(p);
-                    self.status = Some(format!("{}: {name} cleared", crate::menu::ROW_NAMES[k]));
+                if self.editor_bytes(k).is_some() {
+                    self.clear_pattern_at(k, p);
                 }
             }
             Act::Length { n, drag } => {
-                let keep = drag && self.editor.length_wrote;
-                let changed = self.editor_edit("Pattern Length", keep, |b| with_length(b, n));
-                self.editor.length_wrote = drag && (keep || changed);
+                let keep = drag && self.editors[k].length_wrote;
+                let changed = self.editor_edit(k, "Pattern Length", keep, |b| with_length(b, n));
+                self.editors[k].length_wrote = drag && (keep || changed);
             }
             Act::Shuffle => {
-                self.editor_edit("Pattern Shuffle", false, |b| with_shuffle(b, b[0] == 0));
+                self.editor_edit(k, "Pattern Shuffle", false, |b| with_shuffle(b, b[0] == 0));
             }
             Act::Shift { right } => {
-                self.editor_edit("Shift Pattern", false, |b| shifted(b, right));
+                self.editor_edit(k, "Shift Pattern", false, |b| shifted(b, right));
             }
             Act::Transpose { up } => {
-                self.editor_edit("Transpose Pattern", false, |b| transposed(b, up));
+                self.editor_edit(k, "Transpose Pattern", false, |b| transposed(b, up));
             }
             Act::NoteDown { step, pitch } => {
-                let Some(bytes) = self.editor_bytes() else {
+                let Some(bytes) = self.editor_bytes(k) else {
                     return;
                 };
                 let lit = note(&bytes, step) == Some(pitch);
                 // a press on the lit cell waits: a click there makes a pause, a drag paints
-                let wrote = !lit && self.editor_edit(EDIT, false, |b| with_note(b, step, pitch));
-                self.editor.gesture = Some(Gesture::Notes {
+                let wrote = !lit && self.editor_edit(k, EDIT, false, |b| with_note(b, step, pitch));
+                self.editors[k].gesture = Some(Gesture::Notes {
                     last: (step, pitch),
                     pause: lit,
                     wrote,
                 });
             }
             Act::NoteMove { step, pitch } => {
-                let Some(Gesture::Notes { last, wrote, .. }) = self.editor.gesture else {
+                let Some(Gesture::Notes { last, wrote, .. }) = self.editors[k].gesture else {
                     return;
                 };
                 if last == (step, pitch) {
                     return;
                 }
                 let cells = crossed(last.0, last.1, step, pitch);
-                let changed = self.editor_edit(EDIT, wrote, |b| {
+                let changed = self.editor_edit(k, EDIT, wrote, |b| {
                     cells
                         .iter()
                         .fold(b.to_vec(), |b, &(s, n)| with_note(&b, s, n))
                 });
-                self.editor.gesture = Some(Gesture::Notes {
+                self.editors[k].gesture = Some(Gesture::Notes {
                     last: (step, pitch),
                     pause: false,
                     wrote: wrote || changed,
                 });
             }
             Act::FlagDown { flag: f, step } => {
-                let Some(bytes) = self.editor_bytes() else {
+                let Some(bytes) = self.editor_bytes(k) else {
                     return;
                 };
                 let on = !flag(&bytes, step, f);
-                let wrote = self.editor_edit(EDIT, false, |b| with_flag(b, step, f, on));
-                self.editor.gesture = Some(Gesture::Flags {
+                let wrote = self.editor_edit(k, EDIT, false, |b| with_flag(b, step, f, on));
+                self.editors[k].gesture = Some(Gesture::Flags {
                     flag: f,
                     on,
                     last: step,
@@ -544,18 +525,18 @@ impl App {
                     on,
                     last,
                     wrote,
-                }) = self.editor.gesture
+                }) = self.editors[k].gesture
                 else {
                     return;
                 };
                 if last == step {
                     return;
                 }
-                let changed = self.editor_edit(EDIT, wrote, |b| {
+                let changed = self.editor_edit(k, EDIT, wrote, |b| {
                     (last.min(step)..=last.max(step))
                         .fold(b.to_vec(), |b, s| with_flag(&b, s, f, on))
                 });
-                self.editor.gesture = Some(Gesture::Flags {
+                self.editors[k].gesture = Some(Gesture::Flags {
                     flag: f,
                     on,
                     last: step,
@@ -567,9 +548,9 @@ impl App {
                     last: (step, _),
                     pause: true,
                     ..
-                }) = self.editor.gesture.take()
+                }) = self.editors[k].gesture.take()
                 {
-                    self.editor_edit(EDIT, false, |b| with_pause(b, step));
+                    self.editor_edit(k, EDIT, false, |b| with_pause(b, step));
                 }
             }
         }
@@ -577,31 +558,37 @@ impl App {
 
     /// The editor's selector: in song mode it chooses what the editor shows only; in pattern
     /// mode the pattern is selected on the panel too, as a click on its button selects it.
-    fn editor_select(&mut self, synth: usize, pattern: u8) {
-        let (synth, pattern) = (synth.min(1), pattern.min(31));
-        self.editor.synth = synth;
-        self.editor.pattern = pattern;
-        self.editor.gesture = None;
-        if !self.panel.transport.song_mode && self.panel.rows[synth].pattern != pattern {
-            self.select_pattern(synth, pattern);
+    fn editor_select(&mut self, k: usize, pattern: u8) {
+        let pattern = pattern.min(31);
+        let e = &mut self.editors[k];
+        e.pattern = pattern;
+        e.gesture = None;
+        if !self.panel.transport.song_mode && self.panel.rows[k].pattern != pattern {
+            self.select_pattern(k, pattern);
         }
-        self.editor.seen = [self.panel.rows[0].pattern, self.panel.rows[1].pattern];
     }
 
-    /// Draws the editor's window when it is open, and runs what it asks for.
-    pub(crate) fn pattern_editor_ui(&mut self, ctx: &Context) {
-        if !self.editor.open {
+    /// Draws the 303 editors' windows that are open, and runs what they ask for.
+    pub(crate) fn pattern_editors_ui(&mut self, ctx: &Context) {
+        for k in 0..2 {
+            self.pattern_editor_ui(ctx, k);
+        }
+    }
+
+    /// Draws the window of 303 `k` when it is open, and runs what it asks for.
+    fn pattern_editor_ui(&mut self, ctx: &Context, k: usize) {
+        if !self.editors[k].open {
             return;
         }
         if self.link.is_none() {
-            self.editor.open = false;
+            self.editors[k].open = false;
             return;
         }
-        self.editor_follow();
+        self.editor_follow(k);
         let Some(link) = &self.link else {
             return;
         };
-        let (k, p) = (self.editor.synth, self.editor.pattern);
+        let p = self.editors[k].pattern;
         let shown = Shown {
             bytes: link.pattern(k, p).to_vec(),
             synth: k,
@@ -612,40 +599,52 @@ impl App {
             paste: true,
         };
         let plugin = self.is_plugin();
-        let saved = (!plugin)
-            .then_some(self.settings.pattern_editor_pos)
-            .flatten();
+        let saved = if plugin {
+            None
+        } else if k == 0 {
+            self.settings.pattern_editor_303_1_pos
+        } else {
+            self.settings.pattern_editor_303_2_pos
+        };
         let mut acts = Vec::new();
         let mut length_drag = false;
-        let mut win = std::mem::take(&mut self.editor.win);
-        let editor = &mut self.editor;
+        let mut win = std::mem::take(&mut self.editors[k].win);
+        let editor = &mut self.editors[k];
         let spec = frame::Spec {
-            id: egui::Id::unique("orb_pattern_editor"),
-            title: "303 Pattern Editor",
+            id: egui::Id::unique(salt(k)),
+            title: title(k),
             saved,
-            guess: vec2(530.0, 340.0),
+            guess: vec2(480.0, 340.0),
             keep: !plugin,
         };
         let out = frame::show_window(ctx, spec, &mut win, |ui| {
             length_drag = window_ui(ui, editor, &shown, &mut acts);
         });
-        self.editor.win = win;
+        self.editors[k].win = win;
+        if out.pressed {
+            self.editor_focus = Some(k);
+        }
         if !length_drag {
-            self.editor.length_wrote = false;
+            self.editors[k].length_wrote = false;
         }
         for a in acts {
-            self.editor_act(a);
+            self.editor_act(k, a);
         }
         // the place is saved once the window is let go (the standalone app's only)
         if let Some(pos) = out.save {
-            self.settings.set_pattern_editor_pos(Some(pos));
+            if k == 0 {
+                self.settings.set_pattern_editor_303_1_pos(Some(pos));
+            } else {
+                self.settings.set_pattern_editor_303_2_pos(Some(pos));
+            }
             if let Err(e) = self.settings.save() {
                 self.fail(e);
             }
         }
         if !out.open {
-            self.editor.open = false;
-            self.editor.gesture = None;
+            self.editors[k].open = false;
+            self.editors[k].gesture = None;
+            self.editor_unfocus(k);
         }
     }
 }
@@ -659,25 +658,13 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
     // ---- the top row ----
     ui.horizontal(|ui| {
         frame::compact(ui);
-        for k in 0..2 {
-            let name = ["303-1", "303-2"][k];
-            let r = ui.selectable_label(s.synth == k, name);
-            e.hits.buttons.push((name, r.rect));
-            if r.clicked() && s.synth != k {
-                acts.push(Act::Synth(k));
-            }
-        }
-        ui.separator();
         if let Some(b) = frame::bank_buttons(ui, s.pattern, &mut e.hits.buttons) {
-            acts.push(Act::Select {
-                synth: s.synth,
-                pattern: b * 8 + s.pattern % 8,
-            });
+            acts.push(Act::Select(b * 8 + s.pattern % 8));
         }
-        // the number between its arrows, which step through 303-1 A1..D8 then 303-2 A1..D8
-        // and stop at the two ends (`step_pattern`)
-        let prev = step_pattern(s.synth, s.pattern, false);
-        let next = step_pattern(s.synth, s.pattern, true);
+        // the number between its arrows, which step through the 303's A1..D8 and stop at the
+        // two ends (`step_pattern`; each window is fixed to its 303, task-290)
+        let prev = step_pattern(s.pattern, false);
+        let next = step_pattern(s.pattern, true);
         let n = frame::number_field(
             ui,
             s.pattern,
@@ -688,11 +675,11 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
         let to = match n {
             Some(Number::Prev) => prev,
             Some(Number::Next) => next,
-            Some(Number::Set(n)) => Some((s.synth, bank * 8 + n)),
+            Some(Number::Set(n)) => Some(bank * 8 + n),
             None => None,
         };
-        if let Some((synth, pattern)) = to {
-            acts.push(Act::Select { synth, pattern });
+        if let Some(pattern) = to {
+            acts.push(Act::Select(pattern));
         }
         ui.separator();
         match frame::edit_buttons(ui, s.paste, &mut e.hits.buttons) {
@@ -774,7 +761,7 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
             painter.rect_filled(c, CornerRadius::same(2), dimmed(AMBER, st >= len));
         }
     }
-    let id = egui::Id::unique("orb_pattern_editor_notes");
+    let id = egui::Id::unique((salt(s.synth), "notes"));
     match frame::grid_press(ui, id, grid, rows, &mut e.notes_down) {
         Some(Press::Down(step, row)) => acts.push(Act::NoteDown {
             step,
@@ -796,10 +783,11 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
     let up = Rect::from_min_size(pos2(tx, mid_y - 2.0 - ARROW.y), ARROW);
     let dn = Rect::from_min_size(pos2(tx, mid_y + 2.0), ARROW);
     let b = &mut e.hits.buttons;
-    if frame::arrow_button(ui, up, vec2(0.0, -1.0), b, SALT, "transpose_up") {
+    let sa = salt(s.synth);
+    if frame::arrow_button(ui, up, vec2(0.0, -1.0), b, sa, "transpose_up") {
         acts.push(Act::Transpose { up: true });
     }
-    if frame::arrow_button(ui, dn, vec2(0.0, 1.0), b, SALT, "transpose_down") {
+    if frame::arrow_button(ui, dn, vec2(0.0, 1.0), b, sa, "transpose_down") {
         acts.push(Act::Transpose { up: false });
     }
 
@@ -839,7 +827,7 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
             }
         }
     }
-    let id = egui::Id::unique("orb_pattern_editor_flags");
+    let id = egui::Id::unique((salt(s.synth), "flags"));
     match frame::grid_press(ui, id, flags, frows, &mut e.flags_down) {
         Some(Press::Down(step, row)) => acts.push(Act::FlagDown {
             flag: Flag::ALL[row],
@@ -860,17 +848,14 @@ fn window_ui(ui: &mut Ui, e: &mut Editor, s: &Shown, acts: &mut Vec<Act>) -> boo
     let left = Rect::from_min_size(pos2(mid - 2.0 - ARROW.x, row.top()), ARROW);
     let right = Rect::from_min_size(pos2(mid + 2.0, row.top()), ARROW);
     let b = &mut e.hits.buttons;
-    if frame::arrow_button(ui, left, vec2(-1.0, 0.0), b, SALT, "shift_left") {
+    if frame::arrow_button(ui, left, vec2(-1.0, 0.0), b, sa, "shift_left") {
         acts.push(Act::Shift { right: false });
     }
-    if frame::arrow_button(ui, right, vec2(1.0, 0.0), b, SALT, "shift_right") {
+    if frame::arrow_button(ui, right, vec2(1.0, 0.0), b, sa, "shift_right") {
         acts.push(Act::Shift { right: true });
     }
     length_drag
 }
-
-/// The salt of the window's arrow buttons' ids.
-const SALT: &str = "orb_pattern_editor";
 
 #[cfg(test)]
 mod tests {
@@ -966,24 +951,22 @@ mod tests {
     }
 
     #[test]
-    fn the_number_arrows_run_one_sequence_of_64_and_stop_at_its_ends() {
-        assert_eq!(step_pattern(0, 7, true), Some((0, 8)), "A8 to B1");
-        assert_eq!(step_pattern(0, 8, false), Some((0, 7)));
-        assert_eq!(
-            step_pattern(0, 31, true),
-            Some((1, 0)),
-            "303-1 D8 to 303-2 A1"
-        );
-        assert_eq!(step_pattern(1, 0, false), Some((0, 31)));
-        assert_eq!(step_pattern(0, 0, false), None, "303-1 A1 is the first");
-        assert_eq!(step_pattern(1, 31, true), None, "303-2 D8 is the last");
-        let mut at = (0, 0);
-        let mut n = 1;
-        while let Some(p) = step_pattern(at.0, at.1, true) {
-            at = p;
-            n += 1;
-        }
-        assert_eq!((at, n), ((1, 31), 64));
+    fn the_number_arrows_run_a1_to_d8_of_the_303_and_stop_at_the_ends() {
+        assert_eq!(step_pattern(7, true), Some(8), "A8 to B1");
+        assert_eq!(step_pattern(8, false), Some(7));
+        assert_eq!(step_pattern(0, false), None, "A1 is the first");
+        assert_eq!(step_pattern(31, true), None, "D8 is the last");
+    }
+
+    #[test]
+    fn each_303_has_its_own_window() {
+        assert_eq!(title(0), "303-1 Pattern Editor");
+        assert_eq!(title(1), "303-2 Pattern Editor");
+        assert_eq!(menu_item(0), "303-1 Pattern Editor...");
+        assert_eq!(menu_item(1), "303-2 Pattern Editor...");
+        assert_ne!(salt(0), salt(1));
+        assert_eq!(Editor::new(1).synth, 1);
+        assert!(!Editor::new(0).open);
     }
 
     #[test]

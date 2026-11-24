@@ -148,8 +148,14 @@ pub struct App {
     pub(crate) clip_text: Option<String>,
     /// What Edit > Undo puts back (`App::undo`).
     pub(crate) undo: Option<crate::menu::Undo>,
-    /// The 303 pattern editor's window (Edit > 303 Pattern Editor..., task-274).
-    pub(crate) editor: crate::pattern_editor::Editor,
+    /// The 303 pattern editors' windows, by 303 (Edit > 303-1 and 303-2 Pattern Editor...,
+    /// tasks 274 and 290).
+    pub(crate) editors: [crate::pattern_editor::Editor; 2],
+    /// The pattern editor that has the focus, by its row (0 and 1 the 303s' editors, 2 the
+    /// 808's, 3 the 909's): the one last opened or pressed on, until a press on the panel or its
+    /// window closes (task-290). The Edit menu's pattern commands act on its pattern
+    /// (`App::pattern_target`).
+    pub(crate) editor_focus: Option<usize>,
     /// The drum pattern editors' windows, by `drum_editor::Machine::index` (Edit > 808 and 909
     /// Pattern Editor..., tasks 280 and 281).
     pub(crate) drum_editors:
@@ -258,7 +264,11 @@ impl App {
             clipboard: crate::clipboard::Clipboard::memory(),
             clip_text: None,
             undo: None,
-            editor: Default::default(),
+            editors: [
+                crate::pattern_editor::Editor::new(0),
+                crate::pattern_editor::Editor::new(1),
+            ],
+            editor_focus: None,
             drum_editors: Default::default(),
             edit_items: Vec::new(),
             key_mode: KeyMode::default(),
@@ -1145,7 +1155,7 @@ impl App {
         self.browse(&ctx);
         self.prompt_ui(&ctx);
         self.info_ui(&ctx);
-        self.pattern_editor_ui(&ctx);
+        self.pattern_editors_ui(&ctx);
         self.drum_editors_ui(&ctx);
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);

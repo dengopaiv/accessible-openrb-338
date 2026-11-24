@@ -412,7 +412,9 @@ fn the_edit_menu_has_the_standalones_items_without_shortcuts() {
         "Copy Pattern",
         "Paste Pattern",
         "Duplicate Pattern",
-        "303 Pattern Editor...",
+        "Clear Pattern",
+        "303-1 Pattern Editor...",
+        "303-2 Pattern Editor...",
         "808 Pattern Editor...",
         "909 Pattern Editor...",
     ];
@@ -483,26 +485,38 @@ fn the_edit_menus_pattern_commands_work_in_the_plugin() {
     assert_eq!(pattern(&h, to), a1);
 }
 
-/// task-274: the plugin's Edit menu opens the 303 pattern editor (no shortcut text); the item
-/// opens the editor's window on TB-303 1's pattern, an edit in it goes into the plugin's song,
-/// and Undo (the user's review, round 2) names the change and takes it back.
+/// task-274: the plugin's Edit menu opens the 303 pattern editors (no shortcut text); each
+/// item opens its 303's window (task-290) on that 303's pattern, an edit in it goes into the
+/// plugin's song, and Undo (the user's review, round 2) names the change and takes it back.
 #[test]
-fn the_edit_menu_opens_the_303_pattern_editor_and_undoes_its_changes() {
+fn the_edit_menu_opens_the_303_pattern_editors_and_undoes_their_changes() {
+    for k in 0..2 {
+        the_edit_menu_opens_a_303_pattern_editor(k);
+    }
+}
+
+fn the_edit_menu_opens_a_303_pattern_editor(k: usize) {
     let mut h = Harness::new(with("303_accent0"));
-    h.open_menu_with("303 Pattern Editor...");
+    let item = orb_ui::pattern_editor::menu_item(k);
+    h.open_menu_with(item);
     assert_eq!(h.app.edit_item("Undo").map(|i| i.1), Some(false));
-    let (r, enabled) = h.app.edit_item("303 Pattern Editor...").expect("drawn");
+    let (r, enabled) = h.app.edit_item(item).expect("drawn");
     assert!(enabled);
     h.click(r.center());
     for _ in 0..3 {
         h.frame(vec![]);
     }
-    let e = h.app.pattern_editor();
+    let e = h.app.pattern_editor(k);
     assert!(e.open);
-    assert_eq!(e.synth, 0);
-    let (k, p) = (e.synth, e.pattern);
+    assert_eq!(e.synth, k);
+    assert!(
+        !h.app.pattern_editor(1 - k).open,
+        "the other 303's stays closed"
+    );
+    assert_eq!(h.app.focused_editor(), Some(k));
+    let p = e.pattern;
     let before = h.app.link.as_ref().unwrap().pattern(k, p).to_vec();
-    let cell = h.app.pattern_editor_flag_cell(Flag::Accent, 15).unwrap();
+    let cell = h.app.pattern_editor_flag_cell(k, Flag::Accent, 15).unwrap();
     h.click(cell.center());
     let after = h.app.link.as_ref().unwrap().pattern(k, p).to_vec();
     assert_ne!(after, before, "the click edits the pattern");

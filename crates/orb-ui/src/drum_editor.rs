@@ -19,11 +19,11 @@ use egui::{Color32, Context, CornerRadius, Rect, RichText, Sense, Ui, Vec2, pos2
 
 use crate::app::App;
 use crate::behavior::{self, Mods};
+pub use crate::editor_frame::step_pattern;
 use crate::editor_frame::{
     self as frame, ARROW, CELL_H, HEAD_H, KEY_W, LABEL_SIZE, Number, Placing, Press, SPLIT_H,
     STEPS, cell_rect, dimmed, paint_columns,
 };
-use crate::link::emptied_pattern;
 use crate::model::Panel;
 use crate::palette::{AMBER, BG, INK_DIM, SLATE_DARK};
 use crate::settings::Settings;
@@ -345,17 +345,6 @@ pub fn shifted(bytes: &[u8], right: bool) -> Vec<u8> {
     frame::shifted(bytes, STEP_BYTES, right)
 }
 
-/// The pattern after (`next`) or before pattern `pattern` (0..=31) in the number's arrows' one
-/// sequence A1..D8: 8 goes on to the next bank's 1. `None` past the ends (A1, D8).
-pub fn step_pattern(pattern: u8, next: bool) -> Option<u8> {
-    let p = pattern.min(31);
-    if next {
-        (p < 31).then_some(p + 1)
-    } else {
-        p.checked_sub(1)
-    }
-}
-
 /// What the keys and the mouse do in a drum editor (the editors' own inputs, [`Machine::inputs`];
 /// the help does not list them, task-284): each is a case of the tests (`tests/drum_editor.rs`
 /// `every_input_of_the_help_does_what_it_says`, a match on every one).
@@ -606,12 +595,12 @@ impl App {
         &self.drum_editors[m.index()]
     }
 
-    /// Ctrl/Cmd+E: the editor of the focused row, the 808's with the TR-808 focused, the 909's
-    /// with the TR-909 focused, else the 303 editor.
+    /// Ctrl/Cmd+E: the editor of the focused row, the 808's with the 808 focused, the 909's
+    /// with the 909 focused, the 303-1's or the 303-2's with that 303 focused (task-290).
     pub fn open_focused_editor(&mut self) {
         match Machine::of_row(self.panel.focus) {
             Some(m) => self.open_drum_editor(m),
-            None => self.open_pattern_editor(),
+            None => self.open_pattern_editor(self.panel.focus.min(1)),
         }
     }
 
@@ -628,6 +617,7 @@ impl App {
         e.win.open(e.open);
         e.open = true;
         e.gesture = None;
+        self.editor_focus = Some(m.row());
     }
 
     /// Where the window drew instrument `column`'s cell (0 the AC row, 1..=11 the drum rows) of
@@ -678,7 +668,7 @@ impl App {
     /// The selection rule of pattern mode: the editor shows the machine's selected pattern (a
     /// selection on the panel moves it; so does the switch into pattern mode). In song mode it
     /// keeps its own.
-    fn drum_follow(&mut self, m: Machine) {
+    pub(crate) fn drum_follow(&mut self, m: Machine) {
         if !self.panel.transport.song_mode {
             self.drum_editors[m.index()].pattern = self.panel.rows[m.row()].pattern;
         }
@@ -749,9 +739,8 @@ impl App {
                 }
             }
             DrumAct::Clear => {
-                if self.drum_edit(m, "Clear Pattern", false, |b| emptied_pattern(r, b)) {
-                    let name = crate::menu::pattern_name(p);
-                    self.status = Some(format!("{}: {name} cleared", crate::menu::ROW_NAMES[r]));
+                if self.drum_bytes(m).is_some() {
+                    self.clear_pattern_at(r, p);
                 }
             }
             DrumAct::Length { n, drag } => {
@@ -855,6 +844,9 @@ impl App {
             length_drag = window_ui(ui, editor, &shown, &mut acts);
         });
         self.drum_editors[i].win = win;
+        if out.pressed {
+            self.editor_focus = Some(r);
+        }
         if !length_drag {
             self.drum_editors[i].length_wrote = false;
         }
@@ -870,6 +862,7 @@ impl App {
         if !out.open {
             self.drum_editors[i].open = false;
             self.drum_editors[i].gesture = None;
+            self.editor_unfocus(r);
         }
     }
 }

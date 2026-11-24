@@ -241,15 +241,16 @@ fn the_menu_item_and_cmd_e_open_it_on_the_808s_pattern_and_bring_it_to_the_front
     h.open_edit_menu();
     let (r, enabled) = h.app.edit_item(M.menu_item()).unwrap();
     assert!(enabled);
-    // the items in order: 303's, then 808's
-    let (r303, _) = h.app.edit_item("303 Pattern Editor...").unwrap();
+    // the items in order: 303-1's and 303-2's, then 808's
+    let (r303, _) = h.app.edit_item("303-2 Pattern Editor...").unwrap();
     assert!(r303.top() < r.top());
     h.click(r.center());
     h.frame(vec![]);
     let e = h.app.drum_editor(M);
     assert!(e.open);
     assert_eq!(e.pattern, 5);
-    assert!(!h.app.pattern_editor().open, "the 303's stays closed");
+    assert!(!h.app.pattern_editor(0).open, "the 303s' stay closed");
+    assert!(!h.app.pattern_editor(1).open);
 
     // File > Info opens over it; Cmd+E with the 808 focused brings it back to the front, on
     // the 808's selected pattern
@@ -267,11 +268,11 @@ fn the_menu_item_and_cmd_e_open_it_on_the_808s_pattern_and_bring_it_to_the_front
     h.frame(vec![]);
     assert!(in_front(&h), "the editor is in front");
     assert_eq!(h.app.drum_editor(M).pattern, 9);
-    // with a 303 focused, the key opens the 303 editor; the 808's stays open
+    // with a 303 focused, the key opens that 303's editor; the 808's stays open
     h.app.panel.focus = 1;
     h.key(egui::Key::E, Modifiers::COMMAND);
-    assert!(h.app.pattern_editor().open);
-    assert_eq!(h.app.pattern_editor().synth, 1);
+    assert!(h.app.pattern_editor(1).open);
+    assert!(!h.app.pattern_editor(0).open);
     assert!(h.app.drum_editor(M).open);
 }
 
@@ -625,7 +626,11 @@ fn its_place_is_kept_in_the_settings_file() {
     let saved = Settings::load_from(&file);
     let want = [moved.min.x.round() as i32, moved.min.y.round() as i32];
     assert_eq!(saved.pattern_editor_808_pos, Some(want));
-    assert_eq!(saved.pattern_editor_pos, None, "the 303's is its own");
+    assert_eq!(
+        saved.pattern_editor_303_1_pos, None,
+        "the 303s' are their own"
+    );
+    assert_eq!(saved.pattern_editor_303_2_pos, None);
     let mut h2 = Harness::new();
     h2.app.settings = Settings::load_from(&file);
     h2.open_editor();
@@ -856,9 +861,10 @@ fn the_909_menu_item_and_cmd_e_open_its_own_window() {
     h.select(ROW9, 4);
     h.app.panel.focus = 0;
     h.open_edit_menu();
-    // the items in order: 303's, 808's, 909's
+    // the items in order: 303-1's, 303-2's, 808's, 909's
     let tops: Vec<f32> = [
-        "303 Pattern Editor...",
+        "303-1 Pattern Editor...",
+        "303-2 Pattern Editor...",
         "808 Pattern Editor...",
         "909 Pattern Editor...",
     ]
@@ -873,7 +879,7 @@ fn the_909_menu_item_and_cmd_e_open_its_own_window() {
     assert!(h.app.drum_editor(M9).open);
     assert_eq!(h.app.drum_editor(M9).pattern, 4);
     assert!(!h.app.drum_editor(M).open, "the 808's stays closed");
-    assert!(!h.app.pattern_editor().open);
+    assert!(!h.app.pattern_editor(0).open && !h.app.pattern_editor(1).open);
     // the 808's opens beside it: two windows
     h.app.command(Cmd::DrumEditor(M));
     for _ in 0..3 {
@@ -891,7 +897,7 @@ fn the_909_menu_item_and_cmd_e_open_its_own_window() {
     h.frame(vec![]);
     assert!(h.app.drum_editor(M9).open);
     assert_eq!(h.app.drum_editor(M9).pattern, 9);
-    assert!(!h.app.pattern_editor().open);
+    assert!(!h.app.pattern_editor(0).open && !h.app.pattern_editor(1).open);
     assert!(!h.app.drum_editor(M).open);
 }
 

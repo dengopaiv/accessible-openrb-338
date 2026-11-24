@@ -98,6 +98,9 @@ pub(crate) struct Shown {
     /// The window's new place to save (the standalone app's only): set once the user lets go
     /// of the window after moving it.
     pub(crate) save: Option<[i32; 2]>,
+    /// A primary press went down on the window in this frame (it takes the editors' focus,
+    /// task-290: `App::editor_focus`).
+    pub(crate) pressed: bool,
 }
 
 /// An editor's window.
@@ -149,6 +152,16 @@ pub(crate) fn show_window(
             ctx.memory_mut(|m| m.areas_mut().set_state(layer, s));
         }
     }
+    // a press on the window (egui's layers of the last frame: the window's own, not one
+    // over it)
+    let press = ctx.input(|i| {
+        i.pointer
+            .button_pressed(egui::PointerButton::Primary)
+            .then(|| i.pointer.press_origin())
+            .flatten()
+    });
+    let layer = egui::LayerId::new(egui::Order::Middle, id);
+    let pressed = press.is_some_and(|p| ctx.layer_id_at(p) == Some(layer));
     let resp = window.show(ctx, add);
     let down = ctx.input(|i| i.pointer.any_down());
     if let Some(r) = resp {
@@ -172,7 +185,23 @@ pub(crate) fn show_window(
     if !open {
         p.last_min = None;
     }
-    Shown { open, save }
+    Shown {
+        open,
+        save,
+        pressed,
+    }
+}
+
+/// The pattern after (`next`) or before pattern `pattern` (0..=31) in the number's arrows' one
+/// sequence A1..D8 of the editor's device: 8 goes on to the next bank's 1. `None` past the ends
+/// (A1, D8).
+pub fn step_pattern(pattern: u8, next: bool) -> Option<u8> {
+    let p = pattern.min(31);
+    if next {
+        (p < 31).then_some(p + 1)
+    } else {
+        p.checked_sub(1)
+    }
 }
 
 /// A button with a triangle drawn on it, pointing `dir` (a unit vector), at `rect`; `salt`

@@ -7,11 +7,13 @@
 //!   As, Info ([`crate::info`]), Export loop as audio file. The browser (task-046) returns paths
 //!   only; the writes happen here and their errors are shown in the message box
 //!   ([`crate::error_box`]).
-//! - **Edit**: Undo (one level), Cut, Copy, Paste and Duplicate Pattern on the focused row's
-//!   selected pattern ([`App::undo`], [`App::copy_pattern`], [`App::paste_pattern`],
-//!   [`App::duplicate_pattern`]), orb's own commands, and the 303 Pattern Editor... (Ctrl/Cmd+E,
-//!   [`crate::pattern_editor`], task-274); a plugin's Edit menu has the same items with no shortcut
-//!   texts.
+//! - **Edit**: Undo (one level), Cut, Copy, Paste, Duplicate and Clear Pattern on the focused
+//!   pattern editor's pattern, else on the focused row's selected pattern ([`App::undo`],
+//!   [`App::copy_pattern`], [`App::paste_pattern`], [`App::duplicate_pattern`],
+//!   [`App::clear_pattern`], [`App::pattern_target`], task-290), orb's own commands, and the 303-1,
+//!   303-2, 808 and 909 Pattern Editor... (Ctrl/Cmd+E on the focused row's,
+//!   [`crate::pattern_editor`], [`crate::drum_editor`]); a plugin's Edit menu has the same items
+//!   with no shortcut texts.
 //! - **Mods**: "Standard ReBirth", the mods of the Mods folder (one entry per INFO menu name, as
 //!   the original's Mods menu: `sub_40C163`, docs/rbm.md section 14), and a file picked in the
 //!   browser. A choice is the original's `sub_42D80D` -> `sub_426FB3`: the song is marked modified,
@@ -115,8 +117,9 @@ pub enum Cmd {
     SetPluginMode(crate::embed::PluginMode),
     /// Edit > Undo ([`App::undo`]).
     Undo,
-    /// Edit > 303 Pattern Editor... ([`App::open_pattern_editor`], task-274).
-    PatternEditor,
+    /// Edit > 303-1 or 303-2 Pattern Editor..., by the 303 (0 or 1;
+    /// [`App::open_pattern_editor`], tasks 274 and 290).
+    PatternEditor(usize),
     /// Edit > 808 or 909 Pattern Editor... ([`App::open_drum_editor`], tasks 280 and 281).
     DrumEditor(crate::drum_editor::Machine),
     /// Edit > Cut Pattern ([`App::copy_pattern`]).
@@ -125,6 +128,8 @@ pub enum Cmd {
     /// Edit > Paste Pattern from the app's clipboard ([`App::paste_pattern`]).
     PastePattern,
     DuplicatePattern,
+    /// Edit > Clear Pattern, no shortcut ([`App::clear_pattern`], task-290).
+    ClearPattern,
 }
 
 /// What Edit > Undo puts back: pattern `pattern` of row `row` held `bytes` before the command
@@ -1038,25 +1043,68 @@ impl App {
                 }
             }
             Cmd::Undo => self.undo(),
-            Cmd::PatternEditor => self.open_pattern_editor(),
+            Cmd::PatternEditor(k) => self.open_pattern_editor(k),
             Cmd::DrumEditor(m) => self.open_drum_editor(m),
             Cmd::CutPattern => self.copy_pattern(true),
             Cmd::CopyPattern => self.copy_pattern(false),
             Cmd::PastePattern => self.paste_pattern(),
             Cmd::DuplicatePattern => self.duplicate_pattern(),
+            Cmd::ClearPattern => self.clear_pattern(),
         }
     }
 
     // ---- patterns -----------------------------------------------------------------------
 
-    /// The row with the focus and its selected pattern, after the panel's pending events were
-    /// noted and sent; `None` without a link (the demo panel).
-    fn pattern_target(&mut self) -> Option<(usize, u8)> {
+    /// The pattern the Edit menu's pattern commands act on (task-290), after the panel's
+    /// pending events were noted and sent: the focused pattern editor's row and the pattern it
+    /// shows ([`App::focused_editor`]), else the focused row and its selected pattern; `None`
+    /// without a link (the demo panel).
+    pub fn pattern_target(&mut self) -> Option<(usize, u8)> {
         self.link.as_ref()?;
         self.note_edits();
         self.link.as_mut()?.forward(&mut self.panel);
+        if let Some(r) = self.focused_editor() {
+            return Some((r, self.editor_pattern(r)));
+        }
         let r = self.panel.focus;
         Some((r, self.panel.rows[r].pattern))
+    }
+
+    /// The row of the pattern editor that has the focus, when its window is open: 0 and 1 the
+    /// 303-1's and the 303-2's, 2 the 808's, 3 the 909's. An editor takes the focus when it
+    /// opens (the Edit menu, Ctrl/Cmd+E) and when a primary press goes down on its window; it
+    /// loses it when a primary press goes down on the panel or its window closes (task-290).
+    pub fn focused_editor(&self) -> Option<usize> {
+        use crate::drum_editor::Machine;
+        let r = self.editor_focus?;
+        let open = match Machine::of_row(r) {
+            Some(m) => self.drum_editors[m.index()].open,
+            None => self.editors[r.min(1)].open,
+        };
+        open.then_some(r)
+    }
+
+    /// The pattern the editor of row `r` shows, after its selection rule ran (in pattern mode it
+    /// is the row's selected pattern, which may have changed since its last frame).
+    fn editor_pattern(&mut self, r: usize) -> u8 {
+        use crate::drum_editor::Machine;
+        match Machine::of_row(r) {
+            Some(m) => {
+                self.drum_follow(m);
+                self.drum_editors[m.index()].pattern
+            }
+            None => {
+                self.editor_follow(r);
+                self.editors[r].pattern
+            }
+        }
+    }
+
+    /// The editor of row `r` closed: it no longer has the focus.
+    pub(crate) fn editor_unfocus(&mut self, r: usize) {
+        if self.editor_focus == Some(r) {
+            self.editor_focus = None;
+        }
     }
 
     /// Writes `bytes` into pattern `p` of row `r` ([`crate::link::Link::set_pattern`]) for the
@@ -1123,9 +1171,9 @@ impl App {
         self.status = Some(format!("{}: {} undone", ROW_NAMES[u.row], u.what));
     }
 
-    /// Edit > Copy Pattern, and with `cut` Cut Pattern: the focused row's selected pattern goes
-    /// to the system clipboard as JSON ([`crate::pattern_json`], at the end of the frame); Cut
-    /// then empties its steps, the length and the shuffle flag stay.
+    /// Edit > Copy Pattern, and with `cut` Cut Pattern: the target pattern
+    /// ([`App::pattern_target`]) goes to the system clipboard as JSON ([`crate::pattern_json`], at
+    /// the end of the frame); Cut then empties its steps, the length and the shuffle flag stay.
     pub fn copy_pattern(&mut self, cut: bool) {
         if let Some((r, p)) = self.pattern_target() {
             self.copy_pattern_at(r, p, cut);
@@ -1154,8 +1202,8 @@ impl App {
     }
 
     /// Edit > Paste Pattern: the system clipboard's pattern (read directly,
-    /// [`crate::clipboard::Clipboard::read`]) into the focused row's selected pattern, when the
-    /// row is of its device (a 303 pattern pastes into either 303).
+    /// [`crate::clipboard::Clipboard::read`]) into the target pattern ([`App::pattern_target`]),
+    /// when its row is of the pattern's device (a 303 pattern pastes into either 303).
     pub fn paste_pattern(&mut self) {
         if let Some((r, p)) = self.pattern_target() {
             self.paste_pattern_at(r, p);
@@ -1199,9 +1247,10 @@ impl App {
         });
     }
 
-    /// Edit > Duplicate Pattern: the focused row's selected pattern goes into the row's next
-    /// empty pattern ([`next_empty_pattern`]), which is then selected as a click on its button
-    /// selects it. The clipboard stays as it is.
+    /// Edit > Duplicate Pattern: the target pattern ([`App::pattern_target`]) goes into its
+    /// row's next empty pattern ([`next_empty_pattern`]), which is then selected as a click on
+    /// its button selects it; a focused editor shows the copy too. The clipboard stays as it
+    /// is.
     pub fn duplicate_pattern(&mut self) {
         let Some((r, p)) = self.pattern_target() else {
             return;
@@ -1233,12 +1282,42 @@ impl App {
             bytes: before,
             select: Some(p),
         });
+        // the editor it came from shows the copy (in song mode too, where it does not follow
+        // the panel's selection)
+        if self.focused_editor() == Some(r) {
+            match crate::drum_editor::Machine::of_row(r) {
+                Some(m) => self.drum_editors[m.index()].pattern = to,
+                None => self.editors[r].pattern = to,
+            }
+        }
         let (from, to) = (pattern_name(p), pattern_name(to));
         self.status = Some(format!("{row}: {from} duplicated to {to}"));
     }
 
+    /// Edit > Clear Pattern (no shortcut, task-290): the target pattern's steps are emptied as
+    /// the editors' Clear empties them ([`emptied_pattern`]: the shuffle flag and the length
+    /// stay), one write with Undo; the status line says "cleared" also when the pattern was
+    /// empty already (then nothing is written and the Undo stays).
+    pub fn clear_pattern(&mut self) {
+        if let Some((r, p)) = self.pattern_target() {
+            self.clear_pattern_at(r, p);
+        }
+    }
+
+    /// [`App::clear_pattern`] of pattern `p` of row `r` (also the pattern editors' Clear, after
+    /// the panel's events were sent).
+    pub(crate) fn clear_pattern_at(&mut self, r: usize, p: u8) {
+        let Some(link) = &self.link else {
+            return;
+        };
+        let empty = emptied_pattern(r, link.pattern(r, p));
+        // the status also when the pattern was empty already (the user's review, round 1)
+        self.write_pattern(r, p, &empty, "Clear Pattern");
+        self.status = Some(format!("{}: {} cleared", ROW_NAMES[r], pattern_name(p)));
+    }
+
     /// A paste of the system clipboard's `text` (Ctrl/Cmd+V, the standalone's Edit > Paste
-    /// Pattern) into the focused row's selected pattern. Nothing without a link.
+    /// Pattern) into the target pattern ([`App::pattern_target`]). Nothing without a link.
     pub fn paste_text(&mut self, text: &str) {
         if self.link.is_none() {
             return;
@@ -1544,7 +1623,7 @@ impl App {
             // the pattern commands, in a plugin's editor too (the user's review of task-274,
             // round 3), there with no shortcut texts
             for (text, sc, c) in EDIT_ITEMS {
-                let r = item_if(ui, song, text, key(sc));
+                let r = item_if(ui, song, text, sc.and_then(key));
                 self.edit_items.push((text, r.rect, song));
                 if r.clicked() {
                     *cmd = Some(c);
@@ -1552,19 +1631,21 @@ impl App {
             }
             ui.separator();
             // the pattern editors; Ctrl/Cmd+E opens the focused row's, so its text is on that
-            // item (the 303's with a 303 focused, the 808's or the 909's with theirs; tasks 280
-            // and 281)
-            let focused = crate::drum_editor::Machine::of_row(self.panel.focus);
-            let text = PATTERN_EDITOR_ITEM;
+            // item (the 303-1's or the 303-2's with that 303 focused, the 808's or the 909's
+            // with theirs; tasks 280, 281 and 290)
+            let focus = self.panel.focus;
             let sc = key(&shortcuts::PATTERN_EDITOR);
-            let r = item_if(ui, song, text, sc.filter(|_| focused.is_none()));
-            self.edit_items.push((text, r.rect, song));
-            if r.clicked() {
-                *cmd = Some(Cmd::PatternEditor);
+            for k in 0..2 {
+                let text = crate::pattern_editor::menu_item(k);
+                let r = item_if(ui, song, text, sc.filter(|_| focus == k));
+                self.edit_items.push((text, r.rect, song));
+                if r.clicked() {
+                    *cmd = Some(Cmd::PatternEditor(k));
+                }
             }
             for m in crate::drum_editor::Machine::ALL {
                 let text = m.menu_item();
-                let r = item_if(ui, song, text, sc.filter(|_| focused == Some(m)));
+                let r = item_if(ui, song, text, sc.filter(|_| focus == m.row()));
                 self.edit_items.push((text, r.rect, song));
                 if r.clicked() {
                     *cmd = Some(Cmd::DrumEditor(m));
@@ -1710,20 +1791,18 @@ impl App {
     }
 }
 
-/// The Edit menu's item that opens the 303 pattern editor (task-274; the ellipsis: it opens a
-/// window).
-pub const PATTERN_EDITOR_ITEM: &str = "303 Pattern Editor...";
-
-/// The pattern items of the Edit menu, in order.
-const EDIT_ITEMS: [(&str, &egui::KeyboardShortcut, Cmd); 4] = [
-    ("Cut Pattern", &shortcuts::CUT, Cmd::CutPattern),
-    ("Copy Pattern", &shortcuts::COPY, Cmd::CopyPattern),
-    ("Paste Pattern", &shortcuts::PASTE, Cmd::PastePattern),
+/// The pattern items of the Edit menu, in order, with their shortcuts (Clear Pattern has none,
+/// task-290).
+const EDIT_ITEMS: [(&str, Option<&egui::KeyboardShortcut>, Cmd); 5] = [
+    ("Cut Pattern", Some(&shortcuts::CUT), Cmd::CutPattern),
+    ("Copy Pattern", Some(&shortcuts::COPY), Cmd::CopyPattern),
+    ("Paste Pattern", Some(&shortcuts::PASTE), Cmd::PastePattern),
     (
         "Duplicate Pattern",
-        &shortcuts::DUPLICATE,
+        Some(&shortcuts::DUPLICATE),
         Cmd::DuplicatePattern,
     ),
+    ("Clear Pattern", None, Cmd::ClearPattern),
 ];
 
 /// The items of the Help menu, in order.

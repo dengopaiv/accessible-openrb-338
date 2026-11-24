@@ -404,8 +404,9 @@ Behavior [C]:
   (msg 41 sub 42 / 59 / 76, senders `sub_43ECCA`, `sub_441CC9`, `sub_445C88`;
   `docs/song_load.md` section 4.10, which lists every device message of the panel).
 - **orb** (orb's own commands; what the original's Edit menu items do was not read): Edit >
-  Cut, Copy, Paste and Duplicate Pattern act on the selected pattern of the focused row, and
-  Edit > Undo takes back the last Cut, Paste or Duplicate (section 18).
+  Cut, Copy, Paste, Duplicate and Clear Pattern act on the focused pattern editor's pattern,
+  else on the selected pattern of the focused row (section 18, task-290), and Edit > Undo takes
+  back the last of them.
 
 ## 5. TB-303 (two)
 
@@ -1094,9 +1095,10 @@ read, and what it leaves out.
   Ctrl/Cmd+X, C and V into egui's Cut, Copy and Paste events without a key event;
   `App::pattern_keys` takes them, and Ctrl/Cmd+D and Z, only where the panel takes keys (no text
   field focused, no browser, prompt or error box open), and leaves Cut and Copy to a window's
-  selected text. Ctrl/Cmd+E (the focused row's pattern editor: Edit > 808 Pattern Editor...
-  with the TR-808 focused, section 24, Edit > 909 Pattern Editor... with the TR-909 focused,
-  section 25, else Edit > 303 Pattern Editor..., section 23) is taken in the
+  selected text. Ctrl/Cmd+E (the focused row's pattern editor: Edit > 303-1 or 303-2 Pattern
+  Editor... with that 303 focused, section 23, Edit > 808 Pattern Editor... with the 808
+  focused, section 24, Edit > 909 Pattern Editor... with the 909 focused, section 25) is taken
+  in the
   standalone app by `App::show` with Ctrl/Cmd+F and G: also while a text field has the focus,
   but not while the browser, the prompt or the error box is open. Edit > Paste Pattern asks for
   the system clipboard
@@ -1255,7 +1257,9 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   save, the other's kept; the file is never blank), `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
   (an array), `startup_sound` and `theme` (`"modern"`, the default, or `"classic"`: View >
   Classic / Modern, section 21; another value is skipped; the removed Theme Viewer's
-  `theme_viewer_filter` of an older file is ignored and dropped at the next save, task-267) at
+  `theme_viewer_filter` of an older file is ignored and dropped at the next save, task-267),
+  the pattern editors' places `pattern_editor_303_1_pos`, `pattern_editor_303_2_pos`,
+  `pattern_editor_808_pos` and `pattern_editor_909_pos` (sections 23 to 25) and the table `preferred_mods` (section 18) at
   `$ORB_UI_CONFIG`, else (Windows) `OpenRB-338.toml` next to the program when it is there
   (portable mode, task-289, docs/building.md; turned off by moving the file to the per-user path,
   replacing the one there), else `OpenRB-338/OpenRB-338.toml` (task-068; named
@@ -1299,12 +1303,13 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | File | Save As... | the browser for a `.rbs`; the file becomes the song's file |
 | File | Export Loop as Audio File... | the browser for `.wav`, `.flac` or `.ogg`; enabled in song mode only (the original disables it in pattern mode, section 12) |
 | Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
-| Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with the 303's Clear |
-| Edit | Copy Pattern (Ctrl+C, Cmd+C) | the focused row's selected pattern (steps, length, shuffle flag) to the system clipboard as JSON (section 16); the song is not modified |
-| Edit | Paste Pattern (Ctrl+V, Cmd+V) | the system clipboard's pattern JSON (section 16) into the focused row's selected pattern, into a row of its device only (a 303 pattern into either 303), nothing written and a status message for any other text; the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
-| Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard is not touched |
-| Edit | 303 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating 303 pattern editor on the selected 303's active pattern, or brings it to the front and switches it to that pattern (section 23, task-274); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
-| Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303's: opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 808's with the TR-808 focused, the 909's with the TR-909 focused, else the 303's (tasks 280 and 281) |
+| Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with Clear Pattern |
+| Edit | Copy Pattern (Ctrl+C, Cmd+C) | the target pattern (below: the focused pattern editor's, else the focused row's selected pattern; steps, length, shuffle flag) to the system clipboard as JSON (section 16); the song is not modified |
+| Edit | Paste Pattern (Ctrl+V, Cmd+V) | the system clipboard's pattern JSON (section 16) into the target pattern, into a row of its device only (a 303 pattern into either 303; with a pattern editor focused the device is the editor's), nothing written and a status message for any other text; the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
+| Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the target pattern into its row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it (a focused pattern editor shows it too, also in song mode); the clipboard is not touched |
+| Edit | Clear Pattern (no shortcut) | the target pattern's steps are emptied as the pattern editors' Clear empties them (`link::emptied_pattern`: every 303 step note 0, no flags, rest on; every 808 and 909 step byte 0), the length and the shuffle flag stay; one write with Undo ("Undo Clear Pattern"); the status line says "303 1: A1 cleared", also when the pattern was empty already (then nothing is written and the Undo stays; the user's review of task-290, round 1); the clipboard is not touched (task-290) |
+| Edit | 303-1 Pattern Editor..., 303-2 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating pattern editor of that 303 on its selected pattern, or brings it to the front and switches it to that pattern (section 23, tasks 274 and 290); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
+| Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303s': opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 303-1's or the 303-2's with that 303 focused, the 808's with the 808 focused, the 909's with the 909 focused (tasks 280, 281 and 290) |
 | Edit | 909 Pattern Editor... (Ctrl+E, Cmd+E) | under the 808's: opens the floating 909 pattern editor on the TR-909's active pattern, or brings it to the front and switches it to that pattern (section 25, task-281); disabled without a song; the shortcut text is on it with the TR-909 focused |
 | View | Classic, Modern | two radio items directly in View, no submenu (the user's review of task-267, 2026-11-21): a radio choice of the main window's skin: Modern (the SVG panel, the default) or Classic (the original's panel from the kit's bitmaps, section 21); saved in the settings file at once (`theme`, section 17) and taken by the next run; the standalone app's only, a plugin's editor has no View menu (task-267) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
@@ -1320,8 +1325,24 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 The Help menu is last in the bar. Its items are the list `HELP_ITEMS` in `menu.rs`, so a new item
 is one more entry.
 
-- **The Edit menu** (orb's own commands). The items act on the selected pattern of the row with
-  the focus (the lit focus bar, section 1) and are disabled without a song (the demo panel). The
+- **The Edit menu** (orb's own commands). Cut, Copy, Paste, Duplicate and Clear Pattern act
+  on the **target pattern** (task-290, `App::pattern_target`): the pattern shown by the pattern
+  editor that has the focus (sections 23 to 25), its row and its device; when no editor has the
+  focus, the selected pattern of the row with the focus (the lit focus bar, section 1). They
+  are disabled without a song (the demo panel).
+  - **Which editor has the focus** (`App::focused_editor`, `App::editor_focus`): the one that
+    was opened last (the Edit menu's item, Ctrl/Cmd+E) or that a primary mouse press went down
+    on last (a press anywhere on its window, title bar included:
+    `editor_frame::show_window` compares the press's layer, egui's `layer_id_at` of the press
+    origin, with the window's). It keeps the focus until a primary press goes down on the panel
+    itself (inside the skin's rect, on the panel's layer: `App::focus_click`; the menu bar, the
+    status line, the plugin's desk margin and any window over the panel do not take it) or its
+    window closes. A selection by a key or a pattern button does not take it; nor does opening
+    the Edit menu. It is the same in the standalone app and the plugin's editor (egui's pointer
+    input only; egui's keyboard focus and the window order are not used: the order does not
+    change on a click on the panel, and the plugin takes no keys). The focused window is not
+    marked. The pattern of a focused editor in pattern mode is its row's selected pattern even
+    when the selection changed since the editor's last frame (its selection rule runs first). The
   names and shortcuts of Cut, Copy and Paste Pattern are those the original's Edit menu shows
   (the screenshot in `docs/test_machine.md` section 3); what the original's items do was not
   read.
@@ -1961,8 +1982,10 @@ The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the sam
   user's decision of 2026-11-16). The Sync LED
   lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
 - **The menus**: File has New, Open and Info only; nothing asks to save. The Edit menu is the
-  standalone's (section 18): Undo, Cut, Copy, Paste and Duplicate Pattern, and the 303 Pattern
-  Editor... (section 23), 808 Pattern Editor... (section 24) and 909 Pattern Editor... (section 25), in the same order, with the same names and the same behavior, but no
+  standalone's (section 18): Undo, Cut, Copy, Paste, Duplicate and Clear Pattern, and the
+  303-1 Pattern Editor... and 303-2 Pattern Editor... (section 23), 808 Pattern Editor...
+  (section 24) and 909 Pattern Editor... (section 25), in the same order, with the same names
+  and the same behavior (the target pattern of section 18 too), but no
   shortcut texts (the user's review of task-274, rounds 2 and 3). Undo is the one-level Undo,
   named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the system
   clipboard as JSON (egui-baseview 0.9 writes egui's `CopyText` to it; section 16, task-287),
@@ -2318,9 +2341,9 @@ three variants (pixelate and fade, pixelate then fade, fade only).
   end, monotonic, the ease, the reversal) and `tests/classic.rs`
   `the_switch_crossfades_both_ways_and_reverses_from_the_current_alpha`.
 
-## 23. The 303 pattern editor (task-274)
+## 23. The 303 pattern editors (task-274, task-290)
 
-A floating editor for one TB-303 pattern, designed with the user on 2026-11-21: a step grid
+A floating editor for one 303 pattern, designed with the user on 2026-11-21: a step grid
 with a 13-key piano roll, like modern 303 pattern editors. It is orb's own (the original has
 none) and edits only what a song stores for a 303 pattern (`docs/RBS42.txt`, the "303 " chunk;
 the 98 bytes of `docs/song_load.md` section 4.6: the shuffle flag, the length, and per step
@@ -2329,20 +2352,24 @@ is section 25 (task-281). The window's frame is shared with them (`crates/orb-ui
 the placing, the header's controls, the grid's geometry and painting). Code:
 `crates/orb-ui/src/pattern_editor.rs`; tests: `crates/orb-ui/tests/pattern_editor.rs`, the unit
 tests of the module, and `crates/orb-plugin/tests/editor.rs`
-`the_edit_menu_opens_the_303_pattern_editor`.
+`the_edit_menu_opens_the_303_pattern_editors_and_undoes_their_changes`.
 
-**The window.** An `egui::Window` titled "303 Pattern Editor" inside the main window:
-draggable, closable (its title bar's close button), neither resizable nor collapsible; the same
-in the standalone app and the plugin's editor (no separate OS window).
-- **Opening**: Edit > 303 Pattern Editor... (the ellipsis: it opens a window; round 3 of
-  the user's review), and Ctrl+E (Cmd+E on macOS) in the standalone app;
-  the plugin's editor takes no keys (section 20), so there it is the menu only. It opens on the
-  selected 303's active pattern: the focused row when it is a 303, else the 303 the editor
-  showed last (303 1 at first), and that row's selected pattern. When it is open, the item
-  and the key bring it to the front and switch it to that pattern. Disabled without a song.
-- **Its place**: the standalone app saves the window's left top in `OpenRB-338.toml`
-  (`pattern_editor_pos = [x, y]`, points) when the user lets go of the window after moving it,
-  and opens it there; with no saved place it opens centered. Whether it is open is not saved.
+**The windows.** Two `egui::Window`s inside the main window, "303-1 Pattern Editor" and
+"303-2 Pattern Editor" (task-290; until then one "303 Pattern Editor" switched between the two
+303s), each fixed to its 303; either or both can be open, beside the 808's and the 909's.
+Each is draggable, closable (its title bar's close button), neither resizable nor collapsible;
+the same in the standalone app and the plugin's editor (no separate OS window).
+- **Opening**: Edit > 303-1 Pattern Editor... and Edit > 303-2 Pattern Editor... (the
+  ellipsis: it opens a window; round 3 of the user's review), and Ctrl+E (Cmd+E on macOS) with
+  that 303's row focused in the standalone app; the plugin's editor takes no keys (section 20),
+  so there it is the menu only. It opens on its 303's selected pattern. When it is open, the
+  item and the key bring it to the front and switch it to that pattern. The editor opened takes
+  the focus of the Edit menu's pattern commands (section 18). Disabled without a song.
+- **Its place**: the standalone app saves each window's left top in `OpenRB-338.toml`
+  (`pattern_editor_303_1_pos = [x, y]` and `pattern_editor_303_2_pos`, points) when the user
+  lets go of the window after moving it, and opens it there; with no saved place it opens
+  centered (the one window's `pattern_editor_pos` of task-274, never in a release, is not
+  read). Whether a window is open is not saved.
   The plugin neither reads nor writes the place. egui 0.37 places a window that moves by its
   title bar from its stored place after the first frame (`Window::current_pos` holds only for
   that frame), and its first frame measures it at a guessed 600 x 400 that pushes it left on a
@@ -2350,14 +2377,14 @@ in the standalone app and the plugin's editor (no separate OS window).
 
 **Layout, top to bottom** (the colors are the app's palette, `palette.rs`, not the skin's, so the
 editor looks the same in the Classic and Modern skins):
-- **The top row**, standard egui controls: the 303-1 / 303-2 switch; the bank buttons A B C D;
-  the pattern number 1-8 as a `DragValue` (drag up or down, or click to type; within the
-  bank) between a left and a right arrow button. The arrows step through one sequence of 64
-  patterns, 303-1 A1..A8, B1..D8, then 303-2 A1..D8 (`pattern_editor::step_pattern`): right
-  from 8 goes to the next bank's 1, right from 303-1 D8 to 303-2 A1, left the reverse. They
-  stop at the two ends, 303-1 A1 and 303-2 D8, where the arrow is disabled (no wrap). The 303
-  switch and the bank buttons follow, and in pattern mode the panel selects the pattern, also
-  the other 303's (the selection rules below). Copy, Paste (always enabled; the
+- **The top row**, standard egui controls: the bank buttons A B C D (no 303 switch since
+  task-290: the window is fixed to its 303); the pattern number 1-8 as a `DragValue` (drag up or
+  down, or click to type; within the bank) between a left and a right arrow button. The arrows
+  step through the 303's 32 patterns, A1..A8, B1..D8 (`editor_frame::step_pattern`, the drum
+  editors' too): right from 8 goes to the next bank's 1, left the reverse. They stop at A1 and
+  D8, where the arrow is disabled (no wrap; until task-290 they ran on from 303-1 D8 to 303-2
+  A1). The bank buttons follow, and in pattern mode the panel selects the pattern (the
+  selection rules below). Copy, Paste (always enabled; the
   clipboard is read on the click, task-287) and Clear; Length 1-16, a `DragValue`; and the Shuffle toggle,
   the pattern's own shuffle flag (byte 0), not the song's shuffle amount.
 - **The step numbers** 1 to 16 over the grid; the playing step's number is amber.
@@ -2385,7 +2412,7 @@ Layout from the user's review, round 1 (2026-11-21): larger row labels, Shift mo
 between the grids to the bottom and its label dropped, Transpose centered on the roll, one
 arrow size, the columns filling the width, the black keys' names right-aligned with the white
 keys', the white-pair lines, and the number's arrows (round 2 made them one sequence over
-both 303s with stops at the ends).
+both 303s with stops at the ends; task-290's separate windows keep each in its 303).
 
 **What the controls do.**
 - **Notes.** A click in a step's column at a pitch makes the step a note at that pitch (rest
@@ -2408,8 +2435,10 @@ both 303s with stops at the ends).
   pattern: Copy is Edit > Copy Pattern of it (so the panel's Ctrl/Cmd+V pastes it too), Paste
   reads the clipboard directly (a 303 pattern only, into either 303; the status line
   reports as the menu's).
-- **Clear** leaves the emptied pattern Edit > Cut Pattern leaves (every step note 0, no flags,
-  rest on) with the pattern's length and shuffle flag kept, and does not touch the clipboard.
+- **Clear** is Edit > Clear Pattern of the editor's pattern (section 18): it leaves the
+  emptied pattern Edit > Cut Pattern leaves (every step note 0, no flags, rest on) with the
+  pattern's length and shuffle flag kept, and does not touch the clipboard; the status line
+  says "cleared" also when the pattern was empty already.
 - **The status line** says "303 1: A1 copied", "303 1: pasted into A2", "303 1: A1
   cleared".
 
@@ -2428,16 +2457,16 @@ that leaves the bytes as they were writes nothing and keeps the Undo. The plugin
 has the same Undo item, with no shortcut (its editor takes no keys; section 20).
 
 **Pattern selection.**
-- **Pattern mode**: the editor and the panel follow each other both ways. A bank or a number
-  chosen in the editor selects that pattern of the editor's 303 on the panel as a click on its
+- **Pattern mode**: each editor and its 303's row follow each other both ways. A bank or a
+  number chosen in the editor selects that pattern of its 303 on the panel as a click on its
   pattern button does (`App::select_pattern`: the bank, the row's focus, the selection at the
-  next bar line). The 303 switch shows that 303's selected pattern. A new selection on the
-  panel of one 303 row (a click, a key of Select Patterns mode, the engine) moves the editor to
-  that 303 and pattern; a song open, which changes both rows at once, keeps the editor's 303.
-  The drum rows do not move it. On the switch into pattern mode the editor takes the panel's
+  next bar line). A new selection on the panel of its 303's row (a click, a key of Select
+  Patterns mode, the engine) moves the editor to that pattern; the other rows do not move it
+  (the rule of the drum editors since task-290; before, a selection of the other 303 moved the
+  one window to that 303). On the switch into pattern mode the editor takes the panel's
   selection of its 303.
 - **Song mode**: the two are independent. The editor's selector only chooses what the editor
-  shows (the 303 switch keeps the pattern number); it never changes the panel's selection and
+  shows; it never changes the panel's selection and
   never records. The pattern the panel plays does not move the editor.
 - There is no Follow button (dropped by the user).
 

@@ -116,9 +116,14 @@ fn windows() -> Vec<Win> {
             id: |a| a.plugin_usage_id(),
         },
         Win {
-            name: "303 Pattern Editor",
-            open: |a| a.command(Cmd::PatternEditor),
-            id: |_| egui::Id::unique("orb_pattern_editor"),
+            name: "303-1 Pattern Editor",
+            open: |a| a.command(Cmd::PatternEditor(0)),
+            id: |_| egui::Id::unique(orb_ui::pattern_editor::salt(0)),
+        },
+        Win {
+            name: "303-2 Pattern Editor",
+            open: |a| a.command(Cmd::PatternEditor(1)),
+            id: |_| egui::Id::unique(orb_ui::pattern_editor::salt(1)),
         },
         Win {
             name: "808 Pattern Editor",
