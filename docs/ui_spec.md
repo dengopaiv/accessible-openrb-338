@@ -46,6 +46,15 @@ to the panel's width and to a height between 165 (transport plus one row) and 51
 vertically when the window is lower than 510: the scroll bar is enabled when the visible rack
 height is below 460, with a line step of 14 px and a page step of 115 px (`sub_42AF63`).
 
+**The app's windows (task-283).** Song Information, Mod Information, About, Keyboard Shortcuts,
+Plugin Usage and the 303, 808 and 909 pattern editors are `egui::Window`s of the one app
+viewport (the plugin's too). Choosing the command of a window that is already open (a menu item
+or a shortcut) brings it to the front, above any window that covers it, and leaves its place,
+size and contents as they are (`App::raise_window`, `Context::move_to_top` at the end of the
+frame; the editors do it through `Placing::front`). A window that is closed opens as before.
+A raise does not move keyboard focus: a field being edited keeps it.
+`crates/orb-ui/tests/raise_windows.rs` checks every pair.
+
 **Sections [C]** (`sub_42A8FE`; the rack is placed at (16, 50), its children are listed here in
 panel coordinates):
 

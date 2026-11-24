@@ -200,6 +200,9 @@ pub struct App {
     /// The same for the plugin's Help > Plugin Usage window (`App::plugin_usage_ui`, task-221).
     pub(crate) plugin_usage_open: bool,
     pub(crate) plugin_usage_serial: u32,
+    /// The ids of the open windows whose command was chosen again: they come to the front at the
+    /// end of the frame (`App::raise_window`, task-283).
+    pub(crate) to_front: Vec<egui::Id>,
     /// The classic skin of the kit last shown with View > Classic (task-267): it is
     /// made again when the kit changes.
     classic: Option<(orb_cli::mods::Kit, Arc<crate::skin::classic::ClassicSkin>)>,
@@ -283,6 +286,7 @@ impl App {
             key_help_serial: 0,
             plugin_usage_open: false,
             plugin_usage_serial: 0,
+            to_front: Vec::new(),
             classic: None,
             info_shown: None,
             events_seen: 0,
@@ -930,6 +934,21 @@ pub fn paint_part_in(
 }
 
 impl App {
+    /// Asks for the open window `id` (an `egui::Window` of the one viewport, Middle order) to
+    /// come to the front at the end of this frame: its command was chosen while it is open.
+    /// Its place, size and contents stay (task-283).
+    pub(crate) fn raise_window(&mut self, id: egui::Id) {
+        if !self.to_front.contains(&id) {
+            self.to_front.push(id);
+        }
+    }
+
+    fn raise_windows(&mut self, ctx: &egui::Context) {
+        for id in self.to_front.drain(..) {
+            ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
+        }
+    }
+
     /// Reports once, in the message box, that the sound has stopped for good (the rule of
     /// `orb_player::output::Health`); a transient stream error that the sound survives is only
     /// logged by the stream. It runs on every frame, so a device lost while the UI is idle is
@@ -1126,6 +1145,7 @@ impl App {
         self.key_help_ui(&ctx);
         self.plugin_usage_ui(&ctx);
         self.mod_info_ui(&ctx);
+        self.raise_windows(&ctx);
         self.poll_export(&ctx);
         if let Some(marker) = self.clip_text.take() {
             ctx.copy_text(marker);

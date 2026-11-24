@@ -236,6 +236,8 @@ impl App {
         if !self.mod_info_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.mod_info_serial += 1;
+        } else {
+            self.raise_window(self.mod_info_id());
         }
         self.mod_info_open = true;
     }

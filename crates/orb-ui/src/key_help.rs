@@ -686,6 +686,8 @@ impl App {
         if !self.key_help_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.key_help_serial += 1;
+        } else {
+            self.raise_window(self.key_help_id());
         }
         self.key_help_open = true;
     }

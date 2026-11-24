@@ -135,6 +135,8 @@ impl App {
             self.about_serial += 1;
             // the logo animation starts with the window's first frame (`about_ui`)
             self.about_start_due = true;
+        } else {
+            self.raise_window(self.about_id());
         }
         self.about_open = true;
     }

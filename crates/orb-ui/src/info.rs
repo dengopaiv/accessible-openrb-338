@@ -370,6 +370,8 @@ impl App {
             // a new id: no stored place, so the window opens at its default, the center; an
             // open window stays where it is
             self.info_serial += 1;
+        } else {
+            self.raise_window(self.info_id());
         }
         self.info_open = true;
     }

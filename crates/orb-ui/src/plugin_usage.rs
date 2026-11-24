@@ -274,6 +274,8 @@ impl App {
         if !self.plugin_usage_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.plugin_usage_serial += 1;
+        } else {
+            self.raise_window(self.plugin_usage_id());
         }
         self.plugin_usage_open = true;
     }
