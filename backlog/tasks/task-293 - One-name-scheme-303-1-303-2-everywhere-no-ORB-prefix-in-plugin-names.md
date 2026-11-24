@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-24T15:51:00Z'
+updated_date: '2026-11-24T16:04:00Z'
 labels:
   - ui
   - player
@@ -59,3 +60,9 @@ ordinal: 267700
 - [ ] #4 cargo test --workspace, clippy -D warnings (macOS and Windows) and nightly fmt --check pass
 - [ ] #5 The user has checked the names in the app and in a host
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-24, supervisor: from task-290's review, also fix the stale docs/ui_spec.md sentence near line 2468 ("The editor's selector only chooses what the editor shows"): the in-window 303 selector is gone since task-290.
+<!-- SECTION:NOTES:END -->
