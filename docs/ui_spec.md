@@ -1116,11 +1116,15 @@ starts with it open. The panel takes no key or click while a browser is open. Th
 18) acts on the paths: `App::chosen(mode, path)`.
 
 - **Keys.** Up/Down/PageUp/PageDown/Home/End select; Enter enters a folder or accepts the file
-  (in the name field: accepts the typed name); Backspace and Alt+Up go to the parent (the folder
-  left is selected); Ctrl+L (Cmd+L on macOS) edits the path (Enter goes there; `~` is the home folder); a typed
-  letter jumps to the next name that starts with it; Esc cancels (in the overwrite question it
-  answers no). Mouse: click selects, double click opens, the Up button, the Places and Recent
-  folders on the left.
+  (in the name field: accepts the typed name); Backspace and Alt+Up (Option+Up on macOS; a
+  Shift held with it is ignored) go to the parent: the folder left is selected and scrolled
+  to the middle of the list, or as near as the list's ends allow. Every other selection move
+  (arrows, PageUp/PageDown, Home/End, typed letters) scrolls just enough to show the row, and
+  a click does not scroll (task-285). Ctrl+L (Cmd+L on macOS) edits the path (Enter goes there;
+  `~` is the home folder); a typed letter jumps to the next name that starts with it; Esc
+  cancels (in the overwrite question it answers no). Mouse: click selects, double click opens,
+  the Up button goes to the parent like Backspace (and centers the same way), the Places and
+  Recent folders on the left.
 - **Lists** folders first, then files, by name ignoring case; hidden names (a leading dot) are not
   shown; "All files" lifts the extension filter. Large folders are drawn by visible rows only.
 - **Writing modes** take a name: a song name without `.rbs` gets it; an export name without an

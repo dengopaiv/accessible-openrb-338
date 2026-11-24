@@ -631,7 +631,11 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                 row("Home / End", "First / last entry of the browser", vec![]),
                 row("Enter", "Open the selected entry", vec![]),
                 row(
-                    "Backspace  or  Alt+Up",
+                    if is_mac {
+                        "Backspace  or  Option+Up"
+                    } else {
+                        "Backspace  or  Alt+Up"
+                    },
                     "The browser goes to the parent folder",
                     vec![],
                 ),

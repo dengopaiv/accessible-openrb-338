@@ -18,13 +18,13 @@
 //! What it does: lists a folder (folders first, then the files of the mode's extensions, or
 //! every file with "All files"), navigates by mouse (click, double click, the Up button, the
 //! places and the recent folders on the left) and by keyboard (Up/Down/PageUp/PageDown/Home/End
-//! select, Enter opens a folder or accepts a file, Backspace and Alt+Up go to the parent,
-//! Ctrl/Cmd+L edits the path, typing a letter jumps to the next name that starts with it, Esc
-//! cancels). The save and export modes have a name field and ask before replacing a file; every
-//! problem (a folder that cannot be read, a bad name, a missing folder, a mod orb cannot load) is
-//! shown in the dialog. A mod that is not recrypted is listed and marked "needs orb mod recrypt"
-//! (docs/rbm.md section 12.4); it cannot be chosen. The folders (songs, mods, recent) are kept
-//! in [`Settings`].
+//! select, Enter opens a folder or accepts a file, Backspace and Alt+Up (Option+Up on macOS) go to
+//! the parent, Ctrl/Cmd+L edits the path, typing a letter jumps to the next name that starts with
+//! it, Esc cancels). The save and export modes have a name field and ask before replacing a file;
+//! every problem (a folder that cannot be read, a bad name, a missing folder, a mod orb cannot
+//! load) is shown in the dialog. A mod that is not recrypted is listed and marked "needs orb mod
+//! recrypt" (docs/rbm.md section 12.4); it cannot be chosen. The folders (songs, mods, recent) are
+//! kept in [`Settings`].
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -179,7 +179,13 @@ pub struct Browser {
     mods: HashMap<PathBuf, ModStatus>,
     scroll: f32,
     view_h: f32,
+    /// The distance between the tops of two rows: the row height plus the item spacing that
+    /// `ScrollArea::show_rows` and the layout both add (task-285).
+    row_pitch: f32,
     scroll_to_selected: bool,
+    /// With `scroll_to_selected`: put the row in the middle of the list (going Up) instead of
+    /// scrolling just enough to show it.
+    center_selected: bool,
     first_frame: bool,
     /// Where the widgets were drawn in the last frame, by name (`row:NAME`, `place:LABEL`,
     /// `button:LABEL`): lets tests (and a UI test driver) click them.
@@ -216,7 +222,11 @@ impl Browser {
             mods: HashMap::new(),
             scroll: 0.0,
             view_h: 0.0,
+            // Only the value before the first frame: egui's default item spacing is 3; `draw_list`
+            // reads the real one.
+            row_pitch: ROW_H + 3.0,
             scroll_to_selected: false,
+            center_selected: false,
             first_frame: true,
             hits: Vec::new(),
         };
@@ -365,7 +375,8 @@ impl Browser {
         Ok(out)
     }
 
-    /// Goes to the parent folder, selecting the folder that was left.
+    /// Goes to the parent folder, selecting the folder that was left and scrolling it to the
+    /// middle of the list (as near as the list's ends allow).
     pub fn up(&mut self) {
         let Some(parent) = self.dir.parent().map(Path::to_path_buf) else {
             return;
@@ -377,6 +388,7 @@ impl Browser {
         self.go(parent);
         self.selected = left.and_then(|n| self.entries.iter().position(|e| e.name == n));
         self.scroll_to_selected = true;
+        self.center_selected = true;
     }
 
     /// Moves the selection by `delta` rows (clamped); `None` selects the first or last.
@@ -626,13 +638,19 @@ impl Browser {
             if key(Key::Escape, Modifiers::NONE) {
                 return Poll::Cancelled;
             }
+            // Alt+Up first: `consume_key` ignores an extra Alt, so the plain Up would take it.
+            if key(Key::ArrowUp, Modifiers::ALT)
+                || (!typing && key(Key::Backspace, Modifiers::NONE))
+            {
+                self.up();
+            }
             if key(Key::ArrowDown, Modifiers::NONE) {
                 self.move_selection(1);
             }
             if key(Key::ArrowUp, Modifiers::NONE) {
                 self.move_selection(-1);
             }
-            let page = (self.view_h / ROW_H).max(2.0) as isize - 1;
+            let page = (self.view_h / self.row_pitch).max(2.0) as isize - 1;
             if key(Key::PageDown, Modifiers::NONE) {
                 self.move_selection(page);
             }
@@ -644,11 +662,6 @@ impl Browser {
             }
             if !typing && key(Key::End, Modifiers::NONE) && !self.entries.is_empty() {
                 self.select(self.entries.len() - 1);
-            }
-            if key(Key::ArrowUp, Modifiers::ALT)
-                || (!typing && key(Key::Backspace, Modifiers::NONE))
-            {
-                self.up();
             }
             if ctx.input_mut(|i| i.consume_shortcut(&shortcuts::EDIT_PATH)) {
                 ctx.memory_mut(|m| m.request_focus(path_id));
@@ -750,7 +763,11 @@ impl Browser {
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(self.dir.parent().is_some(), egui::Button::new("Up"))
-                .on_hover_text("Parent folder (Backspace, Alt+Up)")
+                .on_hover_text(if cfg!(target_os = "macos") {
+                    "Parent folder (Backspace, Option+Up)"
+                } else {
+                    "Parent folder (Backspace, Alt+Up)"
+                })
                 .clicked()
             {
                 self.up();
@@ -853,15 +870,22 @@ impl Browser {
         ui.allocate_ui(Vec2::new(ui.available_width(), height), |ui| {
             Frame::new().fill(BG).show(ui, |ui| {
                 ui.set_min_size(Vec2::new(ui.available_width(), height));
+                self.row_pitch = ROW_H + ui.spacing().item_spacing.y;
                 let mut area = egui::ScrollArea::vertical()
                     .id_salt("orb_browser_list")
                     .auto_shrink([false, false])
                     .max_height(height);
                 if self.scroll_to_selected {
                     if let Some(i) = self.selected {
-                        let top = i as f32 * ROW_H;
+                        let top = i as f32 * self.row_pitch;
                         let mut off = self.scroll;
-                        if top < off {
+                        if self.center_selected {
+                            let max = (n as f32 * self.row_pitch
+                                - ui.spacing().item_spacing.y
+                                - self.view_h)
+                                .max(0.0);
+                            off = (top + ROW_H / 2.0 - self.view_h / 2.0).clamp(0.0, max);
+                        } else if top < off {
                             off = top;
                         } else if top + ROW_H > off + self.view_h {
                             off = top + ROW_H - self.view_h;
@@ -869,6 +893,7 @@ impl Browser {
                         area = area.vertical_scroll_offset(off.max(0.0));
                     }
                     self.scroll_to_selected = false;
+                    self.center_selected = false;
                 }
                 let out = area.show_rows(ui, ROW_H, n, |ui, range| {
                     for i in range {
@@ -936,6 +961,7 @@ impl Browser {
                 });
                 self.scroll = out.state.clamped_offset().y;
                 self.view_h = out.inner_rect.height();
+                self.hits.push(("list".to_string(), out.inner_rect));
                 if n == 0 {
                     ui.painter().text(
                         out.inner_rect.center(),
