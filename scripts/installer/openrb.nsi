@@ -198,6 +198,9 @@ Section "${NAME} and orb" SecApp
   File "${BINDIR}\orb.exe"
   File "${STAGEDIR}\LICENSE.txt"
   File "${STAGEDIR}\README.txt"
+  !ifdef NOTICES
+    File "${NOTICES}"
+  !endif
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   WriteRegStr HKLM "${APP_KEY}" "InstallDir" "$INSTDIR"
@@ -336,6 +339,7 @@ Section "Uninstall"
   Delete "$INSTDIR\orb.exe"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\README.txt"
+  Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
   Delete "$INSTDIR\path.ps1"
   Delete "$INSTDIR\Uninstall.exe"
   ; not recursive: a folder the user put files in stays

@@ -23,3 +23,6 @@
 *.gz binary
 *.dmg binary
 *.ogg binary
+
+# The vendored ASIO SDK subset keeps the SDK's own bytes (task-193).
+third_party/asiosdk/** -text

@@ -1282,7 +1282,7 @@ impl App {
             let path = shot.path.clone();
             ctx.request_screenshot(Box::new(move |image: std::sync::Arc<egui::ColorImage>| {
                 save_png(&path, &image).expect("writing the screenshot");
-                std::process::exit(0);
+                crate::crash::end_process(0);
             }));
         }
     }

@@ -6,11 +6,12 @@
 //! song keeps playing after a short gap, and the choice is saved. The window is the standalone
 //! app's only (the plugin's audio is the host's).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use egui::{self, Context, Key, Modifiers, RichText};
 use orb_player::control::Event;
 use orb_player::devices::{self, Caps, DeviceInfo};
+use orb_player::output::InUse;
 
 use crate::app::App;
 use crate::palette::INK_DIM;
@@ -33,12 +34,29 @@ pub struct AudioUi {
     caps: Option<Caps>,
     /// Why the lists are short, shown under the settings.
     problem: Option<String>,
+    /// The In use numbers as last sampled and when ([`AudioUi::sample`]).
+    shown: Option<(Instant, InUse)>,
+}
+
+/// How often the In use numbers (output latency, underruns, the granted size) are sampled: the
+/// window's own repaint period. A repaint caused by input shows the sampled copy again.
+pub const SAMPLE_EVERY: Duration = Duration::from_millis(500);
+
+/// Whether two readings are of one stream setup (all but the measured numbers).
+fn same_setup(a: &InUse, b: &InUse) -> bool {
+    let blank = |u: &InUse| InUse {
+        granted: None,
+        output_latency_ns: None,
+        underruns: 0,
+        ..u.clone()
+    };
+    blank(a) == blank(b)
 }
 
 /// Whether `driver`'s buffer is set in the driver's own control panel and not asked for by
 /// the program (ASIO, task-193).
 pub fn buffer_is_the_drivers(driver: &str) -> bool {
-    driver == "ASIO"
+    devices::is_asio(Some(driver))
 }
 
 /// The driver a choice names: its own, else the platform's first.
@@ -51,6 +69,23 @@ fn driver_of<'a>(drivers: &'a [String], choice: &'a AudioChoice) -> &'a str {
 }
 
 impl AudioUi {
+    /// The In use numbers to draw at `now`, given the stream's `live` reading: the copy sampled
+    /// at most [`SAMPLE_EVERY`] ago, so the numbers change at a steady rate and not with every
+    /// repaint (the mouse moving). A new sample is taken when none is held, when the period has
+    /// passed or when the stream's setup changed (a reopen shows at once).
+    pub fn sample(&mut self, now: Instant, live: Option<InUse>) -> Option<InUse> {
+        let Some(live) = live else {
+            self.shown = None;
+            return None;
+        };
+        let keep = matches!(&self.shown, Some((at, old))
+            if now.saturating_duration_since(*at) < SAMPLE_EVERY && same_setup(old, &live));
+        if !keep {
+            self.shown = Some((now, live));
+        }
+        self.shown.as_ref().map(|(_, u)| u.clone())
+    }
+
     /// Reads the drivers, the driver's devices and the device's capabilities for `choice`.
     pub fn refresh(&mut self, choice: &AudioChoice) {
         self.drivers = devices::drivers();
@@ -214,10 +249,11 @@ impl App {
         let mut refresh_devices = false;
         let mut refresh_caps = false;
         // the rate the latencies are of: the stream's, else the one asked for
-        let latency_rate = self.audio.as_ref().and_then(|c| c.in_use()).map(|u| u.rate);
+        let live = self.audio.as_ref().and_then(|c| c.in_use());
+        let in_use = self.audio_ui.sample(Instant::now(), live);
+        let latency_rate = in_use.as_ref().map(|u| u.rate);
         let choice = self.settings.audio.clone();
         let ui_state = &self.audio_ui;
-        let in_use = self.audio.as_ref().and_then(|c| c.in_use());
         let running = self.audio.is_some();
         let screen = ctx.content_rect();
         let shown_buffer = ui_state.requested_buffer(choice.buffer);
@@ -328,7 +364,7 @@ impl App {
                         ui.label("Buffer size");
                         if buffer_is_the_drivers(&driver) {
                             // task-193: ASIO sets the buffer in its own panel
-                            ui.label("Set in the driver's control panel");
+                            ui.label("Set in the driver's own control panel");
                         } else {
                             let r = egui::ComboBox::from_id_salt("audio_buffer")
                                 .selected_text(frames_text(shown_buffer, rate))
@@ -493,6 +529,68 @@ mod tests {
     fn a_size_shows_its_time() {
         assert_eq!(frames_text(2048, 44100), "2048 frames (46.4 ms)");
         assert_eq!(frames_text(512, 48000), "512 frames (10.7 ms)");
+    }
+
+    fn reading(latency_ms: u64, underruns: u64) -> InUse {
+        InUse {
+            driver: "WASAPI".into(),
+            device: "Speakers".into(),
+            follows_default: true,
+            rate: 44100,
+            resampled: false,
+            channels: 2,
+            format: "f32".into(),
+            requested: Some(2048),
+            granted: Some(2048),
+            output_latency_ns: Some(latency_ms * 1_000_000),
+            underruns,
+        }
+    }
+
+    #[test]
+    fn the_numbers_are_sampled_on_a_timer_and_not_on_every_repaint() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut ui = AudioUi::default();
+        // the first reading is taken at once
+        assert_eq!(ui.sample(t0, Some(reading(40, 0))), Some(reading(40, 0)));
+        // repaints before the period show the sampled copy, whatever the live numbers are
+        for k in [1, 50, 120, 499] {
+            assert_eq!(
+                ui.sample(t0 + ms(k), Some(reading(99, 7))),
+                Some(reading(40, 0))
+            );
+        }
+        // the period passed: a new sample, which is then held for the next period
+        assert_eq!(
+            ui.sample(t0 + ms(500), Some(reading(60, 1))),
+            Some(reading(60, 1))
+        );
+        assert_eq!(
+            ui.sample(t0 + ms(700), Some(reading(70, 2))),
+            Some(reading(60, 1))
+        );
+        assert_eq!(
+            ui.sample(t0 + ms(1000), Some(reading(70, 2))),
+            Some(reading(70, 2))
+        );
+    }
+
+    #[test]
+    fn a_new_stream_shows_at_once_and_no_stream_shows_nothing() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut ui = AudioUi::default();
+        ui.sample(t0, Some(reading(40, 0)));
+        // the stream was reopened on another device inside the period
+        let mut other = reading(10, 0);
+        other.device = "Headphones".into();
+        assert_eq!(ui.sample(t0 + ms(5), Some(other.clone())), Some(other));
+        assert_eq!(ui.sample(t0 + ms(6), None), None);
+        assert_eq!(
+            ui.sample(t0 + ms(7), Some(reading(1, 0))),
+            Some(reading(1, 0))
+        );
     }
 
     #[test]

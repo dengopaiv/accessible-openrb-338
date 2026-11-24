@@ -115,6 +115,10 @@ case $os in
             # MSVC's cl accepts that with a warning; clang-cl 21+ makes it an error. cargo-xwin
             # overwrites CFLAGS_<target> and CC_<target>, but clang-cl reads CL itself.
             export CL=-Wno-incompatible-pointer-types
+            # asio-sys (cpal's asio feature, x86_64 only, task-193) looks for vcvarsall.bat on a
+            # Windows host unless VCINSTALLDIR is set; cargo-xwin has the headers and libraries
+            # already, so any value does
+            export VCINSTALLDIR=${VCINSTALLDIR:-/xwin}
             # the first run downloads the Microsoft CRT and SDK into the cargo-xwin cache
             # (~/Library/Caches/cargo-xwin on macOS, ~/.cache/cargo-xwin on Linux)
             XWIN_ACCEPT_LICENSE=1 cargo xwin build "${cargo_args[@]}"

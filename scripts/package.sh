@@ -36,6 +36,10 @@ case $target in
         # in one folder
         cp "$dist/$target/plugins/$p"/Contents/*-win/"$p" "$stage/$p"
         : > "$stage/OpenRB-338.toml"
+        # the ASIO SDK's license and notices (task-193): ASIO is in the x86_64 build only
+        case $target in
+            x86_64-*) "$root/scripts/asio-notices.sh" "$stage/THIRD-PARTY-NOTICES.txt" ;;
+        esac
         ;;
     *)
         mkdir -p "$stage/plugins"
@@ -124,6 +128,20 @@ folder uses the per-user settings.
 If the folder cannot be written (for instance under Program Files), the app runs with the
 settings it read and says once that they cannot be saved; move the folder somewhere you can
 write, or turn portable mode off as above.
+EOF
+        ;;
+esac
+case $target in
+    x86_64-pc-windows-msvc)
+        cat >> "$stage/README.txt" <<'EOF'
+
+ASIO
+----
+OpenRB-338.exe can play through ASIO drivers: Options > Audio Output..., Driver: ASIO. The
+default stays WASAPI; ASIO is never chosen by itself. An ASIO driver sets its buffer size in its
+own control panel, and many drivers allow one program at a time. THIRD-PARTY-NOTICES.txt holds
+the license of the ASIO SDK.
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
 EOF
         ;;
 esac

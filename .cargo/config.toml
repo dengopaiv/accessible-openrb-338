@@ -1,3 +1,8 @@
 # `cargo xtask bundle orb-plugin --release` builds the plugin bundles (xtask/, docs/plugin.md).
 [alias]
 xtask = "run --package xtask --release --"
+
+# The ASIO SDK subset asio-sys compiles on Windows (cpal's `asio` feature, task-193): vendored in
+# third_party/asiosdk, so the build downloads nothing.
+[env]
+CPAL_ASIO_DIR = { value = "third_party/asiosdk", relative = true }

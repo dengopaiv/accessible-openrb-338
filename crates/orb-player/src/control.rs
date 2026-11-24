@@ -115,7 +115,11 @@ impl Controller {
             }
             return Vec::new();
         }
-        if self.request.device.is_none() && self.checked.elapsed() >= WATCH_EVERY {
+        // ASIO has no system default to follow (looking would load every driver in turn)
+        if self.request.device.is_none()
+            && !devices::is_asio(self.request.driver.as_deref())
+            && self.checked.elapsed() >= WATCH_EVERY
+        {
             self.checked = Instant::now();
             let now = devices::default_device_id(self.request.driver.as_deref());
             if let Some(id) = now

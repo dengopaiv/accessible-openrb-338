@@ -382,8 +382,12 @@ fn main() -> eframe::Result {
     if let Err(e) = &result {
         report_start_error(e);
         // the report is the one message; returning the error would print it a second time
-        std::process::exit(1);
+        orb_ui::crash::end_process(1);
     }
+    // The window is closed, the settings are saved and the player has stopped: App and its
+    // Controller (the stream) were dropped inside run_native. When an ASIO driver was loaded
+    // the process ends without the DLLs' detach calls (task-193).
+    orb_ui::crash::terminate_if_asio_was_used(0);
     result
 }
 

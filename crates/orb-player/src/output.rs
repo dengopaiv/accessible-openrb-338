@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{
     BufferSize, ErrorKind, FromSample, SampleFormat, SizedSample, StreamConfig, SupportedBufferSize,
 };
@@ -75,6 +75,8 @@ pub struct Stream {
     pub requested: Option<u32>,
     health: Health,
     stats: CallbackStats,
+    /// Marks an ASIO driver as held while the stream lives ([`devices::DriverHold`]).
+    _hold: Option<devices::DriverHold>,
 }
 
 impl Stream {
@@ -882,7 +884,7 @@ pub fn open(audio: Audio, request: &Request) -> Result<Stream, Box<Refused>> {
     let driver = host.id().name().to_string();
     let found = match &request.device {
         Some(d) => devices::find_device(&host, &d.id),
-        None => host.default_output_device(),
+        None => devices::default_device(&host),
     };
     let Some(device) = found else {
         let e = match &request.device {
@@ -897,7 +899,12 @@ pub fn open(audio: Audio, request: &Request) -> Result<Stream, Box<Refused>> {
         Ok(c) => c,
         Err(e) => return Err(refuse(e, &mut audio)),
     };
-    let requested = buffer_request_for(request.buffer, &range);
+    // ASIO's buffer is set in the driver's own control panel: the driver's size is used
+    let requested = if devices::is_asio(Some(&driver)) {
+        None
+    } else {
+        buffer_request_for(request.buffer, &range)
+    };
     let resampled = config.sample_rate != RATE;
     let health = Health::started();
     let stats = CallbackStats::new();
@@ -948,6 +955,7 @@ pub fn open(audio: Audio, request: &Request) -> Result<Stream, Box<Refused>> {
                 while stats.snapshot().calls == 0 && t.elapsed().as_millis() < 300 {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
+                let _hold = devices::DriverHold::new(&driver);
                 return Ok(Stream {
                     stream,
                     recover,
@@ -961,6 +969,7 @@ pub fn open(audio: Audio, request: &Request) -> Result<Stream, Box<Refused>> {
                     requested: req,
                     health,
                     stats,
+                    _hold,
                 });
             }
             Err(e) => {

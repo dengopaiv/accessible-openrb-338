@@ -109,6 +109,9 @@ jobs:
       - name: Install the ALSA headers (cpal)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
+      - name: Install LLVM (bindgen of asio-sys, the ASIO build; task-193)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: scripts/install-llvm-windows.sh
       - name: Install rustup (the Windows arm64 image has none)
         if: matrix.target == 'aarch64-pc-windows-msvc'
         run: |

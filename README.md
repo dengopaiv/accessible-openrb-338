@@ -166,6 +166,10 @@ See [docs/building.md](docs/building.md).
 OpenRB-338 is free software under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only).
 Copyright (C) 2026 the OpenRB-338 authors.
 
+The Windows x86_64 build can play through ASIO drivers, with Steinberg's ASIO SDK under the GPL
+Version 3 option of its license ([third_party/asiosdk](third_party/asiosdk/README.md)).
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+
 ReBirth RB-338 is a trademark of Propellerhead Software (now Reason Studios). OpenRB-338 is not
 affiliated with or endorsed by them. The built-in standard kit (`assets/Standard.rbm`) holds
 ReBirth's own drum samples and panel pictures. See [assets/README.md](assets/README.md). The

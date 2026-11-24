@@ -215,6 +215,41 @@ thread_local! {
     static IN_HOOK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Ends the process with `code`, after the caller's own work (the error message, the crash log
+/// written and flushed): by [`terminate_if_asio_was_used`] when an ASIO driver was loaded, else
+/// by `std::process::exit`. Every `exit` of the program goes through it (task-193).
+pub fn end_process(code: i32) -> ! {
+    terminate_if_asio_was_used(code);
+    std::process::exit(code)
+}
+
+/// When an ASIO driver was loaded, ends the process with `TerminateProcess` (task-193).
+/// `ExitProcess`, which a return from `main` and `std::process::exit` end in, runs every DLL's
+/// `DLL_PROCESS_DETACH`, and ASIO4ALL's `DllMain` waits there for a thread of its own that
+/// `ExitProcess` has killed already when the driver's panel is open: the process hung, "Not
+/// Responding", with no window (found with a minidump: the main thread in
+/// `LdrShutdownProcess`, then asio4all64.dll, then `Sleep`). Returns when no ASIO driver was
+/// loaded (and off Windows). `TerminateProcess` skips destructors, so the caller has stopped
+/// the player and saved what it keeps first; on the panic path the crash log is written
+/// before.
+pub fn terminate_if_asio_was_used(code: i32) {
+    #[cfg(windows)]
+    if orb_player::devices::asio_was_used() {
+        unsafe extern "system" {
+            fn GetCurrentProcess() -> isize;
+            fn TerminateProcess(process: isize, exit_code: u32) -> i32;
+        }
+        let _ = std::io::stdout().flush();
+        let _ = std::io::stderr().flush();
+        // SAFETY: plain Win32 calls; the pseudo handle of the current process needs no closing.
+        unsafe {
+            TerminateProcess(GetCurrentProcess(), code as u32);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = code;
+}
+
 /// Installs the hook; `version` is the text of the About box.
 pub fn install(version: &'static str) {
     let default = std::panic::take_hook();
@@ -230,10 +265,10 @@ pub fn install(version: &'static str) {
             // thread may need it (macOS runs the box on the main queue).
             std::thread::sleep(WAIT);
             say("OpenRB-338: a second panic; the first one did not end the process in time");
-            std::process::exit(EXIT_CODE);
+            end_process(EXIT_CODE);
         }
         let _ = std::panic::catch_unwind(AssertUnwindSafe(|| handle(version, info)));
-        std::process::exit(EXIT_CODE);
+        end_process(EXIT_CODE);
     }));
 }
 

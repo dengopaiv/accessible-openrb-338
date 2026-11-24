@@ -273,6 +273,79 @@ for `tools/rbm_test.py` only; `RBM` is the mod format), and the variables of oth
 docs/plugin.md section 10, task-260). The settings folder is `OpenRB-338`
 (`OpenRB-338/OpenRB-338.toml`, renamed from `ui.toml` in task-289, which is copied to the new name once when only it exists and is never changed; the portable Windows zip below); settings of the old `rb/` folder are not carried over (no migration).
 
+## ASIO on Windows x86_64 (task-193, GitHub issue 12)
+
+The x86_64 Windows build can play through ASIO drivers (Options > Audio Output..., Driver:
+ASIO). The original ReBirth 2.01 had no ASIO (docs/export_state.md 2.1); this is an addition.
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+
+- **What builds it.** `crates/orb-player/Cargo.toml` turns on cpal's `asio` feature for
+  `cfg(all(windows, target_arch = "x86_64"))` only, so macOS, Linux and Windows arm64 builds are
+  unchanged (a Windows arm64 process cannot load x64 ASIO drivers anyway; the x64 package runs
+  there under emulation). The feature builds `asio-sys`, whose `build.rs` compiles the SDK's
+  `.cpp` files with `cc` and generates the Rust bindings with bindgen.
+- **The SDK.** A minimal subset of ASIO SDK 2.3.4, unmodified, is vendored in
+  `third_party/asiosdk/` (its README has the version, the zip's URL and SHA-256, and the file
+  list); `.cargo/config.toml` sets `CPAL_ASIO_DIR` to it (`[env]`, relative), so nothing is
+  downloaded at build time. The SDK is used under its GPL Version 3 option (task-192). The
+  `asio-sys` build compiles every `.cpp` of `common/`, `host/` and `host/pc/` it finds and no
+  driver-side file is needed.
+- **What to install.** LLVM, for bindgen's libclang: `LIBCLANG_PATH` names the folder of
+  `libclang.dll` (the `windows-latest` runner has LLVM in `C:\Program Files\LLVM\bin`;
+  `scripts/install-llvm-windows.sh` installs it with Chocolatey when it is missing and sets
+  `LIBCLANG_PATH` in `GITHUB_ENV`; `ci.yml` and `release.yml` run it on the x86_64 Windows
+  jobs). MSVC's headers and libraries come from the Visual Studio of the machine, or from
+  cargo-xwin.
+- **Cross builds.** `cargo xwin` builds it too (checked 2026-11-24 on this Mac: bindgen finds
+  the xwin SDK headers, the C++ compiles with clang-cl and `cargo xwin clippy`, `cargo xwin build
+  --profile dist` and `scripts/package.sh x86_64-pc-windows-msvc` pass), with one catch:
+  `asio-sys`'s `build.rs` searches for `vcvarsall.bat` unless the variable `VCINSTALLDIR` is set,
+  also when the host is not Windows. `scripts/build.sh` sets it (to `/xwin`; any value does)
+  for the xwin build. Run `cargo xwin clippy` by hand with
+  `VCINSTALLDIR=/xwin CL=-Wno-incompatible-pointer-types XWIN_ACCEPT_LICENSE=1`.
+- **Notices.** The x86_64 Windows zip carries `THIRD-PARTY-NOTICES.txt`, and the installer
+  installs it next to `LICENSE.txt` (`scripts/asio-notices.sh` writes it): the trademark line,
+  the SDK's `LICENSE.txt` and the BSD notice of the SDK's host helpers. The README of the
+  package and README.md carry the trademark line; the Audio Output window does not (the
+  user sees none in REAPER or Ableton, 2026-11-24). No ASIO logo is
+  used and "ASIO" is in no product name.
+- **In the program.** ASIO is a driver of the Audio Output window, after the platform's
+  default (WASAPI): "System default" and the automatic choice never mean ASIO, and ASIO has no
+  system default to follow, so the first ASIO driver stands for it. The buffer row reads "Set in
+  the driver's own control panel" and the program asks for no size; the window shows the size
+  the driver granted. There is no "Driver Settings..." button: neither cpal nor asio-sys exposes
+  `ASIOControlPanel` (asio-sys 0.4.0 allowlists only the calls cpal needs). cpal enumerates
+  the ASIO devices by loading each driver in turn, and ASIO loads one driver at a time, so
+  while a stream holds a driver the window lists the devices of the last enumeration
+  (`orb_player::devices::all_devices`). A driver that fails to open (busy, or it refuses the
+  rate) shows the error box and the output falls back to the defaults, as for any driver.
+- **ASIO4ALL hangs the process at exit when its panel is open (round 2, 2026-11-24).** The user
+  closed OpenRB-338 with ASIO4ALL's configuration window open (opened from the driver's own tray
+  icon, which lives in our process); the window went, the process stayed, "Not Responding", with
+  only the input-method window `CicMarshalWnd`. A minidump of it (`MiniDumpWriteDump` from a
+  PowerShell script, then a stack read by hand on the Mac, the exe being stripped) shows one
+  thread left, the main thread, in the process's exit: `kernel32!ExitProcess` >
+  `ntdll!RtlExitUserProcess` > `LdrShutdownProcess` (the `DLL_PROCESS_DETACH` calls) >
+  `asio4all64.dll` (offsets 0xd6b8, 0xc77c, 0x1f1d0, v2.22 of 2026-07-23) > `KERNELBASE!Sleep`
+  > `ntdll!ZwDelayExecution`. The driver's `DllMain` sleeps in a wait loop for a thread of its
+  own (the panel's UI thread); `ExitProcess` has killed every other thread before it calls the
+  detach routines, so the wait never ends. It is the driver's behavior, not cpal's or ours, and
+  our stream is already stopped by then (the exit is the only place it shows). The fix:
+  `orb_ui::crash::terminate_if_asio_was_used` ends the process with `TerminateProcess` (no DLL
+  detach) when the process made the ASIO host (`orb_player::devices::asio_was_used`). `main`
+  calls it once `run_native` has returned: the window is closed, the settings are saved and
+  the player has stopped, because `App` and its `Controller` (the stream) are dropped inside
+  `run_native`. Every other exit goes through `orb_ui::crash::end_process`, which calls it
+  after the caller's own work: the start error message, the screenshot, and the panic hook,
+  after the crash log is written and flushed. A process without ASIO ends as before. The
+  help and usage exits of `main` run before any host is made. Not
+  reproduced on the test machine before the fix: with ASIO4ALL's panel opened by
+  `a4apanel.exe` (a separate process, which connects to the driver in ours) the app closed
+  cleanly, so the hang needs the panel the driver itself opens in our process (its tray icon),
+  which could not be clicked remotely; the user re-tests.
+- **Checked** on the Windows test machine with FlexASIO (task-193 notes): the window lists ASIO,
+  the song plays through it, the rate choice works (resampled) and a missing ASIO device falls back to System default with a note; a busy driver could not be provoked (FlexASIO shares), so that fallback is task-191's open_chain, not seen with ASIO. The user's own runs: FlexASIO audible directly and over RDP; ASIO4ALL silent over an HDMI output (an ASIO4ALL limit), and the exit with its panel open, re-tested.
+
 ## The portable Windows zip (task-289, GitHub issue 19)
 
 The Windows `.zip` of `scripts/package.sh` unpacks to one folder with `OpenRB-338.exe`,
@@ -426,7 +499,8 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     inputs of the tests; AGENTS.md) skip when those are absent (checked locally with all of them unset). The
     synthetic recrypt tests (`crates/rbm/tests/recrypt_python.rs`, which run `tools/rbm.py`)
     need none of them.
-    Linux installs `libasound2-dev` first.
+    Linux installs `libasound2-dev` first. The Windows x86_64 job installs LLVM first
+    (`scripts/install-llvm-windows.sh`, bindgen for the ASIO build, "ASIO on Windows x86_64").
   - `plugin validators` (task-204) on `ubuntu-22.04` and `macos-latest`: bundles the plugin and
     runs `scripts/validate-plugin.sh` (pluginval) and `scripts/test-pkg-scripts.sh` (the macOS
     plugin installer's preinstall script; see "The plugin").
@@ -442,7 +516,8 @@ Actions are pinned to a commit SHA (the version in a comment). No workflow uses 
     (`plugins-<target>`, one day; the package holds them too, task-204).
   - The runner images change: GitHub retires old ones (macos-13 is gone, which is why amd64
     macOS uses `macos-15-intel`). Fix a label here when a run reports one as missing.
-  - The Windows arm64 job installs rustup if the image has none.
+  - The Windows arm64 job installs rustup if the image has none. The Windows x86_64 job
+    installs LLVM (`scripts/install-llvm-windows.sh`) before the build: the package has ASIO.
   - `dmg` (task-110, task-136), one job per macOS target after the package jobs, on the runner
     of its target (`macos-15-intel`, `macos-15`; not one runner for both, so each job needs only
     its own `bin-<target>` and the target's own tools check the image): downloads that

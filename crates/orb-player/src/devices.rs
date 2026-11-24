@@ -2,16 +2,29 @@
 //! the request that names a choice of them.
 //!
 //! A *driver* is a cpal host: CoreAudio on macOS, WASAPI on Windows, ALSA on Linux (and ASIO
-//! when task-193 builds it in). A device is named by cpal's [`cpal::DeviceId`] in its text form
-//! (`CoreAudio:...`), which survives a restart; its name is for display only. What the window
-//! lists for a device comes from pure functions of the device's supported configurations
+//! in the x86_64 Windows build, task-193). A device is named by cpal's [`cpal::DeviceId`] in its
+//! text form (`CoreAudio:...`), which survives a restart; its name is for display only. What the
+//! window lists for a device comes from pure functions of the device's supported configurations
 //! ([`offered_rates`], [`buffer_sizes`]), so the rules are tested without a device.
+
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 pub use cpal::SupportedBufferSize;
 use cpal::SupportedStreamConfigRange;
 use cpal::traits::{DeviceTrait, HostTrait};
 
 use crate::output::{BUFFER_FRAMES, Error};
+
+/// The name of cpal's ASIO host (Windows builds with the `asio` feature).
+pub const ASIO: &str = "ASIO";
+
+/// Whether `driver` is ASIO: it sets its buffer in its own control panel (the buffer is not
+/// asked for), it has no system default device (the first driver is the "default") and it
+/// loads one driver at a time, so it is enumerated with care ([`all_devices`]).
+pub fn is_asio(driver: Option<&str>) -> bool {
+    driver == Some(ASIO)
+}
 
 /// The largest buffer the window offers, in frames; the smallest is the device's own minimum
 /// ([`UNKNOWN_MIN_BUFFER`] for a device that states none).
@@ -86,6 +99,18 @@ pub fn drivers() -> Vec<String> {
     v.iter().map(|h| h.name().to_string()).collect()
 }
 
+/// Whether the ASIO host was made in this process, so that ASIO driver DLLs may be loaded.
+static ASIO_USED: AtomicBool = AtomicBool::new(false);
+
+/// Whether this process made the ASIO host, which loads the drivers' DLLs. A program that did
+/// should end with `TerminateProcess` and not `ExitProcess` (the UI's `main` does): ASIO4ALL's
+/// `DllMain` waits for a thread of its own on `DLL_PROCESS_DETACH`, which `ExitProcess` has
+/// already killed when the driver's panel is open, and the process hangs (task-193,
+/// docs/building.md "ASIO on Windows x86_64").
+pub fn asio_was_used() -> bool {
+    ASIO_USED.load(Ordering::SeqCst)
+}
+
 /// The host named `driver` (`None`: the default one).
 pub fn host(driver: Option<&str>) -> Result<cpal::Host, Error> {
     let Some(name) = driver else {
@@ -95,6 +120,9 @@ pub fn host(driver: Option<&str>) -> Result<cpal::Host, Error> {
         .into_iter()
         .find(|h| h.name() == name)
         .ok_or_else(|| Error(format!("the audio driver {name} is not available")))?;
+    if is_asio(Some(name)) {
+        ASIO_USED.store(true, Ordering::SeqCst);
+    }
     cpal::host_from_id(id).map_err(|e| Error(format!("the audio driver {name}: {e}")))
 }
 
@@ -111,16 +139,78 @@ pub fn device_name(device: &cpal::Device) -> String {
         .unwrap_or_else(|_| "?".into())
 }
 
+/// The number of streams that hold an ASIO driver ([`DriverHold`]).
+static ASIO_HELD: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    /// The ASIO devices of the last enumeration made while no stream held a driver (the window
+    /// and the controller run on one thread; no lock is needed, and the callback crates hold
+    /// none, tests/no_alloc.rs).
+    static ASIO_DEVICES: RefCell<Vec<cpal::Device>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Marks that a running stream holds an ASIO driver, until it is dropped. ASIO loads one driver
+/// at a time, and cpal enumerates the devices by loading each driver in turn: with a driver
+/// held, an enumeration stops at the first other driver. So while this exists the ASIO devices
+/// are the ones of the last enumeration made without it ([`all_devices`]).
+pub struct DriverHold(());
+
+impl DriverHold {
+    /// A hold for a stream on `driver`; `None` when it is not ASIO.
+    pub fn new(driver: &str) -> Option<DriverHold> {
+        is_asio(Some(driver)).then(|| {
+            ASIO_HELD.fetch_add(1, Ordering::SeqCst);
+            DriverHold(())
+        })
+    }
+}
+
+impl Drop for DriverHold {
+    fn drop(&mut self) {
+        ASIO_HELD.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// The output devices of a host. ASIO's come from the last enumeration while a stream holds a
+/// driver ([`DriverHold`]), else from a new one (which loads every driver for a moment).
+pub fn all_devices(host: &cpal::Host) -> Result<Vec<cpal::Device>, Error> {
+    let asio = is_asio(Some(host.id().name()));
+    if asio && ASIO_HELD.load(Ordering::SeqCst) > 0 {
+        return Ok(ASIO_DEVICES.with_borrow(|v| v.clone()));
+    }
+    let v: Vec<cpal::Device> = host
+        .output_devices()
+        .map_err(|e| Error(format!("the output devices: {e}")))?
+        .collect();
+    if asio {
+        ASIO_DEVICES.with_borrow_mut(|c| *c = v.clone());
+    }
+    Ok(v)
+}
+
 /// The device `id` names on `host`, if it is there.
 pub fn find_device(host: &cpal::Host, id: &str) -> Option<cpal::Device> {
     let id: cpal::DeviceId = id.parse().ok()?;
+    if is_asio(Some(host.id().name())) {
+        return all_devices(host)
+            .ok()?
+            .into_iter()
+            .find(|d| d.id().ok().as_ref() == Some(&id));
+    }
     host.device_by_id(&id)
+}
+
+/// The host's default output device: for ASIO, which has none, the first.
+pub fn default_device(host: &cpal::Host) -> Option<cpal::Device> {
+    if is_asio(Some(host.id().name())) {
+        return all_devices(host).ok()?.into_iter().next();
+    }
+    host.default_output_device()
 }
 
 /// The system default output device's id on a driver, `None` when there is none.
 pub fn default_device_id(driver: Option<&str>) -> Option<String> {
     let host = host(driver).ok()?;
-    host.default_output_device().and_then(|d| device_id(&d))
+    default_device(&host).and_then(|d| device_id(&d))
 }
 
 /// One output device of a driver.
@@ -133,10 +223,8 @@ pub struct DeviceInfo {
 /// The output devices of a driver, in the driver's order.
 pub fn list_devices(driver: Option<&str>) -> Result<Vec<DeviceInfo>, Error> {
     let host = host(driver)?;
-    let devices = host
-        .output_devices()
-        .map_err(|e| Error(format!("the output devices: {e}")))?;
-    Ok(devices
+    Ok(all_devices(&host)?
+        .into_iter()
         .filter_map(|d| {
             Some(DeviceInfo {
                 id: device_id(&d)?,
@@ -171,9 +259,7 @@ pub fn caps(driver: Option<&str>, device: Option<&str>) -> Result<Caps, Error> {
     let d = match device {
         Some(id) => find_device(&host, id)
             .ok_or_else(|| Error("the audio device is not available".into()))?,
-        None => host
-            .default_output_device()
-            .ok_or_else(|| Error("no default output device".into()))?,
+        None => default_device(&host).ok_or_else(|| Error("no default output device".into()))?,
     };
     let configs: Vec<SupportedStreamConfigRange> = d
         .supported_output_configs()
@@ -382,6 +468,23 @@ mod tests {
         assert_eq!(back.rate, Some(48000));
         assert_eq!(back.buffer, 512);
         assert_eq!(back.driver.as_deref(), Some("CoreAudio"));
+    }
+
+    #[test]
+    fn only_asio_is_asio() {
+        assert!(is_asio(Some("ASIO")));
+        assert!(!is_asio(Some("WASAPI")));
+        assert!(!is_asio(None));
+    }
+
+    #[test]
+    fn a_hold_exists_for_asio_only() {
+        assert!(DriverHold::new("WASAPI").is_none());
+        let before = ASIO_HELD.load(Ordering::SeqCst);
+        let h = DriverHold::new("ASIO").expect("a hold");
+        assert_eq!(ASIO_HELD.load(Ordering::SeqCst), before + 1);
+        drop(h);
+        assert_eq!(ASIO_HELD.load(Ordering::SeqCst), before);
     }
 
     #[test]

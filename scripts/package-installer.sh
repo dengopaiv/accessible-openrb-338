@@ -47,6 +47,14 @@ rm -rf "$stage"
 mkdir -p "$stage"
 crlf() { awk '{ printf "%s\r\n", $0 }' "$1" > "$2"; }
 crlf "$root/LICENSE" "$stage/LICENSE.txt"
+# the x86_64 build carries ASIO: its SDK's license and notices (task-193)
+notices=
+if [ "$arch" = x64 ]; then
+    "$root/scripts/asio-notices.sh" "$stage/notices.in"
+    crlf "$stage/notices.in" "$stage/THIRD-PARTY-NOTICES.txt"
+    rm "$stage/notices.in"
+    notices=1
+fi
 cat > "$stage/readme.in" <<EOF
 OpenRB-338 $version ($arch)
 
@@ -76,6 +84,15 @@ The installer and the programs are not signed, so Windows SmartScreen may say "W
 your PC": choose "More info", then "Run anyway".
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE.txt).
 EOF
+if [ -n "$notices" ]; then
+    cat >> "$stage/readme.in" <<'EOF'
+
+OpenRB-338.exe can play through ASIO drivers: Options > Audio Output..., Driver: ASIO. The default
+stays WASAPI; ASIO is never chosen by itself. THIRD-PARTY-NOTICES.txt holds the license of the
+ASIO SDK.
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+EOF
+fi
 crlf "$stage/readme.in" "$stage/README.txt"
 rm "$stage/readme.in"
 # NSIS stores the time of every file it packs: copy all of them here and give them the build
@@ -96,6 +113,7 @@ rm -f "$out"
 # -WX (the default of MAKENSIS_FLAGS; set it empty to drop it): a warning fails the build. The time inside the file comes from SOURCE_DATE_EPOCH.
 "$makensis" -V2 ${MAKENSIS_FLAGS--WX} "-DICON=$root/assets/app_icon.ico" \
     "-DVERSION=$version" "-DARCH=$arch" "-DBINDIR=$stage" "-DSTAGEDIR=$stage" \
+    ${notices:+"-DNOTICES=$stage/THIRD-PARTY-NOTICES.txt"} \
     "-DPATHPS1=$stage/path.ps1" "-DPLUGINDIR=$stage/plugins" "-DOUTFILE=$out" \
     "$root/scripts/installer/openrb.nsi"
 rm -rf "$stage"
