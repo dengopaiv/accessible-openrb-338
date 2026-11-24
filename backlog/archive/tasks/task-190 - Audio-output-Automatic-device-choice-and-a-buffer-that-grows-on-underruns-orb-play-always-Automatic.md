@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-15T12:44:00Z'
-updated_date: '2026-11-15T12:45:00Z'
+updated_date: '2026-11-24T16:04:00Z'
 labels:
   - player
   - cli
@@ -52,3 +52,9 @@ The user's plan (2026-11-15): orb-player gets an **Automatic** mode that picks t
 - [ ] #5 A manual check on the Mac (play, unplug and replug headphones or switch the default output) is recorded in the notes; the Linux path is described for the issue #7 reporter in a reply text in the notes (not posted)
 - [ ] #6 docs/building.md describes Automatic and orb play's lines; fmt, clippy and cargo test pass
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Not done as written: merged into task-191 by the user on 2026-11-24. Its player-side work (device listing, System default following, reopen on a lost device, reporting what is in use) moved into task-191. The automatic buffer growth and the per-device remembered buffer were dropped: the user chose a fixed, selectable buffer with a 2048-frame default, as commercial DAWs do.
+<!-- SECTION:FINAL_SUMMARY:END -->

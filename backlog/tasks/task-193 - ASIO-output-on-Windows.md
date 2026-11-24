@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-15T12:45:00Z'
-updated_date: '2026-11-16T07:55:00Z'
+updated_date: '2026-11-24T16:04:00Z'
 labels:
   - player
   - ui
@@ -13,7 +13,6 @@ labels:
 milestone: m-5
 dependencies:
   - TASK-191
-  - TASK-192
 references:
   - crates/orb-player/Cargo.toml
   - crates/orb-player/src/output.rs
@@ -25,9 +24,9 @@ references:
   - task-192
   - https://github.com/pingw33n/OpenRB-338/issues/12
   - https://download.steinberg.net/sdk_downloads/ASIO-SDK_2.3.4_2025-10-15.zip
-priority: low
+priority: medium
 type: feature
-ordinal: 206000
+ordinal: 160
 ---
 
 ## Description
@@ -58,3 +57,9 @@ Testing has no Windows machine on the dev side: the Windows test machine (docs/t
 - [ ] #4 ASIO is listed as a host in the Audio Output window, is never chosen by Automatic, and a busy or failing driver shows the error box and falls back to Automatic
 - [ ] #5 A manual check on the Windows test machine with ASIO4ALL (play a song, switch to ASIO and back, the window's facts) is recorded in the notes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-24, supervisor: task-190 was merged into task-191, which now has the Driver/Device/Sample rate/Buffer size window (the user's redesign). For ASIO the window replaces the buffer size row with "Set in the driver's control panel" and a "Driver Settings..." button. Check whether cpal or asio-sys exposes ASIOControlPanel; if it does not, the button is left out and the text points to the driver's own tool. The sample rate stays selectable. The user is the first reviewer.
+<!-- SECTION:NOTES:END -->
