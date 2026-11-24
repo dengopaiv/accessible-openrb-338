@@ -356,10 +356,9 @@ pub fn step_pattern(pattern: u8, next: bool) -> Option<u8> {
     }
 }
 
-/// What the keys and the mouse do in a drum editor: each is a line of Help > Keyboard
-/// Shortcuts (`crate::key_help`, which lists every one of [`Machine::inputs`]) and a case of
-/// the tests (`tests/drum_editor.rs` `every_input_of_the_help_does_what_it_says`, a match on
-/// every one).
+/// What the keys and the mouse do in a drum editor (the editors' own inputs, [`Machine::inputs`];
+/// the help does not list them, task-284): each is a case of the tests (`tests/drum_editor.rs`
+/// `every_input_of_the_help_does_what_it_says`, a match on every one).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Input {
     /// Ctrl/Cmd+E with the drum machine's row focused (the standalone app).
@@ -1313,6 +1312,17 @@ mod tests {
         assert_eq!(Input::OpenKey.keys(m8, true), "Cmd+E");
         assert_eq!(Input::OpenKey.keys(m9, false), "Ctrl+E");
         assert_eq!(Input::Undo.keys(m8, false), "Ctrl+Z");
+        // the open key and Undo are the menu's shortcuts, as `shortcuts` writes them
+        for (m, is_mac) in [(m8, false), (m8, true), (m9, false), (m9, true)] {
+            assert_eq!(
+                Input::OpenKey.keys(m, is_mac),
+                crate::shortcuts::text_for(&crate::shortcuts::PATTERN_EDITOR, is_mac)
+            );
+            assert_eq!(
+                Input::Undo.keys(m, is_mac),
+                crate::shortcuts::text_for(&crate::shortcuts::UNDO, is_mac)
+            );
+        }
         assert!(Input::Modified.keys(m8, true).contains("Option"));
         assert!(Input::Modified.keys(m8, false).contains("Alt"));
         // the 909's held entries

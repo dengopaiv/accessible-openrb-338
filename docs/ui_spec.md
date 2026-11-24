@@ -660,7 +660,7 @@ not read].
   the panel read the physical Ctrl on every platform). macOS's Ctrl and Shift do nothing.
   Tests: `behavior.rs` `the_909_step_modifiers_are_cmd_and_option_on_macos`,
   `tests/interaction.rs` `tr909_step_click_cycles_and_modifiers_pick_the_value`; Help >
-  Keyboard Shortcuts lists them (section 18, the group "The panel's TR-909 step buttons").
+  Keyboard Shortcuts no longer lists them (section 18, the user's cut of task-284).
 - Display: each cell's LED is 14 x 8 at `x = 30 + 21 i`, y 86 of the 909 section, frame
   `value - 1` of resource 12566 for values 1 and 2 and frame 3 for 3: value 1 orange, value 2
   red, flam green (observed). A step byte above 3 (a song may hold any) is drawn as the flam
@@ -1208,7 +1208,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Vintage ReBirth Synth Sound | the song's sound model (the original has it in the Edit menu) |
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
-| Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, always-active keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
+| Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, the global keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` with an icon-only copy button (task-279) and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
 
 The Help menu is last in the bar. Its items are the list `HELP_ITEMS` in `menu.rs`, so a new item
@@ -1258,24 +1258,20 @@ is one more entry.
   prompt: S/Y/Enter save, D/N do not, Esc cancels; the browser's overwrite question: Y replaces,
   Enter/Esc/N go back) are listed by hand from `prompt_ui` (`menu.rs`) and the browser's key
   handler (`browser.rs`); no test checks them. The Theme Viewer's Space row is gone with the
-  viewer (task-267; the unit test `no_row_names_the_theme_viewer`). The group "808 Pattern
-  Editor" (task-280, section 24) lists every key and mouse action of the 808 editor: its lines
-  are `drum_editor::Input::ALL` with the platform's names (Cmd/Option on macOS, Ctrl/Alt
-  elsewhere); the unit test `the_808_editor_group_lists_every_input_of_the_editor` requires each
-  input once, and `tests/drum_editor.rs` `every_input_of_the_help_does_what_it_says` runs each
-  (a match on every `Input`, so a new input does not compile untested). The group "909 Pattern
-  Editor" (task-281, section 25) is the same for the 909 editor (`Machine::Tr909.inputs()`:
-  besides the 808's, the entry switch and the held Low, High and Flam keys, "Hold Cmd",
-  "Hold Option", "Hold Cmd+Option" on macOS and "Hold Ctrl", "Hold Alt", "Hold Ctrl+Alt"
-  elsewhere); the unit test is now `each_drum_editor_group_lists_every_input_of_its_editor`
-  (both editors' groups, `Machine::inputs`) and `every_input_of_the_help_does_what_it_says`
-  runs the inputs of both. The group "The panel's TR-909 step buttons" (task-281,
-  `key_help::Step909`) lists the panel's 909 step clicks: click (cycle), Cmd/Ctrl+click (low),
-  Option/Alt+click (high), Cmd+Option / Ctrl+Alt+click (flam, as the Flam button), the AC row
-  and the drag (section 7); the unit test `the_panels_909_step_group_names_the_keys_that_do_it`
-  runs each line's modifiers, as egui reports them on each platform, through
-  `behavior::step_mods` and `tr909_step_value`. The help window is the standalone app's only
-  (section 20).
+  viewer (task-267; the unit test `no_row_names_the_theme_viewer`).
+  The user's cuts of 2026-11-22 (task-284; the unit test `the_users_cuts_and_renames_hold`
+  keeps them): the help lists keys only. It has no mouse-only row (no click, drag, modifier-click
+  or DragValue line), no note of the menu shortcuts' command key, of both keyboard modes or of
+  egui and the numpad, no "Numpad *" row, and no row for a menu shortcut's second place (the
+  Edit menu shows Cmd/Ctrl+E and Cmd/Ctrl+Z; the group "Menu shortcuts" lists Undo only).
+  The groups "808 Pattern Editor" and "909 Pattern Editor" (tasks 280 and 281, sections 24 and
+  25) and "The panel's 909 step buttons" (task-281) are removed from the help; the editors'
+  inputs stay listed in `drum_editor::Input` and run by `tests/drum_editor.rs`
+  `every_input_of_the_help_does_what_it_says`, and the panel's step modifiers by `behavior.rs`
+  and `tests/interaction.rs` (section 7). The group "Always active" is "Global". The help names
+  the machines 303, 808 and 909, never TB-303, TR-808 or TR-909 (the user's rule: no direct
+  reference to the Roland hardware; the rest of the app's text follows in task-286). The help
+  window is the standalone app's only (section 20).
 
 - **Help > About and the version string** (task-102; `crates/orb-ui/src/about.rs`, `version.rs`,
   `build.rs`). The window is centered as File > Info is (pivot CENTER_CENTER, `default_pos` at
@@ -2353,8 +2349,7 @@ shuffle flag, the length, and 16 steps of 12 bytes, one per instrument in RBS or
 LT/LC, MT/MC, HT/HC, RS/CL, CP/MA, CB, CY, OH, CH, each 0 or 1). Code:
 `crates/orb-ui/src/drum_editor.rs` (the drum-grid editor, `Machine::Tr808`; the 909's,
 task-281, is `Machine::Tr909` on it, section 25) on `crates/orb-ui/src/editor_frame.rs`; tests:
-`crates/orb-ui/tests/drum_editor.rs`, the unit tests of the module, `key_help.rs`
-`the_808_editor_group_lists_every_input_of_the_editor`, and `crates/orb-plugin/tests/editor.rs`
+`crates/orb-ui/tests/drum_editor.rs`, the unit tests of the module, and `crates/orb-plugin/tests/editor.rs`
 `the_edit_menu_opens_the_808_pattern_editor_and_undoes_its_changes`.
 
 **The window.** "808 Pattern Editor", an `egui::Window` like the 303's (draggable, closable,
@@ -2410,10 +2405,9 @@ on the panel moves it, the switch into pattern mode too) and a bank, number or a
 editor selects it on the panel. Song mode: the two are independent, and the editor never
 records. No Follow button.
 
-**Keyboard Shortcuts** (section 18, Help): the group "808 Pattern Editor" lists Ctrl/Cmd+E,
-click, drag, the modifiers (none), the pattern number's and Length's drag, Shift+drag (slower),
-click-type-Enter and Escape, and Ctrl/Cmd+Z, each with what it does and its plugin difference
-(the plugin takes no keys: the menu opens the editor and undoes).
+**Keyboard Shortcuts** (section 18, Help): no group for this editor (the user's cut of
+task-284; the Edit menu shows Ctrl/Cmd+E and Ctrl/Cmd+Z). The editor's inputs are still
+`drum_editor::Input`, each run by `tests/drum_editor.rs`.
 
 ## 25. The 909 pattern editor (task-281)
 
@@ -2425,8 +2419,7 @@ CH, OH, CC, RC). A drum byte is 0 off, 1 low, 2 high, 3 flam (a low hit plus the
 retrigger); the AC byte is on/off with the stored "on" 2, as the panel writes it (section 7).
 Code: `crates/orb-ui/src/drum_editor.rs`, `Machine::Tr909` (with `Entry`, the entry switch);
 tests: `crates/orb-ui/tests/drum_editor.rs` (the `909` tests and
-`every_input_of_the_help_does_what_it_says`), the unit tests of the module, `key_help.rs`
-`each_drum_editor_group_lists_every_input_of_its_editor`, and `crates/orb-plugin/tests/editor.rs`
+`every_input_of_the_help_does_what_it_says`), the unit tests of the module, and `crates/orb-plugin/tests/editor.rs`
 `the_edit_menu_opens_the_909_pattern_editor_and_undoes_its_changes`.
 
 **The window.** "909 Pattern Editor", its own window, separate from the 808's (the user's
@@ -2479,7 +2472,5 @@ Linux).
 - **One edit path, one Undo**: every change is one whole-pattern write through
   `App::write_pattern` and undone by Edit > Undo, as in section 24 (a drag is one change).
 
-**Keyboard Shortcuts** (section 18, Help): the group "909 Pattern Editor" lists Ctrl/Cmd+E,
-click, drag, the entry switch, Hold Cmd / Option / Cmd+Option (Ctrl / Alt / Ctrl+Alt
-elsewhere), the other modifiers (none), the pattern number's and Length's drag, Shift+drag,
-click-type-Enter and Escape, and Ctrl/Cmd+Z.
+**Keyboard Shortcuts** (section 18, Help): no group for this editor (the user's cut of
+task-284), as for the 808's.

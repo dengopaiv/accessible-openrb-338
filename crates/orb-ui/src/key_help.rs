@@ -11,7 +11,6 @@
 use egui::{self, Color32, Context, Key, KeyboardShortcut, Modifiers, RichText};
 
 use crate::app::App;
-use crate::drum_editor;
 use crate::keys::{Action, KeyMode};
 use crate::palette::{INK, INK_DIM};
 use crate::shortcuts;
@@ -151,61 +150,6 @@ pub struct Row {
     pub what: &'static str,
     /// The bindings the line stands for (empty for a menu shortcut and for a plain note).
     pub binds: Vec<Bind>,
-    /// The drum editor and its input the line stands for (tasks 280 and 281;
-    /// tests/drum_editor.rs runs each).
-    pub editor: Option<(drum_editor::Machine, drum_editor::Input)>,
-}
-
-/// The mouse on the panel's TR-909 step buttons (docs/ui_spec.md section 7; task-281 made the
-/// original's Ctrl the command key, Cmd on macOS): each is a line of the help, and its test runs
-/// each line's modifiers through the panel's rule.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Step909 {
-    Click,
-    Low,
-    High,
-    Flam,
-    Accent,
-    Drag,
-}
-
-impl Step909 {
-    pub const ALL: [Step909; 6] = [
-        Step909::Click,
-        Step909::Low,
-        Step909::High,
-        Step909::Flam,
-        Step909::Accent,
-        Step909::Drag,
-    ];
-
-    /// The keys and the mouse, with the platform's key names.
-    pub fn keys(self, is_mac: bool) -> String {
-        let (cmd, alt) = if is_mac {
-            ("Cmd", "Option")
-        } else {
-            ("Ctrl", "Alt")
-        };
-        match self {
-            Step909::Click => "Click".into(),
-            Step909::Low => format!("{cmd}+click"),
-            Step909::High => format!("{alt}+click"),
-            Step909::Flam => format!("{cmd}+{alt}+click"),
-            Step909::Accent => "Click, AC selected".into(),
-            Step909::Drag => "Drag".into(),
-        }
-    }
-
-    pub fn what(self) -> &'static str {
-        match self {
-            Step909::Click => "The selected instrument's step: off, low, high, off",
-            Step909::Low => "Set low, or clear a low step",
-            Step909::High => "Set high, or clear a high step",
-            Step909::Flam => "Set flam, or clear a flam step (so does a click with Flam on)",
-            Step909::Accent => "The accent on or off, whatever the modifiers",
-            Step909::Drag => "Set every step crossed to the first step's new value",
-        }
-    }
 }
 
 /// A titled block of lines.
@@ -223,32 +167,6 @@ fn row(keys: &str, what: &'static str, binds: Vec<Bind>) -> Row {
         keys: keys.into(),
         what,
         binds,
-        editor: None,
-    }
-}
-
-/// The line of a drum editor's input, with the platform's key names.
-fn editor_row(is_mac: bool, m: drum_editor::Machine, i: drum_editor::Input) -> Row {
-    Row {
-        keys: i.keys(m, is_mac),
-        what: i.what(m),
-        binds: vec![],
-        editor: Some((m, i)),
-    }
-}
-
-/// The group of a drum editor: every input it handles.
-fn editor_group(is_mac: bool, m: drum_editor::Machine) -> Group {
-    Group {
-        title: m.title(),
-        mode: None,
-        note: "Every key and mouse action of the editor's window; the panel's keys work as \
-               without it, except while a value is typed.",
-        rows: m
-            .inputs()
-            .iter()
-            .map(|&i| editor_row(is_mac, m, i))
-            .collect(),
     }
 }
 
@@ -369,7 +287,7 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
         Group {
             title: "Menu shortcuts",
             mode: None,
-            note: "Keys with the command key held are left to the menu.",
+            note: "",
             rows: vec![
                 menu_row(is_mac, &shortcuts::NEW, "File > New"),
                 menu_row(is_mac, &shortcuts::OPEN, "File > Open..."),
@@ -379,13 +297,6 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                 menu_row(is_mac, &shortcuts::COPY, "Edit > Copy Pattern"),
                 menu_row(is_mac, &shortcuts::PASTE, "Edit > Paste Pattern"),
                 menu_row(is_mac, &shortcuts::DUPLICATE, "Edit > Duplicate Pattern"),
-                menu_row(
-                    is_mac,
-                    &shortcuts::PATTERN_EDITOR,
-                    "The focused row's pattern editor: Edit > 808 Pattern Editor... with the \
-                     TR-808 focused, Edit > 909 Pattern Editor... with the TR-909 focused, \
-                     else Edit > 303 Pattern Editor...",
-                ),
                 menu_row(
                     is_mac,
                     &shortcuts::KEYS_SYNTH,
@@ -399,9 +310,9 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
             ],
         },
         Group {
-            title: "Always active",
+            title: "Global",
             mode: None,
-            note: "Both keyboard modes, whatever row has the focus.",
+            note: "",
             rows: vec![
                 row(
                     "Space",
@@ -452,8 +363,7 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
         Group {
             title: "Transport keys that depend on the mode",
             mode: None,
-            note: "egui cannot tell the numpad from the main keyboard, so these keys are \
-                   resolved by the mode and the focus.",
+            note: "",
             rows: vec![
                 row(
                     "Enter",
@@ -501,15 +411,10 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                         bind(Key::Num2, Scope::Synth, Want::Locate(true)),
                     ],
                 ),
-                row(
-                    "Numpad *",
-                    "Nothing: egui gives no key for it (Insert records)",
-                    vec![],
-                ),
             ],
         },
         Group {
-            title: "Program Synth mode, a TB-303 focused",
+            title: "Program Synth mode, a 303 focused",
             mode: Some(KeyMode::Synth),
             note: "The keys press the focused 303's panel keys.",
             rows: vec![
@@ -577,8 +482,8 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                 ),
                 row(
                     "A S D F G H J K L ; '",
-                    "Instruments 1..11. TR-808: BD SD LT MT HT RS CP CB CY OH CH. \
-                     TR-909: BD SD LT MT HT RS CP CH OH CC RC",
+                    "Instruments 1..11. 808: BD SD LT MT HT RS CP CB CY OH CH. \
+                     909: BD SD LT MT HT RS CP CH OH CC RC",
                     drums,
                 ),
             ],
@@ -589,29 +494,12 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
             note: "Each key row selects patterns 1..8 of one section, as a click on the \
                    pattern button.",
             rows: vec![
-                patterns(0, "TB-303 #1", "1 2 3 4 5 6 7 8"),
-                patterns(1, "TB-303 #2", "Q W E R T Y U I"),
-                patterns(2, "TR-808", "A S D F G H J K"),
-                patterns(3, "TR-909", "Z X C V B N M ,"),
+                patterns(0, "303 #1", "1 2 3 4 5 6 7 8"),
+                patterns(1, "303 #2", "Q W E R T Y U I"),
+                patterns(2, "808", "A S D F G H J K"),
+                patterns(3, "909", "Z X C V B N M ,"),
             ],
         },
-        Group {
-            title: "The panel's TR-909 step buttons",
-            mode: None,
-            note: "The mouse on the TR-909's 16 step buttons; the 909 Pattern Editor's entry \
-                   keys are the same.",
-            rows: Step909::ALL
-                .iter()
-                .map(|&s| Row {
-                    keys: s.keys(is_mac),
-                    what: s.what(),
-                    binds: vec![],
-                    editor: None,
-                })
-                .collect(),
-        },
-        editor_group(is_mac, drum_editor::Machine::Tr808),
-        editor_group(is_mac, drum_editor::Machine::Tr909),
         Group {
             title: "Windows and the file browser",
             mode: None,
@@ -871,133 +759,77 @@ mod tests {
                 .map(|r| r.keys.clone())
                 .collect()
         };
-        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "E", "F", "G"];
+        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "F", "G"];
         assert_eq!(text(true), keys.map(|k| format!("Cmd+{k}")));
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
     }
 
-    /// Each drum editor's group (808 and 909) lists every input the editor handles
-    /// (`Machine::inputs`, each of which tests/drum_editor.rs runs), once each and in order,
-    /// with the platform's key names.
+    /// The user's cuts of 2026-11-22 (task-284): the groups, rows and notes they removed stay
+    /// removed, "Always active" is "Global", and no text names the Roland hardware.
     #[test]
-    fn each_drum_editor_group_lists_every_input_of_its_editor() {
-        use drum_editor::{Input, Machine};
+    fn the_users_cuts_and_renames_hold() {
         for is_mac in [false, true] {
             let gs = groups(is_mac);
-            for m in Machine::ALL {
-                let g = gs.iter().find(|g| g.title == m.title()).expect("the group");
-                let listed: Vec<_> = g.rows.iter().map(|r| r.editor).collect();
-                let all: Vec<_> = m.inputs().iter().map(|&i| Some((m, i))).collect();
-                assert_eq!(listed, all);
-                for r in &g.rows {
-                    let (_, i) = r.editor.unwrap();
-                    assert_eq!(r.keys, i.keys(m, is_mac));
-                    assert_eq!(r.what, i.what(m));
-                }
-                let keys: Vec<&str> = g.rows.iter().map(|r| r.keys.as_str()).collect();
-                let (cmd, alt) = if is_mac {
-                    ("Cmd", "Option")
-                } else {
-                    ("Ctrl", "Alt")
-                };
-                assert!(keys.contains(&format!("{cmd}+E").as_str()), "{keys:?}");
-                assert!(keys.contains(&format!("{cmd}+Z").as_str()), "{keys:?}");
-                // the open key is the menu's shortcut
-                assert_eq!(
-                    Input::OpenKey.keys(m, is_mac),
-                    shortcuts::text_for(&shortcuts::PATTERN_EDITOR, is_mac)
-                );
-                assert_eq!(
-                    Input::Undo.keys(m, is_mac),
-                    shortcuts::text_for(&shortcuts::UNDO, is_mac)
-                );
-                // the 909's entry switch and its held keys, by the platform's names
-                if m == Machine::Tr909 {
-                    for k in [
-                        format!("Hold {cmd}"),
-                        format!("Hold {alt}"),
-                        format!("Hold {cmd}+{alt}"),
-                        "Click Cycle / Low / High / Flam".into(),
-                    ] {
-                        assert!(keys.contains(&k.as_str()), "{k}: {keys:?}");
-                    }
+            let titles: Vec<&str> = gs.iter().map(|g| g.title).collect();
+            assert_eq!(
+                titles,
+                [
+                    "Menu shortcuts",
+                    "Global",
+                    "Transport keys that depend on the mode",
+                    "Program Synth mode, a 303 focused",
+                    "Program Synth mode, a drum machine focused",
+                    "Select Patterns mode",
+                    "Windows and the file browser",
+                    "Prompts and questions",
+                ]
+            );
+            let notes: Vec<&str> = gs.iter().map(|g| g.note).collect();
+            let rows: Vec<(&str, &str)> = gs
+                .iter()
+                .flat_map(|g| &g.rows)
+                .map(|r| (r.keys.as_str(), r.what))
+                .collect();
+            // no menu repeats: the pattern editor's key is in the Edit menu only
+            let cmd = if is_mac { "Cmd" } else { "Ctrl" };
+            assert!(!rows.iter().any(|r| r.0 == format!("{cmd}+E")), "{rows:?}");
+            assert!(!rows.iter().any(|r| r.1.contains("Opens the focused row")));
+            assert_eq!(rows.iter().filter(|r| r.0 == format!("{cmd}+Z")).count(), 1);
+            for gone in [
+                "Keys with the command key held",
+                "Both keyboard modes, whatever row",
+                "egui cannot tell the numpad",
+                "Every key and mouse action of the editor",
+            ] {
+                assert!(!notes.iter().any(|n| n.contains(gone)), "{gone}");
+            }
+            assert!(!rows.iter().any(|r| r.0 == "Numpad *"));
+            // no mouse-only rows: no click, drag, held-modifier or DragValue line
+            for (k, w) in &rows {
+                let (kl, wl) = (k.to_lowercase(), w.to_lowercase());
+                for bad in ["click", "drag", "hold ", "length", "pattern number"] {
+                    assert!(!kl.contains(bad) && !wl.contains(bad), "{k}: {w}");
                 }
             }
-            // no other group lists an editor input
-            let titles = Machine::ALL.map(|m| m.title());
-            let elsewhere = gs
-                .iter()
-                .filter(|o| !titles.contains(&o.title))
-                .flat_map(|o| &o.rows)
-                .any(|r| r.editor.is_some());
-            assert!(!elsewhere);
-        }
-    }
-
-    /// The panel's 909 step group lists each mouse action with the platform's key names, and
-    /// the modifiers each line names give, through the panel's reading of them
-    /// (`behavior::step_mods`, as egui reports the keys on that platform), what the line says.
-    #[test]
-    fn the_panels_909_step_group_names_the_keys_that_do_it() {
-        use crate::behavior::{step_mods, tr909_step_value};
-        for is_mac in [false, true] {
-            let gs = groups(is_mac);
-            let g = gs
-                .iter()
-                .find(|g| g.title == "The panel's TR-909 step buttons")
-                .expect("the group");
-            let keys: Vec<String> = g.rows.iter().map(|r| r.keys.clone()).collect();
-            let want: Vec<String> = Step909::ALL.iter().map(|s| s.keys(is_mac)).collect();
-            assert_eq!(keys, want);
-            // egui's modifiers of the command key on the platform, and of Alt / Option
-            let cmd = if is_mac {
-                Modifiers {
-                    mac_cmd: true,
-                    command: true,
-                    ..Modifiers::NONE
-                }
-            } else {
-                Modifiers {
-                    ctrl: true,
-                    command: true,
-                    ..Modifiers::NONE
-                }
-            };
-            let (cmd_name, alt_name) = if is_mac {
-                ("Cmd", "Option")
-            } else {
-                ("Ctrl", "Alt")
-            };
-            for s in Step909::ALL {
-                let k = s.keys(is_mac);
-                let mods = match s {
-                    Step909::Low => cmd,
-                    Step909::High => Modifiers::ALT,
-                    Step909::Flam => cmd | Modifiers::ALT,
-                    _ => Modifiers::NONE,
-                };
-                assert_eq!(k.contains(cmd_name), mods.command, "{k}");
-                assert_eq!(k.contains(alt_name), mods.alt, "{k}");
-                let m = step_mods(mods);
-                let toggle = |v: u8, c: u8| if c == v { 0 } else { v };
-                for c in 0..=3u8 {
-                    let got = tr909_step_value(c, s == Step909::Accent, false, m);
-                    let want = match s {
-                        Step909::Click | Step909::Drag => (c + 1) % 3,
-                        Step909::Low => toggle(1, c),
-                        Step909::High => toggle(2, c),
-                        Step909::Flam => toggle(3, c),
-                        Step909::Accent => {
-                            if c == 0 {
-                                2
-                            } else {
-                                0
-                            }
-                        }
-                    };
-                    assert_eq!(got, want, "{k} on {c}");
+            // no Roland prefixes anywhere in the help's text
+            for g in &gs {
+                for t in [g.title, g.note]
+                    .into_iter()
+                    .chain(g.rows.iter().flat_map(|r| [r.keys.as_str(), r.what]))
+                {
+                    assert!(!t.contains("TR-") && !t.contains("TB-"), "{t}");
                 }
             }
+            // the renamed rows are there
+            assert!(
+                rows.iter()
+                    .any(|r| r.0 == "A S D F G H J K" && r.1 == "808")
+            );
+            assert!(rows.iter().any(|r| r.1 == "303 #1"));
+            assert!(rows.iter().any(|r| r.1.contains("808: BD SD")));
+            // task-285's row stays, with the platform's key
+            let up = if is_mac { "Option+Up" } else { "Alt+Up" };
+            assert!(rows.iter().any(|r| r.0 == format!("Backspace  or  {up}")));
         }
     }
 
@@ -1025,7 +857,7 @@ mod tests {
         assert_eq!(
             marked(KeyMode::Synth),
             [
-                "Program Synth mode, a TB-303 focused",
+                "Program Synth mode, a 303 focused",
                 "Program Synth mode, a drum machine focused"
             ]
         );

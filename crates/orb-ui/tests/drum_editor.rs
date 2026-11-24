@@ -624,9 +624,8 @@ fn its_place_is_kept_in_the_settings_file() {
     assert_eq!(w2.min, Pos2::new(want[0] as f32, want[1] as f32));
 }
 
-/// Every input Help > Keyboard Shortcuts lists for the 808 and the 909 editor
-/// (`Machine::inputs`, which the help's test requires it to list) does what the help says. A
-/// new input added to `Input` fails to compile here until it is tested.
+/// Every input of the 808 and the 909 editor (`Machine::inputs`) does what its description
+/// says. A new input added to `Input` fails to compile here until it is tested.
 #[test]
 fn every_input_of_the_help_does_what_it_says() {
     for m in Machine::ALL {
