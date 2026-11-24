@@ -1,7 +1,7 @@
 //! The Audio Output fallbacks of `Controller::start` (task-191): what a missing saved device
 //! and a refused request fall back to, and that the engine comes back. They work with no output
-//! device: where one opens the stream is checked too, where none does the refusals are the same
-//! and the checks that need a stream are skipped with a message.
+//! device: where one opens, the stream and the exact fallback are checked; where none does (CI),
+//! every request falls on to the default request, which fails too, and the tests check that.
 
 mod common;
 
@@ -40,13 +40,18 @@ fn a_missing_saved_device_opens_system_default_with_a_note() {
         "{events:?}"
     );
     // the request now runs on System default, with the rate and the buffer kept; the saved
-    // choice is the settings' and Controller::start never writes it
-    assert_eq!(c.request(), &saved.on_system_default());
+    // choice is the settings' and Controller::start never writes it. Where that refuses (no
+    // output device, or no 48 kHz at 512 frames) it falls on to the default request, with one
+    // error.
     assert!(c.request().device.is_none());
-    if c.is_open() {
+    if errors(&events).is_empty() {
+        assert_eq!(c.request(), &saved.on_system_default());
+        assert!(c.is_open());
         assert!(c.in_use().unwrap().follows_default);
     } else {
-        eprintln!("no stream opened here ({events:?}): the checks on it are skipped");
+        assert_eq!(errors(&events).len(), 1, "{events:?}");
+        assert_eq!(c.request(), &Request::default());
+        eprintln!("System default refused the saved rate and buffer here ({events:?})");
     }
     // the engine is not lost either way: the default request can be applied
     let ev = c.apply(Request::default());
@@ -72,11 +77,17 @@ fn a_refused_request_gives_the_defaults_with_an_error_and_the_engine_back() {
         let (mut c, events) = Controller::start(audio, bad.clone());
         let errs = errors(&events);
         assert_eq!(errs.len(), 1, "{events:?}");
-        assert!(
-            errs[0].contains("NoSuchDriver") || errs[0].contains("12345"),
-            "{}",
-            errs[0]
-        );
+        // with an output device the error names the refused driver or rate; with none (CI) the
+        // first refusal may be the missing device, and the default fails too
+        if c.is_open() {
+            assert!(
+                errs[0].contains("NoSuchDriver") || errs[0].contains("12345"),
+                "{}",
+                errs[0]
+            );
+        } else {
+            assert!(errs[0].contains("runs without sound"), "{}", errs[0]);
+        }
         // the request now is the default one, and says what it fell back to
         assert_eq!(c.request(), &Request::default());
         // the engine came back: nothing says it is lost, and a new request is tried
