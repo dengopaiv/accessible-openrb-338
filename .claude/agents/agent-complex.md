@@ -31,7 +31,7 @@ Rules that always apply:
 - **Engine numerics.** Compute in f64, round to f32 exactly where the original stores, use no FMA, and keep the operand order.
 - **Testing.** A behavior change of the engine is checked against the reference corpus with the comparator. Unit tests come with each piece. State the corpus result in the commit message.
 - **Facts go into docs/.** Facts learned about the original go into docs/ in the same commit, with addresses. A [G] (guessed) item you confirm or refute in docs/initial_investigation.md is updated there.
-- **Editing.** Edit source with the Edit/Write tools, not sed or python. The shell is fish: put multi-step sequences in a bash script file.
+- **The shell.** The shell is fish: put multi-step sequences in a bash script file.
 - **Rebase.** Rebase onto main before your final commit. Resolve source conflicts by hand, keeping both changes. Never resolve a backlog-file conflict by hand.
 - **The test machine.** It is shared through locky permits (doc-001). A ReBirth session holds all the permits of `redc-win-run`.
 - **Keep to the task.** A design decision the task does not take, or a change outside its area, becomes a proposed decision and a `Decide:` task (root AGENTS.md) with your recommendation, not a change.

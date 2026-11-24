@@ -99,7 +99,6 @@ Planning, progress and decisions live in `backlog/` (Backlog.md). The shared age
   - Facts about the original carry addresses and are checked against the disassembly, not only Hex-Rays.
   - Engine code computes in f64, rounds to f32 exactly where the original stores a float, uses no FMA, and keeps the original's operand order.
   - An engine change is checked against the reference corpus.
-  - Edit source with Edit/Write, not python or sed.
   - Spell "color" the American way.
   - Lines of Rust are at most 100 columns, enforced by nightly rustfmt (`rustfmt.toml`). Long string literals are split by hand (`\` continuation or `concat!`); rustfmt does not wrap them.
 
