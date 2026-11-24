@@ -8,7 +8,8 @@ mod common;
 
 use common::{activate, set, with_song};
 use nice_plug::plugin::{ParamValue, PluginState};
-use nice_plug::prelude::{IntParam, IntRange, Param};
+use nice_plug::prelude::{IntParam, IntRange, Param, Params, Plugin};
+use orb_plugin::OrbPlugin;
 use orb_plugin::instance::{HostParam, OrbParams, migrate_state, set_normalized};
 use orb_plugin::params::{self, COUNT, Kind, SPECS, Target};
 
@@ -250,4 +251,51 @@ fn a_released_builds_state_restores_its_values() {
     let before = format!("{:?}", state.params);
     migrate_state(&mut state);
     assert_eq!(format!("{:?}", state.params), before);
+}
+
+/// task-291: nothing compares the state's `version` (nice-plug writes the plugin's `VERSION`
+/// into it): a state labelled `0.1.0`, as the released build saved it, and the same state under
+/// the new version string both go through the code that runs on a load (`filter_state`, then
+/// nice-plug's restore of the parameters and the fields) and end with the same parameters and
+/// the same song. (nice-plug's `deserialize_object` is crate-private, so the restore is the
+/// one `state.rs` mirrors.)
+#[test]
+fn the_states_version_string_does_not_matter() {
+    let src = with_song("full_mix");
+    let make = |version: &str| PluginState {
+        version: version.into(),
+        params: src
+            .ids()
+            .iter()
+            .cloned()
+            .zip(src.values())
+            .map(|(id, v)| (id, ParamValue::I32(v)))
+            .collect(),
+        fields: src.serialize_fields(),
+    };
+    let load = |version: &str| {
+        let mut state = make(version);
+        <OrbPlugin as Plugin>::filter_state(&mut state);
+        assert_eq!(
+            state.version, version,
+            "the filter leaves the version alone"
+        );
+        let p = OrbParams::new();
+        for (id, v) in &state.params {
+            let v = match *v {
+                ParamValue::I32(i) => i,
+                ParamValue::F32(f) => f.round() as i32,
+                ref x => panic!("{id}: {x:?}"),
+            };
+            set(&p, id, v);
+        }
+        p.deserialize_fields(&state.fields);
+        p
+    };
+    let (old, new) = (load("0.1.0"), load(orb_ui::about::VERSION));
+    assert_eq!(old.values(), new.values());
+    assert_eq!(old.values(), src.values());
+    assert_eq!(old.serialize_fields(), new.serialize_fields());
+    assert!(old.song().is_some());
+    assert_eq!(old.song(), new.song());
 }

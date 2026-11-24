@@ -456,6 +456,18 @@ fn the_vst3_factory_has_the_identity() {
         assert_eq!(chars(&ci.category), "Audio Module Class");
         assert_eq!(chars(&ci.subCategories), "Instrument|Synth");
         assert_eq!(chars(&ci.vendor), "OpenRB-338");
+        // the About box's version string, not Cargo's 0.1.0 (task-291). The date and minute are
+        // not compared with the About box's: the cdylib and this test binary are built at
+        // different times, so their build minutes differ. The shape and the git part are.
+        let v = chars(&ci.version);
+        let shape = |s: &str| {
+            let (n, g) = s.split_once(" (")?;
+            let d: Vec<&str> = n.split('.').collect();
+            let ok = d.len() == 3 && d.iter().all(|x| x.chars().all(|c| c.is_ascii_digit()));
+            (ok && g.ends_with(')')).then(|| g.to_string())
+        };
+        let about = shape(orb_ui::about::VERSION).expect("the About box string has its shape");
+        assert_eq!(shape(&v), Some(about), "{v}");
         ((*(*f2).vtbl).base.base.release)(f2 as *mut _);
         (vt.base.release)(f as *mut _);
     }

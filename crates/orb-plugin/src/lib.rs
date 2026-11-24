@@ -155,7 +155,9 @@ impl Plugin for OrbPlugin {
     const VENDOR: &'static str = VENDOR;
     const URL: &'static str = URL;
     const EMAIL: &'static str = "";
-    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    /// The About box's version string (`YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)`, task-291), not
+    /// Cargo's `0.1.0`: the host's plugin list and the state's `version` show it.
+    const VERSION: &'static str = orb_ui::about::VERSION;
 
     /// The stereo Mix and the four stereo per-device outputs (task-256, [`OUTPUT_NAMES`]).
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {

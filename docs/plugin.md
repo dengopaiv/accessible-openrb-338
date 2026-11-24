@@ -91,6 +91,13 @@ Permanent after the first release (task-185):
 
 `tests/exports.rs` loads the built library and checks them through the VST3 C API.
 
+**Version (task-291).** `Plugin::VERSION`, which the VST3 class info's `version` and the state's
+`version` carry, is orb-ui's `about::VERSION`: exactly the About box's string
+`YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` (set by `crates/orb-ui/build.rs`, `src/version.rs`;
+docs/building.md), not Cargo's `0.1.0`. Nothing compares the state's `version` (nice-plug only
+writes it; `STATE_VERSION` in `instance.rs` is the plugin's own, separate), so a state of a
+build that reported `0.1.0` loads unchanged (`tests/continuous.rs`).
+
 ## 3. Parameters
 
 One parameter per control the plugin's panel shows (119; continuous or stepped, below): every controller of
