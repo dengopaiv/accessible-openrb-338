@@ -1084,10 +1084,11 @@ read, and what it leaves out.
   (`Link::set_pattern`, after the panel's pending events); a Duplicate's selection follows it
   with the panel's events. Undo of a pattern the row does not select (after a Duplicate)
   sends the selection first and holds the pattern back until the engine leaves it
-  (`Link::set_pattern_unplayed`, sent from `Link::follow`). The pattern bytes stay in the app (`App::clip`): Copy and Cut put
-  only a marker text on the system clipboard ("OpenRB-338 pattern: 909 A1 [process.count]"),
-  and a paste takes the pattern only when the clipboard brings that text back, so no bytes are
-  read from the clipboard and text copied elsewhere since pastes nothing. egui-winit turns
+  (`Link::set_pattern_unplayed`, sent from `Link::follow`). Copy and Cut put the whole pattern on the system clipboard as
+  readable JSON and a paste reads it from there (task-287, below): the app keeps no pattern of
+  its own (`App::clip` and the marker text are gone), so a pattern moves between app windows,
+  between plugin instances and from the app into the plugin, and it can be saved or shared as
+  text. egui-winit turns
   Ctrl/Cmd+X, C and V into egui's Cut, Copy and Paste events without a key event;
   `App::pattern_keys` takes them, and Ctrl/Cmd+D and Z, only where the panel takes keys (no text
   field focused, no browser, prompt or error box open), and leaves Cut and Copy to a window's
@@ -1099,6 +1100,104 @@ read, and what it leaves out.
   the system clipboard
   (`ViewportCommand::RequestPaste`), so it takes the path of Ctrl/Cmd+V. A press on an open menu
   or a window over the panel does not move the row focus (`App::focus_click`).
+- **The pattern on the clipboard** (task-287; `crates/orb-ui/src/pattern_json.rs`,
+  `clipboard.rs`).
+  - **Copy** writes the text with `ctx.copy_text` at the end of the frame (eframe and
+    egui-baseview both write it to the system clipboard), from the pattern's bytes as the
+    link holds them (`Link::pattern`: 98 bytes for a 303, 194 for an 808 or a 909).
+  - **Paste** gets the text from egui's Paste event (Ctrl/Cmd+V, the standalone's Edit menu), or
+    reads the system clipboard directly (`Clipboard::System`, arboard) where egui gives no
+    event: the plugin's Edit menu (egui-baseview reads the clipboard on a paste key only, which
+    a plugin leaves to the host) and the pattern editors' Paste buttons, which are always
+    enabled (the clipboard is not read every frame). `App::clipboard` is a memory clipboard
+    until the standalone binary (`main.rs`) and the plugin's editor (`EditorApp`) switch it to
+    the system's, so no test touches the real clipboard; two apps of a test share one memory
+    clipboard (`tests/pattern_clipboard.rs`).
+  - **Refusals**: nothing is written, and the status line says "The clipboard holds no
+    pattern" (no JSON, or JSON without `"openrb338": "pattern"`: the clipboard holds something
+    else), "The clipboard holds a 909 pattern" (a valid pattern of another device: a 303
+    pattern pastes into either 303 row, an 808 or a 909 only into its own), or "The clipboard's
+    pattern is not valid: <reason>" (a wrong version, device, missing, unknown or misspelled
+    key, a value out of range, not 16 steps). The check covers every value before the one
+    `write_pattern` (with Undo, as before), so there is never a partial pattern.
+  - **The format** (version 1): one JSON object, 16 steps one to a line, written as below; a
+    paste takes any JSON layout, but exactly these keys (an unknown or missing key is
+    refused). The identifying `"openrb338": "pattern"` and `"version": 1` come first;
+    `"device"` is `"303"`, `"808"` or `"909"` (never a TB-/TR- name); `"length"` is the
+    pattern's length byte, a number 1 to 16 (a copy writes whatever byte the pattern holds,
+    but a paste refuses a length outside 1 to 16: "The clipboard's pattern is not valid:
+    "length" must be 1 to 16, not 0"); `"shuffle"` is the pattern's flag, `true` or
+    `false` (any other byte as its number, as the flag fields below); `"steps"` holds all 16
+    steps, also those past the length. A key written twice in one object is not an error: the
+    last one wins (serde_json's reading of an object); a long offending value or key is cut
+    to 40 characters in the status line.
+  - **Exact round trip.** Every byte of the pattern has a field, and a value the readable form
+    names is written as its name; any other byte is written as its number (0 to 255) in the
+    same field, and a paste takes a number in place of any name. So copy then paste gives back
+    the same bytes for every byte string whose length byte is 1 to 16 (`pattern_json.rs` tests
+    all 256 values at every position of the three layouts, the length byte aside, which it
+    checks is written and refused outside 1 to 16; `tests/pattern_clipboard.rs` takes all
+    20 864 patterns of the 163 songs of `tests/songs`, none of which has a length outside 1
+    to 16). The flag fields are `true` (1), `false` (0) or a number.
+  - **303 step**: `"note"` (the tone byte: `"C"`, `"C#"`, `"D"`, `"D#"`, `"E"`, `"F"`, `"F#"`,
+    `"G"`, `"G#"`, `"A"`, `"A#"`, `"B"`, `"C'"` for 0 to 12; a tone above 12 as its number),
+    `"slide"`, `"accent"`, `"up"` and `"down"` (transpose; flags) and `"gate"` (`"note"` for the
+    rest byte 0, `"pause"` for 1, else a number).
+  - **808 step**: `"ac"`, `"bd"`, `"sd"`, `"lt"`, `"mt"`, `"ht"`, `"rs"`, `"cp"`, `"cb"`, `"cy"`,
+    `"oh"`, `"ch"`, each a flag.
+  - **909 step**: `"ac"` (`false` for 0, `true` for 2, the accent the panel writes; any other
+    byte as its number) and the drums `"bd"`, `"sd"`, `"lt"`, `"mt"`, `"ht"`, `"rs"`, `"cp"`,
+    `"ch"`, `"oh"`, `"cc"`, `"rc"` (the order of the 909's pattern bytes), each `"off"` (0),
+    `"low"` (1), `"high"` (2), `"flam"` (3), or a number for a byte above 3.
+  - **Examples** (steps 3 to 16 are written the same way and left out here):
+
+    ```json
+    {
+      "openrb338": "pattern",
+      "version": 1,
+      "device": "303",
+      "length": 16,
+      "shuffle": false,
+      "steps": [
+        {"note": "C", "slide": false, "accent": true, "up": false, "down": false, "gate": "note"},
+        {"note": "C'", "slide": true, "accent": false, "up": false, "down": true, "gate": "pause"},
+        {"note": 13, "slide": 3, "accent": false, "up": false, "down": false, "gate": "note"}
+      ]
+    }
+    ```
+
+    ```json
+    {
+      "openrb338": "pattern",
+      "version": 1,
+      "device": "808",
+      "length": 12,
+      "shuffle": true,
+      "steps": [
+        {"ac": true, "bd": true, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": true},
+        {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": true, "cb": false, "cy": false, "oh": 5, "ch": false}
+      ]
+    }
+    ```
+
+    ```json
+    {
+      "openrb338": "pattern",
+      "version": 1,
+      "device": "909",
+      "length": 16,
+      "shuffle": false,
+      "steps": [
+        {"ac": true, "bd": "high", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+        {"ac": 1, "bd": "off", "sd": "flam", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "off", "oh": "off", "cc": 4, "rc": "off"}
+      ]
+    }
+    ```
+
+    (The examples' short lists show the layout only; a real copy and a paste need all 16
+    steps. The 303 example's third step holds the tone 13 and the slide byte 3, and the 808's
+    and the 909's second steps an `"oh"` 5, an `"ac"` 1 and a `"cc"` 4: values the readable
+    form has no word for, carried as numbers.)
 - **Not done.** The logo click (msg 58), and the mod's panel art (not drawn by decision, section 18). The song's own mod
   is applied (section 18). The computer keyboard is done (task-070, section 10) except PgUp/PgDn (no scrolling rack)
   and the drums' Shift+Tab.
@@ -1194,9 +1293,9 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | File | Export Loop as Audio File... | the browser for `.wav`, `.flac` or `.ogg`; enabled in song mode only (the original disables it in pattern mode, section 12) |
 | Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
 | Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with the 303's Clear |
-| Edit | Copy Pattern (Ctrl+C, Cmd+C) | the focused row's selected pattern (steps, length, shuffle flag) to orb's clipboard; the song is not modified |
-| Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a 303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
-| Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard stays |
+| Edit | Copy Pattern (Ctrl+C, Cmd+C) | the focused row's selected pattern (steps, length, shuffle flag) to the system clipboard as JSON (section 16); the song is not modified |
+| Edit | Paste Pattern (Ctrl+V, Cmd+V) | the system clipboard's pattern JSON (section 16) into the focused row's selected pattern, into a row of its device only (a 303 pattern into either 303), nothing written and a status message for any other text; the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
+| Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard is not touched |
 | Edit | 303 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating 303 pattern editor on the selected 303's active pattern, or brings it to the front and switches it to that pattern (section 23, task-274); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
 | Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303's: opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 808's with the TR-808 focused, the 909's with the TR-909 focused, else the 303's (tasks 280 and 281) |
 | Edit | 909 Pattern Editor... (Ctrl+E, Cmd+E) | under the 808's: opens the floating 909 pattern editor on the TR-909's active pattern, or brings it to the front and switches it to that pattern (section 25, task-281); disabled without a song; the shortcut text is on it with the TR-909 focused |
@@ -1243,7 +1342,8 @@ is one more entry.
     selection alone: it puts back only the copy's bytes.
   - The status line reports each command with the row and the pattern names: "909: A1
     duplicated to A2", "909: pasted into A2", "909: no empty pattern left", "The
-    clipboard holds a 303 pattern", "The clipboard holds no pattern".
+    clipboard holds a 303 pattern", "The clipboard holds no pattern", "The clipboard's pattern
+    is not valid: <reason>" (section 16).
 
 - **Help > Keyboard Shortcuts** (task-105; `crates/orb-ui/src/key_help.rs`). Centered as About is
   (`App::key_help_serial`); Escape is consumed after the other windows. The text is one table,
@@ -1857,15 +1957,15 @@ The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the sam
   standalone's (section 18): Undo, Cut, Copy, Paste and Duplicate Pattern, and the 303 Pattern
   Editor... (section 23), 808 Pattern Editor... (section 24) and 909 Pattern Editor... (section 25), in the same order, with the same names and the same behavior, but no
   shortcut texts (the user's review of task-274, rounds 2 and 3). Undo is the one-level Undo,
-  named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the app's
-  clipboard and the marker text on the system clipboard (egui-baseview 0.9 writes egui's
-  `CopyText` to it); as in the standalone, the pattern bytes stay in the editor's own app, so
-  another instance or the standalone app pastes nothing from it (section 16). **One
-  difference**: Paste Pattern cannot check the system clipboard for
-  the marker, because the plugin's window does not answer egui's `RequestPaste` (egui-baseview
-  reads the clipboard only on a paste key event, and the plugin leaves keys to the host). So
-  the plugin's Paste Pattern pastes the app's clipboard directly, as the 303 pattern editor's
-  Paste does: text copied elsewhere since the last Copy does not stop it. There is no View
+  named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the system
+  clipboard as JSON (egui-baseview 0.9 writes egui's `CopyText` to it; section 16, task-287),
+  so another instance or the standalone app pastes it. **One difference**: the plugin's window
+  does not answer egui's `RequestPaste` (egui-baseview reads the clipboard only on a paste key
+  event, and the plugin leaves keys to the host), so the plugin's Paste Pattern reads the
+  system clipboard directly (arboard, `Clipboard::System`), as the pattern editors' Paste
+  buttons do, and refuses any text that is no pattern of the row's device. On Linux arboard
+  speaks X11 only (no `wayland-data-control`), so a Wayland session without XWayland reads
+  nothing. There is no View
   menu: the editor has the modern skin only (section 21, task-267). Options has no keyboard modes;
   Help no Keyboard Shortcuts.
 - **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
@@ -2250,8 +2350,8 @@ editor looks the same in the Classic and Modern skins):
   from 8 goes to the next bank's 1, right from 303-1 D8 to 303-2 A1, left the reverse. They
   stop at the two ends, 303-1 A1 and 303-2 D8, where the arrow is disabled (no wrap). The 303
   switch and the bank buttons follow, and in pattern mode the panel selects the pattern, also
-  the other 303's (the selection rules below). Copy, Paste (enabled while the
-  clipboard holds a 303 pattern) and Clear; Length 1-16, a `DragValue`; and the Shuffle toggle,
+  the other 303's (the selection rules below). Copy, Paste (always enabled; the
+  clipboard is read on the click, task-287) and Clear; Length 1-16, a `DragValue`; and the Shuffle toggle,
   the pattern's own shuffle flag (byte 0), not the song's shuffle amount.
 - **The step numbers** 1 to 16 over the grid; the playing step's number is amber.
 - **The note grid**: the piano roll's 13 keys on the left, low C at the bottom to the C an
@@ -2297,10 +2397,10 @@ both 303s with stops at the ends).
 - **Transpose** moves every step's pitch (pauses too) by one semitone, wrapping over the 13
   rows: 12 up is 0, 0 down is 12. The Up and Down flags do not change. A stored pitch above 12
   (not one of the rows) is left alone.
-- **Copy and Paste** use the Edit menu's pattern clipboard (section 16, `App::clip`) on the
-  editor's pattern: Copy is Edit > Copy Pattern of it (the marker goes to the system
-  clipboard too, so the panel's Ctrl/Cmd+V pastes it), Paste takes the clipboard's pattern
-  directly (a 303 pattern only, into either 303; the status line reports as the menu's).
+- **Copy and Paste** use the system clipboard's pattern JSON (section 16) on the editor's
+  pattern: Copy is Edit > Copy Pattern of it (so the panel's Ctrl/Cmd+V pastes it too), Paste
+  reads the clipboard directly (a 303 pattern only, into either 303; the status line
+  reports as the menu's).
 - **Clear** leaves the emptied pattern Edit > Cut Pattern leaves (every step note 0, no flags,
   rest on) with the pattern's length and shuffle flag kept, and does not touch the clipboard.
 - **The status line** says "303 1: A1 copied", "303 1: pasted into A2", "303 1: A1
@@ -2365,8 +2465,8 @@ both can be open.
 **Layout, top to bottom** (the app's palette, the same in both skins):
 - **The top row**: the bank buttons A B C D; the pattern number 1-8 between its left and right
   arrows, which step through A1..D8 (8 goes on to the next bank's 1) and stop at A1 and D8
-  (`drum_editor::step_pattern`; the 808 has no 1/2 switch); Copy, Paste (enabled while the
-  clipboard holds an 808 pattern) and Clear; Length 1-16; Shuffle (the pattern's flag, byte 0).
+  (`drum_editor::step_pattern`; the 808 has no 1/2 switch); Copy, Paste (always enabled; an
+  808 pattern only, task-287) and Clear; Length 1-16; Shuffle (the pattern's flag, byte 0).
 - **The step numbers** 1 to 16; the playing step's is amber.
 - **11 drum rows**, top to bottom BD, SD, the five switched slots, CB, CY, OH, CH (step bytes 1
   to 11), labeled in the 303 editor's label column (66 points, 15.5-point names). The labels of

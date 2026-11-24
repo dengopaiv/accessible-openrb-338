@@ -584,7 +584,7 @@ fn the_pattern_commands_do_nothing_on_the_panel_without_a_song() {
     }
     assert_eq!(h.app.panel.synth[0].patterns, steps);
     assert_eq!(h.app.panel.rows[0].pattern, 0);
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
     assert_eq!(h.app.status, None);
     assert!(!h.app.doc.modified);
 }

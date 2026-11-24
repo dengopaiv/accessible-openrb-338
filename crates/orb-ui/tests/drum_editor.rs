@@ -484,8 +484,9 @@ fn shift_clear_copy_paste_length_shuffle_and_their_undo() {
     assert_eq!(h.bytes(), base);
     // Copy, then Paste into B1; Clear keeps the length and shuffle; Undo
     h.press("Copy");
-    assert_eq!(h.app.clip.as_ref().unwrap().row, ROW);
-    assert_eq!(h.app.clip.as_ref().unwrap().bytes, base);
+    let copied = h.app.clipboard.read().expect("copied");
+    let p = orb_ui::pattern_json::parse(&copied).unwrap();
+    assert_eq!((p.device, p.bytes), ("808", base.clone()));
     h.press("B");
     assert_eq!(h.app.drum_editor(M).pattern, 8);
     h.press("Paste");
@@ -498,18 +499,26 @@ fn shift_clear_copy_paste_length_shuffle_and_their_undo() {
     assert_eq!(h.app.undo_name(), Some("Clear Pattern"));
     assert_eq!(h.app.status.as_deref(), Some("808: B1 cleared"));
     assert_eq!(
-        h.app.clip.as_ref().unwrap().bytes,
-        base,
+        h.app.clipboard.read(),
+        Some(copied),
         "Clear leaves the clipboard"
     );
     h.undo();
     assert_eq!(h.bytes(), base);
-    // Paste is enabled only with an 808 pattern on the clipboard
-    h.app.clip.as_mut().unwrap().row = 0;
+    // a 303 pattern on the clipboard is refused with a message and nothing is written
+    let mut p303 = [0u8; 98];
+    p303[1] = 16;
+    h.app
+        .clipboard
+        .copied(&orb_ui::pattern_json::to_json(0, &p303));
     h.frame(vec![]);
     h.press("Paste");
-    assert_eq!(h.app.undo_name(), None, "Paste disabled");
+    assert_eq!(h.app.undo_name(), None, "nothing pasted");
     assert_eq!(h.bytes(), base);
+    assert_eq!(
+        h.app.status.as_deref(),
+        Some("The clipboard holds a 303 pattern")
+    );
 }
 
 #[test]

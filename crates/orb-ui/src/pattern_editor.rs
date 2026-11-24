@@ -607,7 +607,9 @@ impl App {
             synth: k,
             pattern: p,
             playing: self.panel.playing_step303[k].filter(|_| self.panel.rows[k].pattern == p),
-            paste: self.clip.as_ref().is_some_and(|c| c.row < 2),
+            // the system clipboard is not read every frame: Paste is always enabled, and a text
+            // that is no pattern of this device is answered on the status line
+            paste: true,
         };
         let plugin = self.is_plugin();
         let saved = (!plugin)

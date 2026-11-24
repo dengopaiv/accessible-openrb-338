@@ -478,13 +478,13 @@ fn shift_transpose_clear_copy_paste_and_their_undo() {
 
     // Copy; Clear keeps the length, the shuffle and the clipboard
     h.press("Copy");
-    let clip = h.app.clip.clone().expect("copied");
-    assert_eq!(clip.bytes, base);
+    let clip = h.app.clipboard.read().expect("copied");
+    assert_eq!(orb_ui::pattern_json::parse(&clip).unwrap().bytes, base);
     h.press("Clear");
     let b = h.bytes();
     assert!(link::is_empty_pattern(0, &b));
     assert_eq!(&b[..2], &[1, 4]);
-    assert_eq!(h.app.clip, Some(clip));
+    assert_eq!(h.app.clipboard.read(), Some(clip));
     assert_eq!(h.app.undo_name(), Some("Clear Pattern"));
     h.undo();
     assert_eq!(h.bytes(), base);

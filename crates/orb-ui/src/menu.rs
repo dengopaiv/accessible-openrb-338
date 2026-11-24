@@ -127,18 +127,6 @@ pub enum Cmd {
     DuplicatePattern,
 }
 
-/// A pattern on the app's clipboard (Edit > Copy Pattern and Cut Pattern).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Clip {
-    /// The row it came from (0..=3): it pastes into a row of the same kind.
-    pub row: usize,
-    /// The whole pattern (98 or 194 bytes).
-    pub bytes: Vec<u8>,
-    /// The text the copy put on the system clipboard: a paste of that text pastes this
-    /// pattern (docs/ui_spec.md section 16).
-    pub marker: String,
-}
-
 /// What Edit > Undo puts back: pattern `pattern` of row `row` held `bytes` before the command
 /// `what`; after a Duplicate, `select` is the pattern it came from, until the user selects a
 /// pattern ([`App::note_edits`]).
@@ -1136,8 +1124,8 @@ impl App {
     }
 
     /// Edit > Copy Pattern, and with `cut` Cut Pattern: the focused row's selected pattern goes
-    /// to the app's clipboard ([`Clip`]) and its marker to the system clipboard; Cut then
-    /// empties its steps, the length and the shuffle flag stay.
+    /// to the system clipboard as JSON ([`crate::pattern_json`], at the end of the frame); Cut
+    /// then empties its steps, the length and the shuffle flag stay.
     pub fn copy_pattern(&mut self, cut: bool) {
         if let Some((r, p)) = self.pattern_target() {
             self.copy_pattern_at(r, p, cut);
@@ -1152,20 +1140,11 @@ impl App {
         };
         let bytes = link.pattern(r, p).to_vec();
         let (row, name) = (ROW_NAMES[r], pattern_name(p));
-        // the process id and the count tell this copy from another instance's
-        self.clip_count += 1;
-        let marker = format!(
-            "OpenRB-338 pattern: {row} {name} [{}.{}]",
-            std::process::id(),
-            self.clip_count
-        );
-        self.clip_text = Some(marker.clone());
+        let text = crate::pattern_json::to_json(r, &bytes);
+        // a memory clipboard has it at once; the system's gets it at the end of the frame
+        self.clipboard.copied(&text);
+        self.clip_text = Some(text);
         let empty = emptied_pattern(r, &bytes);
-        self.clip = Some(Clip {
-            row: r,
-            bytes,
-            marker,
-        });
         if cut {
             self.write_pattern(r, p, &empty, "Cut Pattern");
             self.status = Some(format!("{row}: {name} cut"));
@@ -1174,27 +1153,44 @@ impl App {
         }
     }
 
-    /// Edit > Paste Pattern: the app's clipboard into the focused row's selected pattern, when
-    /// the row is of its kind (a 303 pattern pastes into either 303).
+    /// Edit > Paste Pattern: the system clipboard's pattern (read directly,
+    /// [`crate::clipboard::Clipboard::read`]) into the focused row's selected pattern, when the
+    /// row is of its device (a 303 pattern pastes into either 303).
     pub fn paste_pattern(&mut self) {
         if let Some((r, p)) = self.pattern_target() {
             self.paste_pattern_at(r, p);
         }
     }
 
-    /// [`App::paste_pattern`] into pattern `p` of row `r` (the 303 pattern editor's Paste,
-    /// after the panel's events were sent).
+    /// [`App::paste_pattern`] into pattern `p` of row `r` (the pattern editors' Paste, after
+    /// the panel's events were sent).
     pub(crate) fn paste_pattern_at(&mut self, r: usize, p: u8) {
-        let Some(clip) = &self.clip else {
-            self.status = Some("The clipboard holds no pattern".into());
-            return;
+        match self.clipboard.read() {
+            Some(text) => self.paste_text_at(r, p, &text),
+            None => self.status = Some("The clipboard holds no pattern".into()),
+        }
+    }
+
+    /// `text`, the clipboard's text, into pattern `p` of row `r`: nothing is written, and the
+    /// status says why, unless the text is a valid pattern of the row's device.
+    pub(crate) fn paste_text_at(&mut self, r: usize, p: u8, text: &str) {
+        use crate::pattern_json::{Refused, parse};
+        let pattern = match parse(text) {
+            Ok(pattern) => pattern,
+            Err(Refused::NotPattern) => {
+                self.status = Some("The clipboard holds no pattern".into());
+                return;
+            }
+            Err(Refused::Invalid(why)) => {
+                self.status = Some(format!("The clipboard's pattern is not valid: {why}"));
+                return;
+            }
         };
-        let kind = ROW_KINDS[clip.row];
-        if kind != ROW_KINDS[r] {
-            self.status = Some(format!("The clipboard holds a {kind} pattern"));
+        if pattern.device != ROW_KINDS[r] {
+            self.status = Some(format!("The clipboard holds a {} pattern", pattern.device));
             return;
         }
-        let bytes = clip.bytes.clone();
+        let bytes = pattern.bytes;
         let (row, name) = (ROW_NAMES[r], pattern_name(p));
         self.status = Some(if self.write_pattern(r, p, &bytes, "Paste Pattern") {
             format!("{row}: pasted into {name}")
@@ -1241,16 +1237,14 @@ impl App {
         self.status = Some(format!("{row}: {from} duplicated to {to}"));
     }
 
-    /// A paste of the system clipboard's `text` (Ctrl/Cmd+V, Edit > Paste Pattern): the app's
-    /// clipboard when `text` is its marker, else nothing. Nothing without a link.
+    /// A paste of the system clipboard's `text` (Ctrl/Cmd+V, the standalone's Edit > Paste
+    /// Pattern) into the focused row's selected pattern. Nothing without a link.
     pub fn paste_text(&mut self, text: &str) {
         if self.link.is_none() {
             return;
         }
-        if self.clip.as_ref().is_some_and(|c| c.marker == text) {
-            self.paste_pattern();
-        } else {
-            self.status = Some("The clipboard holds no pattern".into());
+        if let Some((r, p)) = self.pattern_target() {
+            self.paste_text_at(r, p, text);
         }
     }
 
@@ -1480,7 +1474,7 @@ impl App {
             // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V. A
             // plugin's window (egui-baseview 0.9) does not answer `RequestPaste` (it reads the
             // clipboard only on a paste key, which the plugin leaves to the host), so there the
-            // item pastes the app's clipboard directly, without the marker check (task-274)
+            // item reads the system clipboard directly (task-274, task-287)
             Some(Cmd::PastePattern) if !self.is_plugin() => {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);

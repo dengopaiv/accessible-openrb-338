@@ -140,12 +140,12 @@ pub struct App {
     pub(crate) error_text: Option<Rect>,
     /// What was done, shown at the bottom of the window ("Saved ...").
     pub status: Option<String>,
-    /// The pattern Edit > Copy Pattern or Cut Pattern took last.
-    pub clip: Option<crate::menu::Clip>,
-    /// Its marker, for the system clipboard at the end of the frame.
+    /// Where a direct paste reads the clipboard text from (task-287): a memory clipboard until
+    /// the standalone binary and the plugin's editor switch it to the system's.
+    pub clipboard: crate::clipboard::Clipboard,
+    /// The JSON Edit > Copy Pattern or Cut Pattern took, for the system clipboard at the end of
+    /// the frame.
     pub(crate) clip_text: Option<String>,
-    /// The copies made so far (the marker's count).
-    pub(crate) clip_count: u32,
     /// What Edit > Undo puts back (`App::undo`).
     pub(crate) undo: Option<crate::menu::Undo>,
     /// The 303 pattern editor's window (Edit > 303 Pattern Editor..., task-274).
@@ -255,9 +255,8 @@ impl App {
             error_copy: None,
             error_text: None,
             status: None,
-            clip: None,
+            clipboard: crate::clipboard::Clipboard::memory(),
             clip_text: None,
-            clip_count: 0,
             undo: None,
             editor: Default::default(),
             drum_editors: Default::default(),
@@ -1147,8 +1146,8 @@ impl App {
         self.mod_info_ui(&ctx);
         self.raise_windows(&ctx);
         self.poll_export(&ctx);
-        if let Some(marker) = self.clip_text.take() {
-            ctx.copy_text(marker);
+        if let Some(text) = self.clip_text.take() {
+            ctx.copy_text(text);
         }
         self.update_title(&ctx);
         self.close_if_allowed(&ctx);

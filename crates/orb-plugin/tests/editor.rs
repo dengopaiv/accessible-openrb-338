@@ -431,8 +431,8 @@ fn the_edit_menu_has_the_standalones_items_without_shortcuts() {
 }
 
 /// task-274, round 3: Copy, Paste, Cut, Duplicate and Undo of the plugin's Edit menu work as
-/// the standalone's. Copy puts the marker on the system clipboard (egui-baseview writes
-/// `CopyText` to it); Paste takes the app's clipboard directly, as the plugin's window does
+/// the standalone's. Copy puts the pattern's JSON on the system clipboard (egui-baseview
+/// writes `CopyText` to it); Paste reads the clipboard directly, as the plugin's window does
 /// not answer egui's paste request, and asks for none.
 #[test]
 fn the_edit_menus_pattern_commands_work_in_the_plugin() {
@@ -445,14 +445,14 @@ fn the_edit_menus_pattern_commands_work_in_the_plugin() {
     );
     h.app.panel.focus = 0;
     click_edit_item(&mut h, "Copy Pattern");
-    let clip = h.app.clip.clone().expect("copied");
-    assert_eq!(clip.bytes, a1);
+    let json = h.app.clipboard.read().expect("copied");
+    assert_eq!(orb_ui::pattern_json::parse(&json).unwrap().bytes, a1);
     assert_eq!(
         h.copied.last(),
-        Some(&clip.marker),
-        "the marker on the clipboard"
+        Some(&json),
+        "the JSON on the system clipboard"
     );
-    assert!(clip.marker.starts_with("OpenRB-338 pattern: 303 1 A1"));
+    assert!(json.contains("\"device\": \"303\""));
     // A3 selected; the paste
     h.app.panel.press("pattern1.pattern3", 0.0);
     h.frame(vec![]);

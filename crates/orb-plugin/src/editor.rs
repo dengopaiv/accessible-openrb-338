@@ -438,6 +438,9 @@ impl NiceEguiApp for EditorApp {
                 self.route.clone(),
                 Some(self.drag.clone()),
             );
+            // Edit > Paste Pattern reads the system clipboard directly (task-287; the tests
+            // build the app with `editor_app*`, which keep a memory clipboard)
+            app.clipboard = orb_ui::clipboard::Clipboard::System;
             // the logo animation only for a new instance (task-219)
             if self.params.take_intro() {
                 app.enable_logo_anim();

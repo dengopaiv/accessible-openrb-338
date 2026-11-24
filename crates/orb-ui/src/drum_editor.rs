@@ -835,7 +835,8 @@ impl App {
             bytes: link.pattern(r, p).to_vec(),
             pattern: p,
             playing: playing.filter(|_| self.panel.rows[r].pattern == p),
-            paste: self.clip.as_ref().is_some_and(|c| c.row == r),
+            // always enabled, as the 303 editor's (the clipboard is read on the click)
+            paste: true,
             labels: m.labels(&self.panel),
         };
         let plugin = self.is_plugin();

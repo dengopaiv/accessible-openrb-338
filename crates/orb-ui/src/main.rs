@@ -327,6 +327,7 @@ fn main() -> eframe::Result {
                 Some(l) => App::with_link(panel, l, shot),
                 None => App::new(panel, shot),
             };
+            app.clipboard = orb_ui::clipboard::Clipboard::System;
             app.samples = app_samples;
             app.audio_health = audio_health;
             app.menu = true;

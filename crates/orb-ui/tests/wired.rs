@@ -1681,7 +1681,7 @@ fn duplicate_with_no_empty_pattern_left_sends_nothing() {
     assert_eq!(h.app.panel.rows[2].pattern, 3);
     assert_eq!(h.app.status.as_deref(), Some("808: no empty pattern left"));
     // the clipboard is Copy's only
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
 }
 
 #[test]

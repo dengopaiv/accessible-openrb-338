@@ -1038,15 +1038,16 @@ fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
     link.set_pattern(2, 0, &bytes, &mut h.app.panel);
     select(&mut h, 2, 0);
     click_edit_item(&mut h, "Copy Pattern");
-    let marker = h.app.clip.as_ref().expect("copied").marker.clone();
+    let json = h.app.clipboard.read().expect("copied");
     assert_eq!(
         h.copied.last(),
-        Some(&marker),
-        "the marker is on the clipboard"
+        Some(&json),
+        "the JSON is on the system clipboard"
     );
+    assert_eq!(orb_ui::pattern_json::parse(&json).unwrap().bytes, bytes);
     select(&mut h, 2, 2);
     click_edit_item(&mut h, "Paste Pattern");
-    // the item asks for the system clipboard, which brings the marker back
+    // the item asks for the system clipboard, which brings the JSON back
     assert!(link::is_empty_pattern(2, &pattern(&h, 2, 2)));
     h.answer_paste_request();
     assert_eq!(pattern(&h, 2, 2), bytes);
@@ -1070,7 +1071,7 @@ fn the_undo_item_names_its_command_and_ctrl_z_runs_it() {
     link.set_pattern(2, 0, &bd_pattern(), &mut h.app.panel);
     select(&mut h, 2, 0);
     h.frame(vec![Event::Copy]);
-    let marker = h.app.clip.as_ref().unwrap().marker.clone();
+    let marker = h.app.clipboard.read().unwrap();
     select(&mut h, 2, 1);
     h.frame(vec![Event::Paste(marker.clone())]);
     let (_, shapes) = open_menu_with(&mut h, "Cut Pattern");
@@ -1113,7 +1114,7 @@ fn the_edit_items_are_disabled_without_a_song() {
         h.click(r.center());
         open_menu_with(&mut h, "Cut Pattern");
     }
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
     let paste = |c: &egui::ViewportCommand| matches!(c, egui::ViewportCommand::RequestPaste);
     assert!(!h.requested.iter().any(paste));
 }
@@ -1127,11 +1128,8 @@ fn the_clipboard_events_and_the_duplicate_key_run_the_pattern_commands() {
     select(&mut h, 2, 0);
     // Ctrl/Cmd+C arrives as egui's Copy event (egui-winit), never as a key
     h.frame(vec![Event::Copy]);
-    let marker = h.app.clip.as_ref().expect("copied").marker.clone();
-    assert!(
-        marker.starts_with("OpenRB-338 pattern: 808 A1 "),
-        "{marker}"
-    );
+    let marker = h.app.clipboard.read().expect("copied");
+    assert!(marker.contains("\"device\": \"808\""), "{marker}");
     assert_eq!(h.copied.last(), Some(&marker));
     // a paste of other text pastes nothing
     select(&mut h, 2, 4);
@@ -1168,11 +1166,11 @@ fn a_focused_field_keeps_the_clipboard_events_and_the_keys() {
     let link = h.app.link.as_mut().unwrap();
     link.set_pattern(2, 0, &bd_pattern(), &mut h.app.panel);
     select(&mut h, 2, 0);
-    // A1 is cut: a paste of the marker would fill it again, Undo too, a Duplicate would select
-    // A2, and a copy or a cut would put another marker on the clipboard
+    // A1 is cut: a paste of its JSON would fill it again, Undo too, a Duplicate would select
+    // A2, and a copy or a cut would put other text on the clipboard
     h.frame(vec![Event::Cut]);
-    let clip = h.app.clip.clone().expect("cut");
-    let marker = clip.marker.clone();
+    let clip = h.app.clipboard.read().expect("cut");
+    let marker = clip.clone();
     assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
     h.app.show_info();
     h.frame(vec![]);
@@ -1195,14 +1193,15 @@ fn a_focused_field_keeps_the_clipboard_events_and_the_keys() {
     assert_eq!(h.app.link.as_ref().unwrap().patterns().to_vec(), before);
     assert_eq!(h.app.panel.rows[2].pattern, 0);
     assert_eq!(
-        h.app.clip,
+        h.app.clipboard.read(),
         Some(clip),
         "the field's copy is not a pattern's"
     );
     assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
     // the paste went into the field
     let web = &h.app.doc.source.usri.web_page;
-    assert!(web.ends_with(&marker), "{web:?}");
+    // (a one-line field takes the text without its line breaks, and only so many characters)
+    assert!(web.contains("\"openrb338\": \"pattern\""), "{web:?}");
 }
 
 #[test]
@@ -1245,13 +1244,9 @@ fn selected_text_of_a_window_copies_as_text() {
     assert!(selected(&h), "no text selected in {line:?}");
     h.copied.clear();
     h.frame(vec![Event::Copy]);
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
     assert_eq!(h.copied.len(), 1, "{:?}", h.copied);
-    assert!(
-        !h.copied[0].starts_with("OpenRB-338 pattern"),
-        "{:?}",
-        h.copied
-    );
+    assert!(!h.copied[0].contains("\"openrb338\""), "{:?}", h.copied);
 }
 
 #[test]
