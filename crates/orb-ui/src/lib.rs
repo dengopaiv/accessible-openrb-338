@@ -11,6 +11,7 @@
 pub mod about;
 pub mod app;
 pub mod art;
+pub mod audio_window;
 pub mod backdrop;
 pub mod behavior;
 pub mod browser;

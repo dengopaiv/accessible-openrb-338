@@ -31,7 +31,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use common::{kit, manifest, samples, send, song, tables};
 use orb_engine::samples::Sample;
 use orb_engine::song::Device;
-use orb_player::output::Output;
+use orb_player::output::{CallbackBook, CallbackStats, Health, Output};
 use orb_player::{Audio, CALL_FRAMES, Command, Player, Preview};
 
 struct Counting;
@@ -350,6 +350,21 @@ fn the_callback_does_not_allocate() {
     assert_eq!(
         n, 0,
         "the six-channel callback allocated or freed {n} times"
+    );
+    // the callback's bookkeeping around the engine call (gap check, underrun, latency, stats)
+    let mut book = CallbackBook::new(Health::started(), CallbackStats::new(), 48_000);
+    let t0 = std::time::Instant::now();
+    let n = armed(|| {
+        for k in 0..4u64 {
+            // the third call comes far later than its buffer: an underrun is counted
+            let at = t0 + std::time::Duration::from_millis(if k < 2 { 40 * k } else { 600 * k });
+            book.enter(at, 1024, std::time::Duration::from_millis(50));
+            book.leave(1024, 1_000_000);
+        }
+    });
+    assert_eq!(
+        n, 0,
+        "the callback bookkeeping allocated or freed {n} times"
     );
     let (_p3, a3) = Player::new(tables(), Some(samples()));
     let mut mono = Output::new(a3, 1, 22_050).unwrap();

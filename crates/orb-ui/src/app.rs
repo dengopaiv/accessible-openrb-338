@@ -127,6 +127,9 @@ pub struct App {
     /// The audio stream's health (None: no stream), checked every frame: a lost device or a
     /// stall is reported once (`App::check_audio`), as in `orb play` (task-139).
     pub audio_health: Option<orb_player::output::Health>,
+    /// The owner of the output stream (the standalone app; `None` in a plugin, in the tests
+    /// and in the demo): the Audio Output window drives it and `App::check_audio` polls it.
+    pub audio: Option<orb_player::control::Controller>,
     audio_reported: bool,
     /// Where the box's OK button was drawn last (`App::error_ok_rect`).
     pub(crate) error_ok: Option<Rect>,
@@ -200,6 +203,11 @@ pub struct App {
     pub(crate) mod_info_serial: u32,
     pub(crate) mod_details: Option<crate::mod_info::Cached>,
     pub(crate) mod_info_shown: Option<crate::mod_info::SplashShown>,
+    /// The Options > Audio Output window (task-191): open, the number of its opens (its id)
+    /// and what it knows of the drivers and devices (`App::audio_ui`).
+    pub(crate) audio_open: bool,
+    pub(crate) audio_serial: u32,
+    pub(crate) audio_ui: crate::audio_window::AudioUi,
     /// The same for the Help > Keyboard Shortcuts window (`App::key_help_ui`).
     pub(crate) key_help_open: bool,
     pub(crate) key_help_serial: u32,
@@ -254,6 +262,7 @@ impl App {
             errors: Default::default(),
             notified: Default::default(),
             audio_health: None,
+            audio: None,
             audio_reported: false,
             error_ok: None,
             batch: None,
@@ -291,6 +300,9 @@ impl App {
             mod_info_serial: 0,
             mod_details: None,
             mod_info_shown: None,
+            audio_open: false,
+            audio_serial: 0,
+            audio_ui: Default::default(),
             key_help_open: false,
             key_help_serial: 0,
             plugin_usage_open: false,
@@ -962,7 +974,18 @@ impl App {
     /// `orb_player::output::Health`); a transient stream error that the sound survives is only
     /// logged by the stream. It runs on every frame, so a device lost while the UI is idle is
     /// reported on the next frame it repaints.
-    fn check_audio(&mut self) {
+    fn check_audio(&mut self, ctx: &egui::Context) {
+        // the owner of the stream (task-191): it reopens on the new default device or after a
+        // lost one, and says what it did
+        if let Some(c) = &mut self.audio {
+            let events = c.poll();
+            // a lost device and a changed system default are looked for once a second while a
+            // stream is open, also while nothing else makes the window repaint; without one
+            // (a refused open) the controller's retry is looked at every two seconds
+            ctx.request_repaint_after(Duration::from_secs(if c.is_open() { 1 } else { 2 }));
+            self.audio_events(events);
+            return;
+        }
         if self.audio_reported {
             return;
         }
@@ -981,7 +1004,7 @@ impl App {
         if let Some(n) = self.settings.notice.take() {
             self.status = Some(n);
         }
-        self.check_audio();
+        self.check_audio(ui.ctx());
         // The theme is always dark (task-127): the colors of the windows assume it. Set on
         // every frame, so a system theme that changes at run time cannot switch it back.
         if ui.ctx().options(|o| o.theme_preference) != egui::ThemePreference::Dark {
@@ -1134,8 +1157,9 @@ impl App {
             // the engine's side of the panel moves, else not at all (input repaints). Without
             // a working audio stream the snapshot never moves.
             // (a plugin's engine runs in the host)
-            let sound =
-                (self.audio_health.is_some() && !self.audio_reported) || self.plugin.is_some();
+            let sound = (self.audio_health.is_some() && !self.audio_reported)
+                || self.audio.as_ref().is_some_and(|c| c.is_open())
+                || self.plugin.is_some();
             if sound && link.moving(&self.panel) {
                 ui.ctx().request_repaint_after(METER_FRAME);
             }
@@ -1159,6 +1183,7 @@ impl App {
         self.drum_editors_ui(&ctx);
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);
+        self.audio_ui(&ctx);
         self.plugin_usage_ui(&ctx);
         self.mod_info_ui(&ctx);
         self.raise_windows(&ctx);

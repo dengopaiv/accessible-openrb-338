@@ -1063,6 +1063,12 @@ read, and what it leaves out.
     song position still change on time. A loaded song that waits for Play is not followed,
     so it does not count. Without a working audio stream (none at the start, or one reported
     lost) the snapshot never moves and nothing is asked.
+  - **The audio device watch (task-191).** While the app has an open stream (`App::audio`, the
+    standalone app) it asks for a frame every second; with none open (the open was refused) it
+    asks every two seconds, for the controller's silent retry (`Controller::poll`). The one-second frame is so that a changed system default device or
+    a lost device is noticed while the window is idle (`Controller::poll`); an idle frame is
+    cheap. The Audio Output window asks for one every 500 ms while it is open, for the
+    underrun count.
   - **Timed looks of the panel.** The 303's lit note in pitch mode goes out after 0.4 s
     (`NOTE_FLASH`): `Panel::next_change` gives the time, and the window repaints then.
   - **Their own requests.** Held repeat and wind buttons (mouse or key) repaint every 16 ms,
@@ -1259,7 +1265,8 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   Classic / Modern, section 21; another value is skipped; the removed Theme Viewer's
   `theme_viewer_filter` of an older file is ignored and dropped at the next save, task-267),
   the pattern editors' places `pattern_editor_303_1_pos`, `pattern_editor_303_2_pos`,
-  `pattern_editor_808_pos` and `pattern_editor_909_pos` (sections 23 to 25) and the table `preferred_mods` (section 18) at
+  `pattern_editor_808_pos` and `pattern_editor_909_pos` (sections 23 to 25), the audio output keys `audio_driver`,
+  `audio_device`, `audio_device_name`, `audio_sample_rate` and `audio_buffer_size` (section 18, task-191) and the table `preferred_mods` (section 18) at
   `$ORB_UI_CONFIG`, else (Windows) `OpenRB-338.toml` next to the program when it is there
   (portable mode, task-289, docs/building.md; turned off by moving the file to the per-user path,
   replacing the one there), else `OpenRB-338/OpenRB-338.toml` (task-068; named
@@ -1318,12 +1325,59 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Mods | Info... | a centered, closable window (Escape closes it) with the splash of the kit that plays at its 2000-era physical size, the mod's INFO facts and the file's (task-106; below) |
 | Options | Vintage ReBirth Synth Sound | the song's sound model (the original has it in the Edit menu) |
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
+| Options | Audio Output... | the window of Audio Output (below, task-191); the standalone app only: a plugin's audio is the host's, so its Options menu has no such item |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, the global keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` with an icon-only copy button (task-279) and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
 
 The Help menu is last in the bar. Its items are the list `HELP_ITEMS` in `menu.rs`, so a new item
 is one more entry.
+
+- **Options > Audio Output (task-191).** `crates/orb-ui/src/audio_window.rs`, over
+  `orb_player::control::Controller`. A centered, closable window (Escape closes it) with four
+  drop-down lists, then a read-only "In use" block:
+  - **Driver:** the hosts cpal offers on the build (`devices::drivers`), the platform's first
+    selected by default: CoreAudio on macOS, WASAPI on Windows, ALSA on Linux (cpal has no MME or
+    DirectSound; ASIO comes with task-193). Changing it resets the other three.
+  - **Device:** "System default" first, then the driver's output devices. System default follows
+    the OS: when the default output changes, or the device disappears, the stream reopens on the
+    new default (a short gap, the song goes on, the status line says so; `Controller::poll`).
+    A named device that disappears reopens on System default with a status-line note.
+  - **Sample rate:** "Device default" first (the engine's 44.1 kHz when the device offers it,
+    else the device's own rate with orb resampling, as `orb play` does), then the rates of
+    `devices::STANDARD_RATES` that the device's configurations hold. A chosen rate is a request:
+    the engine runs at 44.1 kHz and orb resamples to it.
+  - **Buffer size:** from the device's own minimum to 8192 frames, clamped into its range
+    (`devices::buffer_sizes`: the minimum itself first, then the powers of two above it; a device
+    with one fixed size lists just it; one that states no range, the powers of two from 64), so
+    small sizes can be tried and the underrun counter watched; 2048 by default, which is
+    `orb play`'s size (task-176). Each entry carries its time at the stream's rate, with one
+    decimal: "2048 frames (46.4 ms)" at 44.1 kHz (`devices::latency_ms`). That is the buffer
+    only: a control change can come up to one 1024-frame engine step (about 23 ms) later on top
+    of it. The size asked for is the size opened: there is no automatic
+    growth. The ASIO hook: for the driver named `ASIO` the row says "Set in the driver's control
+    panel" (`audio_window::buffer_is_the_drivers`); task-193 adds the "Driver Settings..." button
+    when cpal or asio-sys can open the panel.
+  - **Lists are read when they open, never every frame:** the drivers when the window opens
+    (they are fixed in the build); the devices, and the selected device's rates and sizes, when
+    the window opens and when the Device list opens; the rates and sizes again when the Sample
+    rate or Buffer size list opens (`AudioUi::refresh_devices`, `refresh_caps`). There is no
+    Refresh button.
+  - **In use:** the driver and device, the actual rate and whether orb resamples, channels and
+    sample format, the buffer as the first callback's size with its time, "2048 frames (46.4 ms)"
+    (not always the device's period, as `Stream::buffer_text` says; what was asked for is the
+    Buffer size list's selection, and no range of callback sizes is shown), the "Output latency" row (the last callback's
+    `OutputCallbackInfo` playback time minus its callback time, as the host measures it: on
+    CoreAudio 49.6 ms for a 2048-frame buffer at 44.1 kHz, task-191), and the underruns since the stream opened (the stream's
+    xrun errors and callback gaps over two buffers and 20 ms, `output::is_gap`).
+  - **A change applies at once** (`App::audio_choose`): the stream is stopped, the engine taken
+    back (`Stream::stop`) and a new stream opened with it, so the song keeps playing after a short
+    gap; the choice is saved in the settings file (`AudioChoice`). A request that fails to open
+    shows the error box and the default request opens instead (and is saved); a saved device
+    that is missing at the start opens System default, with a status-line note and the saved
+    choice kept for the next start; the app without any working output runs silent and tries
+    the system default again every two seconds.
+  - Not in a plugin's editor. `orb play` is unchanged: System default, 2048 frames, no options.
 
 - **The Edit menu** (orb's own commands). Cut, Copy, Paste, Duplicate and Clear Pattern act
   on the **target pattern** (task-290, `App::pattern_target`): the pattern shown by the pattern

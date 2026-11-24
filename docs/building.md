@@ -122,7 +122,10 @@ second (issue #7, pipewire-alsa) means the device buffer is too small for the so
 cycle; the output asks for 2048 frames (`BUFFER_FRAMES`, crates/orb-player/src/output.rs). Report
 the two lines `orb play SONG.rbs --seconds 10` prints (the start line with `buffer ... requested,
 first callback ... frames` and the exit line with the callback sizes; Ctrl+C prints it too), and
-the sound server's quantum (`pw-top`). OpenRB-338 also loads X11 or Wayland and the GL or Vulkan
+the sound server's quantum (`pw-top`). OpenRB-338's Options > Audio Output... window chooses the
+driver, the device, the sample rate and the buffer size (from the device's minimum to 8192 frames, 2048 by default), and
+shows the underrun count (docs/ui_spec.md section 18; the player side is `devices.rs`, `control.rs`
+and `output.rs` of crates/orb-player); a larger buffer there is the fix for the crackle above. OpenRB-338 also loads X11 or Wayland and the GL or Vulkan
 driver at run time (dlopen): on a bare Ubuntu 22.04 it needed `libxcursor1`, `libxrandr2`,
 `libxi6`, `libegl1` and a driver (`mesa-vulkan-drivers` for software Vulkan, or
 Mesa's OpenGL and EGL drivers, `libgl1-mesa-dri` and `libegl-mesa0`; see "The AppImage"; the
@@ -316,6 +319,7 @@ work as ever.
 | | `--ppp S` | overrides the pixel density |
 | | `--browse open\|save\|export\|mod` | starts with the file browser open for that mode |
 | | `--about` | starts with the About window open (task-115) |
+| | `--audio` | starts with Options > Audio Output's window open (task-191) |
 | | `--info` | starts with File > Info's Song Information window open (task-117) |
 | | `--screenshot OUT.png` | saves the window to a PNG after a few frames and quits |
 | | `--debug-panic` / `--debug-panic-window` / `--debug-panic-thread` | panic on purpose: at the start (no display needed), once the window is up, on another thread half a second later (the crash hook, task-157) |

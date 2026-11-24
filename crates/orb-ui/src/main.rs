@@ -9,7 +9,7 @@
 //! "OpenRB-338 developer options"):
 //!
 //! ```text
-//! --demo  --size WxH  --ppp S  --browse open|save|export|mod  --about  --info
+//! --demo  --size WxH  --ppp S  --browse open|save|export|mod  --about  --info  --audio
 //! --screenshot OUT.png  --play
 //! ```
 //!
@@ -28,7 +28,8 @@
 //! overrides the pixel density. `--screenshot` saves the window to a PNG after a few frames and
 //! quits. Ctrl/Cmd+O opens the in-app file browser (task-046) to open a song, Ctrl/Cmd+S saves;
 //! `--about` starts with the About window open (for screenshots, task-115), `--info` with File >
-//! Info's Song Information window (task-117). `--play` presses Play once the song is open (CPU
+//! Info's Song Information window (task-117), `--audio` with Options > Audio Output's window
+//! (task-191). `--play` presses Play once the song is open (CPU
 //! measurements, task-153).
 //! `--browse MODE` starts with the browser open for a mode. The browser's folders are kept in the
 //! settings file (`OpenRB-338/OpenRB-338.toml` in the configuration folder, or `$ORB_UI_CONFIG`).
@@ -64,6 +65,8 @@ struct Args {
     demo: bool,
     about: bool,
     info: bool,
+    /// `--audio`: start with the Audio Output window open (task-191).
+    audio: bool,
     /// `--play`: press Play once the song is open (CPU measurements, task-153).
     play: bool,
     size: [f32; 2],
@@ -101,6 +104,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Exit> {
         demo: false,
         about: false,
         info: false,
+        audio: false,
         play: false,
         size: [PANEL_W, PANEL_H],
         sized: false,
@@ -117,6 +121,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Exit> {
             "--demo" => r.demo = true,
             "--about" => r.about = true,
             "--info" => r.info = true,
+            "--audio" => r.audio = true,
             "--play" => r.play = true,
             "--debug-panic" => r.debug_panic = Some(DebugPanic::Start),
             "--debug-panic-window" => r.debug_panic = Some(DebugPanic::Window),
@@ -213,6 +218,7 @@ fn main() -> eframe::Result {
         demo,
         about,
         info,
+        audio,
         play,
         size,
         sized,
@@ -232,9 +238,12 @@ fn main() -> eframe::Result {
     let mut startup = None;
     // errors of the start, shown in the message box once the app is up (task-130)
     let mut start_errors: Vec<String> = Vec::new();
-    // keeps the audio stream alive for the whole run
-    let mut _stream = None;
-    let mut audio_health = None;
+    // the settings, read before the audio opens: the saved Audio Output choice (task-191)
+    let settings = Settings::load();
+    // owns the audio stream for the whole run
+    let mut controller = None;
+    // what the start tells in the status line
+    let mut start_notes: Vec<String> = Vec::new();
     if !demo {
         let samples = Some(rbm::standard::builtin_samples());
         app_samples = samples.clone();
@@ -250,31 +259,38 @@ fn main() -> eframe::Result {
                 }
             }
         }
-        match orb_player::output::start(audio) {
-            Ok(s) => {
-                eprintln!(
-                    "OpenRB-338: audio on {} ({} Hz{}, {} channels, {}, {})",
-                    s.device,
-                    s.config.sample_rate,
-                    if s.resampled {
-                        ", resampled from 44100"
-                    } else {
-                        ""
-                    },
-                    s.config.channels,
-                    s.format,
-                    s.buffer_text()
-                );
-                audio_health = Some(s.health());
-                _stream = Some(s);
-            }
-            Err(e) => {
-                eprintln!("OpenRB-338: audio output: {e}; the panel runs without sound");
+        let (c, events) = orb_player::control::Controller::start(audio, settings.audio.request());
+        for e in events {
+            match e {
+                orb_player::control::Event::Note(n) => {
+                    eprintln!("OpenRB-338: {n}");
+                    start_notes.push(n);
+                }
                 // the one failure at the launch is an error the user expects to hear of: the
                 // box. Later audio errors repeat: `App::notify`.
-                start_errors.push(format!("Audio output: {e}; the panel runs without sound"));
+                orb_player::control::Event::Error(e) => {
+                    eprintln!("OpenRB-338: {e}");
+                    start_errors.push(e);
+                }
             }
         }
+        if let Some(s) = c.stream() {
+            eprintln!(
+                "OpenRB-338: audio on {} {} ({} Hz{}, {} channels, {}, {})",
+                s.driver,
+                s.device,
+                s.config.sample_rate,
+                if s.resampled {
+                    ", resampled from 44100"
+                } else {
+                    ""
+                },
+                s.config.channels,
+                s.format,
+                s.buffer_text()
+            );
+        }
+        controller = Some(c);
         link = Some(l);
     }
 
@@ -329,10 +345,13 @@ fn main() -> eframe::Result {
             };
             app.clipboard = orb_ui::clipboard::Clipboard::System;
             app.samples = app_samples;
-            app.audio_health = audio_health;
+            app.audio = controller;
             app.menu = true;
             app.enable_logo_anim();
-            app.settings = Settings::load();
+            app.settings = settings;
+            if let Some(n) = start_notes.pop() {
+                app.status = Some(n);
+            }
             // the song (or the new empty song) and its mod's startup sound; nothing in the demo,
             // which has no player
             // (the errors of the start are one box)
@@ -350,6 +369,9 @@ fn main() -> eframe::Result {
             }
             if info {
                 app.show_info();
+            }
+            if audio {
+                app.show_audio();
             }
             if play {
                 app.panel.press("transport.play", 0.0);
@@ -458,7 +480,7 @@ mod tests {
     fn no_arguments_is_the_new_song() {
         let a = parse(&[]).unwrap();
         assert_eq!(a.song, None);
-        assert!(!a.demo && !a.about && !a.info && !a.sized && !a.play);
+        assert!(!a.demo && !a.about && !a.info && !a.audio && !a.sized && !a.play);
         assert_eq!(a.size, [PANEL_W, PANEL_H]);
     }
 
@@ -494,12 +516,13 @@ mod tests {
             "export",
             "--about",
             "--info",
+            "--audio",
             "--screenshot",
             "out.png",
             "--play",
         ])
         .unwrap();
-        assert!(a.demo && a.about && a.info && a.sized && a.play);
+        assert!(a.demo && a.about && a.info && a.audio && a.sized && a.play);
         assert_eq!(a.size, [300.0, 200.0]);
         assert_eq!(a.ppp, Some(2.0));
         assert_eq!(a.browse, Some(Mode::Export));
@@ -525,6 +548,7 @@ mod tests {
             "--screenshot",
             "--about",
             "--info",
+            "--audio",
             "--play",
         ] {
             assert!(!USAGE.contains(hidden), "{hidden}");

@@ -11,7 +11,9 @@
 //! 303-2 pattern editor windows' left top in points, absent until the window is moved; the
 //! standalone app's only, tasks 274 and 290),
 //! `pattern_editor_808_pos` (the same of the 808 pattern editor, task-280),
-//! `pattern_editor_909_pos` (the same of the 909 pattern editor, task-281)
+//! `pattern_editor_909_pos` (the same of the 909 pattern editor, task-281),
+//! the keys of the audio output (`audio_driver`, `audio_device`, `audio_device_name`,
+//! `audio_sample_rate`, `audio_buffer_size`: [`AudioChoice`], Options > Audio Output, task-191)
 //! and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151), and the version strings `standalone_version` and `plugin_version` that the app and
@@ -75,6 +77,71 @@ pub enum Role {
 
 /// How many recent folders are kept.
 pub const MAX_RECENT: usize = 8;
+
+/// The audio output the user chose in Options > Audio Output (task-191): the standalone app's
+/// only. The default is the platform's first driver, the system default device, the device's
+/// default rate and 2048 frames. Stored as the keys `audio_driver`, `audio_device` (cpal's text
+/// id, e.g. `CoreAudio:...`), `audio_device_name` (what the status line names a missing device
+/// by), `audio_sample_rate` (Hz) and `audio_buffer_size` (frames); the three optional keys are
+/// absent for the default. A value of the wrong type or out of range is skipped.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioChoice {
+    /// The driver's name; `None`: the platform's default.
+    pub driver: Option<String>,
+    /// The device's id; `None`: System default.
+    pub device: Option<String>,
+    /// The device's name when it was chosen.
+    pub device_name: Option<String>,
+    /// The rate asked for; `None`: Device default.
+    pub rate: Option<u32>,
+    /// The buffer size in frames.
+    pub buffer: u32,
+}
+
+impl Default for AudioChoice {
+    fn default() -> Self {
+        AudioChoice {
+            driver: None,
+            device: None,
+            device_name: None,
+            rate: None,
+            buffer: orb_player::output::BUFFER_FRAMES,
+        }
+    }
+}
+
+impl AudioChoice {
+    /// The request that opens this choice.
+    pub fn request(&self) -> orb_player::devices::Request {
+        orb_player::devices::Request {
+            driver: self.driver.clone(),
+            device: self
+                .device
+                .as_ref()
+                .map(|id| orb_player::devices::DeviceRef {
+                    id: id.clone(),
+                    name: self.device_name.clone().unwrap_or_else(|| id.clone()),
+                }),
+            rate: self.rate,
+            buffer: self.buffer,
+        }
+    }
+
+    /// The choice that a request stands for.
+    pub fn from_request(r: &orb_player::devices::Request) -> Self {
+        AudioChoice {
+            driver: r.driver.clone(),
+            device: r.device.as_ref().map(|d| d.id.clone()),
+            device_name: r.device.as_ref().map(|d| d.name.clone()),
+            rate: r.rate,
+            buffer: r.buffer,
+        }
+    }
+}
+
+/// The buffer sizes and rates a file may hold: anything else is skipped.
+const AUDIO_BUFFERS: std::ops::RangeInclusive<i64> = 16..=65536;
+const AUDIO_RATES: std::ops::RangeInclusive<i64> = 8000..=768_000;
 
 /// The look of the main window's panel (View > Classic / Modern, task-267): the standalone app's
 /// only.
@@ -140,6 +207,8 @@ pub struct Settings {
     pub pattern_editor_808_pos: Option<[i32; 2]>,
     /// The same of the 909 pattern editor's window (task-281), `pattern_editor_909_pos`.
     pub pattern_editor_909_pos: Option<[i32; 2]>,
+    /// The audio output (Options > Audio Output, task-191).
+    pub audio: AudioChoice,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
     /// Who saves: the version key written is the role's (`standalone_version` or
@@ -190,6 +259,7 @@ pub struct Values {
     pattern_editor_303_2_pos: Option<[i32; 2]>,
     pattern_editor_808_pos: Option<[i32; 2]>,
     pattern_editor_909_pos: Option<[i32; 2]>,
+    audio: AudioChoice,
 }
 
 /// Equal when the public fields are (the save bookkeeping is not compared).
@@ -216,6 +286,7 @@ impl Default for Settings {
             pattern_editor_303_2_pos: None,
             pattern_editor_808_pos: None,
             pattern_editor_909_pos: None,
+            audio: AudioChoice::default(),
             file: None,
             role: Role::Standalone,
             portable: false,
@@ -301,6 +372,15 @@ struct Stored<'a> {
     pattern_editor_808_pos: Option<[i32; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pattern_editor_909_pos: Option<[i32; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_driver: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_device: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_device_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_sample_rate: Option<u32>,
+    audio_buffer_size: u32,
     // a table, so last
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     preferred_mods: BTreeMap<&'a str, &'a str>,
@@ -474,6 +554,28 @@ impl Settings {
         s.pattern_editor_303_2_pos = pos("pattern_editor_303_2_pos");
         s.pattern_editor_808_pos = pos("pattern_editor_808_pos");
         s.pattern_editor_909_pos = pos("pattern_editor_909_pos");
+        let text = |key: &str| {
+            table
+                .get(key)
+                .and_then(|v| v.as_str())
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+        };
+        let number = |key: &str, range: &std::ops::RangeInclusive<i64>| {
+            table
+                .get(key)
+                .and_then(|v| v.as_integer())
+                .filter(|n| range.contains(n))
+                .and_then(|n| u32::try_from(n).ok())
+        };
+        s.audio = AudioChoice {
+            driver: text("audio_driver"),
+            device: text("audio_device"),
+            device_name: text("audio_device_name"),
+            rate: number("audio_sample_rate", &AUDIO_RATES),
+            buffer: number("audio_buffer_size", &AUDIO_BUFFERS)
+                .unwrap_or(orb_player::output::BUFFER_FRAMES),
+        };
         if let Some(t) = table
             .get("theme")
             .and_then(|v| v.as_str())
@@ -512,6 +614,7 @@ impl Settings {
             pattern_editor_303_2_pos: self.pattern_editor_303_2_pos,
             pattern_editor_808_pos: self.pattern_editor_808_pos,
             pattern_editor_909_pos: self.pattern_editor_909_pos,
+            audio: self.audio.clone(),
         }
     }
 
@@ -561,6 +664,9 @@ impl Settings {
         }
         if set("pattern_editor_909_pos") || v.pattern_editor_909_pos != b.pattern_editor_909_pos {
             m.pattern_editor_909_pos = v.pattern_editor_909_pos;
+        }
+        if set("audio") || v.audio != b.audio {
+            m.audio = v.audio;
         }
         if self.noted.is_empty() && v.recent != b.recent {
             // The list was assigned as a whole.
@@ -634,6 +740,13 @@ impl Settings {
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
         self.dirty.insert("theme".into());
+    }
+
+    /// Sets the audio output choice (`audio_*`, task-191); the next save writes it whatever the
+    /// file holds.
+    pub fn set_audio(&mut self, audio: AudioChoice) {
+        self.audio = audio;
+        self.dirty.insert("audio".into());
     }
 
     /// Sets the 303-1 pattern editor window's place (`pattern_editor_303_1_pos`, task-290); the
@@ -745,6 +858,11 @@ impl Settings {
             pattern_editor_303_2_pos: m.pattern_editor_303_2_pos,
             pattern_editor_808_pos: m.pattern_editor_808_pos,
             pattern_editor_909_pos: m.pattern_editor_909_pos,
+            audio_driver: m.audio.driver.as_deref(),
+            audio_device: m.audio.device.as_deref(),
+            audio_device_name: m.audio.device_name.as_deref(),
+            audio_sample_rate: m.audio.rate,
+            audio_buffer_size: m.audio.buffer,
             preferred_mods: m
                 .preferred_mods
                 .iter()
@@ -769,6 +887,7 @@ impl Settings {
         self.pattern_editor_303_2_pos = m.pattern_editor_303_2_pos;
         self.pattern_editor_808_pos = m.pattern_editor_808_pos;
         self.pattern_editor_909_pos = m.pattern_editor_909_pos;
+        self.audio = m.audio.clone();
         *self.base = m;
         self.noted.clear();
         self.dirty.clear();

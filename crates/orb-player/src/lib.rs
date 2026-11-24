@@ -89,6 +89,8 @@
 //! [`midi`] turns timed MIDI bytes into these commands with the original's Standard Mapping
 //! (task-182, `docs/standard_midi_mapping.md`), whatever the source of the bytes.
 
+pub mod control;
+pub mod devices;
 pub mod midi;
 pub mod output;
 

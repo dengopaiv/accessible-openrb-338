@@ -88,6 +88,8 @@ pub enum Cmd {
     Info,
     /// Help > Keyboard Shortcuts.
     KeyHelp,
+    /// Options > Audio Output... (the standalone app only, task-191).
+    AudioOutput,
     /// Help > Plugin Usage (a plugin's editor only, task-221).
     PluginUsage,
     /// Help > About.
@@ -990,7 +992,12 @@ impl App {
         if self.is_plugin()
             && matches!(
                 cmd,
-                Cmd::Save | Cmd::SaveAs | Cmd::Export | Cmd::KeyHelp | Cmd::SetKeyMode(_)
+                Cmd::Save
+                    | Cmd::SaveAs
+                    | Cmd::Export
+                    | Cmd::KeyHelp
+                    | Cmd::AudioOutput
+                    | Cmd::SetKeyMode(_)
             )
         {
             return;
@@ -1012,6 +1019,7 @@ impl App {
             }
             Cmd::Info => self.show_info(),
             Cmd::KeyHelp => self.show_key_help(),
+            Cmd::AudioOutput => self.show_audio(),
             Cmd::PluginUsage => {
                 if self.is_plugin() {
                     self.show_plugin_usage();
@@ -1746,9 +1754,13 @@ impl App {
                 ui.close();
             }
             // the keyboard modes: none in a plugin's editor (task-201); the plugin's mode is the
-            // panel's selector only (task-231), not a menu item
+            // panel's selector only (task-231), not a menu item. Nor is Audio Output: a
+            // plugin's audio is the host's (task-191)
             if plugin {
                 return;
+            }
+            if item(ui, "Audio Output...", None) {
+                *cmd = Some(Cmd::AudioOutput);
             }
             ui.separator();
             let ctx = ui.ctx().clone();
