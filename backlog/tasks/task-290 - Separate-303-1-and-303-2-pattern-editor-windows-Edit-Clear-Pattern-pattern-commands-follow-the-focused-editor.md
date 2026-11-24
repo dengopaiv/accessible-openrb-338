@@ -7,6 +7,7 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-24T12:27:00Z'
+updated_date: '2026-11-24T12:27:00Z'
 labels:
   - ui
   - player
@@ -40,10 +41,10 @@ ordinal: 265700
 
 **2. Edit > Clear Pattern**, with no keyboard shortcut. It empties the target pattern's steps the way the editors' Clear button does (emptied_pattern: the shuffle and length bytes stay), as one write_pattern with Undo.
 
-**3. Which pattern the Edit menu's pattern commands act on.** Copy, Cut, Duplicate and Clear Pattern act on:
+**3. Which pattern the Edit menu's pattern commands act on.** Copy, Cut, Paste, Duplicate and Clear Pattern act on:
 - the pattern selected in the pattern editor window that has the focus, when one does: the editor's own selected pattern and its device;
 - otherwise, the selected pattern of the focused row in the main panel, as today (`App::pattern_target`, crates/orb-ui/src/menu.rs around 1054).
-Define "has the focus" in the notes: egui's focused or topmost window, a click into it, or similar, whatever is reliable in both the app and the plugin. Paste Pattern is not named by the user: report whether it already follows this rule, and leave it as it is unless the user says otherwise at review.
+Define "has the focus" in the notes: egui's focused or topmost window, a click into it, or similar, whatever is reliable in both the app and the plugin. Paste Pattern follows the same rule (the user, 2026-11-24): it pastes into the focused editor's selected pattern, and the device check is against that editor's device.
 
 **4. Survey the names of the two 303s** in every user-visible place: window titles, menus, status messages, tooltips, the Keyboard Shortcuts help, the plugin's MIDI clip sections and drag-out file names, the docs (docs/ui_spec.md, docs/plugin.md, the site and README), and the CLI. The supervisor's quick grep on 2026-11-24 found three forms:
 - "303 1" / "303 2": the status line row names (menu.rs ROW_NAMES);
@@ -56,9 +57,9 @@ List every occurrence with file:line in the notes, as a table by form. Do not un
 <!-- AC:BEGIN -->
 - [ ] #1 "303-1 Pattern Editor" and "303-2 Pattern Editor" are separate windows, each fixed to its 303, both can be open, with Edit menu items, Cmd/Ctrl+E for the focused row, positions kept per window (the old key seeds 303-1), in the app and the plugin
 - [ ] #2 Edit > Clear Pattern (no shortcut) empties the target pattern's steps with Undo, keeping shuffle and length
-- [ ] #3 Copy, Cut, Duplicate and Clear Pattern act on the focused pattern editor's selected pattern, else on the main panel's focused row's selected pattern; tests cover both cases for a 303, the 808 and the 909
-- [ ] #4 The notes hold a table of every user-visible 303-1 / 303 1 / 303 #1 form (and any other) with file:line, and the report gives it to the user; nothing is unified yet
-- [ ] #5 docs/ui_spec.md describes the two windows, Clear Pattern and the target rule; the Keyboard Shortcuts help stays consistent with the user's cuts (task-284)
-- [ ] #6 cargo test --workspace, clippy -D warnings and nightly fmt --check pass
-- [ ] #7 The user has checked it in the app and the plugin
+- [ ] #3 The notes hold a table of every user-visible 303-1 / 303 1 / 303 #1 form (and any other) with file:line, and the report gives it to the user; nothing is unified yet
+- [ ] #4 docs/ui_spec.md describes the two windows, Clear Pattern and the target rule; the Keyboard Shortcuts help stays consistent with the user's cuts (task-284)
+- [ ] #5 cargo test --workspace, clippy -D warnings and nightly fmt --check pass
+- [ ] #6 The user has checked it in the app and the plugin
+- [ ] #7 Copy, Cut, Paste, Duplicate and Clear Pattern act on the focused pattern editor's selected pattern, else on the main panel's focused row's selected pattern; tests cover both cases for a 303, the 808 and the 909
 <!-- AC:END -->
