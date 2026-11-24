@@ -7,10 +7,10 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-21T09:18:00Z'
+updated_date: '2026-11-24T15:55:00Z'
 labels:
   - player
   - ui
-milestone: m-7
 dependencies:
   - TASK-261
 references:
@@ -48,3 +48,9 @@ What to do (after Decide task-261 picks the option: A vendored baseview with a f
 - [ ] #3 Whether baseview's close path (the X11 thread disconnected, BadWindow on Present SelectInput and DestroyWindow) causes the Debian 13 / Bitwig 6.1 crash on closing the CLAP editor is found and written in docs/plugin.md; if it does, it is fixed
 - [ ] #4 The baseview change is documented in docs/plugin.md (what is patched and why, with file:line); macOS and Windows editors still work (the plugin tests pass)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-24, supervisor: task-261 decided (option A's patch as a GitHub fork of baseview, branch OpenRB-338 on 0.4.2's 4fe59b3, via [patch.crates-io]; see task-261's final summary). The user does not schedule this task yet, so it has no milestone. When scheduled, the fork is made first (gh fork of RustAudio/baseview), then this task implements the patch there and the patch line, and the user tests on the Ubuntu VM.
+<!-- SECTION:NOTES:END -->

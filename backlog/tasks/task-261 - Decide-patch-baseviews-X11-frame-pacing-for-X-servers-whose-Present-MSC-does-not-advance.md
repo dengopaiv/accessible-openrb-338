@@ -3,11 +3,11 @@ id: TASK-261
 title: >-
   Decide: patch baseview's X11 frame pacing for X servers whose Present MSC does
   not advance
-status: To Do
+status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-21T08:51:00Z'
-updated_date: '2026-11-21T09:18:00Z'
+updated_date: '2026-11-24T15:55:00Z'
 labels:
   - decision
   - ui
@@ -50,5 +50,11 @@ Recommendation: A (keeps vsync where it works, fixes the VM, follows the raw-win
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user chose an option (A, B, C or D); the outcome and the date are in the final summary
+- [x] #1 The user chose an option (A, B, C or D); the outcome and the date are in the final summary
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by the user on 2026-11-24: option A's patch (when a CompleteNotify does not advance the MSC, or none arrives within about 100 ms, the window switches to baseview's 15 ms fallback timer for the rest of its life, with a log line), shipped as option C: a GitHub fork of github.com/RustAudio/baseview on the user's account (as the nice-plug and egui-baseview forks), branch OpenRB-338 on the published 0.4.2 commit 4fe59b3, used through [patch.crates-io]. A [patch.crates-io] for baseview reaches egui-baseview's fork unchanged. No upstream pull request unless the user asks. The user does not schedule task-262 (the fix) yet.
+<!-- SECTION:FINAL_SUMMARY:END -->
