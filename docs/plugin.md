@@ -28,9 +28,10 @@ One instance is the whole ReBirth: the two 303s, the 808, the 909, the effects a
 the engine of `orb-engine` driven as orb-player drives it in the standalone app. The plugin is
 built on nice-plug 0.4.2 (codeberg.org/RustAudio/nice-plug, ISC), the community fork of
 nih-plug, with its `vst3` and `editor` features (no logger). Its VST3 bindings are the `vst3`
-crate 0.3.0 (MIT OR Apache-2.0); the editor is on nice-plug-egui 0.6.0 (ISC, egui-baseview
-0.9 with wgpu 30, section 10). These licenses are compatible with the repository's
-GPL-3.0-only.
+crate 0.3.0 (MIT OR Apache-2.0); the editor is on nice-plug-egui 0.6.0 (ISC) and egui-baseview
+0.9 with wgpu 30, egui-baseview from the user's fork that frees textures after the submit
+(MIT OR Apache-2.0, as upstream; section 10). These licenses are compatible with the
+repository's GPL-3.0-only.
 
 | File | Thread | What |
 |---|---|---|
@@ -1459,6 +1460,33 @@ name, so two dynamic libraries that each link raw-window-metal (audio plugins, e
 second `define_class!` registration panics. Please register the class under a name unique to
 the image (e.g. with a random or address suffix through `ClassBuilder`), as baseview does for
 its NSView subclass."
+
+**The egui-baseview fork (task-292).** The workspace takes egui-baseview from the user's fork
+github.com/pingw33n/egui-baseview, branch `OpenRB-338`, commit
+e3db19695653fb05dead3916a553c514c1c88c23, through `[patch.crates-io]` of the workspace
+`Cargo.toml` pinned to that commit (Cargo.lock's source is the fork's git URL at that rev; its
+one user is nice-plug-egui 0.6.0). The fork is upstream commit 1f645a3
+(codeberg.org/RustAudio/egui-baseview, the published 0.9.0) plus one change to
+`src/renderer/wgpu/renderer.rs` `render`. 0.9.0 freed the frame's `textures_delta.free`
+(egui-wgpu 0.37's `Renderer::free_texture`, which calls `wgpu::Texture::destroy` at once,
+`renderer.rs` 790) after recording the frame's render pass but before `queue.submit` (0.9.0
+`renderer.rs` 278-289), so a texture freed in a frame that drew it was destroyed under the
+submitted draw: wgpu's "Validation Error ... In Queue::submit ... In a draw command, kind:
+Draw ... Texture with 'egui_texid_Managed(1)' label has been destroyed", which panics in
+wgpu's default error handler inside the host's call and aborted REAPER 7.8.6 on Windows
+(0xc0000409, FAST_FAIL_FATAL_APP_EXIT, the user's report of 2026-11-24). The trigger was File
+> Open, another folder, "Use as mods folder" with the editor open: `App::refresh_mods`
+(`crates/orb-ui/src/menu.rs`) drops the mod window's splash picture (`self.splash = None`) in
+a frame that has drawn it; any texture the editor drops in a frame that drew it did the same.
+Choosing the current folder again drops nothing, and the standalone app never crashed: eframe's
+egui-wgpu integration frees after the submit. The fork submits, then frees, then presents. Not
+changed by the fork: a frame whose surface acquire returns `Occluded`, `Timeout`, `Outdated`,
+`Suboptimal` or `Lost` returns before the free (in 0.9.0 too), so the textures freed in that
+frame stay allocated until the editor closes. `tests/texture_free.rs` replays the renderer's
+frame on a headless wgpu device (the old order fails validation with "destroyed", the fork's
+passes; skipped with no adapter) and requires the resolved egui-baseview's source to call
+`free_texture` after `.submit(` and before `.present(`. No upstream pull request has been
+opened.
 
 **No panic reaches the host.** Every method of `OrbEditor` (`spawn`, `size`, `resize_hint`)
 and of `OrbHandle` (`run_until_closed`, `set_parent`, `show`, `hide`, `set_size`,
