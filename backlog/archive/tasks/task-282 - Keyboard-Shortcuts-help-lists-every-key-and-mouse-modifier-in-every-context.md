@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-22T09:49:00Z'
-updated_date: '2026-11-22T16:51:00Z'
+updated_date: '2026-11-24T10:38:00Z'
 labels:
   - ui
   - docs
@@ -69,3 +69,15 @@ ordinal: 260300
 - no TR-/TB- names.
 Where this audit would add a row of a kind task-284 removed, it does not; raise it with the user in the notes instead.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed by the user on 2026-11-24 without doing the work. The help was cut instead (task-284). The supervisor's audit that day left these unlisted:
+- type-to-select in the file browser (browser.rs:679);
+- Escape also closes Mod Information, Plugin Usage and the error box;
+- Enter closes the error box;
+- Enter/Escape set or cancel a typed value in the pattern editors (editor_frame.rs:317);
+- Shift+drag on a knob is fine adjustment (controller.rs:303).
+None was added.
+<!-- SECTION:FINAL_SUMMARY:END -->
