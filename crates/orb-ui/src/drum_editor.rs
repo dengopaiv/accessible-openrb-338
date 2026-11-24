@@ -162,8 +162,8 @@ impl Machine {
     /// The panel's name of it.
     pub fn name(self) -> &'static str {
         match self {
-            Machine::Tr808 => "TR-808",
-            Machine::Tr909 => "TR-909",
+            Machine::Tr808 => "808",
+            Machine::Tr909 => "909",
         }
     }
 
@@ -450,12 +450,12 @@ impl Input {
     pub fn what(self, m: Machine) -> &'static str {
         match (self, m) {
             (Input::OpenKey, Machine::Tr808) => {
-                "Open the editor with the TR-808 row focused (Edit > 808 Pattern Editor...), \
+                "Open the editor with the 808 row focused (Edit > 808 Pattern Editor...), \
                  or bring it to the front on the active pattern. Not in the plugin, which \
                  leaves keys to the host: there it is the menu"
             }
             (Input::OpenKey, Machine::Tr909) => {
-                "Open the editor with the TR-909 row focused (Edit > 909 Pattern Editor...), \
+                "Open the editor with the 909 row focused (Edit > 909 Pattern Editor...), \
                  or bring it to the front on the active pattern. Not in the plugin, which \
                  leaves keys to the host: there it is the menu"
             }
@@ -1338,10 +1338,44 @@ mod tests {
             "Shift / Ctrl + click or drag"
         );
         assert_eq!(Input::Modified.keys(m9, false), "Shift + click or drag");
-        assert!(Input::OpenKey.what(m9).contains("TR-909"));
+        assert!(Input::OpenKey.what(m9).contains("909 row"));
         for m in Machine::ALL {
             for &i in m.inputs() {
                 assert!(!i.what(m).is_empty());
+            }
+        }
+    }
+
+    /// The user's rule: no TR-/TB- names in text a user can see (task-286). Scans the drum
+    /// editors' texts, the row names of the status line and clipboard marker, and the Keyboard
+    /// Shortcuts help. It cannot see strings built inline in a menu or a status format.
+    #[test]
+    fn no_hardware_names_in_user_visible_text() {
+        let mut texts: Vec<String> = Vec::new();
+        for m in Machine::ALL {
+            texts.extend([m.name(), m.title(), m.menu_item()].map(String::from));
+            for &i in m.inputs() {
+                texts.push(i.what(m).into());
+                texts.push(i.keys(m, true));
+                texts.push(i.keys(m, false));
+            }
+        }
+        texts.extend(crate::menu::ROW_NAMES.map(String::from));
+        texts.extend(crate::menu::ROW_KINDS.map(String::from));
+        for is_mac in [true, false] {
+            for g in crate::key_help::groups(is_mac) {
+                texts.extend([g.title, g.note].map(String::from));
+                for r in g.rows {
+                    texts.push(r.keys);
+                    texts.push(r.what.into());
+                }
+            }
+        }
+        assert!(texts.len() > 100, "{}", texts.len());
+        for t in &texts {
+            let up = t.to_uppercase();
+            for bad in ["TR-", "TB-", "TR8", "TR9", "TB3"] {
+                assert!(!up.contains(bad), "{bad} in {t:?}");
             }
         }
     }

@@ -1085,7 +1085,7 @@ read, and what it leaves out.
   with the panel's events. Undo of a pattern the row does not select (after a Duplicate)
   sends the selection first and holds the pattern back until the engine leaves it
   (`Link::set_pattern_unplayed`, sent from `Link::follow`). The pattern bytes stay in the app (`App::clip`): Copy and Cut put
-  only a marker text on the system clipboard ("OpenRB-338 pattern: TR-909 A1 [process.count]"),
+  only a marker text on the system clipboard ("OpenRB-338 pattern: 909 A1 [process.count]"),
   and a paste takes the pattern only when the clipboard brings that text back, so no bytes are
   read from the clipboard and text copied elsewhere since pastes nothing. egui-winit turns
   Ctrl/Cmd+X, C and V into egui's Cut, Copy and Paste events without a key event;
@@ -1195,7 +1195,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
 | Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with the 303's Clear |
 | Edit | Copy Pattern (Ctrl+C, Cmd+C) | the focused row's selected pattern (steps, length, shuffle flag) to orb's clipboard; the song is not modified |
-| Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a TB-303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
+| Edit | Paste Pattern (Ctrl+V, Cmd+V) | the clipboard's pattern into the focused row's selected pattern, into a row of its kind only (a 303 pattern into either 303); the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the selected pattern into the row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it; the clipboard stays |
 | Edit | 303 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating 303 pattern editor on the selected 303's active pattern, or brings it to the front and switches it to that pattern (section 23, task-274); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
 | Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303's: opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 808's with the TR-808 focused, the 909's with the TR-909 focused, else the 303's (tasks 280 and 281) |
@@ -1241,9 +1241,9 @@ is one more entry.
     that pattern sends it at once, before the event.
   - A pattern selected after a Duplicate (a click, in any row) makes its Undo leave the
     selection alone: it puts back only the copy's bytes.
-  - The status line reports each command with the row and the pattern names: "TR-909: A1
-    duplicated to A2", "TR-909: pasted into A2", "TR-909: no empty pattern left", "The
-    clipboard holds a TB-303 pattern", "The clipboard holds no pattern".
+  - The status line reports each command with the row and the pattern names: "909: A1
+    duplicated to A2", "909: pasted into A2", "909: no empty pattern left", "The
+    clipboard holds a 303 pattern", "The clipboard holds no pattern".
 
 - **Help > Keyboard Shortcuts** (task-105; `crates/orb-ui/src/key_help.rs`). Centered as About is
   (`App::key_help_serial`); Escape is consumed after the other windows. The text is one table,
@@ -2231,7 +2231,7 @@ in the standalone app and the plugin's editor (no separate OS window).
   the user's review), and Ctrl+E (Cmd+E on macOS) in the standalone app;
   the plugin's editor takes no keys (section 20), so there it is the menu only. It opens on the
   selected 303's active pattern: the focused row when it is a 303, else the 303 the editor
-  showed last (TB-303 1 at first), and that row's selected pattern. When it is open, the item
+  showed last (303 1 at first), and that row's selected pattern. When it is open, the item
   and the key bring it to the front and switch it to that pattern. Disabled without a song.
 - **Its place**: the standalone app saves the window's left top in `ui.toml`
   (`pattern_editor_pos = [x, y]`, points) when the user lets go of the window after moving it,
@@ -2300,10 +2300,10 @@ both 303s with stops at the ends).
 - **Copy and Paste** use the Edit menu's pattern clipboard (section 16, `App::clip`) on the
   editor's pattern: Copy is Edit > Copy Pattern of it (the marker goes to the system
   clipboard too, so the panel's Ctrl/Cmd+V pastes it), Paste takes the clipboard's pattern
-  directly (a TB-303 pattern only, into either 303; the status line reports as the menu's).
+  directly (a 303 pattern only, into either 303; the status line reports as the menu's).
 - **Clear** leaves the emptied pattern Edit > Cut Pattern leaves (every step note 0, no flags,
   rest on) with the pattern's length and shuffle flag kept, and does not touch the clipboard.
-- **The status line** says "TB-303 1: A1 copied", "TB-303 1: pasted into A2", "TB-303 1: A1
+- **The status line** says "303 1: A1 copied", "303 1: pasted into A2", "303 1: A1
   cleared".
 
 **One edit path, one Undo.** Every change of the editor is one whole-pattern write of its new 98
@@ -2391,8 +2391,8 @@ both can be open.
 - **Shift** rotates the steps by one (whole 12-byte steps), wrapping within the length.
 - **Clear** leaves the emptied pattern Edit > Cut Pattern leaves (every byte 0) with the length
   and shuffle kept, and leaves the clipboard. **Copy and Paste** use the Edit menu's pattern
-  clipboard (section 16); status lines "TR-808: A1 copied", "TR-808: pasted into A2",
-  "TR-808: A1 cleared".
+  clipboard (section 16); status lines "808: A1 copied", "808: pasted into A2",
+  "808: A1 cleared".
 
 **One edit path, one Undo**, as the 303 editor's: every change is one whole-pattern write of 194
 bytes through `App::write_pattern` -> `Link::set_pattern` (msg 41 sub 61 `{p, bytes}`), heard at

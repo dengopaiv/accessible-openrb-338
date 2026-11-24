@@ -452,7 +452,7 @@ fn the_edit_menus_pattern_commands_work_in_the_plugin() {
         Some(&clip.marker),
         "the marker on the clipboard"
     );
-    assert!(clip.marker.starts_with("OpenRB-338 pattern: TB-303 1 A1"));
+    assert!(clip.marker.starts_with("OpenRB-338 pattern: 303 1 A1"));
     // A3 selected; the paste
     h.app.panel.press("pattern1.pattern3", 0.0);
     h.frame(vec![]);

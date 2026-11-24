@@ -496,7 +496,7 @@ fn shift_clear_copy_paste_length_shuffle_and_their_undo() {
     assert!(link::is_empty_pattern(ROW, &b));
     assert_eq!(b[1], 4, "the length kept");
     assert_eq!(h.app.undo_name(), Some("Clear Pattern"));
-    assert_eq!(h.app.status.as_deref(), Some("TR-808: B1 cleared"));
+    assert_eq!(h.app.status.as_deref(), Some("808: B1 cleared"));
     assert_eq!(
         h.app.clip.as_ref().unwrap().bytes,
         base,

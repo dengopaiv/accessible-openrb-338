@@ -152,9 +152,9 @@ pub struct Undo {
 }
 
 /// The names of the four rows on the status line.
-pub(crate) const ROW_NAMES: [&str; 4] = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"];
+pub(crate) const ROW_NAMES: [&str; 4] = ["303 1", "303 2", "808", "909"];
 /// The kind of each row's patterns: a pattern pastes into a row of its kind.
-const ROW_KINDS: [&str; 4] = ["TB-303", "TB-303", "TR-808", "TR-909"];
+pub(crate) const ROW_KINDS: [&str; 4] = ["303", "303", "808", "909"];
 
 /// The name of pattern `p` (0..=31): bank and button, A1 to D8.
 pub(crate) fn pattern_name(p: u8) -> String {
@@ -1175,7 +1175,7 @@ impl App {
     }
 
     /// Edit > Paste Pattern: the app's clipboard into the focused row's selected pattern, when
-    /// the row is of its kind (a TB-303 pattern pastes into either 303).
+    /// the row is of its kind (a 303 pattern pastes into either 303).
     pub fn paste_pattern(&mut self) {
         if let Some((r, p)) = self.pattern_target() {
             self.paste_pattern_at(r, p);

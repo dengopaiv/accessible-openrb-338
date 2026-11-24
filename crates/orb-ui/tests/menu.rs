@@ -1057,7 +1057,7 @@ fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
     assert_eq!(pattern(&h, 2, 3), bytes);
     click_edit_item(&mut h, "Cut Pattern");
     assert!(link::is_empty_pattern(2, &pattern(&h, 2, 3)));
-    assert_eq!(h.app.status.as_deref(), Some("TR-808: A4 cut"));
+    assert_eq!(h.app.status.as_deref(), Some("808: A4 cut"));
 }
 
 #[test]
@@ -1129,13 +1129,13 @@ fn the_clipboard_events_and_the_duplicate_key_run_the_pattern_commands() {
     h.frame(vec![Event::Copy]);
     let marker = h.app.clip.as_ref().expect("copied").marker.clone();
     assert!(
-        marker.starts_with("OpenRB-338 pattern: TR-808 A1 "),
+        marker.starts_with("OpenRB-338 pattern: 808 A1 "),
         "{marker}"
     );
     assert_eq!(h.copied.last(), Some(&marker));
     // a paste of other text pastes nothing
     select(&mut h, 2, 4);
-    h.frame(vec![Event::Paste("OpenRB-338 pattern: TR-808 A1".into())]);
+    h.frame(vec![Event::Paste("OpenRB-338 pattern: 808 A1".into())]);
     assert!(link::is_empty_pattern(2, &pattern(&h, 2, 4)));
     assert_eq!(
         h.app.status.as_deref(),

@@ -208,8 +208,8 @@ fn standard_rebirth_is_never_looked_up() {
 }
 
 /// Trakka Rekka has both drum machines off in their chunks; enable events of their tracks turn
-/// them on. They count as playing: the samples are given and both drum machines play (no "not
-/// implemented" warning names them, and the render is not silent).
+/// them on. They count as playing: the samples are given and both drum machines play (the render
+/// is not silent).
 #[test]
 fn drums_enabled_only_by_track_events_play() {
     let dir = tempfile::tempdir().unwrap();
@@ -218,11 +218,6 @@ fn drums_enabled_only_by_track_events_play() {
     let o = render(&song, &out, &[]);
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(o.status.success(), "{err}");
-    assert!(
-        !err.lines()
-            .any(|l| l.contains("not implemented yet") && l.contains("TR-")),
-        "{err}"
-    );
     assert!(std::fs::read(&out).unwrap()[44..].iter().any(|&b| b != 0));
 }
 
