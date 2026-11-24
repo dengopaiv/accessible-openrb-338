@@ -300,6 +300,16 @@ struct Saved {
 }
 
 impl Doc {
+    /// The document of a new song (task-288): no song file, and the four pattern arrays of the
+    /// engine's empty song with the template in A1 ([`orb_ui::template`]). A saved state never
+    /// comes here: it brings its own patterns.
+    pub fn new_song() -> Doc {
+        Doc {
+            patterns: template_patterns(),
+            ..Doc::default()
+        }
+    }
+
     /// The document as the state's JSON.
     pub fn to_json(&self) -> String {
         let s = Saved {
@@ -448,6 +458,15 @@ fn read_patterns(e: &mut Engine) -> [Vec<u8>; 4] {
         }
     }
     out
+}
+
+/// The four pattern arrays of a new song: the empty song's with the template in A1.
+fn template_patterns() -> [Vec<u8>; 4] {
+    let (player, _) = Player::new(tables(), None);
+    // the drum machines hold patterns only with samples (a placeholder has none)
+    let mut e = player.build_new(Some(rbm::standard::builtin_samples()));
+    orb_ui::template::apply(&mut e);
+    read_patterns(&mut e)
 }
 
 /// Applies a panel message to an engine that no callback runs yet.
@@ -610,8 +629,12 @@ impl Main {
     /// activation; returns the engine and its parameter values.
     fn build_song(&mut self, song: Option<Vec<u8>>) -> Result<(Box<Engine>, Doc), String> {
         let mut doc = Doc {
+            patterns: if song.is_none() {
+                template_patterns()
+            } else {
+                Default::default()
+            },
             song,
-            patterns: Default::default(),
             vintage: None,
             kit: self.doc.kit.clone(),
             editor_size: self.doc.editor_size,
@@ -748,7 +771,7 @@ impl OrbParams {
             params,
             ids: SPECS.iter().map(|s| params::id(s.target)).collect(),
             main: Mutex::new(Main {
-                doc: Doc::default(),
+                doc: Doc::new_song(),
                 player: None,
                 samples: None,
                 last_error: None,
@@ -1182,7 +1205,7 @@ unsafe impl Params for OrbParams {
                 m.last_error = Some(format!("the saved state: {e}"));
                 m.doc = Doc::default();
             }
-            None => m.doc = Doc::default(),
+            None => m.doc = Doc::new_song(),
         }
         self.shared.set_remote_enabled(m.doc.remote_enabled);
         self.shared.set_remote_channel(m.doc.remote_channel);

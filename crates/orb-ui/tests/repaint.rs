@@ -21,13 +21,12 @@ fn calls(audio: &mut Audio, n: usize) {
     }
 }
 
-/// A link on the new empty song with the built-in kit, as File > New makes it, after two
-/// engine calls.
+/// A link on the engine's new empty song with the built-in kit, after two engine calls. It is
+/// not File > New's song: that one holds the template (task-288), which is not silent.
 fn new_song() -> (Link, Audio, Panel) {
     let samples = Some(rbm::standard::builtin_samples());
-    let (mut link, mut audio) = Link::new(Arc::new(Tables::new()), samples.clone());
-    let mut panel = Panel::new();
-    link.load_new(samples, &mut panel);
+    let (link, mut audio) = Link::new(Arc::new(Tables::new()), samples);
+    let panel = Panel::new();
     calls(&mut audio, 2);
     (link, audio, panel)
 }

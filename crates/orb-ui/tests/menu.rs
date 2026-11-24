@@ -1952,6 +1952,39 @@ fn the_startup_sound_checkbox_flips_the_preference_and_saves_it() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// task-288: the app's start and File > New hold the template in A1 of each row and the empty
+/// song's patterns elsewhere; a song opened from a file is its own.
+#[test]
+fn start_and_file_new_hold_the_template() {
+    let empty = Harness::new();
+    let empty = empty.app.link.as_ref().unwrap().patterns().clone();
+    let template = orb_ui::template::a1();
+    let check = |h: &Harness, what: &str| {
+        let got = h.app.link.as_ref().unwrap().patterns();
+        for (r, want) in template.iter().enumerate() {
+            let len = want.len();
+            assert_eq!(&got[r][..len], &want[..], "{what}: A1 of row {r}");
+            assert_eq!(
+                &got[r][len..],
+                &empty[r][len..],
+                "{what}: the rest of row {r}"
+            );
+        }
+    };
+    let mut h = Harness::new();
+    h.app.start(None);
+    h.calls(4);
+    check(&h, "start");
+    h.open(&root().join("tests/songs/diag/songs/drums_kit.rbs"));
+    assert_ne!(
+        h.app.link.as_ref().unwrap().patterns()[0][..98],
+        template[0][..]
+    );
+    h.app.command(Cmd::New);
+    h.calls(4);
+    check(&h, "File > New");
+}
+
 /// task-091: File > New is the state of a start without a song: the same code builds both, and
 /// a modified song asks the prompt first.
 #[test]
@@ -1976,14 +2009,18 @@ fn file_new_gives_the_state_of_a_fresh_start() {
     };
 
     // a fresh start without a song argument
+    // (task-288: the start song holds the template, so the app made in is no longer the same
+    // state; a second New on the started app must give the start's state again)
     let mut start = Harness::new();
-    let untouched = state(&start);
     start.app.start(None);
+    start.calls(4);
+    let untouched = state(&start);
+    start.app.new_now();
     start.calls(4);
     assert_eq!(
         state(&start),
         untouched,
-        "the start builds the state the app is made in"
+        "the start builds the state File > New builds"
     );
 
     // a song that plays and was edited, then New through the prompt
@@ -2022,7 +2059,9 @@ fn file_new_gives_the_state_of_a_fresh_start() {
     h.app.panel.set_step808(3, true);
     h.app.command(Cmd::New);
     h.calls(4);
-    let fresh = Harness::new();
+    let mut fresh = Harness::new();
+    fresh.app.start(None);
+    fresh.calls(4);
     let mirror = |h: &Harness| h.app.link.as_ref().unwrap().patterns().clone();
     assert_eq!(
         mirror(&h),

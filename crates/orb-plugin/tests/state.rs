@@ -180,6 +180,58 @@ fn a_bad_state_gives_a_new_song() {
     host(&p, &mut core, 1000, 100, &[]);
 }
 
+/// The bytes of pattern `p` of row `r` in the patterns of a view.
+fn pattern_of(patterns: &[Vec<u8>; 4], r: usize, p: usize) -> &[u8] {
+    let len = if r < 2 { 98 } else { 194 };
+    &patterns[r][p * len..(p + 1) * len]
+}
+
+/// task-288: a new instance, and File > New, hold the template in A1 of each row; every other
+/// pattern is the same empty one.
+#[test]
+fn a_new_instance_and_file_new_hold_the_template() {
+    let template = orb_ui::template::a1();
+    let check = |p: &OrbParams, what: &str| {
+        let (_, patterns) = p.view(&p.values());
+        for (r, want) in template.iter().enumerate() {
+            assert_eq!(pattern_of(&patterns, r, 0), want, "{what}: A1 of row {r}");
+            for q in 2..32 {
+                assert_eq!(
+                    pattern_of(&patterns, r, q),
+                    pattern_of(&patterns, r, 1),
+                    "{what}: pattern {q} of row {r}"
+                );
+            }
+            assert_ne!(pattern_of(&patterns, r, 1), want, "{what}: row {r}");
+        }
+    };
+    check(&OrbParams::new(), "new instance");
+    let q = with_song("full_mix");
+    q.new_song().unwrap();
+    check(&q, "File > New");
+}
+
+/// task-288: a saved state loads unchanged: one with no patterns of its own (saved before the
+/// first build) does not get the template.
+#[test]
+fn a_saved_state_does_not_get_the_template() {
+    let p = OrbParams::new();
+    let mut f = BTreeMap::new();
+    f.insert(
+        "orb".to_string(),
+        concat!(
+            "{\"version\":1,\"song\":null,\"patterns\":[\"\",\"\",\"\",\"\"],\"vintage\":null,",
+            "\"mod\":null,\"editor_size\":null,\"mode\":\"latch\",\"preview\":null}"
+        )
+        .to_string(),
+    );
+    p.deserialize_fields(&f);
+    assert!(p.main().last_error.is_none(), "{:?}", p.main().last_error);
+    assert!(p.main().doc.patterns.iter().all(|a| a.is_empty()));
+    let (_, patterns) = p.view(&p.values());
+    assert_ne!(pattern_of(&patterns, 0, 0), orb_ui::template::a1()[0]);
+}
+
 #[test]
 fn the_logo_animation_plays_once_for_a_new_instance() {
     let p = OrbParams::new();

@@ -801,11 +801,12 @@ impl Link {
         Ok(())
     }
 
-    /// File > New: a new empty song as the song constructor makes it (the state of the player
-    /// at the app's start, [`Link::new`]), queued as [`Link::load`] queues a song: the open
-    /// song stops, the panel is new and takes the engine's values at the next snapshot.
+    /// File > New: a new song, the song constructor's empty song with the template's four
+    /// patterns in A1 ([`crate::template`], task-288), queued as [`Link::load`] queues a song: the
+    /// open song stops, the panel is new and takes the engine's values at the next snapshot.
     pub fn load_new(&mut self, samples: Option<Arc<SampleSet>>, panel: &mut Panel) {
         let mut engine = self.player.build_new(samples.clone());
+        crate::template::apply(&mut engine);
         let patterns = std::array::from_fn(|c| {
             engine.frame.devices.channels[c]
                 .patterns_mut()

@@ -1,0 +1,25 @@
+{
+  "openrb338": "pattern",
+  "version": 1,
+  "device": "303",
+  "length": 16,
+  "shuffle": false,
+  "steps": [
+    {"note": "A", "slide": false, "accent": true, "up": false, "down": true, "gate": "note"},
+    {"note": "A", "slide": false, "accent": false, "up": false, "down": true, "gate": "note"},
+    {"note": "A", "slide": false, "accent": false, "up": false, "down": false, "gate": "note"},
+    {"note": "A", "slide": false, "accent": false, "up": false, "down": true, "gate": "note"},
+    {"note": "C", "slide": false, "accent": false, "up": false, "down": false, "gate": "pause"},
+    {"note": "A", "slide": true, "accent": false, "up": false, "down": true, "gate": "note"},
+    {"note": "C", "slide": false, "accent": false, "up": false, "down": false, "gate": "note"},
+    {"note": "A", "slide": false, "accent": false, "up": false, "down": true, "gate": "note"},
+    {"note": "A", "slide": false, "accent": true, "up": false, "down": true, "gate": "note"},
+    {"note": "C", "slide": false, "accent": false, "up": false, "down": false, "gate": "pause"},
+    {"note": "G", "slide": false, "accent": false, "up": false, "down": true, "gate": "note"},
+    {"note": "A", "slide": false, "accent": false, "up": false, "down": true, "gate": "note"},
+    {"note": "A", "slide": false, "accent": true, "up": false, "down": false, "gate": "note"},
+    {"note": "C", "slide": false, "accent": false, "up": false, "down": false, "gate": "pause"},
+    {"note": "E", "slide": true, "accent": false, "up": false, "down": true, "gate": "note"},
+    {"note": "G", "slide": false, "accent": false, "up": false, "down": true, "gate": "note"}
+  ]
+}

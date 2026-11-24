@@ -1,0 +1,25 @@
+{
+  "openrb338": "pattern",
+  "version": 1,
+  "device": "909",
+  "length": 16,
+  "shuffle": false,
+  "steps": [
+    {"ac": true, "bd": "high", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "high", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "off", "oh": "high", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": true, "bd": "high", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "high", "ch": "high", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "off", "oh": "high", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "low", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": true, "bd": "high", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "high", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "off", "oh": "high", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": true, "bd": "high", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "high", "ch": "high", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "off", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "off", "oh": "high", "cc": "off", "rc": "off"},
+    {"ac": false, "bd": "off", "sd": "low", "lt": "off", "mt": "off", "ht": "off", "rs": "off", "cp": "off", "ch": "low", "oh": "off", "cc": "off", "rc": "off"}
+  ]
+}

@@ -64,6 +64,7 @@ orb-ui-art = { path = "../orb-ui-art" }
 # The gated tests' external inputs (task-121).
 orb-testkit = { path = "../orb-testkit" }
 tempfile = "3.27.0"
+sha2 = "0.10"
 
 [build-dependencies]
 embed-resource = "3"

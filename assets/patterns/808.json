@@ -1,0 +1,25 @@
+{
+  "openrb338": "pattern",
+  "version": 1,
+  "device": "808",
+  "length": 16,
+  "shuffle": false,
+  "steps": [
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": true, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": true, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": true, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": true, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": true, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": true, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": true, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": true, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": true, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": false, "mt": false, "ht": false, "rs": false, "cp": false, "cb": true, "cy": false, "oh": false, "ch": false},
+    {"ac": false, "bd": false, "sd": false, "lt": true, "mt": false, "ht": false, "rs": false, "cp": false, "cb": false, "cy": false, "oh": false, "ch": false}
+  ]
+}

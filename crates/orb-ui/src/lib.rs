@@ -39,4 +39,5 @@ pub mod session;
 pub mod settings;
 pub mod shortcuts;
 pub mod skin;
+pub mod template;
 pub mod version;

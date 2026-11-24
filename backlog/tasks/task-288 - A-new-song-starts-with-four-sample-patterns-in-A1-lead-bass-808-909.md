@@ -1,10 +1,11 @@
 ---
 id: TASK-288
 title: A new song starts with four sample patterns in A1 (lead, bass, 808, 909)
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-24T10:47:00Z'
+updated_date: '2026-11-24T11:09:00Z'
 labels:
   - ui
 milestone: m-9
@@ -169,11 +170,33 @@ The grid that fully defines the patterns, in case the JSON and the grid disagree
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 File > New and the app's starting song hold the lead in the first 303's A1, the bass in the second 303's A1, and 808.json and 909.json in A1 of the 808 and the 909; every other pattern is empty
-- [ ] #2 The four JSON files are in the repository verbatim (sha256 as in the description) and a test parses each and checks its bytes in A1 of its row
-- [ ] #3 The plugin's new instance and its File > New get the same template; a saved plugin state loads unchanged
-- [ ] #4 A song opened from a file, the engine's empty song, the CLI and the corpus are unchanged
-- [ ] #5 Tests that assumed an empty new song are updated and listed in the notes
-- [ ] #6 cargo test --workspace, clippy -D warnings and nightly fmt --check pass
-- [ ] #7 The user has listened to the template in the app and the plugin
+- [x] #1 File > New and the app's starting song hold the lead in the first 303's A1, the bass in the second 303's A1, and 808.json and 909.json in A1 of the 808 and the 909; every other pattern is empty
+- [x] #2 The four JSON files are in the repository verbatim (sha256 as in the description) and a test parses each and checks its bytes in A1 of its row
+- [x] #3 The plugin's new instance and its File > New get the same template; a saved plugin state loads unchanged
+- [x] #4 A song opened from a file, the engine's empty song, the CLI and the corpus are unchanged
+- [x] #5 Tests that assumed an empty new song are updated and listed in the notes
+- [x] #6 cargo test --workspace, clippy -D warnings and nightly fmt --check pass
+- [x] #7 The user has listened to the template in the app and the plugin
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. assets/patterns/*.json verbatim (sha256 checked). 2. orb-ui template.rs: embeds and parses them, apply() writes A1 of each row into an engine. 3. Link::load_new applies it (File > New and App::start both go through it; Link::new, the engine empty song, rbs, CLI, corpus untouched). 4. Plugin: Doc::new_song() (patterns of the empty song with the template in A1) for OrbParams::new, a restore with no saved state, and OrbParams::new_song; Doc::from_json untouched so a saved state loads unchanged. 5. Update tests that assume an empty new song; list them. 6. cargo test --workspace, clippy, nightly fmt; build app and VST3.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-ab0cc56c413e20fb0
+
+Implementation (awaiting the user's listen, AC 7 open). Files: assets/patterns/{303-lead,303-bass,808,909}.json (sha256 verified against the task, each file ends with a newline, hash is of the text block plus newline as in the task); crates/orb-ui/src/template.rs (embeds, parses with pattern_json, apply() writes A1); Link::load_new applies it, which both App::start and File > New go through (Link::new, rbs::Song::empty, CLI, corpus untouched; a song opened from a file untouched); plugin Doc::new_song() (patterns of the empty song with the template in A1) used by OrbParams::new, a restore with no saved state, and OrbParams::new_song via build_song. Doc::from_json untouched, so a saved state loads unchanged (test: a saved state with empty pattern arrays stays empty). Open points: 1 A1 selection kept; 2 knobs unchanged; 3 plugin done as recommended; 4 tests updated. Awkward: the drum machines hold patterns only when built with samples, so the plugin's template_patterns builds with the built-in kit (with None the 808/909 A1 stayed empty, caught by the new plugin test). Error fallbacks in the plugin (a saved song that fails to load) still give the empty song. Tests changed: orb-ui tests/menu.rs file_new_gives_the_state_of_a_fresh_start (start state is now the template, compared with a second File > New, and the mirror compared with a started app), tests/repaint.rs new_song() helper (uses the engine's empty song: the template is not silent after Stop). Tests added: template.rs files_are_verbatim (sha256), each_file_parses_for_its_row; menu.rs start_and_file_new_hold_the_template; plugin tests/state.rs a_new_instance_and_file_new_hold_the_template, a_saved_state_does_not_get_the_template. cargo test --workspace --no-fail-fast: 1088 pass, 0 fail; clippy -D warnings and nightly fmt --check clean. Built target/OpenRB-338.app and target/bundled/OpenRB-338.vst3.
+
+The user listened to the template in the app and the plugin and signed it off on 2026-11-24 ("good"), including the plugin's error fallback giving the empty song.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A new song (the app's start, File > New, the plugin's new instance and File > New) starts with the lead in the first 303's A1, the bass in the second 303's A1, and the 808 and 909 patterns; everything else is empty. Files in assets/patterns/ (sha256 checked), orb-ui template.rs, Link::load_new, plugin Doc::new_song. Saved plugin states, songs opened from files, the engine's empty song, the CLI and the corpus are unchanged. cargo test --workspace 1088 pass, clippy and nightly fmt clean. Commit on branch worktree-agent-ab0cc56c413e20fb0.
+<!-- SECTION:FINAL_SUMMARY:END -->
