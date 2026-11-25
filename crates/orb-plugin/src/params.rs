@@ -351,10 +351,10 @@ const TR909: [&str; 30] = [
     "HH Level",
     "CH Decay",
     "OH Decay",
-    "Crash Level",
-    "Crash Tune",
-    "Ride Level",
-    "Ride Tune",
+    "CC Level",
+    "CC Tune",
+    "RC Level",
+    "RC Tune",
     "Flam",
 ];
 

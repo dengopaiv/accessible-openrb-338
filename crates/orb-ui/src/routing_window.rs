@@ -21,7 +21,7 @@ pub const TITLE: &str = "Output Routing";
 pub const DEVICES: [&str; 4] = ["303-1", "303-2", "808", "909"];
 
 /// One column of the window: its heading and its boxes, each the output's VST3 bus index (from
-/// 1, after the Mix's 0) and /// its name.
+/// 1, after the Mix's 0) and its name.
 pub struct Column {
     pub heading: &'static str,
     pub boxes: Vec<(usize, &'static str)>,
