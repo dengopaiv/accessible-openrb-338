@@ -14,7 +14,9 @@ use base64::engine::general_purpose::STANDARD as B64;
 use nice_plug::prelude::Params;
 use orb_engine::seq::{TEMPO_STEP, trunc};
 use orb_player::midi::Message;
+use orb_plugin::core::AUX_OUTPUTS;
 use orb_plugin::instance::{Mode, OrbParams, set_param};
+pub use orb_plugin::routing::{self, OUTPUT_NAMES};
 use orb_plugin::{clip, editor};
 
 /// The REAPER version the fixtures and the test were made with (`docs/plugin.md` section 7).
@@ -36,10 +38,15 @@ impl Format {
     }
 }
 
-/// The per-device outputs' tracks of a routed case: the track names, and the plugin's output
-/// channels (0-based, the first of the stereo pair) REAPER routes to them (outputs 3/4 .. 9/10:
-/// the buses 303-1, 303-2, 808, 909 after the Mix, `docs/plugin.md` section 13).
-pub const DEVICE_TRACKS: [(&str, u32); 4] = [("303-1", 2), ("303-2", 4), ("808", 6), ("909", 8)];
+/// The output tracks of a routed case: the track name and the aux bus (0-based, [`OUTPUT_NAMES`]
+/// order) it takes. The bus is the plugin's output `k + 1` after the Mix, REAPER's channels
+/// `2k + 2` and `2k + 3` (0-based; outputs 3/4 .. 9/10 for the four device buses, `docs/plugin.md`
+/// section 13). A routed case has the four device tracks; a case with [`Case::drums`] also the
+/// 22 drum tracks.
+pub fn tracks(c: &Case) -> Vec<(&'static str, usize)> {
+    let n = if c.drums { AUX_OUTPUTS } else { 4 };
+    (0..n).map(|k| (OUTPUT_NAMES[k], k)).collect()
+}
 
 /// Where the MIDI item puts a clip's notes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +85,12 @@ pub struct Case {
     /// The four device outputs routed to tracks of their own ([`DEVICE_TRACKS`]), rendered as
     /// stems with the master.
     pub routed: bool,
+    /// All 27 outputs routed (task-305): the 22 drum outputs on tracks of their own as well
+    /// ([`tracks`]), on a track of 54 channels; implies `routed`.
+    pub drums: bool,
+    /// The routing boxes unchecked (Options > Output Routing, the keys of
+    /// [`routing::ROUTING_IDS`]), saved in the state's `routing`.
+    pub off: &'static [&'static str],
     /// A key the MIDI item also presses at tick 0 on the clip's channel and never lets go (a
     /// note-off the host lost, task-258), the item then running [`TAIL`] past the clips.
     pub orphan: Option<u8>,
@@ -124,6 +137,8 @@ const fn note(
         clip: Some((row, timing)),
         loop_selection: None,
         routed: false,
+        drums: false,
+        off: &[],
         orphan: None,
     }
 }
@@ -156,7 +171,24 @@ const fn latch(
         clip: None,
         loop_selection,
         routed,
+        drums: false,
+        off: &[],
         orphan: None,
+    }
+}
+
+/// A Latch Pattern Mode case of the full mix with all 27 outputs routed (task-305), the routing
+/// boxes `off` unchecked and `edits` applied.
+const fn drums(
+    name: &'static str,
+    off: &'static [&'static str],
+    edits: &'static [(&'static str, i32)],
+) -> Case {
+    Case {
+        edits,
+        drums: true,
+        off,
+        ..latch(name, 44_100, 4.0, None, true)
     }
 }
 
@@ -171,7 +203,7 @@ const PCF_909: &[(&str, i32)] = &[("d0c2", 4), ("d7c0", 1), ("d7c4", 0)];
 /// 48 kHz, and with the device outputs routed (and the same project unrouted); a pin of
 /// REAPER's render ignoring a looped selection; and the 303's clip with a note-on whose
 /// note-off never comes (task-258: key 39, which the clip plays and lets go later in each loop).
-pub const CASES: [Case; 11] = [
+pub const CASES: [Case; 14] = [
     note("tb303_slide_clip", "303_slide", &[], 0, Timing::Clip),
     note("tb303_slide_aligned", "303_slide", &[], 0, Timing::Aligned),
     note(
@@ -209,6 +241,12 @@ pub const CASES: [Case; 11] = [
     latch("outputs_routed", 44_100, 4.0, None, true),
     latch("outputs_unrouted", 44_100, 4.0, None, false),
     stuck("tb303_stuck_note", "303_slide", 39),
+    // task-305: the 22 drum outputs and the routing state. The 808's send (channel 2's fourth
+    // control, d0c20) is on where its device is taken out of the Mix, so that its delay send
+    // is heard
+    drums("outputs_drums", &[], &[]),
+    drums("routing_device", &["mix.808"], &[("d0c20", 100)]),
+    drums("routing_drums", &["808.bd", "909.cp"], &[]),
 ];
 
 pub fn case(name: &str) -> &'static Case {
@@ -233,7 +271,7 @@ pub fn fixture_path(c: &Case, f: Format) -> PathBuf {
 }
 
 /// Sets the parameter `id` to `v`, as the host does.
-fn set(p: &OrbParams, id: &str, v: i32) {
+pub fn set(p: &OrbParams, id: &str, v: i32) {
     let param = p.param(id).unwrap_or_else(|| panic!("no parameter {id}"));
     unsafe { set_param(param, v) };
     assert_eq!(param.value(), v, "{id} takes {v}");
@@ -252,7 +290,18 @@ pub fn instance(c: &Case) -> OrbParams {
         set(&p, id, v);
     }
     p.set_mode(c.mode);
+    p.set_routing(routing_of(c.off));
     p
+}
+
+/// The routing with the boxes `off` (keys of [`routing::ROUTING_IDS`]) unchecked.
+pub fn routing_of(off: &[&str]) -> orb_engine::frame::OutputRouting {
+    let mut m = std::collections::BTreeMap::new();
+    for id in off {
+        assert!(routing::ROUTING_IDS.contains(id), "no routing key {id}");
+        m.insert(id.to_string(), false);
+    }
+    routing::from_saved(&m)
 }
 
 /// The frames of a quarter note at the case's rate and tempo: the MIDI item's division.
@@ -390,10 +439,21 @@ pub fn state_json(p: &OrbParams) -> String {
     .unwrap()
 }
 
-/// The plugin's outputs: the Mix and the four device buses, stereo each, as REAPER saved the
-/// released plugin (v2026.1118.0919). task-300's 22 drum buses come after them and are not
-/// mapped here, as in a project saved with the released plugin.
+/// The plugin's outputs mapped in a project: the Mix and the four device buses, stereo each,
+/// as REAPER saved the released plugin (v2026.1118.0919). task-300's 22 drum buses come after
+/// them and are not mapped here, as in a project saved with the released plugin; a case with
+/// [`Case::drums`] maps all of them ([`outputs`]).
 const OUTPUTS: u32 = 10;
+
+/// The channels a case maps (two a stereo output): the Mix and every aux bus with [`Case::drums`],
+/// else [`OUTPUTS`].
+fn outputs(c: &Case) -> u32 {
+    if c.drums {
+        2 * (1 + AUX_OUTPUTS as u32)
+    } else {
+        OUTPUTS
+    }
+}
 
 /// `data` as base64 lines of 96 bytes (128 characters), REAPER's width, each indented.
 fn b64_lines(out: &mut String, indent: &str, data: &[u8]) {
@@ -412,22 +472,23 @@ fn b64_lines(out: &mut String, indent: &str, data: &[u8]) {
 /// one line of the data's length, 1 and 0xFFFF (u32 each), the data (the component state's
 /// length and 1, the state, then the controller state's length 0 and a 0, u32 each), and a
 /// trailer of six zero bytes.
-pub fn fx_block(f: Format, json: &str) -> String {
+pub fn fx_block(f: Format, json: &str, outputs: u32) -> String {
     let mut s = String::new();
     match f {
         Format::Vst3 => {
             // REAPER's id of the class (the decimal before the GUID), as it saved it
             let id: u32 = 1_476_801_187;
             s.push_str(&format!(
-                "      <VST \"VST3i: OpenRB-338 (OpenRB-338) (10 out)\" OpenRB-338.vst3 0 \"\" \
+                "      <VST \"VST3i: OpenRB-338 (OpenRB-338) ({outputs} out)\" OpenRB-338.vst3 0 \
+                 \"\" \
                  {id}{{EFAB08AFB39D43998A803DC1F84ED3D6}} \"\"\n"
             ));
             let mut head = Vec::new();
             head.extend(id.to_le_bytes());
             head.extend(0xFEED_5EEEu32.to_le_bytes());
             head.extend(0u32.to_le_bytes());
-            head.extend(OUTPUTS.to_le_bytes());
-            for n in 0..OUTPUTS {
+            head.extend(outputs.to_le_bytes());
+            for n in 0..outputs {
                 head.extend((1u64 << n).to_le_bytes());
             }
             let mut data = Vec::new();
@@ -461,14 +522,14 @@ fn num(x: f64) -> String {
 /// note's frames, [`ppq`], so an event's position is its frame).
 fn instrument_track(c: &Case, f: Format, p: &OrbParams) -> String {
     let mut s = String::from("  <TRACK\n    NAME \"OpenRB-338\"\n");
-    // the ten outputs on the track's ten channels when the device tracks take them
+    // the outputs on the track's channels (two each) when the output tracks take them
     s.push_str(&format!(
         "    NCHAN {}\n",
-        if c.routed { OUTPUTS } else { 2 }
+        if c.routed { outputs(c) } else { 2 }
     ));
     s.push_str("    MAINSEND 1 0\n");
     s.push_str("    <FXCHAIN\n      SHOW 0\n      LASTSEL 0\n      DOCKED 0\n      BYPASS 0 0 0\n");
-    s.push_str(&fx_block(f, &state_json(p)));
+    s.push_str(&fx_block(f, &state_json(p), outputs(c)));
     s.push_str("      FLOATPOS 0 0 0 0\n      WAK 0 0\n    >\n");
     let (ev, end) = notes(c, p);
     if !ev.is_empty() {
@@ -521,10 +582,10 @@ fn device_track(name: &str, src: u32) -> String {
 /// The case's project for the format `f`, from the template.
 pub fn project(c: &Case, f: Format, template: &str) -> String {
     let p = instance(c);
-    let mut tracks = instrument_track(c, f, &p);
+    let mut text = instrument_track(c, f, &p);
     if c.routed {
-        for (name, src) in DEVICE_TRACKS {
-            tracks.push_str(&device_track(name, src));
+        for (name, bus) in tracks(c) {
+            text.push_str(&device_track(name, 2 * (bus as u32 + 1)));
         }
     }
     let (looped, sel) = match c.loop_selection {
@@ -539,7 +600,7 @@ pub fn project(c: &Case, f: Format, template: &str) -> String {
         .replace("@SECONDS@", &num(c.seconds))
         // 1: the master mix and a stem of each selected track; 0: the master mix
         .replace("@STEMS@", if c.routed { "1" } else { "0" })
-        .replace("@TRACKS@", &tracks)
+        .replace("@TRACKS@", &text)
 }
 
 /// The template, `tests/reaper/template.RPP`.

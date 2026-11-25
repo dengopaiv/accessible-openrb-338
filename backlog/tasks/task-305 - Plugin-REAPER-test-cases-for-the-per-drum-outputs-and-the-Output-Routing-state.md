@@ -3,10 +3,11 @@ id: TASK-305
 title: >-
   Plugin: REAPER test cases for the per-drum outputs and the Output Routing
   state
-status: To Do
+status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-25T12:00:00Z'
+updated_date: '2026-11-25T12:55:00Z'
 labels:
   - tests
   - player
@@ -40,8 +41,30 @@ Keep the existing cases' released layout unchanged. Follow docs/plugin.md 7.1 fo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A REAPER case routes all 22 drum outputs (and the 4 device outputs) to their own tracks; each track matches the in-process host's bus within the existing rules, and Master is unchanged against the unrouted project
-- [ ] #2 REAPER cases with saved routing changes (a device out of Mix-L/R; an 808 and a 909 drum unchecked) render Master and the output tracks as the in-process host does, the device keeping its delay send
-- [ ] #3 The existing REAPER cases keep the released layout; docs/plugin.md 7.1 lists the new cases
-- [ ] #4 The REAPER test passes with ORB_REAPER set on the user's Mac (run by the agent if REAPER is reachable, else by the user); cargo test --workspace, clippy -D warnings (macOS and Windows) and nightly fmt --check pass
+- [x] #1 A REAPER case routes all 22 drum outputs (and the 4 device outputs) to their own tracks; each track matches the in-process host's bus within the existing rules, and Master is unchanged against the unrouted project
+- [x] #2 REAPER cases with saved routing changes (a device out of Mix-L/R; an 808 and a 909 drum unchecked) render Master and the output tracks as the in-process host does, the device keeping its delay send
+- [x] #3 The existing REAPER cases keep the released layout; docs/plugin.md 7.1 lists the new cases
+- [x] #4 The REAPER test passes with ORB_REAPER set on the user's Mac (run by the agent if REAPER is reachable, else by the user); cargo test --workspace, clippy -D warnings (macOS and Windows) and nightly fmt --check pass
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. cases.rs: Case gains drums (all 27 outputs, 54 channels, 22 drum tracks + 4 device tracks) and off (routing ids unchecked, saved in the state's routing key); tracks(c) lists the stems. 2. New cases on full_mix Latch: outputs_drums (all routed, all checked), routing_device (808 out of Mix-L/R, 808 send 100), routing_drums (808.bd and 909.cp unchecked). 3. reaper.rs: check() compares every track with the in-process bus (flush allowed), Master with the in-process Mix under the routing; cross-case: outputs_drums Master == outputs_unrouted; device case 808 track == outputs_drums', Master differs, send contributes; drum case BD/CP tracks == outputs_drums', 808/909 tracks and Master differ. 4. Regenerate fixtures, docs/plugin.md 7.1, run with ORB_REAPER, checks.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-afc1ba6dd40e72cd9 (rebased onto 5b81c7b)
+
+REAPER 7.86 run (ORB_REAPER=/Applications/REAPER.app/Contents/MacOS/REAPER), cargo test -p orb-plugin --test reaper: 4 passed (twice; second run 55 s). New cases outputs_drums, routing_device, routing_drums (full_mix, Latch, 54 channels, 26 stem tracks): every track equals the in-process bus bit for bit (1e-16 flush exemption), Master equals the in-process Mix under the routing. Drums that sound in full_mix: 808 BD, 808 CH, 909 SD, 909 CP, 909 OH. outputs_drums Master == outputs_unrouted Master bit for bit. routing_device (mix.808 off, d0c20 send 100): all 26 tracks equal outputs_drums', Master differs, in-process Mix with send 0 differs (send kept). routing_drums (808.bd, 909.cp off): 808 and 909 tracks and Master differ, the other 24 tracks (incl. BD and CP outputs) equal outputs_drums'. Existing 11 fixtures unchanged (10 channels). cargo test --workspace 1164 passed, 0 failed, 5 ignored; clippy -D warnings clean on macOS and xwin x86_64-pc-windows-msvc; nightly fmt --check clean.
+
+Review round 1: cases.rs fx_block string literal was 103 columns; split with a backslash continuation (content byte-identical: the_fixtures_are_current passes, regenerating the fixtures leaves git status with no fixture change). reaper.rs routing_cases derives Allow from the format as check() does. cargo test -p orb-plugin 172 passed, 0 failed; nightly fmt --check and clippy clean; the REAPER test not rerun (no change to what it renders).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Three REAPER cases added to crates/orb-plugin/tests/reaper (cases.rs, reaper.rs, fixtures outputs_drums, routing_device, routing_drums .vst3.RPP) and documented in docs/plugin.md 7.1. outputs_drums routes all 26 aux outputs to own tracks (54 channels); its Master equals outputs_unrouted. routing_device (808 out of Mix-L/R, send 100) and routing_drums (808 BD, 909 CP unchecked, state key routing) match the in-process host on every track and the Master, and cross-checks against outputs_drums prove the device keeps its send and the drum outputs carry the unchecked drums. REAPER 7.86 run passed; cargo test --workspace 1164 passed; clippy macOS and Windows and nightly fmt clean. Existing fixtures unchanged.
+<!-- SECTION:FINAL_SUMMARY:END -->

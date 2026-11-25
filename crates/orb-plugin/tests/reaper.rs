@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use cases::{CASES, Case, DEVICE_TRACKS, Format, Timing};
+use cases::{CASES, Case, Format, Timing};
 use orb_player::midi::Message;
 use orb_plugin::core::{AUX_OUTPUTS, AuxOut, HostEvent, HostTransport};
 use orb_plugin::instance::{self, Mode, OrbParams};
@@ -65,6 +65,18 @@ const CLIP_CEILING: [(&str, f32); 3] = [
     ("tr808_pcf_clip", 1.5874329),
     ("tr909_pcf_clip", 1.7430725),
 ];
+
+/// The drum outputs that sound in `full_mix` (the in-process host's peak over 0.01), which the
+/// drum cases need to be heard on their tracks (task-305).
+const DRUMS_PLAY: [&str; 5] = ["808 BD", "808 CH", "909 SD", "909 CP", "909 OH"];
+
+/// The aux bus of a routing key.
+fn routing_bus(id: &str) -> usize {
+    cases::routing::ROUTING_IDS
+        .iter()
+        .position(|i| *i == id)
+        .unwrap()
+}
 
 #[test]
 fn the_fixtures_are_current() {
@@ -666,16 +678,39 @@ fn check(c: &Case, f: Format, r: &Render) {
         );
     }
     if c.routed {
-        for (k, (name, _)) in DEVICE_TRACKS.iter().enumerate() {
+        for (name, k) in cases::tracks(c) {
             let stem = r.get(name);
-            assert!(peak(stem) > 0.1, "{id}: the {name} track plays");
+            // the device tracks play; the drum tracks that sound are listed below
+            if k < 4 {
+                assert!(peak(stem) > 0.1, "{id}: the {name} track plays");
+            }
             // the VST3 host flushes tiny samples ([`Allow`])
             let allow = Allow {
                 flush: f == Format::Vst3,
             };
             same(&format!("{id} {name}"), stem, &host.buses[k], allow);
         }
-        eprintln!("{id}: each device track equal to its bus");
+        eprintln!(
+            "{id}: each of the {} tracks equal to its bus",
+            cases::tracks(c).len()
+        );
+    }
+    if c.drums {
+        // the drum tracks that sound (they equal the in-process buses above); the unchecked
+        // drums are among them
+        let sounding: Vec<_> = cases::tracks(c)
+            .into_iter()
+            .filter(|&(name, k)| k >= 4 && peak(r.get(name)) > 0.01)
+            .map(|(name, _)| name)
+            .collect();
+        eprintln!("{id}: the drum tracks that sound: {sounding:?}");
+        for need in DRUMS_PLAY {
+            assert!(sounding.contains(&need), "{id}: the {need} track plays");
+        }
+        for off in c.off.iter().filter(|o| !o.starts_with("mix.")) {
+            let name = cases::OUTPUT_NAMES[routing_bus(off)];
+            assert!(sounding.contains(&name), "{id}: the unchecked {name} plays");
+        }
     }
 }
 
@@ -692,11 +727,15 @@ fn reaper_renders_as_the_plugin_plays_in_process() {
     let exe = PathBuf::from(exe);
     let bundles = bundles();
     let mut masters = BTreeMap::new();
+    let mut stems = BTreeMap::new();
     for c in &CASES {
         for f in Format::ALL {
             let r = render(&exe, &bundles, &k, c, f);
             check(c, f, &r);
             masters.insert((c.name, f.ext()), r.get("Master").to_vec());
+            if c.drums {
+                stems.insert((c.name, f.ext()), r.files);
+            }
         }
     }
     // the Mix does not change when the device outputs are routed (task-256)
@@ -707,6 +746,9 @@ fn reaper_renders_as_the_plugin_plays_in_process() {
             &masters[&("outputs_unrouted", f.ext())],
             EXACT,
         );
+    }
+    for f in Format::ALL {
+        routing_cases(f, &masters, &stems);
     }
     // a limitation pin, not a matching case: REAPER 7.86's command-line render ignores the
     // looped selection and renders the linear timeline, bit-identical to the unlooped project.
@@ -722,6 +764,79 @@ fn reaper_renders_as_the_plugin_plays_in_process() {
             EXACT,
         );
     }
+}
+
+/// The drum outputs and the routing cases against each other (task-305), each already equal to
+/// the in-process host ([`check`]): routing the drum outputs does not change the Mix, a device
+/// out of Mix-L/R changes the Mix and no output, and a drum out of its machine's bus changes the
+/// Mix and its machine's output only, the drum's own output carrying it all the same.
+fn routing_cases(
+    f: Format,
+    masters: &BTreeMap<(&str, &str), Vec<f32>>,
+    stems: &BTreeMap<(&str, &str), BTreeMap<String, Vec<f32>>>,
+) {
+    let ext = f.ext();
+    // the VST3 host flushes tiny samples ([`Allow`])
+    let allow = Allow {
+        flush: f == Format::Vst3,
+    };
+    let master = |n: &'static str| &masters[&(n, ext)];
+    let all = &stems[&("outputs_drums", ext)];
+    // the drum outputs on tracks of their own do not change the Mix (the four device outputs
+    // are task-256's case)
+    same(
+        &format!("outputs_drums.{ext} Master against unrouted"),
+        master("outputs_drums"),
+        master("outputs_unrouted"),
+        EXACT,
+    );
+    let differs = |what: &str, a: &[f32], b: &[f32]| {
+        assert!(diff(a, b, LSB).1 > 0, "{what}: expected a difference");
+    };
+    // 808 out of Mix-L/R: every output as with all checked (the tap is before the level), the
+    // Mix not, and the 808's delay send (send 100) still reaches it: with the send off the Mix
+    // is another
+    let c = cases::case("routing_device");
+    let dev = &stems[&("routing_device", ext)];
+    for (name, _) in cases::tracks(c) {
+        same(
+            &format!("routing_device.{ext} {name} against all checked"),
+            &dev[name],
+            &all[name],
+            allow,
+        );
+    }
+    differs(
+        "routing_device Master against all checked",
+        master("routing_device"),
+        master("outputs_drums"),
+    );
+    let p = cases::instance(c);
+    let frames = (c.seconds * c.rate as f64).round() as usize;
+    let sent = play(c, &p, CALL, frames, &[]);
+    cases::set(&p, "d0c20", 0);
+    let unsent = play(c, &p, CALL, frames, &[]);
+    differs("the 808's delay send", &sent.mix, &unsent.mix);
+    eprintln!("routing_device.{ext}: the delay send is in the Mix");
+    // 808 BD and 909 CP out of their buses: their own outputs as with all checked, the other
+    // outputs too except their machines'
+    let dr = &stems[&("routing_drums", ext)];
+    let c = cases::case("routing_drums");
+    for (name, _) in cases::tracks(c) {
+        let machine = name == "808" || name == "909";
+        let what = format!("routing_drums.{ext} {name} against all checked");
+        if machine {
+            differs(&what, &dr[name], &all[name]);
+        } else {
+            same(&what, &dr[name], &all[name], allow);
+        }
+    }
+    differs(
+        "routing_drums Master against all checked",
+        master("routing_drums"),
+        master("outputs_drums"),
+    );
+    eprintln!("routing_drums.{ext}: the 808 BD and 909 CP are out of the Mix and their machines");
 }
 
 /// The timeout path: a REAPER that does not finish (an unreadable project leaves it waiting)

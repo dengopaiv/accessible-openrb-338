@@ -486,7 +486,7 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
   (`/Applications/REAPER.app/Contents/MacOS/REAPER`); otherwise it prints `skipped: ...` and
   passes, as the `ORB_CD_ISO` tests do. CI does not run it (REAPER is licensed software), and
   it knows REAPER's settings for macOS only (elsewhere it skips with a message). It takes about
-  a minute: 11 renders of a few seconds each and the in-process references. The fixtures' freshness
+  a minute: 14 renders of a few seconds each and the in-process references. The fixtures' freshness
   test (`the_fixtures_are_current`) always runs.
 - **The fresh build only, nothing installed** (the user's decision, 2026-11-21). The test
   builds the bundles (`cargo xtask bundle orb-plugin --release`, into `target/bundled`) and
@@ -611,6 +611,22 @@ drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP for
     in-process plugin's (`Core`) bus bit for bit, except that REAPER 7.86's VST3 host writes 0
     for a sample below about 1e-16 (the 909's decay tail, 3e-17; allowed for the VST3 tracks
     only);
+  - the 22 drum outputs and Options > Output Routing (task-305, section 13, `full_mix` in Latch
+    Pattern Mode, the 54 channels of all 27 outputs mapped, `NCHAN 54`; each of the 26 aux buses
+    on a track of its own, `AUXRECV` of its channels; the older cases keep the released 10
+    channels). Every track is the in-process bus bit for bit (the same 1e-16 exemption), the
+    Master the in-process Mix under the case's routing:
+    - `outputs_drums`: every box checked. The Master is bit for bit `outputs_unrouted`'s: routing
+      the drum outputs changes nothing. Of the drums `full_mix` plays 808 BD, 808 CH, 909 SD,
+      909 CP and 909 OH, which sound on their tracks (peak over 0.01);
+    - `routing_device`: the state's `routing` has `mix.808` unchecked, and the 808's send (`d0c20`)
+      is 100. Every one of the 26 tracks is `outputs_drums`' (the tap is before the level and
+      the send), the Master is not (the 808 is out of Mix-L/R), and the in-process Mix with the
+      send at 0 is another (the device keeps its delay send);
+    - `routing_drums`: `808.bd` and `909.cp` unchecked. The 808 and 909 tracks differ from
+      `outputs_drums`' (the drum is gone from its machine's output) and so does the Master;
+      the other 24 tracks, the 808 BD and 909 CP outputs included, are `outputs_drums`' (an
+      instrument's output carries its voice sum, checked or not);
   - `loop_ignored`, a limitation pin and not a matching case: Latch Pattern Mode of
     `full_mix` with a looped time selection (bar 2 to 3, `LOOP 1`). **REAPER's command-line
     render does not loop**: it renders the linear timeline, bit for bit the project's without
