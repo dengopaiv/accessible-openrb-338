@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@agent-complex'
 created_date: '2026-11-25T10:54:00Z'
-updated_date: '2026-11-25T11:31:00Z'
+updated_date: '2026-11-25T11:46:00Z'
 labels:
   - tests
   - player
@@ -51,7 +51,7 @@ Get GetLastError for the failing RegisterClassExA, for example by reproducing on
 - [x] #1 The root cause is found with evidence (GetLastError, a reproduction or the code path) and recorded in the notes, including why it started at 4201d33
 - [x] #2 The fix makes the exports test pass on Windows reliably (repeated runs on the test machine), without skipping or weakening it
 - [x] #3 If the cause can hit a real host, the notes say so and the fix or a follow-up task covers the plugin itself
-- [ ] #4 cargo test --workspace, clippy -D warnings (macOS and Windows) and nightly fmt --check pass; the supervisor's CI run on the pushed fix is green
+- [x] #4 cargo test --workspace, clippy -D warnings (macOS and Windows) and nightly fmt --check pass; the supervisor's CI run on the pushed fix is green
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -91,6 +91,8 @@ So d810923 made the same race several times likelier on this machine (the timing
 Review round 1 (text only; code and criteria accepted): (1) exports.rs create_instance comment: the garbled 'aborted so' is now 'On the test machine, 6 runs in 100 aborted this way.', and the first line no longer states what hosts do. (2) docs/plugin.md section 7 no longer claims hosts are safe: it says the code path and the test machine show the abort needs two threads within the same 100 ns, that no host's behavior was checked, and that task-303 holds the open question. task-303's description now marks 'VST3 hosts create instances on their main thread, so REAPER, Bitwig, Live and the validators do not' as an unverified belief, with checking it part of the decision. The same claim in these notes above ('VST3 hosts create instances on the main thread, so REAPER etc. do not') is corrected here: unverified, see task-303. Rechecked: cargo test -p orb-plugin --test exports, cargo +nightly fmt --all --check.
 
 Review round 1 check: cargo test -p orb-plugin --test exports passes 3/3 on the amended commit. Run before the amend, with the edits uncommitted, the_vst3_factory_has_the_identity failed: its version check compared the test binary's 'dev-8b23745-dirty' with the cdylib's 'dev-8b23745' (a stale cdylib build next to a dirty tree; the existing task-291 check, not this change). On a clean tree it passes.
+
+2026-11-25, supervisor: merged as a74c22c and pushed; CI run 45605823388 on a74c22c passed on Linux, Windows and macOS with no rerun. Criterion 4 checked.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

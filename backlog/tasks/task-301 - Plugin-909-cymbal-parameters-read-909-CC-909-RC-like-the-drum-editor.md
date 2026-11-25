@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-25T10:34:00Z'
+updated_date: '2026-11-25T11:46:00Z'
 labels:
   - player
 milestone: m-7
@@ -50,3 +51,9 @@ Run your own grep for any other user-visible 'Crash'/'Ride' (the parameter docs 
 - [ ] #3 cargo test --workspace, clippy -D warnings (macOS and Windows) and nightly fmt --check pass
 - [ ] #4 The user has checked the names in a host
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-25, supervisor: from task-300's review, also fix the stray '///' inside the doc comment at crates/orb-ui/src/routing_window.rs:24 ('and /// its name.'); it renders as literal text in rustdoc.
+<!-- SECTION:NOTES:END -->
