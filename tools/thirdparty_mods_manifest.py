@@ -3,7 +3,7 @@
 checks the user's recrypted Mods folder against (task-121).
 
     thirdparty_mods_manifest.py --orig MODS.ORIG --mods MODS --dat RB20FUL.DAT \
-        [-o tests/refs/thirdparty_mods.json] [--orb PATH]
+        [--keep OLD_MANIFEST] [-o tests/refs/thirdparty_mods.json] [--orb PATH]
     thirdparty_mods_manifest.py --check --orig MODS.ORIG --dat RB20FUL.DAT \
         [--manifest tests/refs/thirdparty_mods.json] [--orb PATH]
 
@@ -19,6 +19,13 @@ hashes and names, never file content:
     {"mods": [{"file", "sha256" (of the RECRYPTED file), "name" (the INFO menu name), "error",
                "files": [[name, sha256 of the file]], "slots": {slot name: sha256 of the channel-0
                PCM as int16 BE}, "slot_errors": {slot name: message}}, ...]}
+
+A mod of MODS with no file in MODS.ORIG takes its entry from `--keep OLD_MANIFEST` when that
+lists the same file name with the same recrypted SHA-256 (the originals of the earlier runs are
+gone, so --orig may then hold only the new ones, or not exist). Else it has NO ORIGINAL (a mod
+the user made or edited by hand, task-311): its entry is read from the recrypted file itself
+(without the recryptor's pad file) and carries `"original": false`; the recryptor is not checked
+on it, and `--check` skips it.
 
 So the manifest pins what the current recryptor makes of the originals. `--check` is the opt-in
 re-verification of the recryptor on the real collection: it recrypts MODS.ORIG with the current
@@ -42,6 +49,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rbm  # noqa: E402
 
+PAD_NAME = "rb-recrypt.pad"  # crates/rbm: PAD_NAME
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -87,12 +95,25 @@ def mod_entry(orig_path, mods_dir, dat):
     }
 
 
-def build_manifest(orig_dir, mods_dir, dat, orb=None):
-    """The manifest; with `orb`, first requires orb's recrypt of the originals to equal MODS."""
-    names = sorted(f for f in os.listdir(orig_dir) if f.lower().endswith(".rbm"))
-    if not names:
-        raise SystemExit("no .rbm in %s" % orig_dir)
-    if orb:
+def recrypted_entry(mods_dir, file, dat):
+    """The entry of a mod with no original: read from the recrypted file, minus the pad."""
+    e = mod_entry(os.path.join(mods_dir, file), mods_dir, dat)
+    e["files"] = [f for f in e["files"] if f[0].lower() != PAD_NAME]
+    e["original"] = False
+    return e
+
+
+def build_manifest(orig_dir, mods_dir, dat, orb=None, keep=None):
+    """The manifest; with `orb`, first requires orb's recrypt of the originals to equal MODS.
+    `orig_dir` may be None or lack files: see the module doc for `keep` and for mods with no
+    original. Every .rbm of `mods_dir` is listed."""
+    have = {f for f in os.listdir(orig_dir) if f.lower().endswith(".rbm")} if orig_dir else set()
+    kept = {m["file"]: m for m in (keep or {"mods": []})["mods"]}
+    todo = sorted(f for f in os.listdir(mods_dir) if f.lower().endswith(".rbm"))
+    if not todo:
+        raise SystemExit("no .rbm in %s" % mods_dir)
+    names = sorted(have & set(todo))
+    if orb and names:
         with tempfile.TemporaryDirectory() as tmp:
             made = recrypt_originals(orb, orig_dir, dat, os.path.join(tmp, "out"))
         bad = [n for n in names
@@ -100,14 +121,23 @@ def build_manifest(orig_dir, mods_dir, dat, orb=None):
         if bad:
             raise SystemExit("orb mod recrypt of the originals differs from %s for %d mods: %s"
                              % (mods_dir, len(bad), ", ".join(bad)))
-    return {"mods": [mod_entry(os.path.join(orig_dir, n), mods_dir, dat) for n in names]}
+    mods = []
+    for f in todo:
+        k = kept.get(f)
+        if f in have:
+            mods.append(mod_entry(os.path.join(orig_dir, f), mods_dir, dat))
+        elif k and k["sha256"] == file_sha256(os.path.join(mods_dir, f)):
+            mods.append(k)
+        else:
+            mods.append(recrypted_entry(mods_dir, f, dat))
+    return {"mods": mods}
 
 
 def check_manifest(orig_dir, dat, manifest, orb):
     """Problems (a list of strings) between orb's recrypt of the originals and the manifest."""
     with tempfile.TemporaryDirectory() as tmp:
         made = recrypt_originals(orb, orig_dir, dat, os.path.join(tmp, "out"))
-    want = {m["file"]: m["sha256"] for m in manifest["mods"]}
+    want = {m["file"]: m["sha256"] for m in manifest["mods"] if m.get("original", True)}
     problems = ["%s: not in the manifest" % n for n in sorted(set(made) - set(want))]
     problems += ["%s: not recrypted from the originals" % n for n in sorted(set(want) - set(made))]
     problems += ["%s: orb's recrypt differs from the manifest" % n
@@ -124,7 +154,8 @@ def dumps(manifest):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--orig", required=True, help="the folder of the original .rbm files")
+    ap.add_argument("--orig", help="the folder of the original .rbm files (--check needs it)")
+    ap.add_argument("--keep", help="the old manifest: its entries are kept for unchanged files")
     ap.add_argument("--mods", help="the folder of the same files, recrypted (not with --check)")
     ap.add_argument("--dat", required=True, help="the CD's RB20FUL.DAT")
     ap.add_argument("--check", action="store_true",
@@ -136,6 +167,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     orb = find_orb(a.orb)
     if a.check:
+        if not a.orig:
+            ap.error("--orig is required with --check")
         with open(a.manifest) as f:
             problems = check_manifest(a.orig, a.dat, json.load(f), orb)
         for p in problems:
@@ -144,7 +177,11 @@ def main(argv=None):
         return 1 if problems else 0
     if not a.mods:
         ap.error("--mods is required without --check")
-    manifest = build_manifest(a.orig, a.mods, a.dat, orb)
+    keep = None
+    if a.keep:
+        with open(a.keep) as f:
+            keep = json.load(f)
+    manifest = build_manifest(a.orig, a.mods, a.dat, orb, keep)
     with open(a.out, "w", newline="\n") as f:
         f.write(dumps(manifest))
     print("%d mods -> %s" % (len(manifest["mods"]), a.out))

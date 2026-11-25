@@ -47,6 +47,35 @@ class Manifest(unittest.TestCase):
         # no file content: only 64-hex digests and names
         self.assertNotIn("ffd8", text)
 
+    def test_mod_without_original_and_kept_entry(self):
+        aif = rbm_test.aiff([(i * 37) % 2000 - 1000 for i in range(300)])
+        files = [("TR808BD.aif", aif), (tm.PAD_NAME, bytes(8))]
+        with tempfile.TemporaryDirectory() as d:
+            mods = os.path.join(d, "mods")
+            os.mkdir(mods)
+            for n, body in (("Made.rbm", rbm_test.build_mod(files)), ("Old.rbm", b"old bytes")):
+                with open(os.path.join(mods, n), "wb") as f:
+                    f.write(body)
+            dat = os.path.join(d, "RB20FUL.DAT")
+            with open(dat, "wb") as f:
+                f.write(struct.pack(">I", rbm.DAT_MAGIC))
+                f.truncate(rbm.DAT_HEADER + rbm.DAT_BODY)
+            old = {"file": "Old.rbm", "sha256": hashlib.sha256(b"old bytes").hexdigest(),
+                   "name": "kept"}
+            m = tm.build_manifest(None, mods, dat, keep={"mods": [old]})
+        made, kept = m["mods"]
+        self.assertEqual(made["file"], "Made.rbm")
+        self.assertIs(made["original"], False)
+        self.assertEqual([n for n, _ in made["files"]], ["TR808BD.aif"])  # the pad is dropped
+        self.assertEqual(kept, old)
+        # --check skips what has no original
+        real = tm.recrypt_originals
+        tm.recrypt_originals = lambda *a: {"Old.rbm": old["sha256"]}
+        try:
+            self.assertEqual(tm.check_manifest("o", "d", m, "orb"), [])
+        finally:
+            tm.recrypt_originals = real
+
 
 if __name__ == "__main__":
     unittest.main()
