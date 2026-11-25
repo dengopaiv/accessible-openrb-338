@@ -65,7 +65,7 @@ section 9. [G] Their intended results are the ones of their neighbors' pattern: 
 `+0x101` and sends `{1, 3, v}`, CC 21 stores `+0x10C` (the byte the send reads) and sends
 `{3, 2, v}`; orb uses these.
 
-### 2.2 Synths (`sub_4405B5`, from 0x42EF0F for 303 #1 and 0x42EF46 for 303 #2; p. 195)
+### 2.2 Synths (`sub_4405B5`, from 0x42EF0F for 303-1 and 0x42EF46 for 303-2; p. 195)
 
 | CC synth 1 | CC synth 2 | Control | 303 controller | Value |
 |---|---|---|---|---|

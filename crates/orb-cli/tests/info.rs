@@ -167,7 +167,7 @@ fn song_1x_titled(title: &[u8]) -> Vec<u8> {
     song_1x_with(title, None)
 }
 
-/// With `cc_time`, one controller change (the 303 #1's controller 14) at that MIDI time, which
+/// With `cc_time`, one controller change (the 303-1's controller 14) at that MIDI time, which
 /// is the tick 24 * `cc_time`.
 fn song_1x_with(title: &[u8], cc_time: Option<u32>) -> Vec<u8> {
     let mut b = Box::new([0u8; BLOCK_LEN]);

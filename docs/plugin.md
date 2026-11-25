@@ -126,7 +126,7 @@ state (section 5), not parameters.
   A1..D8), 1..32 the delay steps, 0..54 the PCF wave, 0..5 the compressor insert (off, master,
   channel 1..4), 0..4 the PCF insert (off, channel 1..4).
 - **Continuous and stepped** (task-275, GitHub issue 21: Studio One 7 drew and played the
-  automation of a stepped parameter, "ORB-303 2 Cutoff", as a staircase and would not draw a
+  automation of a stepped parameter, "303-2 Cutoff", as a staircase and would not draw a
   ramp; REAPER and Ableton do not, which is why no test had caught it). Until task-275 every
   parameter was a nice-plug `IntParam`, which gives VST3 a `stepCount` of `max - min`.
   - **Continuous** (86): every value over 0..127 (`params::Spec::continuous`: `Kind::Value`,
@@ -155,7 +155,7 @@ state (section 5), not parameters.
     works in normalized values; its CLAP wrapper, no longer built, would have given the CLAP
     range 0..1). A plugin state of the released build
     restores (section 5). Checked in REAPER 7.86 with the released bundles (task-275's notes):
-    a project REAPER saved through the released build, with an envelope ramp on "ORB-303 1
+    a project REAPER saved through the released build, with an envelope ramp on "303-1
     Cutoff" from 0 to its maximum, renders bit for bit the same through the new build, VST3
     (REAPER saves the envelope normalized, `<PARMENV 27:3029309 0 1 0.5`; 3 renders with each
     build, all 9 pairs equal). (CLAP, history: REAPER saved the CLAP value, `<PARMENV
@@ -308,7 +308,7 @@ field, `orb`, a JSON object (version 1):
 |---|---|
 | `version` | 1 |
 | `song` | the song file as loaded (`.rbs` or a ReBirth 1.x song), base64; null for a new song. File > Info reads its tempo and text from it |
-| `patterns` | the four pattern arrays as edited (303 #1 and #2: 32 x 98 bytes; 808 and 909: 32 x 194), base64 |
+| `patterns` | the four pattern arrays as edited (303-1 and #2: 32 x 98 bytes; 808 and 909: 32 x 194), base64 |
 | `vintage` | the Vintage sound model |
 | `mod` | null for the built-in kit (never embedded); else `{name, sha256, data}`: the mod's INFO name, the SHA-256 of its bytes and the recrypted `.rbm`, base64 (the mods are 2.6 to 9.4 MB, so about 3.5 to 12.5 MB of text) |
 | `editor_size` | the editor window's size in logical points (section 10); absent: 656 x 532 (624 x 532 before task-234's side margins) |
@@ -680,8 +680,8 @@ the last record that starts at or before `h`, extrapolated at its tempo while th
   timeline are identical, and with a host whose positions do not depend on where its buffers
   start, so are different buffer sizes (`sync.rs`).
 
-**Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 1..4 (303 #1 = 1, 303 #2 = 2,
-808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303 #1) in Latch
+**Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 1..4 (303-1 = 1, 303-2 = 2,
+808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303-1) in Latch
 Pattern Mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel message (it
 becomes the pending pattern), then, while the song plays, slot 2 on that device, which takes it
 at once (`relocate`: `0x100255E0`, `0x10028030`, `0x1002B670`) where the panel's would wait for
@@ -724,7 +724,7 @@ host sent (also those nothing maps, and in the preview, which ignores them): the
 ## 9. Note mode (task-200)
 
 In note mode (outside the preview) the song is stopped, and a note-on or note-off on MIDI
-channel 1..4 (303 #1, 303 #2, 808, 909) plays that device by the note mapping of
+channel 1..4 (303-1, 303-2, 808, 909) plays that device by the note mapping of
 `docs/midi.md` section 5, at the block holding the event (section 4), whether the host plays or
 not (the no-sound-while-stopped rule is pattern mode's only; the user, 2026-11-16). The original plays no
 device from a note (`docs/midi.md` section 4), so this is new engine behavior; it does not run
@@ -1563,7 +1563,7 @@ unchanged; the preview overrides Gate as it overrides the other modes (section 4
 
 **What it does** (`src/core.rs`; tests `tests/gate_mode.rs`):
 
-- **A gate per section.** Each section (303 #1, 303 #2, 808, 909 on MIDI channels 1..4) has a
+- **A gate per section.** Each section (303-1, 303-2, 808, 909 on MIDI channels 1..4) has a
   gate, closed until a note 0..31 on its channel is held; the sections gate independently. A
   closed section is silent and does not step; the song itself plays as in Latch (following
   the host while it plays).
@@ -1677,10 +1677,10 @@ makes a MIDI item of it, as a MIDI file dragged from the file manager. The detai
 
 **The clip** (`src/clip.rs`) is a Standard MIDI File:
 - Type 0, one track, 192 ticks a quarter note, so a MIDI tick is an engine tick.
-- The track is named after the section and the pattern (`303 #1 A1`, `808 C2`), with a 4/4
+- The track is named after the section and the pattern (`303-1 A1`, `808 C2`), with a 4/4
   time signature and no tempo, so the host's tempo plays it.
 - The end of the track is the pattern's length: 48 ticks a step, the length byte cut to 1..16.
-- The notes are on the section's channel (1..4: 303 #1, 303 #2, 808, 909) in the note mapping
+- The notes are on the section's channel (1..4: 303-1, 303-2, 808, 909) in the note mapping
   of `docs/midi.md` section 5. The 303's notes follow its gate, the drums' are 24 ticks long,
   the velocities are the export velocities, and shuffle is baked in (all in `docs/midi.md` 5.6).
 - The data is the plugin's, at the moment of the drag:

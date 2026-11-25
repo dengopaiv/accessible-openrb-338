@@ -494,8 +494,8 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
             note: "Each key row selects patterns 1..8 of one section, as a click on the \
                    pattern button.",
             rows: vec![
-                patterns(0, "303 #1", "1 2 3 4 5 6 7 8"),
-                patterns(1, "303 #2", "Q W E R T Y U I"),
+                patterns(0, "303-1", "1 2 3 4 5 6 7 8"),
+                patterns(1, "303-2", "Q W E R T Y U I"),
                 patterns(2, "808", "A S D F G H J K"),
                 patterns(3, "909", "Z X C V B N M ,"),
             ],
@@ -825,7 +825,7 @@ mod tests {
                 rows.iter()
                     .any(|r| r.0 == "A S D F G H J K" && r.1 == "808")
             );
-            assert!(rows.iter().any(|r| r.1 == "303 #1"));
+            assert!(rows.iter().any(|r| r.1 == "303-1"));
             assert!(rows.iter().any(|r| r.1.contains("808: BD SD")));
             // task-285's row stays, with the platform's key
             let up = if is_mac { "Option+Up" } else { "Alt+Up" };

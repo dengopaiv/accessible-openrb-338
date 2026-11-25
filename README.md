@@ -17,7 +17,7 @@
 </p>
 
 OpenRB-338 is a reimplementation of [ReBirth RB-338](https://en.wikipedia.org/wiki/ReBirth_RB-338),
-the 1997 software synth of two TB-303 bass lines, a TR-808 and a TR-909, for today's macOS, Linux
+the 1997 software synth of two 303 bass lines, an 808 and a 909, for today's macOS, Linux
 and Windows.
 
 ## Features

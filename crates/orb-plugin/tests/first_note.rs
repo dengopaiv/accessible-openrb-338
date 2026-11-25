@@ -162,7 +162,7 @@ fn check(what: &str, x: &[Vec<f32>; 3], drum_at_44100: bool) {
     }
 }
 
-/// The devices: 303 #1, 303 #2, the 808's and the 909's bass drum, the 808's snare, the 909's
+/// The devices: 303-1, 303-2, the 808's and the 909's bass drum, the 808's snare, the 909's
 /// closed hi-hat (channel, note, a drum).
 const DEVICES: [(u8, u8, bool); 6] = [
     (0, 36, false),

@@ -1509,13 +1509,13 @@ fn copy_then_paste_works_on_every_row_and_from_one_303_to_the_other() {
             );
         }
         assert!(h.app.doc.modified);
-        let name = ["303 1", "303 2", "808", "909"][r];
+        let name = ["303-1", "303-2", "808", "909"][r];
         assert_eq!(
             h.app.status.as_deref(),
             Some(&*format!("{name}: pasted into D8"))
         );
     }
-    // TB-303 1's pattern into TB-303 2
+    // 303-1's pattern into 303-2
     let bytes = full_pattern(0, 9);
     set_pattern(&mut h, 0, 4, &bytes);
     select(&mut h, 0, 4);
@@ -1643,7 +1643,7 @@ fn duplicate_writes_the_next_empty_pattern_then_selects_it() {
         let row = &h.app.panel.rows[r];
         assert_eq!((row.pattern, row.bank), (9, 1), "row {n}: B2 shown");
         assert_eq!(h.app.panel.focus, r);
-        let name = ["303 1", "303 2", "808", "909"][r];
+        let name = ["303-1", "303-2", "808", "909"][r];
         let want = format!("{name}: A1 duplicated to B2");
         assert_eq!(h.app.status.as_deref(), Some(&*want));
         h.calls(2);

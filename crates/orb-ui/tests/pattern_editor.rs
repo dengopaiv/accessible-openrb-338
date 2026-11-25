@@ -1021,15 +1021,15 @@ fn of_two_303_windows_the_last_clicked_is_the_target() {
     h.frame(vec![]);
     assert!(link::is_empty_pattern(0, &h.pattern(0, 1)));
     assert_eq!(h.pattern(1, 2), two, "303-2's untouched");
-    assert_eq!(h.app.status.as_deref(), Some("303 1: A2 cleared"));
+    assert_eq!(h.app.status.as_deref(), Some("303-1: A2 cleared"));
     // an empty pattern cleared again still says so (the user's review, round 1), from the menu
     // and from the editor's Clear button
     h.app.status = None;
     h.app.command(Cmd::ClearPattern);
-    assert_eq!(h.app.status.as_deref(), Some("303 1: A2 cleared"));
+    assert_eq!(h.app.status.as_deref(), Some("303-1: A2 cleared"));
     h.app.status = None;
     h.k = 0;
     h.press("Clear");
-    assert_eq!(h.app.status.as_deref(), Some("303 1: A2 cleared"));
+    assert_eq!(h.app.status.as_deref(), Some("303-1: A2 cleared"));
     assert!(link::is_empty_pattern(0, &h.pattern(0, 1)));
 }

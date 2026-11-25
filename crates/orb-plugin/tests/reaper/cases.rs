@@ -363,7 +363,7 @@ pub fn notes(c: &Case, p: &OrbParams) -> (Vec<(usize, Message)>, usize) {
     };
     let end = frame_of(c, LOOPS * ticks) + tail;
     // the item's end: REAPER's all-notes-off on channel 1 (no section note before task-258;
-    // since, note mode lets go of 303 #1's held notes, none in a case)
+    // since, note mode lets go of 303-1's held notes, none in a case)
     let all_off = Message::ControlChange {
         channel: 0,
         controller: 123,

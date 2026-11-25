@@ -153,14 +153,28 @@ fn the_values_read_and_parse() {
     assert_eq!(params::display(pat, 31), "D8");
 }
 
-/// task-220: the host shows the devices as ORB-303, ORB-808 and ORB-909, never as the
+/// task-220: the host shows the devices as 303-1, 303-2, 808 and 909, never as the
 /// Roland names; the ids (`param_ids.txt`) are unchanged.
 #[test]
-fn the_device_names_are_orb_names() {
+fn the_device_names_have_no_orb_prefix() {
     use orb_engine::song::Device::*;
     let name = |d, c| params::name(Target::Ctrl(d, c));
-    assert_eq!(name(Tb303_1, 3), "ORB-303 1 Cutoff");
-    assert_eq!(name(Tb303_2, 0), "ORB-303 2 On");
-    assert_eq!(name(Tr808, 0), "ORB-808 On");
-    assert_eq!(name(Tr909, 0), "ORB-909 On");
+    assert_eq!(name(Tb303_1, 3), "303-1 Cutoff");
+    assert_eq!(name(Tb303_2, 0), "303-2 On");
+    assert_eq!(name(Tr808, 0), "808 On");
+    assert_eq!(name(Tr909, 0), "909 On");
+}
+
+/// task-293: no parameter name or group has the ORB- prefix or a "303 1" form, and the MIDI
+/// clip sections read 303-1 and 303-2.
+#[test]
+fn no_orb_prefix_or_old_303_forms_in_names() {
+    for s in &SPECS {
+        for t in [params::name(s.target), params::group(s.target).to_string()] {
+            for bad in ["ORB-", "303 1", "303 2", "303 #"] {
+                assert!(!t.contains(bad), "{bad} in {t:?}");
+            }
+        }
+    }
+    assert_eq!(orb_plugin::clip::SECTIONS, ["303-1", "303-2", "808", "909"]);
 }

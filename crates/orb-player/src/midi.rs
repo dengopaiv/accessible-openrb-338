@@ -261,7 +261,7 @@ pub enum Action {
         row: u8,
         bank: u8,
     },
-    /// The focus moves to row 0..=3 (303 #1, 303 #2, 808, 909); no command (the original also
+    /// The focus moves to row 0..=3 (303-1, 303-2, 808, 909); no command (the original also
     /// tells the DLL, song msg 35 `{22, row + 1}`, which the engine of orb has no use for yet).
     Focus(u8),
     /// The 808 or the 909 selects instrument 0..=11 for its step buttons; no command.
@@ -328,7 +328,7 @@ pub struct State {
     pub channel_dist: [bool; 4],
     /// The on switches of the delay, the distortion, the PCF and the compressor.
     pub effect_on: [bool; 4],
-    /// The pattern sections' on switches (303 #1, 303 #2, 808, 909).
+    /// The pattern sections' on switches (303-1, 303-2, 808, 909).
     pub row_on: [bool; 4],
     /// The pattern each section has selected (0..=31).
     pub pattern: [u8; 4],
@@ -960,7 +960,7 @@ mod tests {
     #[test]
     fn pattern_selection_by_bank_and_pattern_notes() {
         let mut m = StandardMapping::new();
-        // 303 #1: pattern 3 of bank A, then bank C (note 15), pattern 8 (note 24) = 23
+        // 303-1: pattern 3 of bank A, then bank C (note 15), pattern 8 (note 24) = 23
         assert_eq!(
             run(&mut m, &[0x90, 19, 100, 0x80, 19, 0]),
             [dp(Device::Tb303_1, 1, 2)]
@@ -982,7 +982,7 @@ mod tests {
                 dp(Device::Tr808, 1, 12),
             ]
         );
-        // on/off toggles on the note-on only (303 #2: note 25)
+        // on/off toggles on the note-on only (303-2: note 25)
         assert_eq!(
             run(&mut m, &[0x90, 25, 1, 0x80, 25, 0, 0x90, 25, 1]),
             [dp(Device::Tb303_2, 0, 0), dp(Device::Tb303_2, 0, 1)]

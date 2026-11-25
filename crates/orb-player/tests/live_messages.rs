@@ -209,7 +209,7 @@ fn session(pat: [u8; 4]) -> Vec<(u32, Command)> {
         at(c, step_field(D::Tb303_1, p1, st, 3, (st == 6) as u8));
         at(c, step_field(D::Tb303_1, p1, st, 4, (st == 7) as u8));
     }
-    // the pattern section: length and shuffle of 303 #2's pattern
+    // the pattern section: length and shuffle of 303-2's pattern
     at(
         50,
         Command::PatternField {
@@ -322,7 +322,7 @@ fn session(pat: [u8; 4]) -> Vec<(u32, Command)> {
     at(126, ch(0, 5, 9));
     at(140, ch(3, 0, 1));
     at(141, ch(3, 2, 127));
-    // 303 #2: a whole pattern (as Clear sends it), a whole step, both header bytes
+    // 303-2: a whole pattern (as Clear sends it), a whole step, both header bytes
     let mut clear = vec![0u8; 98];
     clear[1] = 16;
     for st in 0..16 {
@@ -411,10 +411,10 @@ fn pcf_303_session() -> Vec<(u32, Command)> {
         (0, Command::SongMode(false)),
         (0, Command::Play),
         (0, param(D::Pcf, 4, 108)),
-        // the PCF on 303 #1, the compressor on the master, the delay on
+        // the PCF on 303-1, the compressor on the master, the delay on
         (0, global(2, 1)),
         (60, param(D::Delay, 0, 0)),
-        // the compressor on channel 0 and the PCF after it, on 303 #2
+        // the compressor on channel 0 and the PCF after it, on 303-2
         (100, global(1, 2)),
         (100, global(2, 2)),
         (140, param(D::Compressor, 0, 0)),
@@ -425,7 +425,7 @@ fn pcf_303_session() -> Vec<(u32, Command)> {
         (300, param(D::Compressor, 0, 1)),
         (300, global(1, 5)),
         (300, param(D::Delay, 0, 0)),
-        // back on 303 #1, a real wave, then the junk wave again
+        // back on 303-1, a real wave, then the junk wave again
         (340, global(2, 1)),
         (360, param(D::Pcf, 4, 30)),
         (380, param(D::Pcf, 4, 108)),

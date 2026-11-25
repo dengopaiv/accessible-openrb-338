@@ -1031,7 +1031,7 @@ fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
         assert!(shapes.contains(&format!("\"{keys}\"")), "{keys}");
     }
 
-    // the 808's A1 copied and pasted into A3; the menu over the TB-303 1 row does not take the
+    // the 808's A1 copied and pasted into A3; the menu over the 303-1 row does not take the
     // focus from the 808
     let bytes = bd_pattern();
     let link = h.app.link.as_mut().unwrap();
@@ -2816,7 +2816,7 @@ fn the_window_title_is_the_app_name_the_song_and_the_modified_mark() {
 }
 
 /// A ReBirth 1.x song (a MIDI file, docs/song_load.md section 12) whose import gives the mixer
-/// track out of tick order: MIDI track 2 (the 303 #1) sets the mixer's level and pan at time 8
+/// track out of tick order: MIDI track 2 (the 303-1) sets the mixer's level and pan at time 8
 /// (tick 192), then MIDI track 5 sets the PCF's channel (mixer controller 2) at time 2 (tick 48)
 /// and the distortion's at time 8 (four mixer events at tick 192). The 909 buffer starts with
 /// the import's `(0, 0, 0)`.
@@ -2835,7 +2835,7 @@ fn song_1x_unsorted() -> Vec<u8> {
         b[r + 7] = 0x3F;
         b[r + 0x17] = 1;
     }
-    // a 303 #1 pattern with notes, so that the song plays
+    // a 303-1 pattern with notes, so that the song plays
     for s in 0..16 {
         b[352 + 30 + 4 * s] = (s % 12) as u8 + 1;
     }

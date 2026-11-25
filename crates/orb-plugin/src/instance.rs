@@ -114,7 +114,7 @@ impl Mode {
 pub struct Doc {
     /// The song file as loaded (`None`: a new song).
     pub song: Option<Vec<u8>>,
-    /// The four pattern arrays as edited (303 #1, 303 #2, 808, 909; 32 patterns each), as the
+    /// The four pattern arrays as edited (303-1, 303-2, 808, 909; 32 patterns each), as the
     /// engine holds them; empty before the first build (the song's own).
     pub patterns: [Vec<u8>; 4],
     /// The Vintage sound model (song msg 35 id 21; `None` before the first build: the song's).
@@ -179,7 +179,7 @@ fn default_remote_channel() -> u8 {
     DEFAULT_REMOTE_CHANNEL
 }
 
-/// The MIDI channels (0-based) of the four pattern sections, 303 #1, 303 #2, 808 and 909: MIDI
+/// The MIDI channels (0-based) of the four pattern sections, 303-1, 303-2, 808 and 909: MIDI
 /// channels 1..4.
 pub const SECTION_CHANNELS: std::ops::RangeInclusive<u8> = 0..=3;
 

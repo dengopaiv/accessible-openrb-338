@@ -1365,12 +1365,26 @@ mod tests {
                 }
             }
         }
+        for k in 0..2 {
+            texts.extend(
+                [
+                    crate::pattern_editor::title(k),
+                    crate::pattern_editor::menu_item(k),
+                ]
+                .map(String::from),
+            );
+        }
         assert!(texts.len() > 100, "{}", texts.len());
         for t in &texts {
             let up = t.to_uppercase();
             for bad in ["TR-", "TB-", "TR8", "TR9", "TB3"] {
                 assert!(!up.contains(bad), "{bad} in {t:?}");
             }
+            // one scheme (task-293): "303-1", never "303 1", "303 #1" or an ORB- prefix
+            for bad in ["303 1", "303 2", "303 #", "ORB-"] {
+                assert!(!t.contains(bad), "{bad} in {t:?}");
+            }
         }
+        assert_eq!(crate::menu::ROW_NAMES[..2], ["303-1", "303-2"]);
     }
 }

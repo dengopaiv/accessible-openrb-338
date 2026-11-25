@@ -109,7 +109,7 @@ const fn first_note(rate: u32, stopped: usize, channel: u8, key: u8) -> FirstNot
     }
 }
 
-/// The 808's bass drum, the 909's and 303 #1's C, in an offline render and in a realtime start
+/// The 808's bass drum, the 909's and 303-1's C, in an offline render and in a realtime start
 /// after a stopped stretch of whole blocks (8192 frames) and of a part of one (7777 frames: the
 /// user's live case of round 3, the 909's bass drum at 48 kHz, whose attack was cut).
 const FIRST_NOTES: [FirstNote; 8] = [

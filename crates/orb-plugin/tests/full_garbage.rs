@@ -117,7 +117,7 @@ fn peak(x: &[f32]) -> f32 {
 
 #[test]
 fn latch_notes_and_the_host_transport_pass_a_full_queue() {
-    // the host plays from call 4 to 40 and from 50 on; a Latch note selects 303 #1's pattern
+    // the host plays from call 4 to 40 and from 50 on; a Latch note selects 303-1's pattern
     // 6 at call 20
     let script: Script = |k| {
         let ev = if k == 20 { vec![on(0, 5)] } else { vec![] };

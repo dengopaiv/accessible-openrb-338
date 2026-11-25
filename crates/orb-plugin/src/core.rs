@@ -63,7 +63,7 @@
 //!
 //! # MIDI
 //!
-//! A note-on 0..31 on channel 1..4 (303 #1, 303 #2, 808, 909) in Latch Pattern Mode selects
+//! A note-on 0..31 on channel 1..4 (303-1, 303-2, 808, 909) in Latch Pattern Mode selects
 //! that section's pattern: the pattern controller (as the panel's message), then, while the song
 //! plays, slot 2 on that device (`Command::Relocate`), which takes a pending pattern at once
 //! where the panel's waits for the bar line; with the host stopped only the selection changes.

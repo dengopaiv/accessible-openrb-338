@@ -270,10 +270,10 @@ pub fn group(t: Target) -> &'static str {
 fn device_name(d: Device) -> &'static str {
     match d {
         Device::Mixer => "Mixer",
-        Device::Tb303_1 => "ORB-303 1",
-        Device::Tb303_2 => "ORB-303 2",
-        Device::Tr808 => "ORB-808",
-        Device::Tr909 => "ORB-909",
+        Device::Tb303_1 => "303-1",
+        Device::Tb303_2 => "303-2",
+        Device::Tr808 => "808",
+        Device::Tr909 => "909",
         Device::Delay => "Delay",
         Device::Distortion => "Distortion",
         Device::Pcf => "PCF",
@@ -358,7 +358,7 @@ const TR909: [&str; 30] = [
     "Flam",
 ];
 
-/// The parameter's name, with its device: "ORB-303 1 Cutoff".
+/// The parameter's name, with its device: "303-1 Cutoff".
 pub fn name(t: Target) -> String {
     let ctrl = |d: Device, c: u8| -> &'static str {
         let c = c as usize;

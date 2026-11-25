@@ -119,7 +119,7 @@ fn a_lost_note_off_keeps_the_303_sliding_until_the_key_is_let_go() {
 #[test]
 fn all_notes_off_and_all_sound_off_let_the_held_notes_go() {
     for controller in [123, 120] {
-        // with notes 36 and 40 held, the message on 303 #1's channel is both note-offs
+        // with notes 36 and 40 held, the message on 303-1's channel is both note-offs
         let run = |release: &[HostEvent]| {
             let (p, mut core) = instance();
             let mut out = call(&p, &mut core, 4096, &[on(0, 0, 36), on(2000, 0, 40)]);
@@ -144,7 +144,7 @@ fn all_notes_off_and_all_sound_off_let_the_held_notes_go() {
         call(&p, &mut core, 64, &[cc(0, 1, controller)]);
         assert!(
             sounds_on(&p, &mut core),
-            "CC {controller} on 303 #2's channel"
+            "CC {controller} on 303-2's channel"
         );
         call(&p, &mut core, 64, &[cc(0, 0, controller)]);
         assert!(!sounds_on(&p, &mut core), "CC {controller} lets go");

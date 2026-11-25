@@ -394,13 +394,13 @@ pub struct Snapshot {
     pub channel_meters: [u8; 4],
     /// The master meter bytes, left and right.
     pub master_meters: [u8; 2],
-    /// The pattern each channel device plays (303 #1, 303 #2, 808, 909).
+    /// The pattern each channel device plays (303-1, 303-2, 808, 909).
     pub patterns: [Option<u8>; 4],
     /// Each channel device's sounding sounds and their last hit's accent after the last block
-    /// (303 #1, 303 #2, 808, 909; the 303s' are empty): the plugin's note-mode lights
+    /// (303-1, 303-2, 808, 909; the 303s' are empty): the plugin's note-mode lights
     /// (task-202; [`orb_engine::frame::ChannelDevice::sounding`]).
     pub sounding: [Sounding; 4],
-    /// Each channel device's pattern gate is closed (303 #1, 303 #2, 808, 909; the plugin's
+    /// Each channel device's pattern gate is closed (303-1, 303-2, 808, 909; the plugin's
     /// Gate Pattern Mode, task-218): the section is silent and does not step, and the panel
     /// shows no step light for it.
     pub gate_closed: [bool; 4],

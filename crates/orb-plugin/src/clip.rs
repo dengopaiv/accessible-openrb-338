@@ -78,7 +78,7 @@ pub struct Note {
 }
 
 /// The section names: in the track name and the file name.
-pub const SECTIONS: [&str; 4] = ["303 #1", "303 #2", "808", "909"];
+pub const SECTIONS: [&str; 4] = ["303-1", "303-2", "808", "909"];
 
 /// The pattern's name on the panel: bank A..D and button 1..8 (`pattern` 0..31).
 pub fn pattern_name(pattern: u8) -> String {
@@ -91,8 +91,7 @@ pub fn pattern_name(pattern: u8) -> String {
 
 /// The clip file's name: `303-1 A1.mid`, `808 B3.mid`.
 pub fn file_name(row: usize, pattern: u8) -> String {
-    let section = SECTIONS[row.min(3)].replace(" #", "-");
-    format!("{section} {}.mid", pattern_name(pattern))
+    format!("{} {}.mid", SECTIONS[row.min(3)], pattern_name(pattern))
 }
 
 /// The steps a pattern plays: its length byte, 1..16 (a hand-made 0 or more than 16 is cut; the

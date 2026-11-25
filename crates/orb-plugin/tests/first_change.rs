@@ -17,7 +17,7 @@ use orb_engine::song::Device;
 use orb_plugin::core::Core;
 use orb_plugin::params::{self, Target};
 
-/// The song: the 303 #1 plays its pattern, so its cutoff is heard.
+/// The song: the 303-1 plays its pattern, so its cutoff is heard.
 const SONG: &str = "303_accent0";
 const ID: &str = "d1c3";
 const CUTOFF: Target = Target::Ctrl(Device::Tb303_1, 3);

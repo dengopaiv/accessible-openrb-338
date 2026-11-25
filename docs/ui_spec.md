@@ -65,11 +65,11 @@ panel coordinates):
 | Transport | 16 | 0 | 592 | 50 | 0.0256 | 0.0000 | 0.9487 | 0.0980 |
 | Pattern section, row 1 | 16 | 50 | 70 | 115 | 0.0256 | 0.0980 | 0.1122 | 0.2255 |
 | Focus bar, row 1 | 86 | 50 | 4 | 115 | 0.1378 | 0.0980 | 0.0064 | 0.2255 |
-| TB-303 #1 | 90 | 50 | 366 | 115 | 0.1442 | 0.0980 | 0.5865 | 0.2255 |
+| 303-1 | 90 | 50 | 366 | 115 | 0.1442 | 0.0980 | 0.5865 | 0.2255 |
 | Mixer channel 1 | 456 | 50 | 70 | 115 | 0.7308 | 0.0980 | 0.1122 | 0.2255 |
 | Pattern section, row 2 | 16 | 165 | 70 | 115 | 0.0256 | 0.3235 | 0.1122 | 0.2255 |
 | Focus bar, row 2 | 86 | 165 | 4 | 115 | 0.1378 | 0.3235 | 0.0064 | 0.2255 |
-| TB-303 #2 | 90 | 165 | 366 | 115 | 0.1442 | 0.3235 | 0.5865 | 0.2255 |
+| 303-2 | 90 | 165 | 366 | 115 | 0.1442 | 0.3235 | 0.5865 | 0.2255 |
 | Mixer channel 2 | 456 | 165 | 70 | 115 | 0.7308 | 0.3235 | 0.1122 | 0.2255 |
 | Pattern section, row 3 | 16 | 280 | 70 | 115 | 0.0256 | 0.5490 | 0.1122 | 0.2255 |
 | Focus bar, row 3 | 86 | 280 | 4 | 115 | 0.1378 | 0.5490 | 0.0064 | 0.2255 |
@@ -364,7 +364,7 @@ Behavior (all [C], `sub_42A058` and its callees, ticks: 768 per bar):
 
 ## 4. Pattern sections (one per row)
 
-Section (16, 50 + 115 r, 70, 115), r = 0..3 for TB-303 #1, TB-303 #2, TR-808, TR-909.
+Section (16, 50 + 115 r, 70, 115), r = 0..3 for 303-1, 303-2, TR-808, TR-909.
 Layout `sub_41A9A0`, poll `sub_41AB67` [C]. The table gives row 1; add 115 px (0.2255 H) per row.
 
 | Control | x | y | w | h | x/W | y/H | w/W | h/H | Kind | Drives |
@@ -678,7 +678,7 @@ not read].
 
 ## 8. Mixer channels (four)
 
-Section (456, 50 + 115 c, 70, 115), c = 0 303 #1, 1 303 #2, 2 808, 3 909. Layout `sub_413E78`,
+Section (456, 50 + 115 c, 70, 115), c = 0 303-1, 1 303-2, 2 808, 3 909. Layout `sub_413E78`,
 ctor `sub_413B55`, poll `sub_413F47` [C]. The table gives channel 1; add 0.2255 H per channel.
 
 | Control | x | y | w | h | x/W | y/H | w/W | h/H | Kind | Drives |
@@ -843,7 +843,7 @@ Keyboard" (Ctrl+G) are one setting with two values (10 and 11, `sub_408F4C`); on
 The menu's item ids are 401 and 402.
 
 **Select Patterns from Keyboard** (`sub_42CE3D`): `1`..`8` select patterns 1..8 of the shown bank
-of TB-303 #1, `Q`..`I` of TB-303 #2, `A`..`K` of the TR-808, `Z`..`,` of the TR-909
+of 303-1, `Q`..`I` of 303-2, `A`..`K` of the TR-808, `Z`..`,` of the TR-909
 (`sub_41AB10`, the same as a click on the pattern button) [C for the codes and the action;
 the row-to-section assignment is the manual's (page 224), the handler hides which view it calls].
 
@@ -1349,7 +1349,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Edit | Copy Pattern (Ctrl+C, Cmd+C) | the target pattern (below: the focused pattern editor's, else the focused row's selected pattern; steps, length, shuffle flag) to the system clipboard as JSON (section 16); the song is not modified |
 | Edit | Paste Pattern (Ctrl+V, Cmd+V) | the system clipboard's pattern JSON (section 16) into the target pattern, into a row of its device only (a 303 pattern into either 303; with a pattern editor focused the device is the editor's), nothing written and a status message for any other text; the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the target pattern into its row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it (a focused pattern editor shows it too, also in song mode); the clipboard is not touched |
-| Edit | Clear Pattern (no shortcut) | the target pattern's steps are emptied as the pattern editors' Clear empties them (`link::emptied_pattern`: every 303 step note 0, no flags, rest on; every 808 and 909 step byte 0), the length and the shuffle flag stay; one write with Undo ("Undo Clear Pattern"); the status line says "303 1: A1 cleared", also when the pattern was empty already (then nothing is written and the Undo stays; the user's review of task-290, round 1); the clipboard is not touched (task-290) |
+| Edit | Clear Pattern (no shortcut) | the target pattern's steps are emptied as the pattern editors' Clear empties them (`link::emptied_pattern`: every 303 step note 0, no flags, rest on; every 808 and 909 step byte 0), the length and the shuffle flag stay; one write with Undo ("Undo Clear Pattern"); the status line says "303-1: A1 cleared", also when the pattern was empty already (then nothing is written and the Undo stays; the user's review of task-290, round 1); the clipboard is not touched (task-290) |
 | Edit | 303-1 Pattern Editor..., 303-2 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating pattern editor of that 303 on its selected pattern, or brings it to the front and switches it to that pattern (section 23, tasks 274 and 290); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
 | Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303s': opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 303-1's or the 303-2's with that 303 focused, the 808's with the 808 focused, the 909's with the 909 focused (tasks 280, 281 and 290) |
 | Edit | 909 Pattern Editor... (Ctrl+E, Cmd+E) | under the 808's: opens the floating 909 pattern editor on the TR-909's active pattern, or brings it to the front and switches it to that pattern (section 25, task-281); disabled without a song; the shortcut text is on it with the TR-909 focused |
@@ -2528,7 +2528,7 @@ both 303s with stops at the ends; task-290's separate windows keep each in its 3
   emptied pattern Edit > Cut Pattern leaves (every step note 0, no flags, rest on) with the
   pattern's length and shuffle flag kept, and does not touch the clipboard; the status line
   says "cleared" also when the pattern was empty already.
-- **The status line** says "303 1: A1 copied", "303 1: pasted into A2", "303 1: A1
+- **The status line** says "303-1: A1 copied", "303-1: pasted into A2", "303-1: A1
   cleared".
 
 **One edit path, one Undo.** Every change of the editor is one whole-pattern write of its new 98
@@ -2554,9 +2554,8 @@ has the same Undo item, with no shortcut (its editor takes no keys; section 20).
   (the rule of the drum editors since task-290; before, a selection of the other 303 moved the
   one window to that 303). On the switch into pattern mode the editor takes the panel's
   selection of its 303.
-- **Song mode**: the two are independent. The editor's selector only chooses what the editor
-  shows; it never changes the panel's selection and
-  never records. The pattern the panel plays does not move the editor.
+- **Song mode**: the two are independent. An editor is fixed to its 303 and shows the pattern
+  it was last given; it never changes the panel's selection and never records. The pattern the panel plays does not move the editor.
 - There is no Follow button (dropped by the user).
 
 **Typed values** (task-280, the shared frame): a value typed into the pattern number or Length

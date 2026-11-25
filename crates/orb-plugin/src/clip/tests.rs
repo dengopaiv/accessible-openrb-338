@@ -176,8 +176,8 @@ fn a_303_pattern_pitch_slide_tie_accent_and_gate() {
     let bytes = pattern_303(false, &steps_303());
     let f = parse(&clip(1, 10, &bytes, &Controls::default()));
     assert_eq!((f.format, f.tracks, f.division), (0, 1, 192));
-    assert_eq!(f.name, "303 #2 B3");
-    assert!(f.channels.iter().all(|&c| c == 1), "303 #2: channel 2");
+    assert_eq!(f.name, "303-2 B3");
+    assert!(f.channels.iter().all(|&c| c == 1), "303-2: channel 2");
     assert_eq!(f.end, 8 * 48, "the clip ends with the pattern's 8 steps");
     assert_eq!(
         f.notes,

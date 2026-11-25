@@ -147,7 +147,7 @@ pub struct Undo {
 }
 
 /// The names of the four rows on the status line.
-pub(crate) const ROW_NAMES: [&str; 4] = ["303 1", "303 2", "808", "909"];
+pub(crate) const ROW_NAMES: [&str; 4] = ["303-1", "303-2", "808", "909"];
 /// The kind of each row's patterns: a pattern pastes into a row of its kind.
 pub(crate) const ROW_KINDS: [&str; 4] = ["303", "303", "808", "909"];
 

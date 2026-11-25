@@ -102,7 +102,7 @@ fn notes_below_32_play_in_note_mode_and_select_in_pattern_mode() {
     let t = HostTransport::default();
     call(&p, &mut core, 4096, &t, &[]);
     let before = core.audio().last_snapshot().live[1].as_slice()[1];
-    // note mode: note 5 on 303 #1's channel is a note (MIDI 5, 31 semitones below the C), not A6
+    // note mode: note 5 on 303-1's channel is a note (MIDI 5, 31 semitones below the C), not A6
     p.set_mode(Mode::Note);
     call(&p, &mut core, 4096, &t, &[on(10, 0, 5, 100)]);
     assert_eq!(core.audio().last_snapshot().live[1].as_slice()[1], before);

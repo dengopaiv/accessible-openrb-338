@@ -81,7 +81,7 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
   and task-188 decide when to feed it). The layer's default channel is 1; the plugin
   (`docs/plugin.md` section 8) feeds it only when its own Standard Mapping setting is on (off by
   default) and sets the channel to 16 by default, since channels 1..4 are the plugin's device
-  channels (303 #1, 303 #2, 808, 909).
+  channels (303-1, 303-2, 808, 909).
 - **Not mapped yet.** The Program Synth notes (step programming;
   `docs/standard_midi_mapping.md` section 7): task-189.
 - **Differences from the original**: `docs/standard_midi_mapping.md` section 10.
@@ -173,8 +173,8 @@ code named matches the corpus byte for byte.
 
 | MIDI channel (1-based) | Device |
 |---|---|
-| 1 | 303 #1 |
-| 2 | 303 #2 |
+| 1 | 303-1 |
+| 2 | 303-2 |
 | 3 | TR-808 |
 | 4 | TR-909 |
 
@@ -182,7 +182,7 @@ The same channels serve both modes and the drag-out. Channels 5..16 carry no dev
 Standard Mapping is off by default in the plugin; turned on, it listens on one channel outside
 1..4, 16 by default, and a device channel is refused for it (task-207, which replaced the
 earlier 2..5 layout; `docs/plugin.md` 5 and 8.2). A keyboard on its default channel 1 plays
-303 #1 without setup.
+303-1 without setup.
 
 ### 5.2 Latch Pattern Mode: pattern selection
 
