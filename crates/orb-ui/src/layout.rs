@@ -13,13 +13,14 @@ pub const PANEL_H: f32 = 510.0;
 pub const DIALOG_MARGIN: f32 = 12.0;
 
 /// The smallest main window (inner size in points, the menu bar included; the standalone's
-/// viewport minimum and the plugin editor's, task-297; independent of the UI scale, which sets
-/// pixels per point, and of the panel's own fit). Every window the user cannot resize fits in it
-/// with [`DIALOG_MARGIN`] around: the widest is About (464 wide), the highest the Save and Export
-/// file dialogs (349 high at their smallest). The test `tests/min_window.rs` measures them all
-/// and fails when a window outgrows this, so the numbers cannot drift.
-pub const MIN_WINDOW_W: f32 = 488.0;
-pub const MIN_WINDOW_H: f32 = 373.0;
+/// viewport minimum and the plugin editor's, task-297 and task-299; independent of the UI scale,
+/// which sets pixels per point, and of the panel's own fit). Every window the user cannot
+/// resize fits in it with [`DIALOG_MARGIN`] around: the widest are the 808 and 909 pattern
+/// editors (512 wide), the highest the 303 pattern editor (461 high). The test
+/// `tests/min_window.rs` measures them all and fails when a window outgrows this or the minimum
+/// is larger than they need, so the numbers cannot drift.
+pub const MIN_WINDOW_W: f32 = 536.0;
+pub const MIN_WINDOW_H: f32 = 485.0;
 
 /// The modern skin's layout table.
 pub const LAYOUT_TSV: &str = include_str!("../../../assets/ui/layout.tsv");

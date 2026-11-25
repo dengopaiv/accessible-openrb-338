@@ -227,7 +227,7 @@ pub const MARGIN_X: f32 = 16.0;
 pub const MARGIN_Y: f32 = 0.0;
 
 /// The smallest scale the corner asks for: half the panel. This floor is separate from the
-/// host's minimum window (`layout::MIN_WINDOW_W/H`, 488 x 373, enforced by `adjust_logical`).
+/// host's minimum window (`layout::MIN_WINDOW_W/H`, 536 x 485, enforced by `adjust_logical`).
 pub const MIN_SCALE: f32 = 0.5;
 
 /// While the editor is open, the panel is drawn at least this often, so that the LEDs follow

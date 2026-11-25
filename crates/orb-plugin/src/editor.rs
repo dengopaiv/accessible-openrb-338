@@ -62,7 +62,7 @@ pub const FOLLOW_FRAMES: u64 = 8192;
 
 /// How the host may resize the editor (VST3 `IPlugView::canResize`; the CLAP format, dropped in
 /// task-278, had `gui.can_resize` and `gui.get_resize_hints`) and for baseview's window: both ways,
-/// to any size of at least `MIN_WINDOW_W` x `MIN_WINDOW_H` (488 x 373, the standalone window's
+/// to any size of at least `MIN_WINDOW_W` x `MIN_WINDOW_H` (536 x 485, the standalone window's
 /// minimum, task-297), with no aspect ratio. The editor takes any size the host gives
 /// ([`adjust_logical`]) and letterboxes the panel in it (task-234, the user's decision of
 /// 2026-11-17; `docs/plugin.md` section 10).
@@ -78,7 +78,7 @@ pub fn resize_hint() -> ResizeHint {
 
 /// The size (logical points) the editor takes for a size `new` the host proposes (CLAP
 /// `gui.adjust_size`, VST3 `IPlugView::checkSizeConstraint`): the host's size itself, at least
-/// the minimum of [`resize_hint`] (488 x 373), with no maximum. The panel
+/// the minimum of [`resize_hint`] (536 x 485), with no maximum. The panel
 /// is letterboxed in whatever size the window has (orb-ui `View::fit`). Any answer that changed
 /// the host's size failed somewhere (task-234, `docs/plugin.md` section 10): Live (VST3) and
 /// Bitwig (CLAP) ask on every mouse event of a drag and make the answer the window's size, so

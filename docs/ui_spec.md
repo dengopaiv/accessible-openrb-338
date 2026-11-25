@@ -1249,20 +1249,27 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   error line or the overwrite question takes its height from the list (the last frame's, at
   least 60 points left), so the dialog does not grow; a resize and the UI scale follow. The
   button row is one row high (egui's `with_layout` would take all the height left in the window).
-- **The smallest main window** is 488 x 373 points, menu bar included (`layout::MIN_WINDOW_W/H`,
-  task-297; before half the panel and the bar, 312 x 277; the standalone's viewport minimum and the
-  plugin editor's, both in points, so the UI scale does not change it). Every window the user cannot
-  resize fits in it with `layout::DIALOG_MARGIN` (12 points) around, measured by
-  `tests/min_window.rs` at the default scale: the file dialogs 464 wide (the width is the window's
-  less 2 x 12 less the frame's 22, between 300 and 620, so the margin holds at any width) and 326
-  (Open, Choose) or 349 (Save, Export) high at the minimum, About 464 x 254, the error box
-  404 x 98 (with 12 lines of long message 406 x 276: the text scrolls), Audio Output 375 x 210
-  (it scrolls and wraps inside the window, so long device names and the "In use" rows cannot
-  push it out). The dialogs were also measured with 8 long recent folders, a long error and the
-  overwrite question at the minimum (`tests/browser.rs`). The widest (About, 464) and the highest (Save and Export, 349)
-  give 488 and 373. The test fails when a window outgrows the minimum. Resizable windows (Song
-  Information, Mod Information, Keyboard Shortcuts, Plugin Usage) and the unsaved-changes prompt
-  (320 wide) are not measured.
+- **The smallest main window** is 536 x 485 points, menu bar included (`layout::MIN_WINDOW_W/H`,
+  task-297 and task-299; before 488 x 373 and, before that, half the panel and the bar, 312 x 277;
+  the standalone's viewport minimum and the plugin editor's, both in points, so the UI scale does
+  not change it). Every window the user cannot resize fits in it with `layout::DIALOG_MARGIN`
+  (12 points) around, measured by `tests/min_window.rs` at the default scale: the 808 and 909
+  pattern editors 512 wide (366 and 393 high with the 909's entry switch), the 303 pattern editor
+  465 x 461, the file dialogs 512 wide (the width is the window's less 2 x 12 less the frame's 22,
+  between 300 and 620, so the margin holds at any width) and 382 (Open, Choose) or 405 (Save,
+  Export) high at the minimum (they grow with the window, so they do not set it), About 464 x 254,
+  Mod Information 400 x 313 (425 high with a long missing-mod notice; max size the window less
+  the margins), the unsaved-changes prompt 346 x 175 with a long song name, the error box
+  404 x 98 (with 12 lines of long message 406 x 388: the text scrolls), Audio Output 375 x 210 (it scrolls
+  and wraps inside the window, so long device names and the "In use" rows cannot push it out).
+  The dialogs were also measured with 8 long recent folders, a long error and the overwrite
+  question at the minimum (`tests/browser.rs`). The widest (the drum editors, 512) and the
+  highest (the 303 editor, 461) give 536 and 485; the test fails when a window outgrows the
+  minimum or the minimum exceeds what they need. The editors' sizes follow their content, not
+  the window (only their place is stored), so no stored size can exceed the bounds. The user
+  decided on 2026-11-25 to raise the minimum rather than bound or scroll the editors. The windows
+  that can be resized (Song Information, Keyboard Shortcuts, Plugin Usage) are not measured;
+  Mod Information is not resizable.
 - **Lists** folders first, then files, by name ignoring case; hidden names (a leading dot) are not
   shown; "All files" lifts the extension filter. Large folders are drawn by visible rows only.
 - **Writing modes** take a name: a song name without `.rbs` gets it; an export name without an

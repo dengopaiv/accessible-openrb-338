@@ -1466,7 +1466,7 @@ impl App {
             .stroke(Stroke::new(1.0, SLATE_LINE))
             .inner_margin(Margin::same(12))
             .corner_radius(3.0);
-        Modal::new(Id::unique("orb_unsaved"))
+        let modal = Modal::new(Id::unique("orb_unsaved"))
             .frame(frame)
             .backdrop_color(Color32::from_black_alpha(170))
             .show(ctx, |ui| {
@@ -1493,9 +1493,16 @@ impl App {
                     }
                 });
             });
+        self.prompt_rect = Some(modal.response.rect);
         if let Some(a) = answer {
             self.answer(a);
         }
+    }
+
+    /// The unsaved-changes prompt's rectangle as last drawn (for tests); `None` when it is not
+    /// open.
+    pub fn prompt_rect(&self) -> Option<egui::Rect> {
+        self.prompt.as_ref().and(self.prompt_rect)
     }
 
     /// The window's close request: with unsaved changes it asks first.

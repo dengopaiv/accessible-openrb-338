@@ -2,14 +2,21 @@
 //! dialogs' own margin at the sides, measured at the minimum and at a large size.
 
 use eframe::egui::{self, Event, Modifiers, Pos2, RawInput, Rect, Vec2};
+use std::sync::Arc;
+
+use orb_engine::tables::Tables;
+use orb_player::Audio;
 use orb_ui::app::App;
 use orb_ui::browser::Mode;
+use orb_ui::drum_editor::Machine;
 use orb_ui::layout::{DIALOG_MARGIN, MIN_WINDOW_H, MIN_WINDOW_W};
+use orb_ui::link::Link;
 use orb_ui::model::Panel;
 
 struct H {
     ctx: egui::Context,
     app: App,
+    _audio: Audio,
     time: f64,
     size: Vec2,
 }
@@ -18,11 +25,15 @@ impl H {
     fn new(size: Vec2) -> Self {
         let ctx = egui::Context::default();
         egui_extras::install_image_loaders(&ctx);
-        let mut app = App::new(Panel::new(), None);
+        let samples = rbm::standard::builtin_samples();
+        let (link, audio) = Link::new(Arc::new(Tables::new()), Some(samples.clone()));
+        let mut app = App::with_link(Panel::new(), link, None);
+        app.samples = Some(samples);
         app.menu = true;
         let mut h = Self {
             ctx,
             app,
+            _audio: audio,
             time: 0.0,
             size,
         };
@@ -51,7 +62,9 @@ impl H {
 }
 
 /// The rectangles of the windows that cannot be resized, in a window of `size`: the four file
-/// dialogs, About, Audio Output and the error box, by name.
+/// dialogs, About, Audio Output, the error box, the 303, 808 and 909 pattern editors (the 909
+/// with its entry switch, its tallest case), Mod Information with a long missing-mod notice and
+/// the unsaved-changes prompt of a long file name, by name.
 fn windows(size: Vec2) -> Vec<(&'static str, Rect)> {
     let mut v = Vec::new();
     for (name, mode) in [
@@ -85,6 +98,37 @@ fn windows(size: Vec2) -> Vec<(&'static str, Rect)> {
     h.app.fail("another error");
     h.settle();
     v.push(("error box", h.app.error_box_rect().unwrap()));
+    let mut h = H::new(size);
+    h.app.open_pattern_editor(0);
+    h.settle();
+    v.push(("303 editor", h.app.pattern_editor_window(0).unwrap()));
+    for (name, m) in [
+        ("808 editor", Machine::Tr808),
+        ("909 editor", Machine::Tr909),
+    ] {
+        let mut h = H::new(size);
+        h.app.open_drum_editor(m);
+        h.settle();
+        v.push((name, h.app.drum_editor_window(m).unwrap()));
+    }
+    let mut h = H::new(size);
+    h.app.doc.mod_name = "a mod with a very long name that wraps ".repeat(6);
+    h.app.show_mod_info();
+    h.settle();
+    let id = h.app.mod_info_id();
+    v.push((
+        "mod information",
+        h.ctx.memory(|m| m.area_rect(id)).unwrap(),
+    ));
+    let mut h = H::new(size);
+    h.app.doc.modified = true;
+    h.app.doc.path = Some(format!("/songs/{}.rbs", "a_long_song_name_".repeat(8)).into());
+    h.app.open_song(std::path::Path::new("/songs/other.rbs"));
+    h.settle();
+    v.push((
+        "unsaved prompt",
+        h.app.prompt_rect().expect("the prompt is drawn"),
+    ));
     v
 }
 
@@ -100,14 +144,21 @@ fn every_window_that_cannot_be_resized_fits_the_smallest_main_window() {
     }
 }
 
-/// The minimum is not larger than it must be: the widest window and the highest, each with its
-/// margin, give it (within a point).
+/// The minimum is not larger than it must be: the widest window and the highest (the editors),
+/// each with its margin, give it (within a point).
 #[test]
 fn the_minimum_is_the_widest_and_highest_window_plus_the_margins() {
     let big = windows(Vec2::new(1400.0, 1000.0));
     let small = windows(Vec2::new(MIN_WINDOW_W, MIN_WINDOW_H));
-    let widest = small.iter().map(|(_, r)| r.width()).fold(0.0, f32::max);
-    let highest = small.iter().map(|(_, r)| r.height()).fold(0.0, f32::max);
+    // the file dialogs follow the window's size (they are as wide as it allows), so they do not
+    // set the minimum; the other windows' sizes do not depend on it
+    let fixed = || {
+        small
+            .iter()
+            .filter(|(n, _)| !["open song", "save song", "choose mod", "export"].contains(n))
+    };
+    let widest = fixed().map(|(_, r)| r.width()).fold(0.0, f32::max);
+    let highest = fixed().map(|(_, r)| r.height()).fold(0.0, f32::max);
     eprintln!("widest {widest} highest {highest}");
     assert!(
         widest + 2.0 * DIALOG_MARGIN >= MIN_WINDOW_W - 1.0,

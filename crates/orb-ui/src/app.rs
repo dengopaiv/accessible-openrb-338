@@ -174,6 +174,8 @@ pub struct App {
     /// of the panel at 1:1 do not).
     pub menu: bool,
     pub(crate) prompt: Option<Then>,
+    /// The unsaved-changes prompt's rectangle as last drawn (for tests).
+    pub(crate) prompt_rect: Option<Rect>,
     pub(crate) after_save: Option<Then>,
     pub(crate) export: Option<Job>,
     pub(crate) mod_list: Option<Result<Vec<ModEntry>, String>>,
@@ -286,6 +288,7 @@ impl App {
             key_mode: KeyMode::default(),
             menu: false,
             prompt: None,
+            prompt_rect: None,
             after_save: None,
             export: None,
             mod_list: None,
