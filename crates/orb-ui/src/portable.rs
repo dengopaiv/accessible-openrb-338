@@ -1,6 +1,7 @@
-//! Portable mode on Windows (task-289, GitHub issue 19): a file `OpenRB-338.toml` in the folder
-//! of the program keeps the settings, the crash logs and the plugin's log next to it instead of
-//! in the user's profile.
+//! Portable mode on Windows (task-289, GitHub issue 19; the marker, task-295): while a marker
+//! file `OpenRB-338.portable` (any content, even empty) is in the folder of the program, the
+//! file `OpenRB-338.toml` there keeps the settings, the crash logs and the plugin's log next to it
+//! instead of in the user's profile.
 //!
 //! - The standalone app's folder is the one of its `OpenRB-338.exe`.
 //! - The plugin's folder is the one that holds the single file `OpenRB-338.vst3` (the zip), or the
@@ -9,7 +10,7 @@
 //!   address of a function here and `GetModuleFileNameW`; the plugin links this crate in, so its
 //!   module is the plugin's binary `OpenRB-338.vst3\Contents\x86_64-win\OpenRB-338.vst3`
 //!   ([`folder_of`] goes up to the bundle's parent) or the single file's own folder.
-//! - [`folder`] is that folder when the file is in it. macOS and Linux never have one.
+//! - [`folder`] is that folder when the marker is in it. macOS and Linux never have one.
 //!
 //! The rules for what the file holds are in `settings.rs`.
 
@@ -17,6 +18,9 @@ use std::path::{Path, PathBuf};
 
 /// The settings file's name, in the per-user folder and in the portable one.
 pub const FILE_NAME: &str = "OpenRB-338.toml";
+
+/// The marker file that turns portable mode on when it is in the program's folder (task-295).
+pub const MARKER_NAME: &str = "OpenRB-338.portable";
 
 /// The folder of the program for the path of its module `module` (the exe, or the plugin's
 /// binary): the exe's folder, or for `X.vst3\Contents\<arch>\X.vst3` the folder that holds the
@@ -55,9 +59,9 @@ pub fn candidate() -> Option<PathBuf> {
     }
 }
 
-/// The portable folder: the program's folder when `OpenRB-338.toml` is in it (Windows only).
+/// The portable folder: the program's folder when the marker is in it (Windows only).
 pub fn folder() -> Option<PathBuf> {
-    candidate().filter(|d| d.join(FILE_NAME).is_file())
+    candidate().filter(|d| d.join(MARKER_NAME).is_file())
 }
 
 /// The path of the module (exe or dll) that holds this function.

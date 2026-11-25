@@ -16,16 +16,15 @@
 //! `audio_sample_rate`, `audio_buffer_size`: [`AudioChoice`], Options > Audio Output, task-191)
 //! and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
-//! task-151), and the version strings `standalone_version` and `plugin_version` that the app and
-//! the plugin write on every save (each keeps the other's as it found it; the file is never
-//! blank), so it can be edited by hand. Where it lives (task-289):
+//! task-151), so it can be edited by hand. Where it lives (task-289):
 //! 1. `$ORB_UI_CONFIG` if set;
-//! 2. on Windows, `OpenRB-338.toml` in the program's folder when it is there (portable mode,
-//!    `portable.rs`): absent, the per-user file below; with settings in it, it alone is used, read
-//!    and written, and the per-user file is never touched; empty (no bytes, whitespace or comments
-//!    only), the per-user settings are read and written into it, and it is used from then on. A
-//!    local file that does not parse is an error ([`Settings::load_error`]). A folder that cannot
-//!    be written gives one notice ([`Settings::notice`]) and no per-user write;
+//! 2. on Windows, `OpenRB-338.toml` in the program's folder while the marker file
+//!    `OpenRB-338.portable` is there (portable mode, `portable.rs`; its content is ignored): when
+//!    the local file is present it alone is used, read and written, and the per-user file is never
+//!    touched; when it is absent, the per-user settings are read and written into it, and it is
+//!    used from then on. A local file that does not parse is an error ([`Settings::load_error`]). A
+//!    folder that cannot be written gives one notice ([`Settings::notice`]) and no per-user write.
+//!    Without the marker a local file is ignored; the per-user file is used;
 //! 3. `OpenRB-338/OpenRB-338.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
 //!    `~/.config` on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows). When
 //!    it is absent and `ui.toml` (its name before task-289) is in that folder, `ui.toml` is copied
@@ -64,16 +63,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::Serialize;
 
 use crate::portable::FILE_NAME;
-
-/// Who writes the file: the key of the version it keeps is the writer's own.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Role {
-    /// The standalone app: `standalone_version`.
-    #[default]
-    Standalone,
-    /// The plugin: `plugin_version`.
-    Plugin,
-}
 
 /// How many recent folders are kept.
 pub const MAX_RECENT: usize = 8;
@@ -211,9 +200,6 @@ pub struct Settings {
     pub audio: AudioChoice,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
-    /// Who saves: the version key written is the role's (`standalone_version` or
-    /// `plugin_version`), the other is kept as found.
-    pub role: Role,
     /// Whether `file` is the portable `OpenRB-338.toml` next to the program (task-289): a
     /// failed write is then one notice, not an error, and never goes to the per-user file.
     #[doc(hidden)]
@@ -288,7 +274,6 @@ impl Default for Settings {
             pattern_editor_909_pos: None,
             audio: AudioChoice::default(),
             file: None,
-            role: Role::Standalone,
             portable: false,
             warned: false,
             notice: None,
@@ -350,10 +335,6 @@ pub const LEGACY_FILE_NAME: &str = "ui.toml";
 #[derive(Serialize)]
 struct Stored<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    standalone_version: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    plugin_version: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     songs_dir: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mods_dir: Option<&'a Path>,
@@ -400,70 +381,51 @@ fn path_of(v: &toml::Value) -> Option<PathBuf> {
 impl Settings {
     /// Reads the settings from the default file (the defaults when there is none).
     pub fn load() -> Self {
-        Self::load_for(Role::Standalone)
-    }
-
-    /// [`Settings::load`] for the plugin: it writes `plugin_version`.
-    pub fn load_plugin() -> Self {
-        Self::load_for(Role::Plugin)
-    }
-
-    fn load_for(role: Role) -> Self {
         if std::env::var_os("ORB_UI_CONFIG").is_some_and(|p| !p.is_empty()) {
-            let mut s = default_file()
+            return default_file()
                 .map(|f| Self::load_from(&f))
                 .unwrap_or_default();
-            s.role = role;
-            return s;
         }
-        Self::load_resolved(
-            role,
-            crate::portable::candidate().as_deref(),
-            default_file(),
-        )
+        Self::load_resolved(crate::portable::candidate().as_deref(), default_file())
     }
 
     /// The settings of the portable file `OpenRB-338.toml` in `local` when it is there, else of
     /// `user`, the per-user file (the rules are in the module text). Public so the tests can
     /// run on any system.
-    pub fn load_resolved(role: Role, local: Option<&Path>, user: Option<PathBuf>) -> Self {
-        let mut s = Self::load_resolved_inner(role, local, user);
-        s.role = role;
-        s
-    }
-
-    fn load_resolved_inner(role: Role, local: Option<&Path>, user: Option<PathBuf>) -> Self {
+    pub fn load_resolved(local: Option<&Path>, user: Option<PathBuf>) -> Self {
         let load_user = |user: Option<PathBuf>| match user {
-            Some(f) => Self::load_user(&f, role),
+            Some(f) => Self::load_user(&f),
             None => Self::default(),
         };
         let Some(dir) = local else {
             return load_user(user);
         };
+        // no marker: the per-user settings, whatever a local OpenRB-338.toml holds
+        if !dir.join(crate::portable::MARKER_NAME).is_file() {
+            return load_user(user);
+        }
         let file = dir.join(FILE_NAME);
         let problem = match std::fs::read_to_string(&file) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return load_user(user),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // the first start: the per-user settings move in, read without writing any
+                // per-user file (not even the copy of ui.toml)
+                let mut s = match user {
+                    Some(f) => Self::read_user(&f),
+                    None => Self::default(),
+                };
+                s.file = Some(file);
+                s.portable = true;
+                // everything counts as changed, so the whole copy is written
+                s.base = Self::default().base;
+                if let Err(e) = s.save() {
+                    s.notice = Some(e);
+                }
+                return s;
+            }
             Ok(text) => match text.parse::<toml::Table>() {
-                Ok(t) if !t.is_empty() => {
+                Ok(_) => {
                     let mut s = Self::load_from(&file);
                     s.portable = true;
-                    return s;
-                }
-                Ok(_) => {
-                    // empty: the per-user settings move in, read without writing any per-user
-                    // file (not even the copy of ui.toml)
-                    let mut s = match user {
-                        Some(f) => Self::read_user(&f),
-                        None => Self::default(),
-                    };
-                    s.file = Some(file);
-                    s.portable = true;
-                    s.role = role;
-                    // everything counts as changed, so the whole copy is written
-                    s.base = Self::default().base;
-                    if let Err(e) = s.save() {
-                        s.notice = Some(e);
-                    }
                     return s;
                 }
                 Err(e) => format!("is damaged: {}", e.message().trim_end()),
@@ -481,16 +443,14 @@ impl Settings {
     }
 
     /// Reads the per-user file `user`; when it is absent and `ui.toml` (its old name) is in the
-    /// same folder, its values are written to `user` first (a save: atomic, with the `role`'s
-    /// version key) and `ui.toml` stays
-    /// as it was. Without the write (an error) the old file's values are still used.
-    fn load_user(user: &Path, role: Role) -> Self {
+    /// same folder, its values are written to `user` first (a save: atomic) and `ui.toml`
+    /// stays as it was. Without the write (an error) the old file's values are still used.
+    fn load_user(user: &Path) -> Self {
         let mut s = Self::read_user(user);
         if s.file.as_deref() != Some(user) {
-            // from ui.toml: written to the new file at once (so it has the version key too);
-            // when that fails they are saved later
+            // from ui.toml: written to the new file at once (when that fails they are saved
+            // later)
             s.file = Some(user.to_path_buf());
-            s.role = role;
             s.base = Self::default().base;
             let _ = s.save();
         }
@@ -800,8 +760,8 @@ impl Settings {
     /// Writes this instance's changes to the file (a no-op without one): the file is read
     /// again first and only what changed here since the last read or write is applied to it,
     /// so another instance's changes to other keys survive (task-229). These settings then
-    /// take the merged values. The writer's version key is always written (so the file is never
-    /// blank) and the other writer's is kept. In portable mode a failure is not an error: it
+    /// take the merged values. The file is written atomically (a temporary file, then a rename).
+    /// In portable mode a failure is not an error: it
     /// sets [`Settings::notice`] once and the values stay unsaved.
     pub fn save(&mut self) -> Result<(), String> {
         let Some(file) = self.file.clone() else {
@@ -826,27 +786,7 @@ impl Settings {
 
     fn save_to(&mut self, file: &Path) -> Result<(), String> {
         let m = self.merged(file).map_err(|e| format!("cannot read: {e}"))?;
-        // the other writer's version, as found
-        let other_key = match self.role {
-            Role::Standalone => "plugin_version",
-            Role::Plugin => "standalone_version",
-        };
-        let other = std::fs::read_to_string(file)
-            .ok()
-            .and_then(|t| t.parse::<toml::Table>().ok())
-            .and_then(|t| {
-                t.get(other_key)
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-            });
-        let own = Some(crate::about::VERSION);
-        let (standalone_version, plugin_version) = match self.role {
-            Role::Standalone => (own, other.as_deref()),
-            Role::Plugin => (other.as_deref(), own),
-        };
         let text = toml::to_string(&Stored {
-            standalone_version,
-            plugin_version,
             songs_dir: m.songs_dir.as_deref().and_then(storable),
             mods_dir: m.mods_dir.as_deref().and_then(storable),
             startup_sound: m.startup_sound,

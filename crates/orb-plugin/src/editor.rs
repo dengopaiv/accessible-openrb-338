@@ -434,7 +434,7 @@ impl NiceEguiApp for EditorApp {
             let mut app = editor_app_with(
                 self.params.clone(),
                 gui_context,
-                Settings::load_plugin(),
+                Settings::load(),
                 self.route.clone(),
                 Some(self.drag.clone()),
             );

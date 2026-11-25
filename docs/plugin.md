@@ -1141,7 +1141,7 @@ the `nice_warn!`/`nice_error!` lines of the plugin go nowhere. The plugin's own 
   |---|---|
   | Linux | `$XDG_STATE_HOME/OpenRB-338/plugin.log`, or `~/.local/state/OpenRB-338/plugin.log` |
   | macOS | `~/Library/Logs/OpenRB-338/plugin.log` |
-  | Windows | `%LOCALAPPDATA%\OpenRB-338\logs\plugin.log`; in portable mode (task-289, docs/building.md) `logs\plugin.log` next to the `OpenRB-338.vst3` file (the zip); the installer's bundle in `%COMMONPROGRAMFILES%\VST3` is portable only when an `OpenRB-338.toml` is put beside it |
+  | Windows | `%LOCALAPPDATA%\OpenRB-338\logs\plugin.log`; in portable mode (task-289, task-295, docs/building.md) `logs\plugin.log` next to the `OpenRB-338.vst3` file (the zip); the installer's bundle in `%COMMONPROGRAMFILES%\VST3` is portable only when an `OpenRB-338.portable` marker is put beside it |
 
   It is not in the settings folder (the settings file's: `~/.config/OpenRB-338`, `~/Library/Application
   Support/OpenRB-338`, `%APPDATA%\OpenRB-338`): a `plugin.log` there does nothing.
@@ -1387,7 +1387,7 @@ are pixel-identical):
   sets the song's control values as host parameters; File > Open and File > New keep the
   mode (task-228). The file browser is orb-ui's own, egui-drawn (task-046),
   so no native dialog is opened from the plugin window; its folders and the Mods folder are the
-  standalone's settings file (`OpenRB-338/OpenRB-338.toml`, or the portable one next to the plugin file or bundle on Windows, docs/building.md; the plugin writes `plugin_version`), shared; a save merges only its own
+  standalone's settings file (`OpenRB-338/OpenRB-338.toml`, or the portable one next to the plugin file or bundle on Windows while `OpenRB-338.portable` is there, docs/building.md), shared; a save merges only its own
   change into the file as it is then, so open instances do not overwrite each other
   (task-229).
 - Mods: a mod chosen (the Mods menu, a song's mod, Choose file) is read and given to the plugin

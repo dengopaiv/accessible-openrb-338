@@ -346,32 +346,37 @@ ASIO is a trademark and software of Steinberg Media Technologies GmbH.
 - **Checked** on the Windows test machine with FlexASIO (task-193 notes): the window lists ASIO,
   the song plays through it, the rate choice works (resampled) and a missing ASIO device falls back to System default with a note; a busy driver could not be provoked (FlexASIO shares), so that fallback is task-191's open_chain, not seen with ASIO. The user's own runs: FlexASIO audible directly and over RDP; ASIO4ALL silent over an HDMI output (an ASIO4ALL limit), and the exit with its panel open, re-tested.
 
-## The portable Windows zip (task-289, GitHub issue 19)
+## The portable Windows zip (task-289, GitHub issue 19; the marker file, task-295)
 
 The Windows `.zip` of `scripts/package.sh` unpacks to one folder with `OpenRB-338.exe`,
 `orb.exe`, the plugin as the single file `OpenRB-338.vst3` (the binary of the bundle,
-which Windows hosts accept as it is), `OpenRB-338.toml` (zero bytes), `LICENSE` and
-`README.txt`; the README explains it. The file turns portable mode on (Windows only, the
+which Windows hosts accept as it is), `OpenRB-338.portable` (the marker, a one-line text),
+`LICENSE` and `README.txt`; the README explains it. There is no `OpenRB-338.toml` in the zip, so
+unzipping a new version over an old folder never touches the settings. The marker turns
+portable mode on (Windows only, the
 standalone app and the plugin; `crates/orb-ui/src/portable.rs`, `settings.rs`):
-- the app looks for `OpenRB-338.toml` in the folder of its exe; the plugin in the folder that
+- the app looks for `OpenRB-338.portable` in the folder of its exe; the plugin in the folder that
   holds its `.vst3` file, or, for the installer's bundle form, holds the bundle (never inside
   it), found from the plugin binary's own path
   (`GetModuleHandleExW` with the address of a function of orb-ui, then `GetModuleFileNameW`; the
   plugin links orb-ui in, so the same code finds the exe's folder in the app). The host must be
   pointed at that folder (its custom VST3 path) for the plugin to be portable; a copy in a
-  plugin folder (the installer's `%COMMONPROGRAMFILES%\VST3`) has no file beside it and is
-  per-user as before. App and plugin in one folder share the one file;
-- absent: the per-user file; with settings in it: that file alone, read and written there, the
-  per-user file never touched; empty (no bytes, white space or comments only): the per-user
-  settings (with the `ui.toml` fallback) are written into it at the start, and it is used from
-  then on; a file that does not parse is an error box and the defaults, never a fallback;
+  plugin folder (the installer's `%COMMONPROGRAMFILES%\VST3`) has no marker beside it and is
+  per-user as before. App and plugin in one folder share the one `OpenRB-338.toml`;
+- marker present (its content is ignored, it may be empty): the settings are the local
+  `OpenRB-338.toml`. Present, it is used as it is, read and written there, the per-user file
+  never touched; absent (the first start), the per-user settings (with the `ui.toml` fallback)
+  are written into it at the start, and it is used from then on; a file that does not parse is
+  an error box and the defaults, never a fallback. Marker absent: the per-user file, even when
+  a local `OpenRB-338.toml` exists (it is ignored, not deleted);
 - the crash logs, the plugin's log and its switch file `plugin.log` are in `logs\` there;
 - a folder that cannot be written (Program Files): the settings as read are used, the status
   line says once `Settings cannot be saved in <folder>: <reason>`, and nothing goes per-user;
-- every save writes `standalone_version` (the app) or `plugin_version` (the plugin), keeps the
-  other's, and goes through a temporary file and a rename, so the file is never blank;
-- off: move the file to `%APPDATA%\OpenRB-338\OpenRB-338.toml`, replacing the one there (the
-  settings go with it); on: create an empty one next to the exe. macOS and Linux never look for one.
+- every save goes through a temporary file and a rename, so the file is never half written;
+- upgrade: unzip the new zip over the folder; the settings in `OpenRB-338.toml` stay;
+- off: delete `OpenRB-338.portable`, and move `OpenRB-338.toml` to
+  `%APPDATA%\OpenRB-338\`, replacing the one there, to keep the settings; on: create the marker
+  next to the exe. macOS and Linux never look for one.
 
 The files the app and plugin write outside the settings and the logs are the system temporary
 folder's `OpenRB-338\clips` and `mods` (drag-out clips and a mod's unpacked copy, the plugin) and
@@ -782,7 +787,7 @@ whenever `path.ps1` is in the folder.
 **The uninstaller** removes the files, the shortcuts, the PATH entry, the two plugin bundles
 (above) and both registry keys, and
 the folder if it is empty. It keeps the user's own files in the folder, and the settings file
-(`%APPDATA%\OpenRB-338\OpenRB-338.toml`, and the older `ui.toml`) and songs. The installer installs no `OpenRB-338.toml` in its folder, so an installed app and plugin are not portable.
+(`%APPDATA%\OpenRB-338\OpenRB-338.toml`, and the older `ui.toml`) and songs. The installer installs no `OpenRB-338.portable` in its folder, so an installed app and plugin are not portable.
 
 **Running programs, upgrades.** Before it changes anything, the installer and the uninstaller try
 to open `OpenRB-338.exe` and `orb.exe` of the folder for writing, which fails while one runs from

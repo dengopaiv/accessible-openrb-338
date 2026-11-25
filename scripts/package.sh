@@ -32,10 +32,11 @@ p=OpenRB-338.vst3
 case $target in
     *-windows-*)
         # portable by default (task-289): the app, the plugin as the single file (the binary
-        # of the bundle, which hosts on Windows accept as it is) and the empty settings file
-        # in one folder
+        # of the bundle, which hosts on Windows accept as it is) and the portable marker in one
+        # folder; no OpenRB-338.toml, so unzipping over an old folder keeps its settings (task-295)
         cp "$dist/$target/plugins/$p"/Contents/*-win/"$p" "$stage/$p"
-        : > "$stage/OpenRB-338.toml"
+        printf '%s\n' 'Portable mode is on while this file exists (see README.txt). Its content is ignored.' \
+            > "$stage/OpenRB-338.portable"
         # the ASIO SDK's license and notices (task-193): ASIO is in the x86_64 build only
         case $target in
             x86_64-*) "$root/scripts/asio-notices.sh" "$stage/THIRD-PARTY-NOTICES.txt" ;;
@@ -111,18 +112,22 @@ case $target in
 
 Portable mode
 -------------
-This folder holds an empty file, OpenRB-338.toml, which makes OpenRB-338.exe and the plugin
-bundle next to it portable: they keep their settings in that file, and the crash logs and the
-plugin's log (turned on by a file plugin.log in logs\) in the logs\ folder here, and write
-nothing in your user profile. The app and the plugin share the one file. The file is empty at
-first: the first start copies your per-user settings (%APPDATA%\OpenRB-338\OpenRB-338.toml) into
-it, so the settings you have come along (from the older ui.toml there when there is no
-OpenRB-338.toml yet); the per-user files are not changed. The plugin is portable
-only when the host loads it from this folder (the host's custom VST3 path); a copy in a plugin
-folder uses the per-user settings.
+The file OpenRB-338.portable in this folder makes OpenRB-338.exe and the plugin file next to it
+portable while it exists (its content is ignored): they keep their settings in OpenRB-338.toml
+here, and the crash logs and the plugin's log (turned on by a file plugin.log in logs\) in the
+logs\ folder here, and write nothing in your user profile. The app and the plugin share the one
+OpenRB-338.toml. It is not in the zip: the first start copies your per-user settings
+(%APPDATA%\OpenRB-338\OpenRB-338.toml, or the older ui.toml there when there is no
+OpenRB-338.toml yet) into it, so the settings you have come along; the per-user files are not
+changed. The plugin is portable only when the host loads it from this folder (the host's custom
+VST3 path); a copy in a plugin folder uses the per-user settings.
 
-  To turn portable mode off: move OpenRB-338.toml to %APPDATA%\OpenRB-338\, replacing the
-  OpenRB-338.toml there. To turn it on again: create an empty OpenRB-338.toml next to
+  To upgrade: unzip the new version over this folder. OpenRB-338.toml is not in the zip, so your
+  settings stay.
+  To turn portable mode off: delete OpenRB-338.portable, and move OpenRB-338.toml to
+  %APPDATA%\OpenRB-338\, replacing the OpenRB-338.toml there, to keep the settings. Without
+  the marker the program uses the per-user settings and ignores a local OpenRB-338.toml.
+  To turn it on again: create a file OpenRB-338.portable (it may be empty) next to
   OpenRB-338.exe.
 
 If the folder cannot be written (for instance under Program Files), the app runs with the

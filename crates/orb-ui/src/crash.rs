@@ -35,7 +35,7 @@ pub const EXIT_CODE: i32 = 101;
 /// The folder of the logs, from the environment: `ORB_UI_LOG_DIR` if set (tests); else, on
 /// Windows in portable mode, `logs` in the portable folder (`portable.rs`); else the platform's.
 pub fn log_dir() -> Option<PathBuf> {
-    // portable mode (task-289, Windows): `logs` next to `OpenRB-338.toml`
+    // portable mode (task-289, Windows): `logs` next to the marker `OpenRB-338.portable`
     if std::env::var_os("ORB_UI_LOG_DIR").is_none_or(|v| v.is_empty())
         && let Some(d) = crate::portable::folder()
     {

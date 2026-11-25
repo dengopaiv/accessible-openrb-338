@@ -1259,17 +1259,16 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   folders do not change the songs and mods folders, which keep their meaning (the default
   place, the Mods menu's folder). "Use as songs/mods folder" in the dialog sets those to the
   folder shown. The last 8 folders a file was chosen in are the recent folders. All of it is a
-  TOML file (task-107) of `standalone_version` and `plugin_version` (written by each on every
-  save, the other's kept; the file is never blank), `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
+  TOML file (task-107) of `songs_dir`, `mods_dir`, `last_song_dir`, `last_mod_dir`, `recent`
   (an array), `startup_sound` and `theme` (`"modern"`, the default, or `"classic"`: View >
   Classic / Modern, section 21; another value is skipped; the removed Theme Viewer's
   `theme_viewer_filter` of an older file is ignored and dropped at the next save, task-267),
   the pattern editors' places `pattern_editor_303_1_pos`, `pattern_editor_303_2_pos`,
   `pattern_editor_808_pos` and `pattern_editor_909_pos` (sections 23 to 25), the audio output keys `audio_driver`,
   `audio_device`, `audio_device_name`, `audio_sample_rate` and `audio_buffer_size` (section 18, task-191) and the table `preferred_mods` (section 18) at
-  `$ORB_UI_CONFIG`, else (Windows) `OpenRB-338.toml` next to the program when it is there
-  (portable mode, task-289, docs/building.md; turned off by moving the file to the per-user path,
-  replacing the one there), else `OpenRB-338/OpenRB-338.toml` (task-068; named
+  `$ORB_UI_CONFIG`, else (Windows) `OpenRB-338.toml` next to the program while the marker file
+  `OpenRB-338.portable` is there (portable mode, task-289 and task-295, docs/building.md; turned
+  off by deleting the marker and moving the file to the per-user path, replacing the one there), else `OpenRB-338/OpenRB-338.toml` (task-068; named
   `ui.toml` before task-289, which is copied to the new name once when only it exists and is
   never changed; settings of the old `rb/` folder are
   not carried over) in `$XDG_CONFIG_HOME` (Linux
