@@ -186,6 +186,9 @@ pub struct App {
     pub(crate) demo_cache: Option<(PathBuf, bool)>,
     /// The splash picture of the kit last shown in the 808's mod window (`App::mod_view`).
     pub(crate) splash: Option<(orb_cli::mods::Kit, Option<egui::TextureHandle>)>,
+    /// The embedded standard mod's splash picture, which the 808's mod window shows for a kit
+    /// that has none (task-309); loaded once.
+    standard_splash: Option<Option<egui::TextureHandle>>,
     /// Whether the File > Info window is open (`App::info_ui`).
     pub(crate) info_open: bool,
     /// The number of the info window's opens; it is in the window's id, so that each open
@@ -244,8 +247,8 @@ pub struct App {
     /// of the last frame (1 with the classic skin alone, 0 with the modern one alone).
     fade: Option<crate::skin::fade::Fade>,
     overlay_alpha: f32,
-    /// Whether the last frame gave the skins the mod's splash picture (for tests).
-    splash_in_frame: bool,
+    /// The size of the splash picture the last frame gave the skins (for tests).
+    splash_in_frame: Option<[usize; 2]>,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
     pub frame_stats: Option<FrameStats>,
@@ -301,6 +304,7 @@ impl App {
             mod_list: None,
             demo_cache: None,
             splash: None,
+            standard_splash: None,
             info_open: false,
             info_serial: 0,
             about_open: false,
@@ -332,7 +336,7 @@ impl App {
             skin: crate::skin::svg::modern(),
             fade: None,
             overlay_alpha: 0.0,
-            splash_in_frame: false,
+            splash_in_frame: None,
             shot,
             frame_stats: FrameStats::from_env(),
             last_px_scale: None,
@@ -381,6 +385,11 @@ impl App {
 
     /// Whether the last frame's skins got the mod's splash picture.
     pub fn splash_in_frame(&self) -> bool {
+        self.splash_in_frame.is_some()
+    }
+
+    /// The size in pixels of the picture the last frame's skins got (task-309).
+    pub fn splash_in_frame_size(&self) -> Option<[usize; 2]> {
         self.splash_in_frame
     }
 
@@ -1106,11 +1115,11 @@ impl App {
         // (a fade to the classic skin, which has no mod window, still draws the modern one
         // under it: the picture stays in the frame, task-268)
         let splash = if self.fade.is_some() || layout.controls.iter().any(|c| c.kind == "modview") {
-            self.splash_texture(ui.ctx())
+            self.panel_splash_texture(ui.ctx())
         } else {
             None
         };
-        self.splash_in_frame = splash.is_some();
+        self.splash_in_frame = splash.as_ref().map(|t| t.size());
         // the crossfade's alpha of this frame and the classic skin it fades (task-268)
         let fading = match (self.fade.as_mut(), self.classic.as_ref()) {
             (Some(fade), Some((_, classic))) => Some((fade.alpha(now), classic.clone())),
@@ -1284,6 +1293,24 @@ impl App {
             self.splash = Some((self.doc.kit.clone(), tex));
         }
         self.splash.as_ref().and_then(|(_, t)| t.clone())
+    }
+
+    /// The picture of the 808's mod window: the splash of the kit that plays, or the embedded
+    /// standard mod's when the kit has none or it does not decode (task-309). Mods > Info uses
+    /// [`App::splash_texture`] and still says the mod has none.
+    pub(crate) fn panel_splash_texture(
+        &mut self,
+        ctx: &egui::Context,
+    ) -> Option<egui::TextureHandle> {
+        if let Some(t) = self.splash_texture(ctx) {
+            return Some(t);
+        }
+        self.standard_splash
+            .get_or_insert_with(|| {
+                crate::session::splash_image(&orb_cli::mods::Kit::Standard)
+                    .map(|c| ctx.load_texture("standard-splash", c, egui::TextureOptions::LINEAR))
+            })
+            .clone()
     }
 
     /// With `--screenshot`: after a few frames (the SVGs are loaded and rasterized) save the

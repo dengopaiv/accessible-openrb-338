@@ -3960,3 +3960,88 @@ fn the_about_copy_feedback_reverts_after_1_5_seconds() {
     );
     assert_eq!(h.copied.len(), 1);
 }
+
+/// The embedded standard mod repacked with `change` applied to its files, under another name.
+fn repacked_mod(dir: &Path, name: &str, change: impl Fn(&str, &mut Vec<u8>) -> bool) -> PathBuf {
+    let r = rbm::Rbm::parse(rbm::standard::EMBEDDED.to_vec()).unwrap();
+    let t = rbm::KeyTable::embedded(&r).unwrap();
+    let mut u = rbm::pack::unpack(&r, &t).unwrap();
+    let mut entries = Vec::new();
+    let mut files = Vec::new();
+    for (e, mut f) in u.manifest.files.drain(..).zip(u.files.drain(..)) {
+        if change(&e.name, &mut f) {
+            entries.push(e);
+            files.push(f);
+        }
+    }
+    u.manifest.files = entries;
+    u.manifest.info.name = name.into();
+    let bytes = rbm::pack::pack(&u.manifest, &files).unwrap();
+    let path = dir.join(format!("{name}.rbm"));
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+/// task-309: the 808's mod window shows the embedded standard mod's splash for a mod with no
+/// splash picture or one that does not decode, and its own for a mod that has one; Mods > Info
+/// keeps saying "This mod has no splash picture." for those two.
+#[test]
+fn the_mod_window_falls_back_to_the_standard_splash_and_info_does_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let is_splash = |n: &str| n.eq_ignore_ascii_case("splash.jpg");
+    let none = repacked_mod(dir.path(), "NoSplash", |n, _| !is_splash(n));
+    let broken = repacked_mod(dir.path(), "BadSplash", |n, f| {
+        if is_splash(n) {
+            *f = b"\xFF\xD8not a jpeg".to_vec();
+        }
+        true
+    });
+    let own = repacked_mod(dir.path(), "OwnSplash", |n, f| {
+        if is_splash(n) {
+            let img = image::RgbImage::from_pixel(16, 24, image::Rgb([9, 9, 9]));
+            let mut out = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut out, image::ImageFormat::Jpeg).unwrap();
+            *f = out.into_inner();
+        }
+        true
+    });
+    let mut h = Harness::with_menu();
+    h.height = 900.0;
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let standard = h
+        .app
+        .splash_in_frame_size()
+        .expect("the built-in kit's splash");
+    assert_eq!(standard, [256, 256]);
+    for (path, size, info_says_none) in [
+        (&none, standard, true),
+        (&broken, standard, true),
+        (&own, [16, 24], false),
+    ] {
+        h.app.use_kit(Kit::Mod(path.clone()));
+        let mut shapes = String::new();
+        h.app.command(Cmd::ModInfo);
+        for _ in 0..8 {
+            shapes = h.frame_shapes(vec![]);
+        }
+        assert_eq!(
+            h.app.splash_in_frame_size(),
+            Some(size),
+            "{path:?}: the 808's window"
+        );
+        assert_eq!(
+            shapes.contains("This mod has no splash picture."),
+            info_says_none,
+            "{path:?}: Mods > Info"
+        );
+        assert_eq!(
+            h.app.mod_info_splash().is_none(),
+            info_says_none,
+            "{path:?}"
+        );
+        h.app.command(Cmd::ModInfo);
+        h.frame(vec![]);
+    }
+}

@@ -557,7 +557,9 @@ UI state (BD at start: observed, the steps showed the BD column and a drag paint
   knob shows `(127 * i + 5) / 11` for the selected instrument i (`sub_441E79`). OpenRB-338 has no
   selector knob (the user's change of 2026-10-28): the legend selects, and the knob's place
   right of the legend shows the mod's window, the `splash.jpg` of the kit that plays (the
-  embedded standard mod's for the built-in kit) above the song's mod name (`App::mod_view`).
+  embedded standard mod's for the built-in kit) above the song's mod name (`App::mod_view`). A mod with no splash.jpg, or one that does not decode, shows the embedded standard mod's splash there
+  instead (`App::panel_splash_texture`, task-309; the plugin's editor is the same panel); Mods > Info still says "This mod has no splash picture." for it
+  (`App::splash_texture`).
   The mod's window takes no click of its own (a press there gives the 808's row the focus, as
   anywhere in a row; the Theme Viewer it linked to is gone, task-267). The classic skin
   (section 21) has the original's selector knob instead (`model::SELECTOR_808`,
