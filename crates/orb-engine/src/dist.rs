@@ -289,11 +289,11 @@ impl SongDevice for Distortion {
         }
     }
 
-    /// Slot 8, 0x10010FE0, with tick 0 from the song ctor: controllers 0..2 of the pattern copy
+    /// Slot 8, 0x10010FE0, at `tick`: controllers 0..2 of the pattern copy
     /// inserted into the distortion's track (`sub_1001F900`; controller 3 is skipped).
-    fn init_track(&mut self, track: &mut TrackMut) {
+    fn insert_pattern(&mut self, track: &mut TrackMut, tick: i32) {
         for c in 0..=SHAPE {
-            track.insert(0, c as u8, self.pattern[c]);
+            track.insert(tick, c as u8, self.pattern[c]);
         }
     }
 }

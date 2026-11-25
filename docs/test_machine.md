@@ -91,7 +91,16 @@ state), Run Benchmark Test..., the recent files, Quit (Ctrl+Q).
 
 - Edit: pattern editing items and, last, `Vintage ReBirth Synth Sound` (a song-level switch, checked
   or not per song) and `Preferences...`. Press Up once in the open Edit menu to wrap to
-  `Preferences...`. ![Edit menu](test_machine/menu_edit.png)
+  `Preferences...`. ![Edit menu](test_machine/menu_edit.png) In song mode the first items read
+  Cut Loop, Copy Loop, Paste at Song Position, Paste Replace at Song Position and Clear, and the
+  two Initialize items are enabled (task-306, `docs/ui_spec.md` section 12):
+  ![Edit menu in song mode](test_machine/menu_edit_song.png) Initialize Song asks first:
+  ![its alert](test_machine/init_song_dialog.png)
+- The app's frame is not always at the same screen place after a start (task-306 saw (208, 185)
+  and (138, 130) on the same day): click menu items with `rcs input --window "ReBirth RB-338"`
+  and coordinates relative to its client area (Edit > Initialize Loop from Pattern Mode at
+  (158, 132), Initialize Song at (158, 154), File > Export Loop as Audio File... at (108, 172)
+  with Save enabled), or by keys.
 - Mods: `Select Mod...` (Ctrl+M), `Update Mod List`, then `Standard ReBirth` (checked), `Metallicon+`,
   `Massen's MSM 2.0`, `Orbit 2.0`, `Pitch Black Edition 2.0`. ![Mods menu](test_machine/menu_mods.png)
 - Options: Sync to MIDI Clock, Program Synth from Keyboard (Ctrl+F), Select Patterns from Keyboard

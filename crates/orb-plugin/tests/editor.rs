@@ -439,6 +439,13 @@ fn the_edit_menu_has_the_standalones_items_without_shortcuts() {
         .collect();
     assert!(ys.windows(2).all(|w| w[0] < w[1]), "in order: {ys:?}");
     assert_eq!(h.app.edit_item("Undo").map(|i| i.1), Some(false));
+    // the standalone's Initialize items are not there: the plugin has no song mode (task-306)
+    for t in [
+        "Initialize Loop from Pattern Mode",
+        "Initialize Song from Pattern Mode",
+    ] {
+        assert!(h.app.edit_item(t).is_none(), "{t}");
+    }
     for key in ["Z", "X", "C", "V", "D", "E"] {
         for m in ["Ctrl+", "Cmd+"] {
             let k = format!("{m}{key}");

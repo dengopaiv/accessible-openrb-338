@@ -830,15 +830,19 @@ impl SongDevice for Tb303 {
         self.vintage = vintage;
     }
 
-    /// Slots 7 (0x10026C40) and 8 (0x10025650) from the song ctor: controllers 0 and 1 of the
-    /// track are quantised to 32 * 24 ticks (a bar, `sub_10021560` → `sub_10014600`), and a
-    /// tick-0 event of every controller 0..8 with the ctor's value is inserted
-    /// (`sub_1001F900` → `sub_10014750`).
-    fn init_track(&mut self, track: &mut TrackMut) {
+    /// Slot 7 (0x10026C40): controllers 0 and 1 of the track are quantised to 32 * 24 ticks (a
+    /// bar, `sub_10021560` → `sub_10014600`).
+    fn quantise(&mut self, track: &mut TrackMut) {
         track.set_quant(ENABLED as u8, 32);
         track.set_quant(PATTERN as u8, 32);
+    }
+
+    /// Slot 8 (0x10025650): an event at `tick` of every controller 0..8 with the pattern copy's
+    /// value (`+0x30`, packed by `sub_10018C60` at 0x10025669) is inserted (`sub_1001F900` →
+    /// `sub_10014750`).
+    fn insert_pattern(&mut self, track: &mut TrackMut, tick: i32) {
         for c in 0..=WAVEFORM {
-            track.insert(0, c as u8, self.params[c]);
+            track.insert(tick, c as u8, self.params[c]);
         }
     }
 }

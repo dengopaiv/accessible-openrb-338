@@ -742,14 +742,17 @@ impl SongDevice for Tr808 {
         }
     }
 
-    /// Slots 7 (0x10026C40, the 303's) and 8 (0x10029DA0) from the song ctor: controllers 0 and
-    /// 1 of the track are quantised to a bar, and a tick-0 event of every controller 0..28 with
-    /// the pattern-mode copy's value is inserted (`sub_1001F900`).
-    fn init_track(&mut self, track: &mut TrackMut) {
+    /// Slot 7 (0x10026C40, the 303's): controllers 0 and 1 of the track are quantised to a bar.
+    fn quantise(&mut self, track: &mut TrackMut) {
         track.set_quant(ENABLED as u8, 32);
         track.set_quant(PATTERN as u8, 32);
+    }
+
+    /// Slot 8 (0x10029DA0): an event at `tick` of every controller 0..28 with the pattern-mode
+    /// copy's value is inserted (`sub_1001F900`).
+    fn insert_pattern(&mut self, track: &mut TrackMut, tick: i32) {
         for c in 0..=LAST_CTRL {
-            track.insert(0, c as u8, self.params[c]);
+            track.insert(tick, c as u8, self.params[c]);
         }
     }
 }

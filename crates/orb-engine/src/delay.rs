@@ -201,12 +201,11 @@ impl SongDevice for Delay {
         }
     }
 
-    /// Slot 8, 0x10010020, with tick 0 from the song ctor: controllers 0..4 of the pattern copy
-    /// inserted into the delay's track (`sub_1001F900`; controller 5 is skipped). Slot 7 is a
-    /// no-op, so the track keeps its quantisation.
-    fn init_track(&mut self, track: &mut TrackMut) {
+    /// Slot 8, 0x10010020, at `tick`: controllers 0..4 of the pattern copy
+    /// inserted into the delay's track (`sub_1001F900`; controller 5 is skipped).
+    fn insert_pattern(&mut self, track: &mut TrackMut, tick: i32) {
         for c in 0..=PAN {
-            track.insert(0, c as u8, self.pattern[c]);
+            track.insert(tick, c as u8, self.pattern[c]);
         }
     }
 }

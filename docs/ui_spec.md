@@ -933,6 +933,8 @@ From the menu resource `SMNU` 128 (item id after `=`, string id after `?`) [C]:
 | File | Save | Ctrl+S | 103 | saves; on a never-saved song it is Save As |
 | File | Save As... | | 104 | file dialog "Save Song as:" |
 | File | Export Loop as Audio File... | | 108 | dialog "Export audio as:" (WAV or AIFF); disabled in pattern mode; renders the loop (`docs/initial_investigation.md` section 3) |
+| Edit | Initialize Loop from Pattern Mode | | 306 | song mode only; song msg 29: the loop's automation is replaced by the pattern-mode values at the loop start, no question (task-306, below) |
+| Edit | Initialize Song from Pattern Mode | | 307 | song mode only; asks first, then song msg 28: all automation but tick 0 is cleared and tick 0 takes the pattern-mode values (task-306, below) |
 | Edit | Vintage ReBirth Synth Sound | | 323 | toggles GLOB vintage (msg 35 id 21, handler 0x42C32E); check mark = the byte (0x42BF09; `docs/song_load.md` section 3) |
 | Mods | Select Mod... | Ctrl+M | 403 | the mod dialog "Mod Selector" (`sub_419460`): list of the mods in the Mods folder; selecting one loads it and plays its startup sound, OK applies it to the song (`docs/rbm.md` section 14) |
 | Mods | (one item per mod) | | 5000 + i | applies mod i to the active song (`sub_40C163`, 0x40C427; `docs/rbm.md` section 14) |
@@ -941,7 +943,32 @@ The Mac menu variant has "Export Loop as AIFF File..." (106) and "... as Wave Fi
 the PC build uses 108. Closing a modified song asks "Save changes before close?" with Save,
 Cancel and Don't Save (observed). The other menu items (Options, MIDI, Windows, Help) are out of
 scope. Of Edit's pattern functions, orb has its own Cut, Copy, Paste and Duplicate Pattern and a
-one-level Undo (section 18); what the original's items do was not read.
+one-level Undo (section 18); what the original's items do was not read, except the two
+Initialize commands (task-306, below).
+
+**The Edit menu in song mode [C] (task-306).** The song window's menu update `sub_42BC83`
+(vtable 0x4BBFD4) tests its copy of global byte 0 (song mode, `+0x1060`, 0x42BF24). In song mode
+it renames 301..305 (string ids 400128054..400128057 and 400128066: Cut Loop, Copy Loop, Paste at
+Song Position, Paste Replace at Song Position, Clear), enables 306 and 307 (0x42BFB4, 0x42BFC3)
+and enables 308 and 309 (Copy Touched Controls to Loop / to Song) only with record on (`+0x1062`,
+global byte 2); the pattern items 310.. are left disabled. In pattern mode 306..309 stay disabled
+(`docs/test_machine/menu_edit.png`, pattern mode; `docs/test_machine/menu_edit_song.png`, song
+mode, observed 2026-11-25). The command handler `sub_42C204` (the vtable slot before) runs, in
+song mode only (the switch at 0x42C3C6): 301 Cut Loop: copy, then song msg 25; 303: song msg 26;
+304: msg 27; **306: song msg 29** (`sub_40B194(song, 29)` at 0x42C59A); **307: the alert
+500128003** (`sub_475D5C` at 0x42C5B7; the exe's `SALR` text, group 128 item 3:
+`[WARN]This will overwrite your entire Song - all knob and button automation will be
+cleared.[Cancel][Initialize]`), and only for the answer 33 (Initialize, 0x42C5CC) **song msg
+28** (0x42C5E3); 308 with record on: msg 31; 309 with record on: msg 30. After each message
+`sub_42590B` marks the document modified (it increments the change counter `+552`), so the title
+and Save follow. The original has no undo for them [C]: the handler keeps nothing but sends the
+message (0x42C592..0x42C5F1), the DLL frees the removed nodes (`sub_10014910` →
+`sub_10014484`), and the exe has no Undo at all (its Edit menu resource `SMNU` 128 has no such
+item and the exe holds no string "Undo"). orb adds one (section 18). The alert is a box titled "ReBirth RB-338" with the warning
+icon, the text, and the buttons Initialize (left, the default: Enter chooses it) and Cancel
+(`docs/test_machine/init_song_dialog.png`). Initialize Loop asks nothing. Neither command touches
+the position, the transport, the loop points or the device chunks. What msgs 28 and 29 do to the
+tracks is `docs/song_load.md` section 14.
 
 ## 13. Where the manual and the program differ
 
@@ -1344,12 +1371,13 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | File | Save (Ctrl+S, Cmd+S on macOS) | writes the song's file; a song with none goes to Save As |
 | File | Save As... | the browser for a `.rbs`; the file becomes the song's file |
 | File | Export Loop as Audio File... | the browser for `.wav`, `.flac` or `.ogg`; enabled in song mode only (the original disables it in pattern mode, section 12) |
-| Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
+| Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, or the tracks of the last Initialize Loop or Song (orb's addition, task-306), and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
 | Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with Clear Pattern |
 | Edit | Copy Pattern (Ctrl+C, Cmd+C) | the target pattern (below: the focused pattern editor's, else the focused row's selected pattern; steps, length, shuffle flag) to the system clipboard as JSON (section 16); the song is not modified |
 | Edit | Paste Pattern (Ctrl+V, Cmd+V) | the system clipboard's pattern JSON (section 16) into the target pattern, into a row of its device only (a 303 pattern into either 303; with a pattern editor focused the device is the editor's), nothing written and a status message for any other text; the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the target pattern into its row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it (a focused pattern editor shows it too, also in song mode); the clipboard is not touched |
 | Edit | Clear Pattern (no shortcut) | the target pattern's steps are emptied as the pattern editors' Clear empties them (`link::emptied_pattern`: every 303 step note 0, no flags, rest on; every 808 and 909 step byte 0), the length and the shuffle flag stay; one write with Undo ("Undo Clear Pattern"); the status line says "303-1: A1 cleared", also when the pattern was empty already (then nothing is written and the Undo stays; the user's review of task-290, round 1); the clipboard is not touched (task-290) |
+| Edit | Initialize Loop from Pattern Mode, Initialize Song from Pattern Mode (no shortcut) | after a separator under Clear Pattern, the original's two commands 306 and 307 with its names (task-306): enabled only with a song in song mode (`App::can_init`; disabled with the hover text "Needs song mode." in pattern mode), as the original enables them. Loop sends song msg 29 at once; Song first opens the question below and sends song msg 28 on Initialize (`orb_player::Command::InitLoop`, `InitSong`; `Engine::init_loop`, `Engine::init_song`; `docs/song_load.md` section 14). Then the song is marked modified and the status line says "Loop initialized from pattern mode" or "Song initialized from pattern mode". **orb's addition, not the original's** (the user's change of 2026-11-25): each is undone by the one-level Edit > Undo, "Undo Initialize Loop" or "Undo Initialize Song" (below). A plugin's Edit menu does not have them, nor the separator after them: the plugin has no song mode (the user's decision of 2026-11-25; section 20) |
 | Edit | 303-1 Pattern Editor..., 303-2 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating pattern editor of that 303 on its selected pattern, or brings it to the front and switches it to that pattern (section 23, tasks 274 and 290); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
 | Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303s': opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 303-1's or the 303-2's with that 303 focused, the 808's with the 808 focused, the 909's with the 909 focused (tasks 280, 281 and 290) |
 | Edit | 909 Pattern Editor... (Ctrl+E, Cmd+E) | under the 808's: opens the floating 909 pattern editor on the TR-909's active pattern, or brings it to the front and switches it to that pattern (section 25, task-281); disabled without a song; the shortcut text is on it with the TR-909 focused |
@@ -1442,6 +1470,22 @@ is one more entry.
     not empty: the shipped "ReBirth 1.0 Default Song" holds one in each of its 64 303 slots, so
     there a Duplicate on a 303 row finds no empty pattern.
   - There are no dialogs: a paste onto a used pattern overwrites it, and Undo brings it back.
+    **Undo of the Initialize commands** (task-306; orb's, the original has none): the
+    command takes the Undo's one level, as a pattern command does, and a pattern command
+    after it takes it back. Before the command the engine copies every track list (the
+    recordings too) into a pool the UI made off the audio thread (`Engine::keep_undo`,
+    `orb_player::Command::InitLoop` / `InitSong` carry it; `Pool::new` reserves the whole
+    capacity, so the copy allocates nothing in the callback); the Undo (`Command::UndoInit`,
+    `Engine::undo_init`) swaps the lists back in one move, points each track at the current
+    tick and, in song mode, applies the tracks at the position as the command's own last step
+    does (`Sequencer::swap_pool`); the lists it lets go of are dropped on the UI thread
+    (`Garbage::Pool`). The song is then as before the command: its save is the earlier one byte
+    for byte, a playing song goes on. Nothing else changes, as the commands change nothing else
+    (the loop points, the device chunks, the patterns). The song stays modified, as after a
+    pattern Undo; the status line says "Initialize Loop undone". Its cost in the callback on a
+    song of 99000 events (release build, the developer's Mac, `seq::tests::init_cost`): the
+    snapshot copy 0.07 ms, the Undo 0.1 ms (the command itself 2.8 ms). An Undo puts back the
+    tracks as they were before the command, so events recorded after it are gone too.
     Undo is forgotten by any other pattern edit of the panel (a step, the length, the shuffle
     flag, the 303's Clear), an open and File > New. Each change of the 303 pattern editor
     (section 23) is undone the same way: it takes the place of the last command's Undo.
@@ -1463,6 +1507,15 @@ is one more entry.
     clipboard holds a 303 pattern", "The clipboard holds no pattern", "The clipboard's pattern
     is not valid: <reason>" (section 16).
 
+- **Initialize Song's question** (task-306, `App::init_song_ui`): a modal box like the
+  unsaved-changes prompt, with the title line "Initialize Song from Pattern Mode", the original's
+  text (`menu::INIT_SONG_TEXT`: "This will overwrite your entire Song - all knob and button
+  automation will be cleared.") and the buttons Initialize and Cancel; Enter is Initialize (the
+  original's default button), Escape is Cancel. While it is open the panel takes no keys and no
+  clicks (`App::asking`). Cancel changes nothing and leaves the song unmodified.
+  `crates/orb-ui/tests/edit_init.rs` runs both commands from the Edit menu on
+  `tests/songs/edit_init` and compares the saves with the original's.
+
 - **Help > Keyboard Shortcuts** (task-105; `crates/orb-ui/src/key_help.rs`). Centered as About is
   (`App::key_help_serial`); Escape is consumed after the other windows. The text is one table,
   `key_help::groups(is_mac)`: each line carries the binds it stands for (key, Shift state, the
@@ -1473,8 +1526,8 @@ is one more entry.
   original (section 10) are written in the window: tempo down has no key in Program Synth mode,
   Enter and `/` change meaning with a 303 focused, PgUp / PgDn do nothing, numpad `*` gives no
   key. The groups "Windows and the file browser" and "Prompts and questions" (the unsaved-changes
-  prompt: S/Y/Enter save, D/N do not, Esc cancels; the browser's overwrite question: Y replaces,
-  Enter/Esc/N go back) are listed by hand from `prompt_ui` (`menu.rs`) and the browser's key
+  prompt: S/Y/Enter save, D/N do not, Esc cancels; Initialize Song's question: Enter initializes,
+  Esc cancels; the browser's overwrite question: Y replaces, Enter/Esc/N go back) are listed by hand from `prompt_ui` (`menu.rs`) and the browser's key
   handler (`browser.rs`); no test checks them. The Theme Viewer's Space row is gone with the
   viewer (task-267; the unit test `no_row_names_the_theme_viewer`).
   The user's cuts of 2026-11-22 (task-284; the unit test `the_users_cuts_and_renames_hold`
@@ -2076,7 +2129,7 @@ The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the sam
   303-1 Pattern Editor... and 303-2 Pattern Editor... (section 23), 808 Pattern Editor...
   (section 24) and 909 Pattern Editor... (section 25), in the same order, with the same names
   and the same behavior (the target pattern of section 18 too), but no
-  shortcut texts (the user's review of task-274, rounds 2 and 3). Undo is the one-level Undo,
+  shortcut texts (the user's review of task-274, rounds 2 and 3). **The one exception**: the standalone's Initialize Loop and Initialize Song from Pattern Mode, and the separator after them, are not in it, since the plugin has no song mode (the user's decision of 2026-11-25, task-306; `crates/orb-plugin/tests/editor.rs` `the_edit_menu_has_the_standalones_items_without_shortcuts`). Undo is the one-level Undo,
   named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the system
   clipboard as JSON (egui-baseview 0.9 writes egui's `CopyText` to it; section 16, task-287),
   so another instance or the standalone app pastes it. **One difference**: the plugin's window

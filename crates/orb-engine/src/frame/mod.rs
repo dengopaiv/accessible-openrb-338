@@ -222,9 +222,20 @@ pub trait SongDevice: Send {
     /// reads the byte at note-on, note-off and in its audio (`sub_10013DA0()+0x15`).
     fn set_sound_model(&mut self, _vintage: bool) {}
     /// Slots 7 and 8, called once on every device by the song ctor (0x10011941, 0x10011985,
-    /// slot 8 with tick 0) with the device's own track: the 303's set the track's quantisation
-    /// and insert its initial events.
-    fn init_track(&mut self, _track: &mut crate::seq::TrackMut) {}
+    /// slot 8 with tick 0) with the device's own track: [`SongDevice::quantise`], then
+    /// [`SongDevice::insert_pattern`] at tick 0.
+    fn init_track(&mut self, track: &mut crate::seq::TrackMut) {
+        self.quantise(track);
+        self.insert_pattern(track, 0);
+    }
+    /// Slot 7 (the song ctor, 0x10011941): the 303s', 808's and 909's (0x10026C40) quantise
+    /// controllers 0 and 1 of the track to a bar; every other device's is the no-op 0x1000F4E0.
+    fn quantise(&mut self, _track: &mut crate::seq::TrackMut) {}
+    /// Slot 8: an event at `tick` of every automatable controller with the pattern-mode copy's
+    /// value, into the device's own track (`sub_1001F900` → `sub_10014750`, in the device's
+    /// controller order). The song ctor calls it with tick 0 (0x10011985), song msg 28 with 0
+    /// (0x10012405) and msg 29 with the loop start (0x100124B5).
+    fn insert_pattern(&mut self, _track: &mut crate::seq::TrackMut, _tick: i32) {}
     /// Not a slot: the live parameter block, the bytes the audio reads and the panel polls
     /// (controllers by number, plus the bytes the device writes itself: the 303's, 808's and
     /// 909's last step at 9, 29 and 30, the delay's meter at 5). Empty for a placeholder; the
@@ -735,21 +746,20 @@ impl SongDevice for MixerDevice {
         }
     }
 
-    /// Slot 8, 0x100160F0, with tick 0 from the song ctor (slot 7 is the no-op 0x1000F4E0):
-    /// the pattern copy's compressor id (controller 1, `+0x5C`) and PCF id (2, `+0x60`), then
-    /// for each channel c its level, pan, send and dist (`6..9 + 6c`, `+0x69..+0x6C + 6c`)
-    /// inserted into the mixer's track (`sub_1001F900`). The master and the enables have no
-    /// controller.
-    fn init_track(&mut self, track: &mut crate::seq::TrackMut) {
+    /// Slot 8, 0x100160F0, at `tick` (slot 7 is the no-op 0x1000F4E0): the pattern copy's
+    /// compressor id (controller 1, `+0x5C`) and PCF id (2, `+0x60`), then for each channel c
+    /// its level, pan, send and dist (`6..9 + 6c`, `+0x69..+0x6C + 6c`) inserted into the
+    /// mixer's track (`sub_1001F900`). The master and the enables have no controller.
+    fn insert_pattern(&mut self, track: &mut crate::seq::TrackMut, tick: i32) {
         let p = self.pattern;
-        track.insert(0, 1, p.comp_id);
-        track.insert(0, 2, p.pcf_id);
+        track.insert(tick, 1, p.comp_id);
+        track.insert(tick, 2, p.pcf_id);
         for (c, ch) in p.channels.iter().enumerate() {
             let base = 5 + 6 * c as u8;
-            track.insert(0, base + 1, ch.level);
-            track.insert(0, base + 2, ch.pan);
-            track.insert(0, base + 3, ch.send);
-            track.insert(0, base + 4, ch.dist);
+            track.insert(tick, base + 1, ch.level);
+            track.insert(tick, base + 2, ch.pan);
+            track.insert(tick, base + 3, ch.send);
+            track.insert(tick, base + 4, ch.dist);
         }
     }
 
@@ -1421,6 +1431,9 @@ pub struct Engine {
     /// of the partial block whose leftover frames the next [`Engine::render_taps`] outputs
     /// first.
     taps: Box<[Taps; 2]>,
+    /// Not in the original (task-306): the track lists before the last Initialize command,
+    /// for orb's Undo ([`Engine::keep_undo`], [`Engine::undo_init`]).
+    undo: Option<Box<crate::seq::Pool>>,
 }
 
 fn zero_buf() -> Box<[f32; MAX_FRAMES]> {
@@ -1478,6 +1491,7 @@ impl Engine {
             fault: None,
             refused: None,
             taps: Box::new([[[0.0; BLOCK]; TAP_WIDTH]; 2]),
+            undo: None,
         }
     }
 
@@ -1880,6 +1894,68 @@ impl Engine {
     pub fn set_record(&mut self, v: u8) {
         let f = &mut self.frame;
         f.seq.set_record(v, &mut f.devices);
+    }
+
+    /// Song msg 28 (0x100123C7), the Edit menu's "Initialize Song from Pattern Mode" (command
+    /// 307, `docs/ui_spec.md` section 12): every track loses every event but those at tick 0
+    /// ([`crate::seq::Sequencer::clear_tracks`]), every device inserts its pattern-mode copy at
+    /// tick 0 (slot 8, 0x10012405, [`SongDevice::insert_pattern`]), which replaces the tick-0
+    /// values of its controllers, then in song mode every track is chased to the current tick
+    /// ([`crate::seq::Sequencer::refresh`]).
+    pub fn init_song(&mut self) {
+        let f = &mut self.frame;
+        f.seq.clear_tracks();
+        for d in song::Device::ALL {
+            f.devices
+                .device_mut(d)
+                .insert_pattern(&mut f.seq.track_mut(d.id() as usize), 0);
+        }
+        f.seq.refresh(&mut f.devices);
+    }
+
+    /// Song msg 29 (0x1001243A), the Edit menu's "Initialize Loop from Pattern Mode" (command
+    /// 306): every track's state at the loop end is inserted there and the events of `loop
+    /// start <= tick < loop end` but those at tick 0 are removed
+    /// ([`crate::seq::Sequencer::clear_range`]), every device inserts its pattern-mode copy at
+    /// the loop start (slot 8 with `sub_1001F8C0`, the globals' loop start, 0x100124B5), then
+    /// in song mode every track is chased to the current tick. The loop switch is not read.
+    pub fn init_loop(&mut self) {
+        let f = &mut self.frame;
+        // sub_1001F8E0 / sub_1001F8C0: the global struct's dwords +4 and +3 as int
+        let start = f.seq.globals.loop_start as i32;
+        let end = f.seq.globals.loop_end as i32;
+        f.seq.clear_range(start, end);
+        for d in song::Device::ALL {
+            f.devices
+                .device_mut(d)
+                .insert_pattern(&mut f.seq.track_mut(d.id() as usize), start);
+        }
+        f.seq.refresh(&mut f.devices);
+    }
+
+    /// Not in the original (task-306): before an Initialize command, the track lists as they
+    /// are (every list, the recordings too) are copied into `snapshot`, a pool the caller made
+    /// off the audio thread ([`crate::seq::Pool::new`] reserves its whole capacity, so the copy
+    /// allocates nothing), and kept for [`Engine::undo_init`]. Returns the snapshot it
+    /// replaces, for the caller to drop off the audio thread.
+    pub fn keep_undo(
+        &mut self,
+        mut snapshot: Box<crate::seq::Pool>,
+    ) -> Option<Box<crate::seq::Pool>> {
+        snapshot.copy_from(&self.frame.seq.pool);
+        self.undo.replace(snapshot)
+    }
+
+    /// Not in the original (task-306): orb's Undo of the last Initialize command. The kept
+    /// lists come back in one swap ([`crate::seq::Sequencer::swap_pool`]), and in song mode the
+    /// tracks are applied at the current tick, as the command's last step does. Returns the
+    /// lists the swap let go of (the song as it was before the Undo), for the caller to drop
+    /// off the audio thread; `None` when nothing was kept.
+    pub fn undo_init(&mut self) -> Option<Box<crate::seq::Pool>> {
+        let mut pool = self.undo.take()?;
+        let f = &mut self.frame;
+        f.seq.swap_pool(&mut pool, &mut f.devices);
+        Some(pool)
     }
 
     /// Globals byte 2: record is on.

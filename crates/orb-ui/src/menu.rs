@@ -12,8 +12,9 @@
 //!   [`App::copy_pattern`], [`App::paste_pattern`], [`App::duplicate_pattern`],
 //!   [`App::clear_pattern`], [`App::pattern_target`], task-290), orb's own commands, and the 303-1,
 //!   303-2, 808 and 909 Pattern Editor... (Ctrl/Cmd+E on the focused row's,
-//!   [`crate::pattern_editor`], [`crate::drum_editor`]); a plugin's Edit menu has the same items
-//!   with no shortcut texts.
+//!   [`crate::pattern_editor`], [`crate::drum_editor`]); the original's Initialize Loop and
+//!   Initialize Song from Pattern Mode, in song mode only ([`App::init_from_pattern`], task-306); a
+//!   plugin's Edit menu has the same items with no shortcut texts.
 //! - **Mods**: "Standard ReBirth", the mods of the Mods folder (one entry per INFO menu name, as
 //!   the original's Mods menu: `sub_40C163`, docs/rbm.md section 14), and a file picked in the
 //!   browser. A choice is the original's `sub_42D80D` -> `sub_426FB3`: the song is marked modified,
@@ -134,11 +135,19 @@ pub enum Cmd {
     DuplicatePattern,
     /// Edit > Clear Pattern, no shortcut ([`App::clear_pattern`], task-290).
     ClearPattern,
+    /// Edit > Initialize Loop from Pattern Mode, the original's command 306 (song mode only;
+    /// [`App::init_from_pattern`], task-306).
+    InitLoop,
+    /// Edit > Initialize Song from Pattern Mode, the original's command 307: asks first
+    /// ([`App::init_song_ui`]).
+    InitSong,
 }
 
 /// What Edit > Undo puts back: pattern `pattern` of row `row` held `bytes` before the command
 /// `what`; after a Duplicate, `select` is the pattern it came from, until the user selects a
-/// pattern ([`App::note_edits`]).
+/// pattern ([`App::note_edits`]). With `tracks` it is an Initialize command's (task-306): the
+/// engine keeps the track lists from before it, and no pattern is involved (`row` is
+/// `usize::MAX`, so no pattern editor keeps it).
 #[derive(Clone, Debug)]
 pub struct Undo {
     what: &'static str,
@@ -146,6 +155,7 @@ pub struct Undo {
     pub(crate) pattern: u8,
     bytes: Vec<u8>,
     select: Option<u8>,
+    tracks: bool,
 }
 
 /// The names of the four rows on the status line.
@@ -1061,6 +1071,12 @@ impl App {
             Cmd::PastePattern => self.paste_pattern(),
             Cmd::DuplicatePattern => self.duplicate_pattern(),
             Cmd::ClearPattern => self.clear_pattern(),
+            Cmd::InitLoop => self.init_from_pattern(false),
+            Cmd::InitSong => {
+                if self.can_init() {
+                    self.confirm_init = true;
+                }
+            }
         }
     }
 
@@ -1141,6 +1157,7 @@ impl App {
                 pattern: p,
                 bytes: before,
                 select: None,
+                tracks: false,
             });
         }
         changed
@@ -1156,7 +1173,8 @@ impl App {
     /// (unless a pattern was selected since). The selection goes first: a pattern the row does
     /// not select then reaches the engine only once the engine no longer plays it
     /// ([`crate::link::Link::set_pattern_unplayed`]), so a playing row never plays the emptied
-    /// copy for the rest of the bar.
+    /// copy for the rest of the bar. After Initialize Loop or Song (orb's addition, task-306)
+    /// the engine swaps the track lists it kept back in ([`orb_player::Command::UndoInit`]).
     pub fn undo(&mut self) {
         // the panel's pending edits go first, and may forget the undo
         if self.pattern_target().is_none() {
@@ -1165,6 +1183,16 @@ impl App {
         let Some(u) = self.undo.take() else {
             return;
         };
+        if u.tracks {
+            // orb's own (task-306): the engine swaps the kept track lists back and applies them
+            // at the position, as the command did
+            if let Some(link) = &mut self.link {
+                link.send([orb_player::Command::UndoInit]);
+                self.doc.modified = true;
+                self.status = Some(format!("{} undone", u.what));
+            }
+            return;
+        }
         if let Some(p) = u.select {
             // a click's selection: an edit, recorded in song mode with record on
             self.select_pattern(u.row, p);
@@ -1292,6 +1320,7 @@ impl App {
             pattern: to,
             bytes: before,
             select: Some(p),
+            tracks: false,
         });
         // the editor it came from shows the copy (in song mode too, where it does not follow
         // the panel's selection)
@@ -1336,6 +1365,111 @@ impl App {
         if let Some((r, p)) = self.pattern_target() {
             self.paste_text_at(r, p, text);
         }
+    }
+
+    /// Whether the Initialize commands are enabled: a song in song mode, as the original
+    /// enables commands 306 and 307 only when the song window's song-mode byte is set
+    /// (`sub_42BC83`, 0x42BFB4 and 0x42BFC3, under the test of `+0x1060` at 0x42BF24).
+    pub fn can_init(&self) -> bool {
+        self.link.is_some() && self.panel.transport.song_mode
+    }
+
+    /// Edit > Initialize Loop from Pattern Mode (`song` false) and, once its question is
+    /// answered, Initialize Song from Pattern Mode (`song` true): the original's commands 306 and
+    /// 307 (`sub_42C204`, 0x42C59A and 0x42C5E3), song msgs 29 and 28 to the engine
+    /// ([`orb_engine::frame::Engine::init_loop`], [`orb_engine::frame::Engine::init_song`]),
+    /// then the song is marked modified (`sub_42590B`). Nothing outside song mode.
+    pub fn init_from_pattern(&mut self, song: bool) {
+        if !self.can_init() {
+            return;
+        }
+        let Some(link) = &mut self.link else {
+            return;
+        };
+        // the engine copies its lists into this pool before the command, for Undo; made here,
+        // off the audio thread, with its whole capacity (task-306)
+        let snapshot = Box::new(orb_engine::seq::Pool::new());
+        link.send([if song {
+            orb_player::Command::InitSong(snapshot)
+        } else {
+            orb_player::Command::InitLoop(snapshot)
+        }]);
+        self.doc.modified = true;
+        self.undo = Some(Undo {
+            what: if song {
+                "Initialize Song"
+            } else {
+                "Initialize Loop"
+            },
+            row: usize::MAX,
+            pattern: 0,
+            bytes: Vec::new(),
+            select: None,
+            tracks: true,
+        });
+        self.status = Some(
+            if song {
+                "Song initialized from pattern mode"
+            } else {
+                "Loop initialized from pattern mode"
+            }
+            .into(),
+        );
+    }
+
+    /// The question of Initialize Song from Pattern Mode, the original's alert 500128003 (the
+    /// exe's `SALR` text, group 128 item 3; `sub_475D5C` at 0x42C5B7): its text, with the
+    /// buttons Initialize (the default: Enter) and Cancel (Escape). Initialize sends the
+    /// command (the original sends msg 28 only for the answer 33, 0x42C5CC).
+    pub fn init_song_ui(&mut self, ctx: &Context) {
+        if !self.confirm_init {
+            return;
+        }
+        let key = |k: Key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, k));
+        let mut answer = None;
+        if key(Key::Enter) {
+            answer = Some(true);
+        } else if key(Key::Escape) {
+            answer = Some(false);
+        }
+        let frame = Frame::new()
+            .fill(SLATE_DARK)
+            .stroke(Stroke::new(1.0, SLATE_LINE))
+            .inner_margin(Margin::same(12))
+            .corner_radius(3.0);
+        Modal::new(Id::unique("orb_init_song"))
+            .frame(frame)
+            .backdrop_color(Color32::from_black_alpha(170))
+            .show(ctx, |ui| {
+                ui.set_width(320.0);
+                ui.label(
+                    RichText::new("Initialize Song from Pattern Mode")
+                        .color(INK)
+                        .strong()
+                        .size(15.0),
+                );
+                ui.label(RichText::new(INIT_SONG_TEXT).color(INK_DIM));
+                ui.add_space(8.0);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        answer = Some(false);
+                    }
+                    if ui.button("Initialize").clicked() {
+                        answer = Some(true);
+                    }
+                });
+            });
+        if let Some(yes) = answer {
+            self.confirm_init = false;
+            if yes {
+                self.init_from_pattern(true);
+            }
+        }
+    }
+
+    /// Whether the question of Initialize Song from Pattern Mode is open.
+    pub fn confirming_init(&self) -> bool {
+        self.confirm_init
     }
 
     /// Where the Edit menu drew its items last, by text, and whether each was enabled (for
@@ -1443,6 +1577,12 @@ impl App {
     /// Whether the unsaved-changes prompt is open.
     pub fn prompting(&self) -> bool {
         self.prompt.is_some()
+    }
+
+    /// Whether a question is open (the unsaved-changes prompt or Initialize Song's): the panel
+    /// then takes no keys and no clicks of its own.
+    pub(crate) fn asking(&self) -> bool {
+        self.prompt.is_some() || self.confirm_init
     }
 
     /// Draws the prompt and takes its keys: S or Enter saves, D or N does not, Esc cancels.
@@ -1557,6 +1697,8 @@ impl App {
     /// Draws the menu bar and runs what it chooses.
     pub fn menu_bar(&mut self, ui: &mut Ui) {
         let mut cmd: Option<Cmd> = None;
+        // the Edit menu's places are this frame's only: none while it is closed
+        self.edit_items.clear();
         let enabled = !self.browsing() && !self.prompting() && !self.error_open();
         egui::Panel::top("orb_menu")
             .exact_size(MENU_H)
@@ -1628,7 +1770,6 @@ impl App {
         });
         ui.menu_button("Edit", |ui| {
             let song = self.link.is_some();
-            self.edit_items.clear();
             // "Undo Paste Pattern": the item names what it undoes (in a plugin's editor too,
             // with no shortcut text: it takes no keys; task-274)
             let what = self.undo_name().filter(|_| song);
@@ -1649,6 +1790,24 @@ impl App {
                 }
             }
             ui.separator();
+            // the original's commands 306 and 307, enabled in song mode only (task-306); not in a
+            // plugin's editor, which has no song mode (the user's decision, 2026-11-25)
+            let on = self.can_init();
+            for (text, c) in INIT_ITEMS.into_iter().filter(|_| !plugin) {
+                let r = item_if(ui, on, text, None);
+                self.edit_items.push((text, r.rect, on));
+                let r = if on || !song {
+                    r
+                } else {
+                    r.on_disabled_hover_text("Needs song mode.")
+                };
+                if r.clicked() {
+                    *cmd = Some(c);
+                }
+            }
+            if !plugin {
+                ui.separator();
+            }
             // the pattern editors; Ctrl/Cmd+E opens the focused row's, so its text is on that
             // item (the 303-1's or the 303-2's with that 303 focused, the 808's or the 909's
             // with theirs; tasks 280, 281 and 290)
@@ -1835,6 +1994,16 @@ const EDIT_ITEMS: [(&str, Option<&egui::KeyboardShortcut>, Cmd); 5] = [
     ),
     ("Clear Pattern", None, Cmd::ClearPattern),
 ];
+
+/// The Edit menu's Initialize items, in the original's order (`SMNU` 128: ids 306 and 307).
+const INIT_ITEMS: [(&str, Cmd); 2] = [
+    ("Initialize Loop from Pattern Mode", Cmd::InitLoop),
+    ("Initialize Song from Pattern Mode", Cmd::InitSong),
+];
+
+/// The original's question before Initialize Song from Pattern Mode (alert 500128003).
+pub const INIT_SONG_TEXT: &str =
+    "This will overwrite your entire Song - all knob and button automation will be cleared.";
 
 /// The items of the Help menu, in order.
 const HELP_ITEMS: &[(&str, Cmd)] = &[

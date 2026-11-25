@@ -200,6 +200,19 @@ pub enum Command {
     Shuffle(u8),
     /// Song msg 35 `{21,v}`: the Vintage sound model.
     Vintage(bool),
+    /// Song msg 28, the Edit menu's Initialize Song from Pattern Mode ([`Engine::init_song`]):
+    /// every track keeps only its tick-0 events, which take the devices' pattern-mode values.
+    /// The box, made off the audio thread, takes the lists before the command for orb's Undo
+    /// ([`Engine::keep_undo`]); the snapshot it replaces goes back through the garbage queue.
+    InitSong(Box<Pool>),
+    /// Song msg 29, the Edit menu's Initialize Loop from Pattern Mode ([`Engine::init_loop`]):
+    /// the loop's events are replaced by the devices' pattern-mode values at the loop start.
+    /// The box as for [`Command::InitSong`].
+    InitLoop(Box<Pool>),
+    /// orb's Undo of the last Initialize command ([`Engine::undo_init`], not a message of the
+    /// original's): the kept lists come back in one swap; the lists it lets go of go back
+    /// through the garbage queue.
+    UndoInit,
     /// A device controller as a track event sets it (slot 11; [`Engine::set_param`]); for the
     /// controllers it takes, the same store as the panel's messages ([`Command::DeviceParam`],
     /// [`Command::MixerGlobal`] ids 1 and 2, [`Command::MixerChannel`] fields 1..4). The pattern
@@ -332,6 +345,8 @@ pub enum Garbage {
     Bytes(Box<[u8]>),
     Mod(Box<ModSwap>),
     Preview(Box<Preview>),
+    /// A song's track lists: an Undo snapshot replaced, or the lists an Undo let go of.
+    Pool(Box<Pool>),
 }
 
 /// One device's live parameter block ([`orb_engine::frame::SongDevice::live`]), inline.
@@ -747,6 +762,9 @@ impl Audio {
             | Command::Pattern { .. }
             | Command::Mod(_)
             | Command::Preview(_)
+            | Command::InitSong(_)
+            | Command::InitLoop(_)
+            | Command::UndoInit
             | Command::Load(_) => GARBAGE_PER_COMMAND + pending,
             _ => 0,
         };
@@ -847,6 +865,23 @@ impl Audio {
             Command::Tempo(t) => self.target().set_tempo(t),
             Command::Shuffle(v) => self.target().set_shuffle(v),
             Command::Vintage(on) => self.target().set_vintage(on as u8),
+            Command::InitSong(snapshot) => {
+                if let Some(old) = self.target().keep_undo(snapshot) {
+                    self.throw(Garbage::Pool(old));
+                }
+                self.target().init_song();
+            }
+            Command::InitLoop(snapshot) => {
+                if let Some(old) = self.target().keep_undo(snapshot) {
+                    self.throw(Garbage::Pool(old));
+                }
+                self.target().init_loop();
+            }
+            Command::UndoInit => {
+                if let Some(old) = self.target().undo_init() {
+                    self.throw(Garbage::Pool(old));
+                }
+            }
             Command::Param {
                 device,
                 ctrl,

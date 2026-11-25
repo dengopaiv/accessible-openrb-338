@@ -514,6 +514,32 @@ See OB-8 for the unclean buffer.
 - **orb.** Not mapped yet (orb's MIDI layer ignores the Program Synth notes).
 - **Home.** `docs/standard_midi_mapping.md` sections 7 and 9.
 
+## 7. Song saving (Rebirth.exe)
+
+### OB-26: the save leaves stale bytes in GLOB 483..511 and USRI 544..711 [C: the code; C: observed]
+
+- **What.** The RBS writer packs every chunk into one shared buffer and writes the chunk's whole
+  size from it, but the GLOB and USRI packers do not write all of their chunk: the rest holds
+  whatever the buffer held from the chunks read or written before.
+- **Where.** `sub_438025` (the writer): each packer writes into `unk_4DB948`, then
+  `sub_4A029F(tag, size, unk_4DB948)` writes `size` bytes. The GLOB packer `sub_433EC2` writes
+  bytes 0..482 (the mod name and URL fields zero-filled by `sub_465D0E`), never 483..511, while
+  the GLOB chunk is 512 bytes long, so bytes 0..511 go to the file (the packer called at
+  0x43816D, the chunk at 0x43817C); the USRI packer `sub_43489D` writes 0..543, never 544..711,
+  while the USRI chunk is 712 bytes long, so 0..711 go to the file (0x4381F4, 0x438203). The effect chunks' packers clear their buffer first (`memset` in
+  `sub_434605`, `sub_4346E1`, `sub_434567`, `sub_4347D1`), so they are not affected.
+- **Trigger.** Every save.
+- **Effect.** Bytes RBS42.txt calls reserved ("set to zero", GLOB 483..511) and USRI's tail hold
+  leftovers: the four saves of task-306 (`tests/songs/edit_init/*.after_*.rbs`) have GLOB[498]
+  = 1 and five USRI tail bytes set; the shipped songs carry 0, 1 and 2 in scattered GLOB
+  reserved bytes. No reader uses them.
+- **Corpus.** The shipped songs (their GLOB 483..511), `tests/songs/edit_init`.
+- **orb.** Keeps these bytes as read (a new song: zeros); the original's leftovers are not
+  reproducible. `crates/orb-ui/tests/edit_init.rs` (`stale`) leaves them out of its comparison.
+  The effect chunks' bytes the original zeroes are kept as read too (the user's decision of
+  2026-11-25, task-307: saves need not match the original's byte for byte).
+- **Home.** `docs/song_load.md` section 14 (the comparison) and this entry.
+
 ## Quirks that are not claimed as defects
 
 ### Q-1: the export's frame count is one frame short of an exact length [C]

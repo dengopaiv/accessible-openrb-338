@@ -174,6 +174,9 @@ pub struct App {
     /// of the panel at 1:1 do not).
     pub menu: bool,
     pub(crate) prompt: Option<Then>,
+    /// The question of Edit > Initialize Song from Pattern Mode is open
+    /// ([`App::init_song_ui`]).
+    pub(crate) confirm_init: bool,
     /// The unsaved-changes prompt's rectangle as last drawn (for tests).
     pub(crate) prompt_rect: Option<Rect>,
     pub(crate) after_save: Option<Then>,
@@ -291,6 +294,7 @@ impl App {
             key_mode: KeyMode::default(),
             menu: false,
             prompt: None,
+            confirm_init: false,
             prompt_rect: None,
             after_save: None,
             export: None,
@@ -486,7 +490,7 @@ impl App {
             Color32::from_rgb(0xb8, 0xd8, 0xc0),
         );
         // Clicks in the browser, the prompt or the box over it do not dismiss it.
-        let blocked = self.browser.is_some() || self.prompt.is_some() || self.error_open();
+        let blocked = self.browser.is_some() || self.asking() || self.error_open();
         // nor does a click on a window or menu over the bar (task-235): the click's layer
         // must be the panel's
         let clicked = ui.input(|i| i.pointer.any_click().then(|| i.pointer.interact_pos()));
@@ -1053,10 +1057,10 @@ impl App {
         if self.is_plugin() {
             // a plugin's editor has no keyboard at all (task-201): the host keeps its keys
             self.holds.clear();
-            if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
+            if self.browser.is_none() && !self.asking() && !self.error_open() {
                 self.focus_click(ui, &view, layout);
             }
-        } else if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
+        } else if self.browser.is_none() && !self.asking() && !self.error_open() {
             if shortcuts::consume(ui, &shortcuts::NEW) {
                 self.new_song();
             } else if shortcuts::consume(ui, &shortcuts::OPEN) {
@@ -1189,6 +1193,7 @@ impl App {
         }
         self.browse(&ctx);
         self.prompt_ui(&ctx);
+        self.init_song_ui(&ctx);
         self.info_ui(&ctx);
         self.pattern_editors_ui(&ctx);
         self.drum_editors_ui(&ctx);

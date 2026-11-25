@@ -533,12 +533,14 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
         Group {
             title: "Prompts and questions",
             mode: None,
-            note: "Listed by hand from the code (the prompt in menu.rs, the browser's question \
-                   in browser.rs); no test checks these lines.",
+            note: "Listed by hand from the code (the prompt and Initialize Song's question in \
+                   menu.rs, the browser's question in browser.rs); no test checks these lines.",
             rows: vec![
                 row("S  Y  Enter", "Unsaved-changes prompt: save", vec![]),
                 row("D  N", "Unsaved-changes prompt: do not save", vec![]),
                 row("Escape", "Unsaved-changes prompt: cancel", vec![]),
+                row("Enter", "Initialize Song question: initialize", vec![]),
+                row("Escape", "Initialize Song question: cancel", vec![]),
                 row(
                     "Y",
                     "Overwrite question of the browser: replace the file",
