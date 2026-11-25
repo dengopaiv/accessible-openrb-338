@@ -3,11 +3,11 @@ id: TASK-303
 title: >-
   Decide: patch nice-plug's Windows event-loop class name against concurrent
   instance creation
-status: To Do
+status: Done
 assignee:
   - '@pingw33n'
 created_date: '2026-11-25T11:19:00Z'
-updated_date: '2026-11-25T11:29:00Z'
+updated_date: '2026-11-25T11:51:00Z'
 labels:
   - decision
   - player
@@ -40,6 +40,12 @@ ordinal: 274700
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The user's choice (accept, vendor/patch, or upstream report) is recorded in the final summary with the date
-- [ ] #2 If the choice is a patch, a follow-up task to apply it exists
+- [x] #1 The user's choice (accept, vendor/patch, or upstream report) is recorded in the final summary with the date
+- [x] #2 If the choice is a patch, a follow-up task to apply it exists
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decided by the user on 2026-11-25: option 1, accept. The race (two threads creating nice-plug instances within one 100 ns QueryPerformanceCounter tick register the same window class and abort) stays documented in docs/plugin.md section 7 (task-302); the test side is fixed (exports.rs creates instances one at a time). No patch or vendored nice-plug, no upstream report, and no host check now; act only on a user report. Criterion 2 needs nothing (no patch chosen).
+<!-- SECTION:FINAL_SUMMARY:END -->
