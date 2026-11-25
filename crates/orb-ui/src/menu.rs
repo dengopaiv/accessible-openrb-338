@@ -1749,7 +1749,15 @@ impl App {
             if !plugin && item(ui, "Save As...", None) {
                 *cmd = Some(Cmd::SaveAs);
             }
-            if item(ui, "Info...", None) {
+            // Ctrl/Cmd+I (task-310); disabled without a song, which a plugin always has
+            if item_if(
+                ui,
+                plugin || self.link.is_some(),
+                "Info...",
+                key(&shortcuts::INFO),
+            )
+            .clicked()
+            {
                 *cmd = Some(Cmd::Info);
             }
             if plugin {

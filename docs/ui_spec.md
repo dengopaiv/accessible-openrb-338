@@ -934,6 +934,7 @@ From the menu resource `SMNU` 128 (item id after `=`, string id after `?`) [C]:
 | File | Open... | Ctrl+O | 101 | file dialog "Open Song:", loads an `.rbs` (`docs/song_load.md`) |
 | File | Save | Ctrl+S | 103 | saves; on a never-saved song it is Save As |
 | File | Save As... | | 104 | file dialog "Save Song as:" |
+| File | Info... | | | orb's own (task-095); Ctrl+I, Cmd+I on macOS in orb (task-310) |
 | File | Export Loop as Audio File... | | 108 | dialog "Export audio as:" (WAV or AIFF); disabled in pattern mode; renders the loop (`docs/initial_investigation.md` section 3) |
 | Edit | Initialize Loop from Pattern Mode | | 306 | song mode only; song msg 29: the loop's automation is replaced by the pattern-mode values at the loop start, no question (task-306, below) |
 | Edit | Initialize Song from Pattern Mode | | 307 | song mode only; asks first, then song msg 28: all automation but tick 0 is cleared and tick 0 takes the pattern-mode values (task-306, below) |
@@ -1372,6 +1373,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | File | Open... (Ctrl+O, Cmd+O on macOS) | the browser for a song; with unsaved changes the prompt first |
 | File | Save (Ctrl+S, Cmd+S on macOS) | writes the song's file; a song with none goes to Save As |
 | File | Save As... | the browser for a `.rbs`; the file becomes the song's file |
+| File | Info... (Ctrl+I, Cmd+I on macOS) | opens the Song Information window below, or brings it to the front when it is open (`App::show_info`); disabled without a song, and the key does nothing then (task-310). The key is taken before the panel keys, so the plain I of the pattern-select keys is not triggered by it, and it works while a text field of the window has the focus, as Ctrl/Cmd+O does. A plugin's Info... item stays enabled and has no shortcut text (section 20) |
 | File | Export Loop as Audio File... | the browser for `.wav`, `.flac` or `.ogg`; enabled in song mode only (the original disables it in pattern mode, section 12) |
 | Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, or the tracks of the last Initialize Loop or Song (orb's addition, task-306), and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
 | Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with Clear Pattern |
@@ -1758,7 +1760,7 @@ is one more entry.
       original's open and Save).
     - While a text edit has the keyboard focus the panel takes no computer keys
       (`App::show`, `text_edit_focused`): Space types a space instead of playing. The menu's
-      shortcuts that `App::show` takes still work: Cmd/Ctrl+N (New), +O (Open), +S (Save),
+      shortcuts that `App::show` takes still work: Cmd/Ctrl+N (New), +O (Open), +S (Save), +I (Info),
       +F (Program Synth from Keyboard) and +G (Select Patterns from Keyboard). Escape closes
       the window. When the field loses the focus (or the window closes) the panel takes its
       keys again.

@@ -1076,6 +1076,11 @@ impl App {
                 self.open_browser(Mode::OpenSong);
             } else if !self.is_plugin() && shortcuts::consume(ui, &shortcuts::SAVE) {
                 self.save();
+            } else if shortcuts::consume(ui, &shortcuts::INFO) {
+                // File > Info (task-310); nothing without a song, as the item is disabled
+                if self.link.is_some() {
+                    self.show_info();
+                }
             } else {
                 // Ctrl/Cmd+F and +G: the Options menu's two keyboard modes.
                 if shortcuts::consume(ui, &shortcuts::KEYS_SYNTH) {

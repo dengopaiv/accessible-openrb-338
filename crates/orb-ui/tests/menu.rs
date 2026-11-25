@@ -4045,3 +4045,68 @@ fn the_mod_window_falls_back_to_the_standard_splash_and_info_does_not() {
         h.frame(vec![]);
     }
 }
+
+/// task-310: Ctrl/Cmd+I opens File > Info, also while a field of the window has the focus,
+/// without the plain I of the pattern-select keys; plain I still selects its pattern.
+#[test]
+fn ctrl_i_opens_the_info_window_and_plain_i_stays_a_panel_key() {
+    use orb_ui::info::Field;
+    let key = |pressed, modifiers| Event::Key {
+        key: egui::Key::I,
+        physical_key: Some(egui::Key::I),
+        pressed,
+        repeat: false,
+        modifiers,
+    };
+    let tap = |h: &mut Harness, m: Modifiers| {
+        h.frame(vec![key(true, m)]);
+        h.frame(vec![key(false, m)]);
+    };
+    // the plain I selects pattern 8 of the second row, and that gives the row the focus
+    let focus = |h: &Harness| h.app.panel.focus;
+    let mut h = Harness::with_menu();
+    h.open(&root().join("tests/songs/diag/songs/303_saw_lowcut.rbs"));
+    h.app.key_mode = KeyMode::Patterns;
+    h.app.panel.focus = 3;
+    h.frame(vec![]);
+
+    // the menu item shows the shortcut
+    let (_, shapes) = open_menu_with(&mut h, "Info...");
+    let text = shortcuts::text(&h.ctx, &shortcuts::INFO);
+    assert!(shapes.contains(&format!("\"{text}\"")), "{text}");
+    egui::Popup::close_all(&h.ctx);
+    h.frame(vec![]);
+
+    // the shortcut opens the window and leaves the panel alone
+    assert!(!h.app.info_is_open());
+    tap(&mut h, Modifiers::COMMAND);
+    assert!(h.app.info_is_open());
+    assert_eq!(focus(&h), 3, "Cmd/Ctrl+I is not the panel's I");
+    assert!(!h.app.doc.modified);
+
+    // with a text field of the window focused it still works, and types nothing
+    h.frame(vec![]);
+    h.ctx
+        .memory_mut(|m| m.request_focus(Field::Title.edit_id()));
+    h.frame(vec![]);
+    assert!(h.ctx.text_edit_focused());
+    tap(&mut h, Modifiers::COMMAND);
+    assert!(h.app.info_is_open());
+    assert!(!h.app.doc.modified, "nothing typed");
+    h.frame(vec![key(true, Modifiers::NONE)]);
+    h.frame(vec![key(false, Modifiers::NONE)]);
+    assert_eq!(focus(&h), 3, "a focused field keeps its plain I");
+
+    // the window closed, the plain I is the panel's again
+    h.frame(vec![Event::Key {
+        key: egui::Key::Escape,
+        physical_key: Some(egui::Key::Escape),
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }]);
+    h.frame(vec![]);
+    assert!(!h.app.info_is_open());
+    tap(&mut h, Modifiers::NONE);
+    assert_eq!(focus(&h), 1, "plain I selects its pattern");
+}

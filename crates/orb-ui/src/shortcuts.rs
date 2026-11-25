@@ -8,6 +8,8 @@ use egui::{Context, Key, KeyboardShortcut, ModifierNames, Modifiers, Ui};
 pub const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
 pub const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 pub const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
+/// File > Info.
+pub const INFO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::I);
 /// Edit > Undo.
 pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
 /// Edit > Cut, Copy and Paste Pattern, for their text only: the keys arrive as egui's Cut, Copy
@@ -53,6 +55,7 @@ mod tests {
             NEW,
             OPEN,
             SAVE,
+            INFO,
             UNDO,
             CUT,
             COPY,
@@ -63,7 +66,9 @@ mod tests {
             KEYS_PATTERNS,
             EDIT_PATH,
         ];
-        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "E", "F", "G", "L"];
+        let keys = [
+            "N", "O", "S", "I", "Z", "X", "C", "V", "D", "E", "F", "G", "L",
+        ];
         for (sc, k) in all.iter().zip(keys) {
             assert_eq!(text_for(sc, true), format!("Cmd+{k}"));
             assert_eq!(text_for(sc, false), format!("Ctrl+{k}"));

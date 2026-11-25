@@ -292,6 +292,7 @@ pub fn groups(is_mac: bool) -> Vec<Group> {
                 menu_row(is_mac, &shortcuts::NEW, "File > New"),
                 menu_row(is_mac, &shortcuts::OPEN, "File > Open..."),
                 menu_row(is_mac, &shortcuts::SAVE, "File > Save"),
+                menu_row(is_mac, &shortcuts::INFO, "File > Info..."),
                 menu_row(is_mac, &shortcuts::UNDO, "Edit > Undo"),
                 menu_row(is_mac, &shortcuts::CUT, "Edit > Cut Pattern"),
                 menu_row(is_mac, &shortcuts::COPY, "Edit > Copy Pattern"),
@@ -761,7 +762,7 @@ mod tests {
                 .map(|r| r.keys.clone())
                 .collect()
         };
-        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "F", "G"];
+        let keys = ["N", "O", "S", "I", "Z", "X", "C", "V", "D", "F", "G"];
         assert_eq!(text(true), keys.map(|k| format!("Cmd+{k}")));
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
     }
