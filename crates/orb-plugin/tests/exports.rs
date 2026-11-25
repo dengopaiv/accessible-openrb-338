@@ -12,7 +12,7 @@ mod common;
 use std::ffi::{c_char, c_void};
 use std::path::PathBuf;
 use std::ptr::null_mut;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use common::activate;
 use nice_plug::prelude::Vst3Plugin;
@@ -46,6 +46,35 @@ fn library() -> &'static PathBuf {
 
 fn load() -> libloading::Library {
     unsafe { libloading::Library::new(library()) }.expect("the plugin library loads")
+}
+
+/// A new instance of class `cid` of factory `f` with interface `iid`, created one at a time in
+/// the process, as on a host that creates them on one main (UI) thread (task-302).
+///
+/// The tests run in parallel threads, and nice-plug's VST3 `createInstance` registers a window
+/// class for its Windows event loop named `nice-event-loop-{QueryPerformanceCounter ticks}`
+/// (nice-plug 0.4.2 `src/event_loop/windows.rs:78-94`). The counter runs at 10 MHz, so two
+/// threads that create an instance in the same 100 ns register the same name; the second
+/// `RegisterClassExA` fails with ERROR_CLASS_ALREADY_EXISTS (1410), and nice-plug's
+/// `assert_ne!` inside the `extern "system"` entry aborts the process. The threads leave
+/// `library()`'s `OnceLock` (the in-test cargo build) together, so their calls come within
+/// microseconds of each other. On the test machine, 6 runs in 100 aborted this way.
+unsafe fn create_instance(
+    f: *mut vst3::Steinberg::IPluginFactory,
+    cid: &vst3::Steinberg::TUID,
+    iid: &vst3::Steinberg::TUID,
+) -> *mut c_void {
+    static MAIN_THREAD: Mutex<()> = Mutex::new(());
+    let _main = MAIN_THREAD.lock().unwrap_or_else(|e| e.into_inner());
+    let mut obj: *mut c_void = null_mut();
+    unsafe {
+        let vt = &*(*f).vtbl;
+        assert_eq!(
+            (vt.createInstance)(f, cid.as_ptr(), iid.as_ptr(), &mut obj),
+            vst3::Steinberg::kResultOk
+        );
+    }
+    obj
 }
 
 fn chars(b: &[c_char]) -> String {
@@ -301,13 +330,7 @@ unsafe fn vst3_first_note(
         ProcessModes_::kRealtime as _
     };
     unsafe {
-        let vt = &*(*f).vtbl;
-        let mut obj: *mut c_void = null_mut();
-        let iid = vst3::Steinberg::Vst::IComponent_iid;
-        assert_eq!(
-            (vt.createInstance)(f, ci.cid.as_ptr(), iid.as_ptr(), &mut obj),
-            kResultOk
-        );
+        let obj = create_instance(f, &ci.cid, &vst3::Steinberg::Vst::IComponent_iid);
         let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
         assert_eq!(component.initialize(null_mut()), kResultOk);
         // task-256: the main Mix bus and the four per-device aux buses, stereo
@@ -489,12 +512,7 @@ fn the_vst3_parameters_are_continuous() {
         let vt = &*(*f).vtbl;
         let mut ci: vst3::Steinberg::PClassInfo = std::mem::zeroed();
         assert_eq!((vt.getClassInfo)(f, 0, &mut ci), kResultOk);
-        let mut obj: *mut c_void = null_mut();
-        let iid = vst3::Steinberg::Vst::IComponent_iid;
-        assert_eq!(
-            (vt.createInstance)(f, ci.cid.as_ptr(), iid.as_ptr(), &mut obj),
-            kResultOk
-        );
+        let obj = create_instance(f, &ci.cid, &vst3::Steinberg::Vst::IComponent_iid);
         let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
         assert_eq!(component.initialize(null_mut()), kResultOk);
         let ctl = component.cast::<IEditController>().unwrap();

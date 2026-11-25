@@ -426,6 +426,19 @@ plays a note at frame 0 of the first playing block (task-226) through the VST3 C
 `editor.rs` (task-201) the editor headless (section 10), `preview.rs` (task-217) the preview
 and its set through the process path (section 4.2).
 
+**Instances are created one at a time (task-302).** On Windows, nice-plug 0.4.2's VST3
+`createInstance` makes the instance's event loop (`src/wrapper/vst3/inner.rs:388`), which
+registers a hidden window class named `nice-event-loop-{QueryPerformanceCounter ticks}` with the
+host executable's module handle (`src/event_loop/windows.rs:78-94`) and asserts that
+`RegisterClassExA` succeeded. The counter runs at 10 MHz: two threads of one process that create
+an instance of any nice-plug plugin in the same 100 ns register the same name, the second
+registration fails with ERROR_CLASS_ALREADY_EXISTS (1410), and the panic inside the
+`extern "system"` entry aborts the process (exit 0xC0000409). `exports.rs` creates its
+instances under one process-wide lock, so they are created one at a time. The code path and the
+test machine show that the abort needs two threads creating instances within the same 100 ns; a
+host that creates all its instances on one thread cannot hit it. Which hosts create instances
+on more than one thread was not checked; that open question is task-303.
+
 ### 7.1 The REAPER render test (task-244)
 
 `cargo test -p orb-plugin --test reaper` renders committed REAPER projects through REAPER's
