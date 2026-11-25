@@ -96,12 +96,12 @@ struct Aux {
 impl Aux {
     fn new(frames: usize) -> Aux {
         Aux {
-            chans: vec![vec![0f32; frames]; 2 * orb_plugin::core::DEVICE_OUTPUTS],
+            chans: vec![vec![0f32; frames]; 2 * orb_plugin::core::AUX_OUTPUTS],
         }
     }
 
     /// The channel pointers of the buses from frame `pos`.
-    fn ptrs(&mut self, pos: usize) -> [[*mut f32; 2]; orb_plugin::core::DEVICE_OUTPUTS] {
+    fn ptrs(&mut self, pos: usize) -> [[*mut f32; 2]; orb_plugin::core::AUX_OUTPUTS] {
         let mut it = self.chans.iter_mut();
         std::array::from_fn(|_| {
             let (l, r) = (it.next().unwrap(), it.next().unwrap());
@@ -333,14 +333,15 @@ unsafe fn vst3_first_note(
         let obj = create_instance(f, &ci.cid, &vst3::Steinberg::Vst::IComponent_iid);
         let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
         assert_eq!(component.initialize(null_mut()), kResultOk);
-        // task-256: the main Mix bus and the four per-device aux buses, stereo
+        // task-256: the main Mix bus and the four per-device aux buses, stereo; task-300:
+        // the 22 per-drum aux buses
         // `as _`: the vst3 enum constants are i32 on Windows and u32 elsewhere, and clippy's
         // unnecessary_cast rejects `as i32` on Windows
         let audio: vst3::Steinberg::Vst::MediaType = MediaTypes_::kAudio as _;
         let output: vst3::Steinberg::Vst::BusDirection = BusDirections_::kOutput as _;
-        assert_eq!(component.getBusCount(audio, output), 5);
+        assert_eq!(component.getBusCount(audio, output), 27);
         let mut names = Vec::new();
-        for i in 0..5 {
+        for i in 0..27 {
             let mut info: BusInfo = std::mem::zeroed();
             assert_eq!(component.getBusInfo(audio, output, i, &mut info), kResultOk);
             assert_eq!(info.channelCount, 2);
@@ -350,7 +351,17 @@ unsafe fn vst3_first_note(
             let n = info.name.iter().position(|&c| c == 0).unwrap();
             names.push(String::from_utf16(&info.name[..n]).unwrap());
         }
-        assert_eq!(names, ["Mix", "303-1", "303-2", "808", "909"]);
+        // task-300: the 22 drum outputs after the released four, which keep their buses
+        let mut want = vec!["Mix", "303-1", "303-2", "808", "909"];
+        for m in ["808", "909"] {
+            let drums = if m == "808" {
+                "BD SD LT MT HT RS CP CB OH CH CY"
+            } else {
+                "BD SD LT MT HT RS CP CH OH CC RC"
+            };
+            want.extend(drums.split(' ').map(|d| &*format!("{m} {d}").leak()));
+        }
+        assert_eq!(names, want);
         let processor = component.cast::<IAudioProcessor>().unwrap();
         let mut setup = ProcessSetup {
             processMode: mode,
@@ -397,7 +408,6 @@ unsafe fn vst3_first_note(
             };
             let mut chans = [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()];
             let mut ap = aux.ptrs(pos);
-            let [a0, a1, a2, a3] = &mut ap;
             let stereo = |chans: &mut [*mut f32; 2]| AudioBusBuffers {
                 numChannels: 2,
                 silenceFlags: 0,
@@ -405,13 +415,10 @@ unsafe fn vst3_first_note(
                     channelBuffers32: chans.as_mut_ptr(),
                 },
             };
-            let mut out = [
-                stereo(&mut chans),
-                stereo(a0),
-                stereo(a1),
-                stereo(a2),
-                stereo(a3),
-            ];
+            // the Mix, then every aux bus (task-256, task-300)
+            let mut out: Vec<AudioBusBuffers> = std::iter::once(stereo(&mut chans))
+                .chain(ap.iter_mut().map(stereo))
+                .collect();
             context.projectTimeSamples = pos as i64;
             context.continousTimeSamples = pos as i64;
             let mut data = ProcessData {

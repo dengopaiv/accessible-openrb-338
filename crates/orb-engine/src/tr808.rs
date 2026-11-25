@@ -18,9 +18,9 @@ mod tests;
 
 use std::sync::Arc;
 
-use crate::drums::{Dual, Filter, Pitched, Simple};
+use crate::drums::{DrumOutput, Dual, Filter, Pitched, Simple, VoiceMut, render_split};
 use crate::frame::{
-    Block, BlockContext, ChannelDevice, Gate, GateClock, SongDevice, Sounding, gate_arm,
+    Block, BlockContext, ChannelDevice, Gate, GateClock, SongDevice, Sounding, Split, gate_arm,
 };
 use crate::process::ProcessState;
 use crate::samples::{Retired, Sample, SampleSet};
@@ -76,6 +76,71 @@ pub const CB: usize = 8;
 pub const CY: usize = 9;
 pub const OH: usize = 10;
 pub const CH: usize = 11;
+
+/// The 808's own outputs, one per instrument (task-300, the user's decision of 2026-11-25; the
+/// original's ReWire has six groups, channels 5..10, `docs/rewire.md` section 4, 808 slot 14
+/// 0x100280B0): the plugin's per-drum outputs and the routing window follow this table and
+/// [`VOICE_OUTPUT`].
+pub const OUTPUTS: [DrumOutput; 11] = [
+    DrumOutput {
+        id: "808.bd",
+        name: "BD",
+        bus: "808 BD",
+    },
+    DrumOutput {
+        id: "808.sd",
+        name: "SD",
+        bus: "808 SD",
+    },
+    DrumOutput {
+        id: "808.lt",
+        name: "LT",
+        bus: "808 LT",
+    },
+    DrumOutput {
+        id: "808.mt",
+        name: "MT",
+        bus: "808 MT",
+    },
+    DrumOutput {
+        id: "808.ht",
+        name: "HT",
+        bus: "808 HT",
+    },
+    DrumOutput {
+        id: "808.rs",
+        name: "RS",
+        bus: "808 RS",
+    },
+    DrumOutput {
+        id: "808.cp",
+        name: "CP",
+        bus: "808 CP",
+    },
+    DrumOutput {
+        id: "808.cb",
+        name: "CB",
+        bus: "808 CB",
+    },
+    DrumOutput {
+        id: "808.oh",
+        name: "OH",
+        bus: "808 OH",
+    },
+    DrumOutput {
+        id: "808.ch",
+        name: "CH",
+        bus: "808 CH",
+    },
+    DrumOutput {
+        id: "808.cy",
+        name: "CY",
+        bus: "808 CY",
+    },
+];
+/// The output of each voice in the render order ([`Tr808::voices`]: BD A, BD B, SD, LT, MT, HT,
+/// RS/CL, CP/MA, CB, OH, CH, CY), an index of [`OUTPUTS`].
+pub const VOICE_OUTPUT: [usize; 12] = [0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 /// The sounds of [`Sounding`] (not in the original; task-200): bit `column - 1` for the
 /// instrument columns (the shared slots' tom, rim shot and clap), then the shared slots' other
@@ -236,6 +301,28 @@ const FILTER_BD_B: usize = 1;
 const FILTER_CY: usize = 2;
 
 impl Tr808 {
+    /// The voices in slot 14's order (0x100280B0): BD A, BD B, SD, LT, MT, HT, RS/CL, CP/MA, CB,
+    /// OH, CH, CY.
+    pub fn voices(&mut self) -> [VoiceMut<'_>; 12] {
+        let [a, b, cy] = &mut self.filter;
+        let [lt, mt, ht] = &mut self.pitched;
+        let [rs, cp, cb, oh, ch] = &mut self.simple;
+        [
+            VoiceMut::Filter(a),
+            VoiceMut::Filter(b),
+            VoiceMut::Dual(&mut self.dual),
+            VoiceMut::Pitched(lt),
+            VoiceMut::Pitched(mt),
+            VoiceMut::Pitched(ht),
+            VoiceMut::Simple(rs),
+            VoiceMut::Simple(cp),
+            VoiceMut::Simple(cb),
+            VoiceMut::Simple(oh),
+            VoiceMut::Simple(ch),
+            VoiceMut::Filter(cy),
+        ]
+    }
+
     /// The ctor `sub_10026F70`: the parameter defaults in both copies, every pattern 16 empty
     /// steps (`sub_10018D20`, `sub_100197C0`), pattern 0, the enable latch 1, the voices silent.
     pub fn new(samples: Arc<SampleSet>, process: ProcessState) -> Self {
@@ -747,16 +834,15 @@ impl ChannelDevice for Tr808 {
     /// export, so all go to bus 0).
     fn process(&mut self, bus: &mut Block, _ctx: &BlockContext) {
         bus.fill(0.0);
-        let [a, b, cy] = &mut self.filter;
-        a.process(bus);
-        b.process(bus);
-        self.dual.process(bus);
-        for v in &mut self.pitched {
+        for v in self.voices() {
             v.process(bus);
         }
-        for v in &mut self.simple {
-            v.process(bus);
-        }
-        cy.process(bus);
+    }
+
+    /// Slot 14 with the per-instrument outputs (task-300): an instrument's voice adds into its own
+    /// output instead of the bus, as ReWire's group channels 5..10 do (0x100280D8..0x10028273),
+    /// one output per instrument ([`OUTPUTS`], [`render_split`]).
+    fn process_split(&mut self, bus: &mut Block, split: Split<'_>, _ctx: &BlockContext) {
+        render_split(self.voices(), &VOICE_OUTPUT, bus, split);
     }
 }

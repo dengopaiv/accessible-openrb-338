@@ -233,7 +233,7 @@ impl Resampler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::DEVICE_OUTPUTS;
+    use crate::core::AUX_OUTPUTS;
 
     /// A sine of 100 engine frames, left, and its negation, right.
     /// Its taps: channel c is the sample times `c + 1` (mono, on both sides of its bus).
@@ -282,7 +282,7 @@ mod tests {
         let mut r = Resampler::new(rate);
         let mut sine = Sine::new();
         let (mut l, mut rr) = (vec![0f32; frames], vec![0f32; frames]);
-        let mut buses = vec![vec![0f32; frames]; 2 * DEVICE_OUTPUTS];
+        let mut buses = vec![vec![0f32; frames]; 2 * AUX_OUTPUTS];
         let mut i = 0;
         while i < frames {
             let n = chunk.min(frames - i);

@@ -110,6 +110,15 @@ pub trait Embed: Send {
         let _ = (row, pattern);
         false
     }
+    /// The plugin's output routing (task-300), which Options > Output Routing... shows and
+    /// sets; `None` (the default) when the plugin has none, and then the menu has no such item.
+    fn routing(&self) -> Option<orb_engine::frame::OutputRouting> {
+        None
+    }
+    /// The routing window changed a box: the plugin's routing is now `r`.
+    fn set_routing(&mut self, r: orb_engine::frame::OutputRouting) {
+        let _ = r;
+    }
 }
 
 /// How far (points) a press on a pattern button must move to drag the pattern out

@@ -390,7 +390,9 @@ pub fn state_json(p: &OrbParams) -> String {
     .unwrap()
 }
 
-/// The plugin's outputs: the Mix and the four device buses, stereo each.
+/// The plugin's outputs: the Mix and the four device buses, stereo each, as REAPER saved the
+/// released plugin (v2026.1118.0919). task-300's 22 drum buses come after them and are not
+/// mapped here, as in a project saved with the released plugin.
 const OUTPUTS: u32 = 10;
 
 /// `data` as base64 lines of 96 bytes (128 characters), REAPER's width, each indented.

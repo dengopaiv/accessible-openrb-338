@@ -13,15 +13,15 @@
 //! `Command::Load`.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use nice_plug::plugin::ParamValue;
 use nice_plug::prelude::*;
-use orb_engine::frame::Engine;
 use orb_engine::frame::edit::{PATTERNS, PatternShape};
+use orb_engine::frame::{Engine, OutputRouting};
 use orb_engine::samples::SampleSet;
 use orb_engine::song::{Device, Song};
 use orb_engine::tables::Tables;
@@ -31,6 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::core::BLOCK;
 use crate::params::{self, COUNT, SPECS, Spec};
+use crate::routing;
 
 /// The devices of the four pattern sections.
 pub const ROWS: [Device; 4] = [
@@ -133,6 +134,9 @@ pub struct Doc {
     /// parameter id; `None` until the first preview, which starts from the parameters' values.
     /// An id it lacks takes the parameter's value.
     pub preview: Option<BTreeMap<String, i32>>,
+    /// Options > Output Routing (task-300): what goes to Mix-L/R and to the drum machines'
+    /// buses; everything by default.
+    pub routing: OutputRouting,
 }
 
 impl Default for Doc {
@@ -147,6 +151,7 @@ impl Default for Doc {
             remote_channel: DEFAULT_REMOTE_CHANNEL,
             mode: Mode::default(),
             preview: None,
+            routing: OutputRouting::default(),
         }
     }
 }
@@ -209,6 +214,8 @@ pub struct Shared {
     preview: AtomicBool,
     /// The preview set's values in [`SPECS`] order, written before `preview` is set.
     preview_values: [AtomicI32; COUNT],
+    /// The output routing ([`OutputRouting::to_bits`]).
+    routing: AtomicU32,
 }
 
 impl Default for Shared {
@@ -219,6 +226,7 @@ impl Default for Shared {
             mode: AtomicU8::new(Mode::default().to_u8()),
             preview: AtomicBool::new(false),
             preview_values: std::array::from_fn(|i| AtomicI32::new(SPECS[i].default as i32)),
+            routing: AtomicU32::new(OutputRouting::default().to_bits()),
         }
     }
 }
@@ -251,6 +259,15 @@ impl Shared {
         for (a, &x) in self.preview_values.iter().zip(v) {
             a.store(x, Ordering::Relaxed);
         }
+    }
+
+    /// The output routing as bits ([`OutputRouting::to_bits`]).
+    pub fn routing_bits(&self) -> u32 {
+        self.routing.load(Ordering::Relaxed)
+    }
+
+    fn set_routing(&self, r: &OutputRouting) {
+        self.routing.store(r.to_bits(), Ordering::Relaxed);
     }
 
     /// Whether the Standard Mapping is on.
@@ -297,6 +314,11 @@ struct Saved {
     mode: Mode,
     /// Null: no preview yet.
     preview: Option<BTreeMap<String, i32>>,
+    /// Options > Output Routing (task-300), each box by its key
+    /// ([`crate::routing::ROUTING_IDS`]); absent (a state of the released build), or a key
+    /// absent: checked.
+    #[serde(default)]
+    routing: BTreeMap<String, bool>,
 }
 
 impl Doc {
@@ -334,6 +356,7 @@ impl Doc {
             remote_channel: self.remote_channel,
             mode: self.mode,
             preview: self.preview.clone(),
+            routing: routing::to_saved(&self.routing),
         };
         serde_json::to_string(&s).expect("the document serializes")
     }
@@ -385,6 +408,7 @@ impl Doc {
             remote_channel: s.remote_channel,
             mode: s.mode,
             preview: s.preview,
+            routing: routing::from_saved(&s.routing),
         })
     }
 }
@@ -642,6 +666,7 @@ impl Main {
             remote_channel: self.doc.remote_channel,
             mode: self.doc.mode,
             preview: None,
+            routing: self.doc.routing,
         };
         let samples = self.samples();
         let e = match &self.player {
@@ -894,6 +919,19 @@ impl OrbParams {
     /// The mode (default Note Mode), kept in the state.
     pub fn mode(&self) -> Mode {
         self.main().doc.mode
+    }
+
+    /// Options > Output Routing (task-300), kept in the state.
+    pub fn routing(&self) -> OutputRouting {
+        self.main().doc.routing
+    }
+
+    /// Sets the output routing (File > Open and File > New keep it); the process side takes it
+    /// at its next engine block.
+    pub fn set_routing(&self, r: OutputRouting) {
+        let mut m = self.main();
+        m.doc.routing = r;
+        self.shared.set_routing(&r);
     }
 
     /// Sets the mode (the panel's mode selector; File > Open and File > New keep it, task-228);
@@ -1210,6 +1248,7 @@ unsafe impl Params for OrbParams {
         self.shared.set_remote_enabled(m.doc.remote_enabled);
         self.shared.set_remote_channel(m.doc.remote_channel);
         self.shared.set_mode(m.doc.mode);
+        self.shared.set_routing(&m.doc.routing);
         // the preview is not saved: a restore ends it, the restored state plays as saved
         self.shared.set_previewing(false);
         if let Some(set) = &m.doc.preview {

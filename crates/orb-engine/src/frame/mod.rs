@@ -257,6 +257,17 @@ pub trait SongDevice: Send {
 pub trait ChannelDevice: SongDevice {
     /// Vtable slot 14 (0x10013580): render one block into `bus`, overwriting all of it.
     fn process(&mut self, bus: &mut Block, ctx: &BlockContext);
+    /// Slot 14 with the drum machine's own outputs (not in the original's export path,
+    /// task-300; ReWire's per-instrument entries, `docs/rewire.md` section 4): as
+    /// [`ChannelDevice::process`], and each output of `split` gets its voices
+    /// ([`crate::drums::render_split`]). Only the 808 and the 909 have outputs; the others
+    /// render as [`ChannelDevice::process`] and zero the outputs of `split`.
+    fn process_split(&mut self, bus: &mut Block, split: Split<'_>, ctx: &BlockContext) {
+        for o in split.outs.iter_mut() {
+            o.fill(0.0);
+        }
+        self.process(bus, ctx);
+    }
     /// Not a slot: the pattern the device plays (the 303's `+0xC94`, the 808's `+0x18D0`, the
     /// 909's `+0x18D3`), latched from controller 1 at a bar line. `None` for a placeholder.
     fn playing_pattern(&self) -> Option<u8> {
@@ -902,13 +913,99 @@ pub struct EngineState {
     pub output: OutputState,
 }
 
-/// The mono taps of one block ([`Frame::block_taps`], task-256): mixer channel c's bus (0
+/// The mono taps of one block ([`Frame::block_taps`]): `[0..4]` mixer channel c's bus (0
 /// 303-1, 1 303-2, 2 808, 3 909) after its inserts, where ReWire's channels 2, 3, 4 and 11 are
-/// taken (`docs/rewire.md` section 4).
+/// taken (task-256, `docs/rewire.md` section 4); from [`TAP_808`] the 808's own outputs and from
+/// [`TAP_909`] the 909's, one per entry of their tables (task-300, [`crate::tr808::OUTPUTS`],
+/// [`crate::tr909::OUTPUTS`]).
 pub type Taps = [Block; TAP_WIDTH];
 
-/// The tap values one frame of [`Engine::render_taps`] holds: one per mixer channel.
-pub const TAP_WIDTH: usize = 4;
+/// The first tap of the 808's own outputs.
+pub const TAP_808: usize = 4;
+/// The first tap of the 909's own outputs.
+pub const TAP_909: usize = TAP_808 + crate::tr808::OUTPUTS.len();
+/// The tap values one frame of [`Engine::render_taps`] holds: one per mixer channel, then one
+/// per drum output.
+pub const TAP_WIDTH: usize = TAP_909 + crate::tr909::OUTPUTS.len();
+
+/// The taps of mixer channel c's own outputs (the 808's and the 909's; empty for the 303s).
+pub const fn drum_taps(c: usize) -> std::ops::Range<usize> {
+    match c {
+        2 => TAP_808..TAP_909,
+        3 => TAP_909..TAP_WIDTH,
+        _ => 0..0,
+    }
+}
+
+/// Not in the original's export path (task-300, the plugin's Options > Output Routing): what
+/// goes into the master and into the drum machines' buses, as ReWire's enabled channels decide
+/// it (`docs/rewire.md` section 4). The default, everything in, is the export's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutputRouting {
+    /// Mixer channel c goes to Mix-L/R. Off, the channel skips its gain smoothing and its pan
+    /// and mix loop (ReWire's bypass, 0x100136AB/0x100136B1; its gains freeze, quirk Q-6) but
+    /// keeps its meter and its delay send.
+    pub to_mix: [bool; 4],
+    /// The 808's outputs ([`crate::tr808::OUTPUTS`]) go to its bus. Off, the output's voices add
+    /// into the output only.
+    pub to_808: [bool; crate::tr808::OUTPUTS.len()],
+    /// The same for the 909 ([`crate::tr909::OUTPUTS`]).
+    pub to_909: [bool; crate::tr909::OUTPUTS.len()],
+}
+
+impl Default for OutputRouting {
+    fn default() -> Self {
+        OutputRouting {
+            to_mix: [true; 4],
+            to_808: [true; crate::tr808::OUTPUTS.len()],
+            to_909: [true; crate::tr909::OUTPUTS.len()],
+        }
+    }
+}
+
+impl OutputRouting {
+    /// Which of mixer channel c's own outputs go to its bus (empty for the 303s).
+    pub fn to_bus(&self, c: usize) -> &[bool] {
+        match c {
+            2 => &self.to_808,
+            3 => &self.to_909,
+            _ => &[],
+        }
+    }
+
+    /// The routing as bits, bit k for tap k ([`Taps`]: the mixer channels to the Mix, then
+    /// the 808's and the 909's outputs to their bus); set is in, the default all set.
+    pub fn to_bits(&self) -> u32 {
+        let all = self.to_mix.iter().chain(&self.to_808).chain(&self.to_909);
+        all.enumerate()
+            .fold(0, |b, (k, &on)| b | ((on as u32) << k))
+    }
+
+    /// [`OutputRouting::to_bits`] back; bits past [`TAP_WIDTH`] are ignored.
+    pub fn from_bits(bits: u32) -> OutputRouting {
+        let mut r = OutputRouting::default();
+        let all = r
+            .to_mix
+            .iter_mut()
+            .chain(&mut r.to_808)
+            .chain(&mut r.to_909);
+        for (k, on) in all.enumerate() {
+            *on = bits & (1 << k) != 0;
+        }
+        r
+    }
+}
+
+const _: () = assert!(TAP_WIDTH <= 32, "the routing's bits fit a u32");
+
+/// The drum machine's own outputs of one block ([`ChannelDevice::process_split`],
+/// [`crate::drums::render_split`]): `outs[o]` is output o's block, `to_bus[o]` whether its
+/// voices also go to the bus, and with `copy` an output on the bus gets the same terms too.
+pub struct Split<'a> {
+    pub outs: &'a mut [Block],
+    pub to_bus: &'a [bool],
+    pub copy: bool,
+}
 
 /// The mixer and its devices: everything one block touches.
 pub struct Frame {
@@ -945,6 +1042,10 @@ pub struct Frame {
     /// ([`BlockContext::tick`]) in place of the stopped song's, so that the PCF steps through
     /// its wave in the plugin's note mode ([`Engine::set_note_clock`]).
     pub note_clock: Option<f64>,
+    /// Not in the original's export path (task-300): the plugin's output routing.
+    pub routing: OutputRouting,
+    /// Not in the original: where the drum outputs a block renders without taps go.
+    scratch: Box<Taps>,
 }
 
 /// What [`Engine::set_note_clock`] does to the note-mode clock ([`Frame::note_clock`]).
@@ -1008,6 +1109,8 @@ impl Frame {
             out_end: None,
             gate_fade: [false; 4],
             note_clock: None,
+            routing: OutputRouting::default(),
+            scratch: Box::new([[0.0; BLOCK]; TAP_WIDTH]),
         }
     }
 
@@ -1104,6 +1207,11 @@ impl Frame {
     /// bus is stored f32, so the tap is exact. Nothing is taken out of the master, so `l` and
     /// `r` are bit-identical to [`Frame::block`]'s. A fault leaves the taps of the channels it
     /// did not reach as they were.
+    ///
+    /// The drum machines' own outputs (task-300) are their taps from [`TAP_808`]: each output's
+    /// voice sum, a copy when the output goes to the bus. [`Frame::routing`] takes channels
+    /// out of the master and drum outputs out of their bus, as ReWire does; with the default
+    /// routing nothing changes.
     pub fn block_taps(
         &mut self,
         l: &mut Block,
@@ -1136,20 +1244,49 @@ impl Frame {
             stack_word: None,
         };
         let bus = &mut self.bus;
+        let routing = self.routing;
+        let copy = taps.is_some();
         for (c, ch) in self.state.channels.iter_mut().enumerate() {
-            self.devices.channels[c].process(bus, &ctx);
+            // task-300: the drum machine's own outputs, when they are tapped or some leave the
+            // bus; else the export's render
+            let to_bus = routing.to_bus(c);
+            let mut outs = if to_bus.is_empty() || (!copy && !to_bus.contains(&false)) {
+                None
+            } else {
+                let r = drum_taps(c);
+                Some(match taps.as_deref_mut() {
+                    Some(t) => &mut t[r],
+                    None => &mut self.scratch[r],
+                })
+            };
+            match outs.as_deref_mut() {
+                None => self.devices.channels[c].process(bus, &ctx),
+                Some(o) => {
+                    let split = Split {
+                        outs: o,
+                        to_bus,
+                        copy,
+                    };
+                    self.devices.channels[c].process_split(bus, split, &ctx);
+                }
+            }
             if self.devices.channels[c].gate().closed() {
                 // not in the original (task-218): a gate that has just closed fades the section
                 // out over this block (task-222), then its voices are silenced (slot 6); a
-                // closed gate's section is silent
+                // closed gate's section is silent, its own outputs too (task-300)
+                let own = outs.into_iter().flat_map(|o| o.iter_mut());
                 if self.gate_fade[c] {
                     self.gate_fade[c] = false;
-                    for (i, x) in bus.iter_mut().enumerate() {
-                        *x = st(*x as f64 * gate_fade_gain(i));
+                    for b in std::iter::once(&mut *bus).chain(own) {
+                        for (i, x) in b.iter_mut().enumerate() {
+                            *x = st(*x as f64 * gate_fade_gain(i));
+                        }
                     }
                     self.devices.channels[c].silence();
                 } else {
-                    bus.fill(0.0);
+                    for b in std::iter::once(&mut *bus).chain(own) {
+                        b.fill(0.0);
+                    }
                 }
             }
             // the word the audio slot leaves at its esp0 - 0x1C (the 303s leave the slot as it
@@ -1187,6 +1324,11 @@ impl Frame {
             let sg = ch.send as f64;
             for (s, &b) in self.state.send.iter_mut().zip(bus.iter()) {
                 *s = st(b as f64 * sg + *s as f64);
+            }
+            // task-300: a channel out of Mix-L/R skips the smoothing and the pan and mix loop,
+            // as a channel on its ReWire output does (`cmp eax, ebp` 0x100136AB, `jnz` 0x100136B1)
+            if !routing.to_mix[c] {
+                continue;
             }
             // 0x100136B7: smoothing, n = old*0.93 + target*0.07 stored as f32; the ramp steps
             // from the stored old value by (n_unrounded - old)/32 every two samples

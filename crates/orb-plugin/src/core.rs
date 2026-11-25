@@ -94,7 +94,7 @@
 
 use std::sync::Arc;
 
-use orb_engine::frame::{Gate, NoteClock, TAP_WIDTH};
+use orb_engine::frame::{Gate, NoteClock, OutputRouting, TAP_WIDTH};
 use orb_engine::seq::TEMPO_STEP;
 use orb_engine::song::Device;
 use orb_player::midi::{Action, Message, StandardMapping, Timed};
@@ -107,13 +107,12 @@ use crate::resample::{Blocks, ENGINE_RATE, Resampler};
 /// The frames of one engine block, and of the reported latency at 44.1 kHz.
 pub const BLOCK: usize = 64;
 
-/// The per-device outputs (task-256): 303-1, 303-2, 808, 909, the mixer's channels 0 to 3.
-pub const DEVICE_OUTPUTS: usize = 4;
+pub use crate::routing::{AUX_OUTPUTS, DEVICE_OUTPUTS};
 
-/// The host's per-device output buffers of one call: `aux[c]` is channel c's left and right
-/// (as long as the call's main output), `None` when the host gave no buffer: such a bus is
-/// skipped.
-pub type AuxOut<'a> = [Option<[&'a mut [f32]; 2]>; DEVICE_OUTPUTS];
+/// The host's aux output buffers of one call: `aux[k]` is tap k's left and right (as long as
+/// the call's main output; the per-device outputs, task-256, then the drum outputs, task-300,
+/// [`crate::routing`]), `None` when the host gave no buffer: such a bus is skipped.
+pub type AuxOut<'a> = [Option<[&'a mut [f32]; 2]>; AUX_OUTPUTS];
 
 /// One engine block as [`Blocks::next_block`] gives it: the main output, [`BLOCK`] frames of
 /// interleaved stereo int16, and the per-channel taps, [`TAP_WIDTH`] f32 values per frame
@@ -633,6 +632,9 @@ impl Blocks for Engine {
         self.audio.drain();
         self.modes();
         self.sync();
+        // task-300: Options > Output Routing, read before each block as the mode is
+        self.audio
+            .set_routing(OutputRouting::from_bits(self.shared.routing_bits()));
         self.audio.render_call();
         self.blocks += 1;
         self.mapping.follow(self.audio.last_snapshot());
@@ -816,16 +818,17 @@ impl Core {
         self.process_aux(
             l,
             r,
-            &mut [None, None, None, None],
+            &mut [const { None }; AUX_OUTPUTS],
             values,
             transport,
             events,
         );
     }
 
-    /// [`Core::process_with`], and the per-device outputs `aux` (task-256): each bus the host
-    /// gave a buffer for gets its channel's taps over the same frames as `l` and `r`, at the
-    /// same latency; a `None` bus is skipped. `l` and `r` do not depend on `aux`.
+    /// [`Core::process_with`], and the aux outputs `aux` (task-256, task-300): each bus the
+    /// host gave a buffer for gets its tap over the same frames as `l` and `r`, at the same
+    /// latency; a `None` bus is skipped. `l` and `r` do not depend on `aux` (they do on the
+    /// routing, [`crate::instance::OrbParams::set_routing`]).
     pub fn process_aux(
         &mut self,
         l: &mut [f32],

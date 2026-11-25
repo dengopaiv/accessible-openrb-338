@@ -82,6 +82,8 @@ struct Harness {
     cursor: egui::CursorIcon,
     /// The texts drawn in the last frame.
     texts: Vec<String>,
+    /// The same with each text's rectangle.
+    text_rects: Vec<(String, Rect)>,
     /// What the frames put on the system clipboard (`OutputCommand::CopyText`, which
     /// egui-baseview writes to the clipboard).
     copied: Vec<String>,
@@ -118,6 +120,7 @@ impl Harness {
             commands: Vec::new(),
             cursor: egui::CursorIcon::Default,
             texts: Vec::new(),
+            text_rects: Vec::new(),
             copied: Vec::new(),
             playing: false,
             beats: 0.0,
@@ -167,14 +170,17 @@ impl Harness {
                 self.copied.push(t.clone());
             }
         }
-        self.texts = out
+        self.text_rects = out
             .shapes
             .iter()
             .filter_map(|s| match &s.shape {
-                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                egui::Shape::Text(t) => {
+                    Some((t.galley.text().to_string(), t.visual_bounding_rect()))
+                }
                 _ => None,
             })
             .collect();
+        self.texts = self.text_rects.iter().map(|t| t.0.clone()).collect();
         self.commands = out
             .viewport_output
             .values()
@@ -223,6 +229,15 @@ impl Harness {
             }
         }
         panic!("no menu has {item}");
+    }
+
+    /// The rectangle of the text `t` drawn in the last frame.
+    fn text_rect(&self, t: &str) -> Rect {
+        self.text_rects
+            .iter()
+            .find(|x| x.0 == t)
+            .unwrap_or_else(|| panic!("{t:?} is not drawn: {:?}", self.texts))
+            .1
     }
 
     fn value(&self, id: &str) -> i32 {
@@ -678,6 +693,90 @@ fn the_plugin_usage_page_fits_the_smallest_window() {
     let screen = Rect::from_min_size(Pos2::ZERO, h.size);
     assert!(screen.contains_rect(rect), "{rect:?} in {screen:?}");
     assert!(rect.width() >= 200.0 && rect.height() >= 150.0, "{rect:?}");
+}
+
+/// task-300: the plugin's Options menu has Output Routing...; its window shows the 26 boxes,
+/// labeled with the outputs' names, in three columns inside the smallest window the host may
+/// give (536 x 485); a box's tooltip is its output's VST3 bus index ("#7"), and a click on a box
+/// sets the plugin's routing.
+#[test]
+fn options_output_routing_fits_the_smallest_window_and_sets_the_routing() {
+    use orb_engine::frame::OutputRouting;
+    let mut h = Harness::new(with("303_accent0"));
+    h.size = Vec2::new(orb_ui::layout::MIN_WINDOW_W, orb_ui::layout::MIN_WINDOW_H);
+    h.frame(vec![]);
+    h.open_menu_with("Output Routing...");
+    let item = h.text_rect("Output Routing...");
+    h.click(item.center());
+    for _ in 0..10 {
+        h.frame(vec![]);
+    }
+    assert!(h.app.routing_is_open(), "the window opened");
+    let rect = h.ctx.memory(|m| m.area_rect(h.app.routing_id())).unwrap();
+    let screen = Rect::from_min_size(Pos2::ZERO, h.size);
+    assert!(screen.contains_rect(rect), "{rect:?} in {screen:?}");
+    // a column's texts under its heading, top to bottom, all inside the window
+    let column = |h: &Harness, heading: &str| -> Vec<(String, Rect)> {
+        let head = h.text_rect(heading);
+        // the window is painted after the panel: only the texts after its heading
+        let at = h.text_rects.iter().position(|t| t.0 == heading).unwrap();
+        let mut col: Vec<(String, Rect)> = h.text_rects[at..]
+            .iter()
+            .filter(|(_, r)| (r.left() - head.left()).abs() < 40.0 && r.top() > head.top())
+            .cloned()
+            .collect();
+        col.sort_by(|a, b| a.1.top().total_cmp(&b.1.top()));
+        for (t, r) in &col {
+            assert!(rect.contains_rect(*r), "{t}: {r:?} in {rect:?}");
+        }
+        col
+    };
+    // every box is shown, whole, without scrolling, with the output's name alone
+    let names = |c: &[(String, Rect)]| c.iter().map(|t| t.0.clone()).collect::<Vec<_>>();
+    let mix = column(&h, "To Mix-L/R");
+    let tr808 = column(&h, "To 808");
+    let tr909 = column(&h, "To 909");
+    assert_eq!(names(&mix), ["303-1", "303-2", "808", "909"]);
+    let want808: Vec<&str> = "BD SD LT MT HT RS CP CB OH CH CY".split(' ').collect();
+    let want909: Vec<&str> = "BD SD LT MT HT RS CP CH OH CC RC".split(' ').collect();
+    assert_eq!(names(&tr808), want808);
+    assert_eq!(names(&tr909), want909);
+    assert!(
+        h.texts.iter().all(|t| !t.starts_with('(')),
+        "no numbers on the labels"
+    );
+    // the tooltip: the VST3 bus index
+    let lt = tr808[2].1;
+    let rc = tr909[10].1;
+    for (r, want) in [(lt, "#7"), (rc, "#26"), (mix[0].1, "#1")] {
+        h.move_to(r.center());
+        for _ in 0..60 {
+            h.frame(vec![]);
+            if h.texts.iter().any(|t| t == want) {
+                break;
+            }
+        }
+        assert!(
+            h.texts.iter().any(|t| t == want),
+            "tooltip {want}: {:?}",
+            h.texts
+        );
+    }
+    assert_eq!(h.params.routing(), OutputRouting::default());
+    // the 808's LT off, then on again; 303-2 off
+    h.click(lt.center());
+    h.frame(vec![]);
+    let mut want = OutputRouting::default();
+    want.to_808[2] = false;
+    assert_eq!(h.params.routing(), want);
+    h.click(mix[1].1.center());
+    h.frame(vec![]);
+    want.to_mix[1] = false;
+    assert_eq!(h.params.routing(), want);
+    h.click(lt.center());
+    h.frame(vec![]);
+    want.to_808[2] = true;
+    assert_eq!(h.params.routing(), want);
 }
 
 #[test]

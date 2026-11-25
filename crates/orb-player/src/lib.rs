@@ -99,7 +99,7 @@ use std::sync::Arc;
 use orb_engine::frame::edit::PatternShape;
 use orb_engine::frame::export::REALTIME_FRAMES;
 use orb_engine::frame::{
-    Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, Sounding, TAP_WIDTH,
+    Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, OutputRouting, Sounding, TAP_WIDTH,
 };
 use orb_engine::process::ProcessState;
 use orb_engine::samples::{Retired, STARTUP_ID, Sample, SampleSet};
@@ -474,6 +474,8 @@ pub struct Audio {
     /// The per-channel taps of the last engine call, `TAP_WIDTH * call_frames` values
     /// ([`Audio::enable_taps`], [`Audio::taps`]); `None` until enabled.
     taps: Option<Box<[f32]>>,
+    /// The output routing every engine call renders with ([`Audio::set_routing`]).
+    routing: OutputRouting,
     /// The frames of `buf` already handed out.
     pos: usize,
     frames: u64,
@@ -532,6 +534,7 @@ impl Player {
             call_frames,
             buf: vec![0; 2 * call_frames].into_boxed_slice(),
             taps: None,
+            routing: OutputRouting::default(),
             pos: call_frames,
             frames: 0,
             generation: 0,
@@ -764,6 +767,8 @@ impl Audio {
         // a faulting call writes nothing (`Engine::fault`): silence rather than the last call
         self.buf.fill(0);
         let faults = self.faults();
+        // the routing is the player's, so a song loaded or switched to keeps it
+        self.current.frame.routing = self.routing;
         match &mut self.taps {
             None => self.current.render(&mut self.buf[..], self.call_frames),
             Some(t) => self
@@ -1086,11 +1091,18 @@ impl Audio {
         }
     }
 
+    /// The output routing of the later engine calls (task-300, the plugin's Options > Output
+    /// Routing; [`orb_engine::frame::Frame::routing`]), whatever song plays. Allocates nothing.
+    pub fn set_routing(&mut self, r: OutputRouting) {
+        self.routing = r;
+    }
+
     /// The per-channel taps of the last engine call ([`Audio::enable_taps`]): frame i of
     /// channel c (0 303-1, 1 303-2, 2 808, 3 909) is `[TAP_WIDTH * i + c]`, the channel's mono
     /// bus after its inserts and before its level, pan and on switch, f32 (full scale 1.0, not
-    /// clamped). Zero for a faulting call. `None` while not enabled. The preview player is not
-    /// in them.
+    /// clamped); from `TAP_808` the drum machines' own outputs (task-300,
+    /// [`orb_engine::frame::Taps`]). Zero for a faulting call. `None` while not enabled. The
+    /// preview player is not in them.
     pub fn taps(&self) -> Option<&[f32]> {
         self.taps.as_deref()
     }

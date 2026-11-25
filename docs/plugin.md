@@ -316,6 +316,7 @@ field, `orb`, a JSON object (version 1):
 | `remote_channel` | the Standard Mapping's MIDI channel, 0-based (15: channel 16, the default and when absent); a section's channel (0..3, MIDI 1..4) restores as 15 with `last_error` set, the rest of the state kept (section 8) |
 | `mode` | `"latch"`, `"gate"` or `"note"` (section 4; a new instance: note; task-217's `"pattern"` is no longer read) |
 | `preview` | the preview set (section 4.2): an object of parameter id to value, or null before the first preview; an id it lacks takes the parameter's value |
+| `routing` | Options > Output Routing (section 13.1, task-300): an object of a box's stable key ("mix.303-1" .. "mix.909", "808.bd" .. "909.rc") to whether it is checked; absent (a state of the released build) or a key absent: checked |
 
 Until the first release (v2026.1118.0919) no state of an earlier build was migrated,
 recognized or tested (the user, 2026-11-16: no compatibility work with old plugin states until
@@ -1803,7 +1804,7 @@ Per platform:
 
 Besides the main stereo output, named **Mix**, the plugin has four stereo aux outputs named
 **303-1**, **303-2**, **808** and **909** (VST3 aux buses 1 to 4 after the main bus 0; one layout, `AUDIO_IO_LAYOUTS` in `src/lib.rs`,
-names `OUTPUT_NAMES`). Requested by the user on 2026-11-20 (item 7, "multi-out", of task-196's
+names `OUTPUT_NAMES`), and after them 22 per-drum outputs (section 13.1, task-300). Requested by the user on 2026-11-20 (item 7, "multi-out", of task-196's
 deferred features). The tap point is the user's decision of 2026-11-21 (task-259): ReWire's.
 
 **The tap.** Each bus is its mixer channel's signal where ReBirth's own ReWire output for the
@@ -1818,7 +1819,8 @@ level, pan and on switch, the delay (a send whose return goes only into the mast
 0x10013844), the master compressor (0x10013883) and the master gain (0x100138AE).
 
 Unlike ReWire, the buses are copies: a connected bus does not take its channel out of the Mix,
-and the Mix is the same whatever the host connects. The panel's channel on switch (the
+and the Mix is the same whatever the host connects. Options > Output Routing (section 13.1)
+takes a device out of the Mix as ReWire does. The panel's channel on switch (the
 mixer's ON) does it instead: a channel turned off is out of the Mix (its gains go to the 1e-6
 guard, `lev = on ? level : 0`) but still on its own bus, so a device can be taken out of the
 Mix and processed on its own track. Its delay send goes too (`T[lev]*T[send]`), as ReWire's
@@ -1877,4 +1879,91 @@ AC 5). Also of nice-plug 0.4.2: the main output is named after `names.main_input
   leave its bus bit-identical, and with the channel off the Mix is silent.
 - `src/resample.rs`: the buses are resampled as the main output, independent of the chunks.
 - `tests/exports.rs`: the VST3 buses (count, names, stereo, which is main), and the VST3 host
-  passes all five buses.
+  passes all of them (27 since task-300).
+
+### 13.1 The drum outputs and Options > Output Routing (task-300)
+
+The user's decision of 2026-11-25 gives the plugin the original's ReWire routing (`docs/rewire.md`
+sections 4 and 6): per-drum outputs, and channels that can be taken out of the mix. VST3's
+`activateBus` cannot drive it (nice-plug 0.4.2 ignores its state, `src/wrapper/vst3/wrapper.rs`
+347, and hosts do not report a connection), so the user chooses in a window, Options > Output
+Routing... (a plugin's editor only; `crates/orb-ui/src/routing_window.rs`, `docs/ui_spec.md`).
+
+**The buses.** After the four per-device buses come 22 stereo buses, one per drum instrument
+(L = R, the mono signal on both sides), so a project saved with the released plugin keeps
+303-1/303-2/808/909 on aux buses 1 to 4 (hosts keep the routing by bus index):
+
+| Aux | Names | What |
+|---|---|---|
+| 1..4 | 303-1, 303-2, 808, 909 | The mixer channel after its inserts (task-256) |
+| 5..15 | 808 BD, 808 SD, 808 LT, 808 MT, 808 HT, 808 RS, 808 CP, 808 CB, 808 OH, 808 CH, 808 CY | One 808 instrument's voice sum |
+| 16..26 | 909 BD, 909 SD, 909 LT, 909 MT, 909 HT, 909 RS, 909 CP, 909 CH, 909 OH, 909 CC, 909 RC | One 909 instrument's voice sum |
+
+The original's ReWire has six groups per machine (BD, SD, Tom, Per, HH, CY; channels 5..10 and
+12..17, `docs/rewire.md` section 4); the plugin splits them further, one output per instrument,
+by the user's decision (2026-11-25). The instruments that share a voice share an output: the
+808's LT/LC, MT/MC, HT/HC, RS/CL and CP/MA (`tr808.rs`: one PITCHED or SIMPLE voice each);
+BD is both bass drum voices. The mapping is one table per machine, `tr808::OUTPUTS` with
+`tr808::VOICE_OUTPUT` (the output of each voice in slot 14's render order, 0x100280B0) and
+`tr909::OUTPUTS` with `tr909::VOICE_OUTPUT` (0x1002B6F0); the engine's taps (`frame::Taps`:
+the four channels, then `TAP_808`, then `TAP_909`), the buses (`routing::OUTPUT_NAMES`), the
+state's keys and the window all follow it. Each entry has a stable `id` (the state's key),
+a `name` (the window's box) and a `bus` (the bus name).
+
+**The window.** Three columns of checkboxes, each labeled with its output's name: "To
+Mix-L/R" (303-1, 303-2, 808, 909), "To 808" (BD .. CY) and "To 909" (BD .. RC). A box's
+tooltip is its output's VST3 bus index, "#N" (Mix is bus 0: 303-1 is #1, 808 BD #5, 909 RC
+#26). The user's review of 2026-11-25 took the numbers off the labels: REAPER numbers the
+plugin's channels flat from 1 (Mix 1/2, bus n 2n+1/2n+2), so they did not match what REAPER
+shows, and other hosts show the names. All are checked by default. A click sets the routing at once (`OrbParams::set_routing`:
+the document and `Shared`'s atomic bits, which the process side reads before every engine
+block and gives the player, `Audio::set_routing`, so a song loaded or switched to keeps it).
+
+**The semantics** (`Frame::block_taps`, `drums::render_split`; [C] addresses of the original
+in `docs/rewire.md` section 4):
+- **A device unchecked under Mix-L/R** leaves Mix-L/R as a channel on its ReWire output does:
+  the block skips its gain smoothing (0x100136B7) and its pan-and-mix loop (0x10013742; the
+  bypass `cmp eax, ebp` 0x100136AB, `jnz` 0x100136B1). Its meter (0x100135FA) and its delay
+  send (`send x level`, 0x1001364A) stay, so its echo stays in the Mix. Its own output is
+  unchanged. Its L and R gains freeze while it is out, and when it is checked again they glide
+  from the frozen values (the original's quirk Q-6, `docs/original_bugs.md`).
+- **A drum instrument unchecked** leaves its machine's bus: its voices add into their own block
+  instead (zeroed first, so an idle instrument is exactly 0, no 1e-6 guard), as a non-null group
+  entry does in the 808's slot 14 (0x100280D8..0x10028273) and the 909's (0x1002B718..
+  0x1002B8AF). So it is out of the machine's inserts, meter, level, pan, delay send, Mix-L/R
+  and the machine's own output (3) or (4). The rest of the bus keeps its voices in their order,
+  so the bus's f32 sum is the same sum without the removed terms (bit-identical to the voices
+  not playing; `frame::tests::routing`).
+- **A drum output** always carries its instrument's raw voice sum: the trigger gain with the
+  level knob, the accent and the envelope, and nothing after it. When the instrument is checked,
+  the output is a copy: each voice adds the same f64 term into the bus and into its output
+  block (`drums::Sink::Both`), so the bus keeps the original's accumulation order and is
+  bit-identical; the bus is never derived from the outputs.
+- **The pattern gate** (section 11) silences a closed section's drum outputs too (the fade-out
+  block fades them as the bus).
+- **The defaults**: with every box checked, the Mix and the four device outputs are bit-identical
+  to task-256's (the corpus, `tests/outputs.rs`). The corpus renders (`Engine::render`) never
+  compute the drum outputs: the export's render is unchanged.
+
+**The state.** The boxes are saved in the `orb` object as `routing`, an object of the box's key
+to a bool: "mix.303-1", "mix.303-2", "mix.808", "mix.909", then each drum output's id
+("808.bd" .. "808.cy", "909.bd" .. "909.rc"; `routing::ROUTING_IDS`). The keys never change once
+released (the names may). A key that is absent is checked, an unknown key is ignored, so a state
+of the released build (v2026.1118.0919, no `routing`) restores with every box checked. They are
+not parameters: the parameter ids and `tests/param_ids.txt` are unchanged.
+
+**nice-plug 0.4.2 with 26 aux buses.** The caveats of section 13 apply to all 26 buses: process
+runs only when every output bus has a buffer, and a host that passes fewer buses than the plugin
+declares meets the off-by-one. Whether REAPER and Ableton pass all 27 buses is the user's check
+(task-300 AC 6).
+
+**Tests.** `crates/orb-engine/src/frame/tests.rs` (`routing`): the default routing leaves the
+master, the send and the meters bit-identical with the drum outputs computed; each drum output
+is its voices' sum on or off the bus; off the bus, the machine's bus, meter, send, the other
+taps and the master equal a render where those voices did not play; a channel out of the Mix
+equals the channel at zero gain with its send, meter and taps kept and its gains frozen.
+`crates/orb-plugin/tests/outputs.rs`: the Mix with every combination of the 26 buses connected;
+a device out of the Mix; a drum instrument out of its bus. `src/routing.rs`: the bus names, the
+keys and the saved routing. `tests/state.rs`: the round trip and a state without `routing`.
+`tests/exports.rs`: the 27 VST3 buses and their names. `tests/no_alloc.rs`: routing changes
+and every bus pattern while playing.

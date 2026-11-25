@@ -25,6 +25,7 @@ pub mod instance;
 pub mod params;
 pub mod plugin_log;
 pub mod resample;
+pub mod routing;
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -51,10 +52,12 @@ pub const URL: &str = "https://github.com/pingw33n/OpenRB-338";
 
 /// The main output's name.
 pub const MIX_NAME: &str = "Mix";
-/// The per-device outputs' names (task-256), the mixer's channels 0 to 3 in order: each is
-/// its channel after its inserts and before its level, pan and on switch, mono on both sides,
-/// as ReWire's channel outputs (`docs/plugin.md` section 13, `docs/rewire.md` section 4).
-pub const OUTPUT_NAMES: [&str; core::DEVICE_OUTPUTS] = ["303-1", "303-2", "808", "909"];
+/// The aux outputs' names: the per-device outputs (task-256), the mixer's channels 0 to 3 in
+/// order, each its channel after its inserts and before its level, pan and on switch, as
+/// ReWire's channel outputs; then the drum outputs (task-300), "808 BD" .. "909 RC", each
+/// an instrument's voice sum. Mono on both sides (`docs/plugin.md` section 13,
+/// `docs/rewire.md` section 4; [`routing::OUTPUT_NAMES`]).
+pub const OUTPUT_NAMES: [&str; core::AUX_OUTPUTS] = routing::OUTPUT_NAMES;
 
 const STEREO: NonZeroU32 = NonZeroU32::new(2).unwrap();
 
@@ -159,11 +162,13 @@ impl Plugin for OrbPlugin {
     /// Cargo's `0.1.0`: the host's plugin list and the state's `version` show it.
     const VERSION: &'static str = orb_ui::about::VERSION;
 
-    /// The stereo Mix and the four stereo per-device outputs (task-256, [`OUTPUT_NAMES`]).
+    /// The stereo Mix, the four stereo per-device outputs (task-256) and the 22 stereo drum
+    /// outputs after them (task-300; [`OUTPUT_NAMES`]). Hosts keep a project's routing by bus
+    /// index, so new buses only ever go after the released ones.
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
         main_input_channels: None,
         main_output_channels: NonZeroU32::new(2),
-        aux_output_ports: &[STEREO; core::DEVICE_OUTPUTS],
+        aux_output_ports: &[STEREO; core::AUX_OUTPUTS],
         names: PortNames {
             layout: Some("Mix and devices"),
             // nice-plug 0.4.2 names the main output after `main_input`
@@ -245,9 +250,9 @@ impl Plugin for OrbPlugin {
             pos_beats: t.pos_beats(),
         };
         let values = self.params.values();
-        // the per-device outputs the host gave buffers for: nice-plug gives an empty slice for
-        // a bus without one (`wrapper/util/buffer_management.rs`), which is skipped
-        let mut buses: AuxOut = [None, None, None, None];
+        // the aux outputs the host gave buffers for: nice-plug gives an empty slice for a bus
+        // without one (`wrapper/util/buffer_management.rs`), which is skipped
+        let mut buses: AuxOut = [const { None }; core::AUX_OUTPUTS];
         for (slot, b) in buses.iter_mut().zip(aux.outputs.iter_mut()) {
             if let [l, r, ..] = b.as_slice()
                 && !l.is_empty()

@@ -1361,6 +1361,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Vintage ReBirth Synth Sound | the song's sound model (the original has it in the Edit menu) |
 | Options | Play Mod Startup Sound | `Settings::startup_sound`, saved to the settings file at once (a save error goes to the error message box); the original has it in Edit > Preferences (task-086, task-089); the logo click plays the sound whatever it is |
 | Options | Audio Output... | the window of Audio Output (below, task-191); the standalone app only: a plugin's audio is the host's, so its Options menu has no such item |
+| Options | Output Routing... | a plugin's editor only, after a separator (task-300; `crates/orb-ui/src/routing_window.rs`, `Embed::routing`): a centered, closable window (Escape closes it) with three columns of checkboxes, "To Mix-L/R" (303-1, 303-2, 808, 909), "To 808" (BD .. CY) and "To 909" (BD .. RC), each labeled with its output's name and with the tooltip "#N", the output's VST3 bus index (Mix 0, 303-1 #1, 808 BD #5, 909 RC #26); built from the drum machines' output tables (orb-engine `tr808::OUTPUTS`, `tr909::OUTPUTS`). A click sets the plugin's routing at once (`docs/plugin.md` section 13.1). It scrolls when the window is shorter than it; it fits the plugin's smallest window (536 x 485) |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, the global keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` with an icon-only copy button (task-279) and the links https://github.com/pingw33n/OpenRB-338, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
@@ -2085,8 +2086,9 @@ The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the sam
   buttons do, and refuses any text that is no pattern of the row's device. On Linux arboard
   speaks X11 only (no `wayland-data-control`), so a Wayland session without XWayland reads
   nothing. There is no View
-  menu: the editor has the modern skin only (section 21, task-267). Options has no keyboard modes;
-  Help no Keyboard Shortcuts.
+  menu: the editor has the modern skin only (section 21, task-267). Options has no keyboard modes
+  and no Audio Output, but Output Routing... (task-300, section 18's table); Help no Keyboard
+  Shortcuts.
 - **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
   shortcut; every key goes on to the host (decided by the user, 2026-11-16). The mouse
   gestures of section 2 are the same.

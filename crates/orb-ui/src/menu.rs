@@ -92,6 +92,8 @@ pub enum Cmd {
     AudioOutput,
     /// Help > Plugin Usage (a plugin's editor only, task-221).
     PluginUsage,
+    /// Options > Output Routing... (a plugin's editor only, task-300).
+    OutputRouting,
     /// Help > About.
     About,
     /// "Choose file..." of the Mods menu: the browser for a mod.
@@ -1025,6 +1027,7 @@ impl App {
                     self.show_plugin_usage();
                 }
             }
+            Cmd::OutputRouting => self.show_routing(),
             Cmd::About => self.show_about(),
             Cmd::ChooseModFile => self.open_browser(Mode::ChooseMod),
             Cmd::UseKit(kit) => self.use_kit(kit),
@@ -1588,6 +1591,7 @@ impl App {
     /// only (task-201); its Edit menu is the standalone's without shortcut texts (task-274).
     fn menu_items(&mut self, ui: &mut Ui, cmd: &mut Option<Cmd>) {
         let plugin = self.is_plugin();
+        let has_routing = self.has_routing();
         // a plugin's editor has no keyboard shortcuts (task-201): no shortcut texts
         let key = |s| (!plugin).then_some(s);
         ui.menu_button("File", |ui| {
@@ -1762,8 +1766,16 @@ impl App {
             }
             // the keyboard modes: none in a plugin's editor (task-201); the plugin's mode is the
             // panel's selector only (task-231), not a menu item. Nor is Audio Output: a
-            // plugin's audio is the host's (task-191)
+            // plugin's audio is the host's (task-191). The plugin has its Output Routing
+            // instead (task-300)
             if plugin {
+                if has_routing {
+                    ui.separator();
+                    let text = format!("{}...", crate::routing_window::TITLE);
+                    if item(ui, &text, None) {
+                        *cmd = Some(Cmd::OutputRouting);
+                    }
+                }
                 return;
             }
             if item(ui, "Audio Output...", None) {

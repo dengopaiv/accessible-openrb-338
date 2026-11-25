@@ -226,7 +226,15 @@ task-256 gives the plugin a stereo Mix and four stereo aux outputs, 303-1, 303-2
 | Rate | The engine's 44.1 kHz [G] (the host's rate is not read by `TopHatDriveAudioProc`) | Resampled to the host's rate like the Mix |
 
 The user's decision (task-259, 2026-11-21): the plugin keeps task-256's four device outputs and
-adds no per-instrument drum outputs; the device outputs are at ReWire's tap point, after the
-channel's inserts and before its level, pan and on switch, as stereo buses carrying the mono
-signal on both sides. No delay-return output, and nothing is removed from the Mix (the outputs
+adds no per-instrument drum outputs (revised by task-300, below); the device outputs are at
+ReWire's tap point, after the channel's inserts and before its level, pan and on switch, as
+stereo buses carrying the mono signal on both sides. No delay-return output, and nothing is removed from the Mix (the outputs
 are copies). task-256 implements it.
+
+**task-300 (the user's decisions of 2026-11-25).** The plugin now has ReWire's routing:
+Options > Output Routing takes a device out of Mix-L/R as an enabled ReWire device channel does
+(its send kept, its gains frozen; section 4's bypass), and a drum instrument out of its machine's
+bus as an enabled instrument channel does, with one output per instrument instead of ReWire's six
+groups (808: BD, SD, LT, MT, HT, RS, CP, CB, OH, CH, CY; 909: BD, SD, LT, MT, HT, RS, CP, CH, OH,
+CC, RC), 22 more stereo buses after the four. With every box checked the buses stay copies and the
+Mix is unchanged. `docs/plugin.md` section 13.1.

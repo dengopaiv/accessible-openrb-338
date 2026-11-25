@@ -1309,6 +1309,15 @@ impl Embed for EditorEmbed {
         Some(self.params.previewing())
     }
 
+    /// Options > Output Routing (task-300), kept in the state.
+    fn routing(&self) -> Option<orb_engine::frame::OutputRouting> {
+        Some(self.params.routing())
+    }
+
+    fn set_routing(&mut self, r: orb_engine::frame::OutputRouting) {
+        self.params.set_routing(r);
+    }
+
     /// The wrapper in use tells: nice-plug's
     /// `GuiContext::plugin_api` is `Vst3` in the VST3 wrapper's editor (wrapper/vst3/context.rs);
     /// no logo in a standalone.

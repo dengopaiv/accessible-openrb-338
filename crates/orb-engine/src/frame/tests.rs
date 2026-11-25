@@ -665,7 +665,9 @@ fn the_taps_are_each_channels_bus_after_its_inserts_and_leave_the_master_alone()
             // the master is bit-identical with and without the taps
             assert_eq!(l0.map(f32::to_bits), l1.map(f32::to_bits));
             assert_eq!(r0.map(f32::to_bits), r1.map(f32::to_bits));
-            for (c, tap) in taps.iter().enumerate() {
+            // the placeholders have no drum outputs: zero (task-300)
+            assert!(taps[TAP_808..].iter().flatten().all(|&x| x == 0.0));
+            for (c, tap) in taps[..TAP_808].iter().enumerate() {
                 for (j, &x) in tap.iter().enumerate() {
                     // the bus after the channel's insert, exactly
                     let b = ((prev[c] * 64 + j as u32) % 8192) as f32 / 8192.0;
@@ -1587,4 +1589,227 @@ fn the_note_clock_gives_the_stopped_songs_blocks_their_tick() {
     e.set_note_clock(NoteClock::Off);
     let p = e.frame.seq.tick_pos();
     assert_eq!(run(&mut e, 3), [p; 3]);
+}
+
+/// task-300: the output routing and the drum machines' own outputs.
+mod routing {
+    use super::*;
+    use crate::drums::VoiceMut;
+    use crate::process::ProcessState;
+    use crate::samples::{COUNT, Sample, SampleSet};
+    use crate::tr808::Tr808;
+    use crate::tr909::Tr909;
+
+    fn samples() -> Arc<SampleSet> {
+        Arc::new(SampleSet::from_samples(
+            (0..COUNT).map(|_| Sample::from_audio(&[0; 8])).collect(),
+        ))
+    }
+
+    /// A sample of 3000 frames that differs for every `k`.
+    fn wave(k: usize) -> Arc<Sample> {
+        let a: Vec<i16> = (0..3000)
+            .map(|i| (((i * (37 + 13 * k) + 101 * k) % 4001) as i32 - 2000) as i16 * 9)
+            .collect();
+        Arc::new(Sample::from_audio(&a))
+    }
+
+    /// Every voice of `voices` triggered, voice k with [`wave`] `base + k`.
+    fn trigger(voices: [VoiceMut<'_>; 12], base: usize) {
+        for (k, v) in voices.into_iter().enumerate() {
+            v.trigger_test(wave(base + k), 0.4 + 0.05 * k as f32);
+        }
+    }
+
+    /// The 808 and the 909 with every voice playing, in channels 2 and 3, and two ramps; the
+    /// voices `skip808` / `skip909` (by render-order index) silenced.
+    fn drum_engine(skip808: &[usize], skip909: &[usize]) -> Engine {
+        let mut d = Devices::placeholders();
+        d.channels[0] = Box::new(Ramp(0));
+        d.channels[1] = Box::new(Ramp(5));
+        let mut a = Tr808::new(samples(), ProcessState::new());
+        trigger(a.voices(), 0);
+        for &k in skip808 {
+            a.voices().into_iter().nth(k).unwrap().silence();
+        }
+        let mut b = Tr909::new(samples(), ProcessState::new());
+        trigger(b.voices(), 20);
+        for &k in skip909 {
+            b.voices().into_iter().nth(k).unwrap().silence();
+        }
+        d.channels[2] = Box::new(a);
+        d.channels[3] = Box::new(b);
+        let mut s = quiet_state();
+        for (c, ch) in s.mixer.channels.iter_mut().enumerate() {
+            let g = 0.2 + 0.1 * c as f32;
+            (ch.target_l, ch.gain_l, ch.target_r, ch.gain_r) = (g, g * 0.9, g * 0.5, g * 0.6);
+            ch.send = 0.3;
+        }
+        engine_with(d, s)
+    }
+
+    struct Run {
+        l: Vec<u32>,
+        r: Vec<u32>,
+        taps: Vec<Taps>,
+        send: Vec<u32>,
+        peaks: Vec<[f32; 4]>,
+        gains: Vec<[(f32, f32); 4]>,
+    }
+
+    /// 15 blocks (counters 1 to 15: no mixer update), with the taps or without.
+    fn run(e: &mut Engine, tapped: bool) -> Run {
+        let mut out = Run {
+            l: vec![],
+            r: vec![],
+            taps: vec![],
+            send: vec![],
+            peaks: vec![],
+            gains: vec![],
+        };
+        for _ in 0..15 {
+            let (mut l, mut r) = ([0.0; BLOCK], [0.0; BLOCK]);
+            let mut t: Taps = [[f32::NAN; BLOCK]; TAP_WIDTH];
+            e.frame
+                .block_taps(&mut l, &mut r, tapped.then_some(&mut t))
+                .unwrap();
+            out.l.extend(l.map(f32::to_bits));
+            out.r.extend(r.map(f32::to_bits));
+            out.taps.push(t);
+            out.send.extend(e.frame.state.send.map(f32::to_bits));
+            let ch = &e.frame.state.channels;
+            out.peaks.push(std::array::from_fn(|c| ch[c].peak));
+            out.gains
+                .push(std::array::from_fn(|c| (ch[c].gain_l, ch[c].gain_r)));
+        }
+        out
+    }
+
+    fn bits(b: &Block) -> [u32; BLOCK] {
+        b.map(f32::to_bits)
+    }
+
+    /// The default routing: the master, the send and the channel taps are the same with the
+    /// drum outputs computed (copies) and without.
+    #[test]
+    fn the_default_routing_leaves_the_master_and_the_channel_taps_alone() {
+        let plain = run(&mut drum_engine(&[], &[]), false);
+        let tapped = run(&mut drum_engine(&[], &[]), true);
+        assert_eq!(plain.l, tapped.l);
+        assert_eq!(plain.r, tapped.r);
+        assert_eq!(plain.send, tapped.send);
+        assert_eq!(plain.peaks, tapped.peaks);
+        assert!(tapped.l.iter().any(|&x| f32::from_bits(x).abs() > 1e-3));
+        // a drum output off the bus changes the master without the taps too
+        let mut e = drum_engine(&[], &[]);
+        e.frame.routing.to_808[0] = false;
+        assert_ne!(run(&mut e, false).l, plain.l);
+    }
+
+    #[test]
+    fn each_drum_output_carries_its_voices_whether_on_the_bus_or_not() {
+        let all = run(&mut drum_engine(&[], &[]), true);
+        for (c, map, n) in [
+            (2, &crate::tr808::VOICE_OUTPUT, crate::tr808::OUTPUTS.len()),
+            (3, &crate::tr909::VOICE_OUTPUT, crate::tr909::OUTPUTS.len()),
+        ] {
+            let skips = |v: &[usize]| -> (Vec<usize>, Vec<usize>) {
+                if c == 2 {
+                    (v.to_vec(), vec![])
+                } else {
+                    (vec![], v.to_vec())
+                }
+            };
+            for o in 0..n {
+                let own: Vec<usize> = (0..12).filter(|&k| map[k] == o).collect();
+                let rest: Vec<usize> = (0..12).filter(|&k| map[k] != o).collect();
+                // the output's voices alone: every other voice of the machine silenced
+                let (s8, s9) = skips(&rest);
+                let alone = run(&mut drum_engine(&s8, &s9), true);
+                // the output off the bus, and the reference: its voices silenced
+                let mut off = drum_engine(&[], &[]);
+                if c == 2 {
+                    off.frame.routing.to_808[o] = false;
+                } else {
+                    off.frame.routing.to_909[o] = false;
+                }
+                let off = run(&mut off, true);
+                let (s8, s9) = skips(&own);
+                let without = run(&mut drum_engine(&s8, &s9), true);
+                let tap = drum_taps(c).start + o;
+                for b in 0..15 {
+                    // the output is its voices' sum, on the bus (a copy) or off it
+                    let want = bits(&alone.taps[b][c]);
+                    assert_eq!(bits(&all.taps[b][tap]), want, "{c} {o} {b}");
+                    assert_eq!(bits(&off.taps[b][tap]), want, "{c} {o} {b}");
+                    // off the bus, the machine's bus (its tap), its meter, the other outputs,
+                    // the send and the master are as if the voices did not play
+                    for k in (0..TAP_WIDTH).filter(|&k| k != tap) {
+                        assert_eq!(
+                            bits(&off.taps[b][k]),
+                            bits(&without.taps[b][k]),
+                            "{c} {o} {b} {k}"
+                        );
+                    }
+                    assert_eq!(off.peaks[b], without.peaks[b]);
+                }
+                assert_eq!(off.l, without.l, "{c} {o}");
+                assert_eq!(off.r, without.r, "{c} {o}");
+                assert_eq!(off.send, without.send, "{c} {o}");
+                assert_ne!(off.l, all.l, "{c} {o}");
+                assert!(alone.taps.iter().any(|t| t[c].iter().any(|&x| x != 0.0)));
+            }
+        }
+    }
+
+    #[test]
+    fn a_channel_out_of_the_mix_keeps_its_meter_and_send_and_freezes_its_gains() {
+        let all = run(&mut drum_engine(&[], &[]), true);
+        for c in 0..4 {
+            let mut off = drum_engine(&[], &[]);
+            off.frame.routing.to_mix[c] = false;
+            let ch = &off.frame.state.channels[c];
+            let gains0 = (ch.gain_l, ch.gain_r);
+            let off = run(&mut off, true);
+            // the reference: the channel's gains at zero, so its pan and mix adds +0
+            let mut zero = drum_engine(&[], &[]);
+            let ch = &mut zero.frame.state.channels[c];
+            (ch.target_l, ch.gain_l, ch.target_r, ch.gain_r) = (0.0, 0.0, 0.0, 0.0);
+            let zero = run(&mut zero, true);
+            assert_eq!(off.l, zero.l, "channel {c}");
+            assert_eq!(off.r, zero.r, "channel {c}");
+            assert_ne!(off.l, all.l, "channel {c}");
+            // the send (send x level), the meter and every tap are kept
+            assert_eq!(off.send, all.send, "channel {c}");
+            assert_eq!(off.peaks, all.peaks, "channel {c}");
+            for b in 0..15 {
+                for k in 0..TAP_WIDTH {
+                    assert_eq!(bits(&off.taps[b][k]), bits(&all.taps[b][k]));
+                }
+                // ReWire's bypass skips the smoothing: the gains freeze (quirk Q-6)
+                assert_eq!(off.gains[b][c], gains0);
+            }
+        }
+    }
+
+    #[test]
+    fn the_routing_bits_follow_the_tap_order() {
+        let d = OutputRouting::default();
+        assert_eq!(d.to_bits(), (1u32 << TAP_WIDTH) - 1);
+        assert_eq!(OutputRouting::from_bits(u32::MAX), d);
+        for k in 0..TAP_WIDTH {
+            let bits = d.to_bits() & !(1 << k);
+            let r = OutputRouting::from_bits(bits);
+            assert_eq!(r.to_bits(), bits);
+            let v: Vec<bool> = r
+                .to_mix
+                .iter()
+                .chain(&r.to_808)
+                .chain(&r.to_909)
+                .copied()
+                .collect();
+            assert_eq!(v.iter().position(|&on| !on), Some(k));
+        }
+        assert_eq!((TAP_808, TAP_909, TAP_WIDTH), (4, 15, 26));
+    }
 }

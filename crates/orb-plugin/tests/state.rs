@@ -125,6 +125,47 @@ fn the_mode_defaults_to_note_and_is_kept_in_the_state() {
     }
 }
 
+/// task-300: Options > Output Routing survives a save and a restore, by its stable keys; a state
+/// without it (the released build's, v2026.1118.0919) restores with every box checked.
+#[test]
+fn the_output_routing_is_kept_in_the_state() {
+    use orb_engine::frame::OutputRouting;
+    assert_eq!(OrbParams::new().routing(), OutputRouting::default());
+    let a = with_song("full_mix");
+    let mut r = OutputRouting::default();
+    r.to_mix[1] = false;
+    r.to_808[2] = false;
+    r.to_909[10] = false;
+    a.set_routing(r);
+    let saved = save(&a);
+    let json = &saved.1["orb"];
+    for key in [
+        "\"mix.303-2\":false",
+        "\"808.lt\":false",
+        "\"909.rc\":false",
+        "\"808.bd\":true",
+    ] {
+        assert!(json.contains(key), "{key} in {json:.200}");
+    }
+    let b = OrbParams::new();
+    restore(&b, &saved);
+    assert_eq!(b.routing(), r);
+    // File > New keeps it
+    b.new_song().unwrap();
+    assert_eq!(b.routing(), r);
+    // a state without the key: everything checked, the rest restored
+    let mut old = saved.clone();
+    let mut v: serde_json::Value = serde_json::from_str(&old.1["orb"]).unwrap();
+    v.as_object_mut().unwrap().remove("routing").unwrap();
+    old.1.insert("orb".into(), v.to_string());
+    let c = OrbParams::new();
+    c.set_routing(r);
+    restore(&c, &old);
+    assert_eq!(c.routing(), OutputRouting::default());
+    assert_eq!(c.main().last_error, None);
+    assert_eq!(c.main().doc.song, a.main().doc.song);
+}
+
 #[test]
 fn a_restore_into_a_running_instance_replaces_its_song() {
     let a = edited();

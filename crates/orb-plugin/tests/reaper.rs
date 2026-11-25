@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use cases::{CASES, Case, DEVICE_TRACKS, Format, Timing};
 use orb_player::midi::Message;
-use orb_plugin::core::{AuxOut, DEVICE_OUTPUTS, HostEvent, HostTransport};
+use orb_plugin::core::{AUX_OUTPUTS, AuxOut, HostEvent, HostTransport};
 use orb_plugin::instance::{self, Mode, OrbParams};
 use orb_plugin::plugin_log::{LEVEL_VAR, LOG_VAR, parse_loaded_from};
 
@@ -513,7 +513,7 @@ fn play(c: &Case, p: &OrbParams, call: usize, frames: usize, ev: &[(usize, Messa
     let total = frames + latency;
     let values = p.values();
     let (mut l, mut r) = (vec![0f32; total], vec![0f32; total]);
-    let mut buses = vec![vec![0f32; total]; 2 * DEVICE_OUTPUTS];
+    let mut buses = vec![vec![0f32; total]; 2 * AUX_OUTPUTS];
     let mut pos = 0;
     while pos < total {
         let end = (pos + call).min(total);
