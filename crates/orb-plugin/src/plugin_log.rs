@@ -215,6 +215,50 @@ pub fn image_path() -> Option<PathBuf> {
     }
 }
 
+/// The OS thread id (Windows `GetCurrentThreadId`, else the Rust id) and a high resolution
+/// clock reading with its unit: Windows `QueryPerformanceCounter` ticks (the clock nice-plug
+/// names its event-loop window class by, task-302), elsewhere nanoseconds of a monotonic clock.
+fn thread_and_clock() -> (String, u64, &'static str) {
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn GetCurrentThreadId() -> u32;
+            fn QueryPerformanceCounter(count: *mut i64) -> i32;
+        }
+        let mut ticks = 0i64;
+        unsafe { QueryPerformanceCounter(&mut ticks) };
+        let tid = unsafe { GetCurrentThreadId() };
+        (tid.to_string(), ticks as u64, "qpc")
+    }
+    #[cfg(not(windows))]
+    {
+        static ORIGIN: OnceLock<Instant> = OnceLock::new();
+        let ns = ORIGIN.get_or_init(Instant::now).elapsed().as_nanos() as u64;
+        (format!("{:?}", std::thread::current().id()), ns, "ns")
+    }
+}
+
+static CREATED: AtomicU64 = AtomicU64::new(0);
+
+/// Logs an instance's creation (the plugin's construction, inside the host's createInstance),
+/// as `create: instance N thread T clock C unit`: N counts the process's instances from 1, T is
+/// the OS thread id (Windows), C a high-resolution clock reading (`qpc` ticks on Windows, `ns`
+/// elsewhere). Creations on two threads can be told apart, and compared with the activations
+/// (task-304; nice-plug's Windows event loop aborts when two threads create instances in the
+/// same QueryPerformanceCounter tick, task-302). With the log off it only looks up the switch
+/// (once per process).
+pub fn created() {
+    if !enabled() {
+        return;
+    }
+    init();
+    let n = CREATED.fetch_add(1, Ordering::Relaxed) + 1;
+    let (tid, clock, unit) = thread_and_clock();
+    line(format_args!(
+        "create: instance {n} thread {tid} clock {clock} {unit}"
+    ));
+}
+
 /// What precedes the library's path in an activation's line ([`activated`]).
 pub const LOADED_FROM: &str = "activate: loaded from ";
 
@@ -230,6 +274,8 @@ pub fn activated(rate: u32) {
     init();
     let image = image_path().map_or_else(|| "?".to_string(), |p| p.display().to_string());
     line(format_args!("{LOADED_FROM}{image} at {rate} Hz"));
+    let (tid, clock, unit) = thread_and_clock();
+    line(format_args!("activate: thread {tid} clock {clock} {unit}"));
 }
 
 /// The library path and the rate of a log line written by [`activated`], or `None` for any

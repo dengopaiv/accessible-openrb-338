@@ -75,6 +75,8 @@ pub struct OrbPlugin {
 
 impl Default for OrbPlugin {
     fn default() -> Self {
+        // the earliest point of ours inside the host's createInstance (task-304)
+        plugin_log::created();
         OrbPlugin {
             params: Arc::new(OrbParams::new()),
             core: None,

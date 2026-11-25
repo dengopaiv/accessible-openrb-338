@@ -438,7 +438,42 @@ registration fails with ERROR_CLASS_ALREADY_EXISTS (1410), and the panic inside 
 instances under one process-wide lock, so they are created one at a time. The code path and the
 test machine show that the abort needs two threads creating instances within the same 100 ns; a
 host that creates all its instances on one thread cannot hit it. Which hosts create instances
-on more than one thread was not checked; that open question is task-303.
+on more than one thread was not checked; that open question is task-303 (decided: accept).
+
+**The host check (task-304).** The log (section 10) has a line per creation, written first thing
+in `OrbPlugin::default`, inside the host's `createInstance`:
+`create: instance N thread T clock C unit`. N counts the process's instances from 1, T is the
+OS thread id on Windows (`GetCurrentThreadId`; the Rust `ThreadId` text on other systems, where
+the line is only for tests) and C is `QueryPerformanceCounter` ticks (`qpc`, the clock
+of the class name above; elsewhere nanoseconds of a monotonic clock, `ns`). Each activation
+adds `activate: thread T clock C unit`. A host creates on one thread when every `create:` line
+of a run has the same T; two creations on different threads whose C differ by less than a few
+ticks would be the race. The result of the user's check of REAPER and Studio One on Windows:
+
+| Host and session | Creates | Creating threads | Result |
+|---|---|---|---|
+| REAPER, session 1 | one create (probably the plugin scan) | one: 22408 | one thread |
+| REAPER, session 2 | 25 creates | one: 12560; closest two 4.5 ms apart | one thread; activations on the creating thread |
+| REAPER, session 3 | 50 creates | one: 9572; closest two 4.1 ms apart | one thread; activations on the creating thread |
+| Studio One, session 1 | 32 creates | one: 21400; closest two 34.0 ms apart | one thread |
+| Studio One, session 2 | 32 creates | one: 21400; closest two 12.5 ms apart | one thread |
+| Studio One, session 3 | 32 creates | one: 20528; closest two 12.3 ms apart | one thread |
+
+**Evidence.** On 2026-11-25 the user did the how-to's actions (a plugin rescan, a project of about
+20 instances saved and reopened, tracks duplicated in bulk) in both hosts and sent the logs:
+six sessions, unlabeled, of 1, 25 and 50 creates (REAPER) and 32, 32 and 32 (Studio One). A
+session is a run of the log whose instance counter starts again at 1 (a new process, or the
+library loaded again). The logs do not label which action made which session, so the table is
+per session, not per action; it is not known that each action ran in a session of its own.
+Whether REAPER's live FX multiprocessing was on is unknown. No panic or abort line in either
+log. In every session all creations ran on one thread, and the closest two were about 41,000
+ticks (4.1 ms) apart against the 1 tick (100 ns) the abort needs: in REAPER and Studio One no
+creation on several threads was seen (task-304), so task-303's choice (accept) stands.
+
+**Build of the check.** The user ran the zip built from the uncommitted tree before the commit:
+the logs' first lines read `2026.1125.1211 (dev-6d61023-dirty)`. The crates' sources were not
+changed between that build and the commit (the files' last change precedes the build, `git
+diff HEAD -- crates` is empty), so the build ran the committed code.
 
 ### 7.1 The REAPER render test (task-244)
 
@@ -1173,7 +1208,11 @@ at info; every panic (a chained panic hook: wgpu's uncaptured validation errors 
 editor's lines: the adapter choice below, `editor: spawn` with the size and the parent,
 `editor: window built` with the window handle, the first five frames and each frame after a
 pause of over a second (size in pixels, the time since the last), the frame count 1, 2, 4, 8,
-16 and 32 s after the window was built, and `editor: closed after N frames`. At most 20000
+16 and 32 s after the window was built, and `editor: closed after N frames`; a line per
+instance creation, `create: instance N thread T clock C unit` (section 7, task-304). The switch is now first read at the first instance creation (with
+the log on, the file's first line follows it), no longer at the first activation or the editor.
+On Windows T is the OS thread id; on other systems it is the Rust `ThreadId` text,
+and an `activate: thread T clock C unit` line after each activation line. At most 20000
 lines per process. `ORB_PLUGIN_LOG_LEVEL=debug` adds wgpu's and egui-wgpu's debug records (the
 instance's backends, each adapter's details, the swapchain configured at each resize, wgpu-core
 device resources, Metal's shader sources), which is why they are off by default: the macOS
