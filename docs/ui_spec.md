@@ -1234,11 +1234,40 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   cancels (in the overwrite question it answers no). Mouse: click selects, double click opens,
   the Up button goes to the parent like Backspace (and centers the same way), the Places and
   Recent folders on the left.
+- **The main button** (Open, Save, Export, Choose) does what Enter does (task-297): when the path
+  bar holds a typed or pasted path (it differs from the current folder), the button treats it like
+  Enter in the path bar (a folder is entered, a file is chosen in the reading modes, a relative name
+  resolves in the current folder); otherwise it acts on the list's selection or the typed name.
+  Selecting a row in the list drops a typed path. With nothing typed or selected it shows "Select a
+  file first.".
+- **Height.** The dialog's height is unchanged from before task-297 and never depends on the
+  recent folders or the status lines: the row of the Places column and the list is the list's
+  nominal height (the window's height less 230 points, between 80 and 270) or 199 points
+  (`PLACES_H`, the column's height with no recent folder), whichever is more; Open Song is 397
+  points high from a 510-point window up, 326 below (Save and Export 23 more). The Places column
+  scrolls inside that row (at most 8 recent folders, `MAX_RECENT`); the list fills the row. An
+  error line or the overwrite question takes its height from the list (the last frame's, at
+  least 60 points left), so the dialog does not grow; a resize and the UI scale follow. The
+  button row is one row high (egui's `with_layout` would take all the height left in the window).
+- **The smallest main window** is 488 x 373 points, menu bar included (`layout::MIN_WINDOW_W/H`,
+  task-297; before half the panel and the bar, 312 x 277; the standalone's viewport minimum and the
+  plugin editor's, both in points, so the UI scale does not change it). Every window the user cannot
+  resize fits in it with `layout::DIALOG_MARGIN` (12 points) around, measured by
+  `tests/min_window.rs` at the default scale: the file dialogs 464 wide (the width is the window's
+  less 2 x 12 less the frame's 22, between 300 and 620, so the margin holds at any width) and 326
+  (Open, Choose) or 349 (Save, Export) high at the minimum, About 464 x 254, the error box
+  404 x 98 (with 12 lines of long message 406 x 276: the text scrolls), Audio Output 375 x 210
+  (it scrolls and wraps inside the window, so long device names and the "In use" rows cannot
+  push it out). The dialogs were also measured with 8 long recent folders, a long error and the
+  overwrite question at the minimum (`tests/browser.rs`). The widest (About, 464) and the highest (Save and Export, 349)
+  give 488 and 373. The test fails when a window outgrows the minimum. Resizable windows (Song
+  Information, Mod Information, Keyboard Shortcuts, Plugin Usage) and the unsaved-changes prompt
+  (320 wide) are not measured.
 - **Lists** folders first, then files, by name ignoring case; hidden names (a leading dot) are not
   shown; "All files" lifts the extension filter. Large folders are drawn by visible rows only.
 - **Writing modes** take a name: a song name without `.rbs` gets it; an export name without an
   extension gets the selected format's, one with another extension than wav/flac/ogg is refused.
-  An existing file asks "Replace it?" inside the dialog (only Y or the Replace button replaces; Enter, Esc and N go back, and the letter typed does not reach the name field). A click outside the dialog cancels it; the panel behind gets no click. The browser returns paths only: it never writes a file, and the errors of the actual write belong to the caller (task-047).
+  An existing file asks "Replace it?" inside the dialog (only Y or the Replace button replaces; Enter, Esc and N go back, and the letter typed does not reach the name field; the buttons read "Replace" and "Back", with no key hints in their captions, task-297). A click outside the dialog cancels it; the panel behind gets no click. The browser returns paths only: it never writes a file, and the errors of the actual write belong to the caller (task-047).
   Errors (empty name, a character of `/\:*?"<>|`, a folder of that name, a read-only or missing
   folder, an unreadable folder) show in red in the dialog.
 - **Mods.** A `.rbm` is checked when its row is drawn (parse, embedded key window, as
@@ -2446,7 +2475,7 @@ editor looks the same in the Classic and Modern skins):
   the label column's full width (66 points), white light and black dark, and the note names
   (15.5 points, as the flag rows' names; round 2 of the user's review) end at one right edge.
   Every row, of the piano roll and of the flags, is 19 points high. The window stays inside
-  the smallest main window (624 x 532 points with the menu bar; the layout test checks it and
+  the panel's native size (624 x 532 points with the menu bar; the layout test checks it and
   that the labels fit their column and rows). 16 step columns, a stronger line every four steps;
   the columns widen to fill the window's width up to the Transpose column (at least 22 points
   each). The rows of black keys (C#, D#, F#, G#, A#) are `palette::BG`, those of white keys

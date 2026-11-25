@@ -137,6 +137,8 @@ pub struct App {
     pub(crate) batch: Option<Vec<String>>,
     /// Where its close button was drawn last (`App::error_close_rect`).
     pub(crate) error_close: Option<Rect>,
+    /// Where the whole box was drawn last (`App::error_box_rect`).
+    pub(crate) error_box: Option<Rect>,
     /// Where its Copy button was drawn last (`App::error_copy_rect`).
     pub(crate) error_copy: Option<Rect>,
     /// Where its message text was drawn last (`App::error_text_rect`).
@@ -267,6 +269,7 @@ impl App {
             error_ok: None,
             batch: None,
             error_close: None,
+            error_box: None,
             error_copy: None,
             error_text: None,
             status: None,

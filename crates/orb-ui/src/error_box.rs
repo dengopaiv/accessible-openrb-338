@@ -41,6 +41,11 @@ impl App {
         self.error_close
     }
 
+    /// Where the whole box was drawn last (for tests).
+    pub fn error_box_rect(&self) -> Option<egui::Rect> {
+        self.error_box
+    }
+
     /// Reports an error: it is shown in the message box when the ones before it are closed.
     /// This is for the error of a one-time action the user asked for (Open, Save, a mod
     /// choice, Refresh List, the start-up song). A message that is already in the box or
@@ -124,6 +129,7 @@ impl App {
     fn clear_rects(&mut self) {
         self.error_ok = None;
         self.error_close = None;
+        self.error_box = None;
         self.error_copy = None;
         self.error_text = None;
     }
@@ -165,7 +171,7 @@ impl App {
             })
         });
         // (the response of the box is not looked at: a click on the backdrop closes nothing)
-        egui::Modal::new(id)
+        let shown = egui::Modal::new(id)
             .area(area)
             .frame(frame)
             .backdrop_color(Color32::from_black_alpha(170))
@@ -224,6 +230,7 @@ impl App {
                     }
                 });
             });
+        self.error_box = Some(shown.response.rect);
         // no key and no paste or cut reaches what is under the box (Copy stays: it acts on the
         // selected text of the box)
         ctx.input_mut(|i| {

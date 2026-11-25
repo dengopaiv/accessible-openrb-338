@@ -1014,8 +1014,9 @@ the same before and after task-234).
 in both formats and with no format detection. `Editor::resize_hint()` (`editor::resize_hint`;
 nice-plug 0.4.2 answers CLAP `gui.can_resize` and `gui.get_resize_hints` from it,
 `wrapper/clap/wrapper.rs` 2907-2937, and VST3 `IPlugView::canResize`, `wrapper/vst3/view.rs`
-721-732; no patch of nice-plug) is resizable both ways, with a minimum of half the panel and
-the bar (312 x 277), no maximum and no aspect ratio. CLAP `gui.adjust_size` and VST3
+721-732; no patch of nice-plug) is resizable both ways, with a minimum of 488 x 373
+(`MIN_WINDOW_W/H`, task-297: every window the user cannot resize fits in it; it was half the
+panel and the bar, 312 x 277), no maximum and no aspect ratio. CLAP `gui.adjust_size` and VST3
 `checkSizeConstraint` (nice-plug routes both to `OrbHandle`'s `EditorHandle::adjust_size`,
 `view.rs` 734-772) give the host's size back unchanged, raised to the minimum only
 (`editor::adjust_logical`); `EditorHandle::set_size` (egui's) applies it. The editor's own
@@ -1110,7 +1111,7 @@ from `checkSizeConstraint` and the view calls no `resizeView` on the test's `IPl
 during that drag, and the corner's sizes (computed by the test with `corner_size`; the test
 cannot drag the egui corner of the loaded library) pass the round trip unchanged.
 `open_editor` checks `gui.can_resize`, `gui.get_resize_hints` and `gui.adjust_size` (1000 x 540,
-721 x 532 and 630 x 1042 unchanged, 10 x 10 to 312 x 277); `the_host_sizes_the_editor` replays
+721 x 532 and 630 x 1042 unchanged, 10 x 10 to 488 x 373); `the_host_sizes_the_editor` replays
 Bitwig's drag through the CLAP API (`gui.adjust_size`, `gui.set_size`, `gui.get_size`): every
 answer is the host's size.
 

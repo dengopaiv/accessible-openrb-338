@@ -316,7 +316,7 @@ fn each_window_keeps_its_place_in_the_settings_file() {
     let w = h.app.pattern_editor_window(0).unwrap();
     assert!(!file.exists(), "opening writes nothing");
     // the title bar dragged 20 points left and 30 down (the window is nearly as wide as the
-    // smallest main window, which holds it)
+    // panel at its native size, which holds it)
     let title = Pos2::new(w.left() + 60.0, w.top() + 10.0);
     h.drag(&[
         title,
@@ -731,8 +731,8 @@ fn the_layout_of_the_users_first_review() {
     assert!(tu.left() - grid.right() < 8.0, "{tu:?} {grid:?}");
     assert!(w.right() - tu.right() < 12.0, "{w:?} {tu:?}");
     assert!(first.width() > 22.0, "{first:?}");
-    // round 2: the larger labels fit their rows and columns, and the window fits the smallest
-    // main window (624 x 510 points of panel under the menu bar)
+    // round 2: the larger labels fit their rows and columns, and the window fits the panel
+    // at its native size (624 x 510 points under the menu bar)
     let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(PANEL_W, PANEL_H + MENU_H));
     assert!(screen.contains_rect(w), "{w:?}");
     let font = egui::FontId::proportional(15.5);

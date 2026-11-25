@@ -9,6 +9,18 @@ pub use crate::skin::Ctl;
 pub const PANEL_W: f32 = 624.0;
 pub const PANEL_H: f32 = 510.0;
 
+/// The space the app's windows and dialogs keep between their frame and the window's edge.
+pub const DIALOG_MARGIN: f32 = 12.0;
+
+/// The smallest main window (inner size in points, the menu bar included; the standalone's
+/// viewport minimum and the plugin editor's, task-297; independent of the UI scale, which sets
+/// pixels per point, and of the panel's own fit). Every window the user cannot resize fits in it
+/// with [`DIALOG_MARGIN`] around: the widest is About (464 wide), the highest the Save and Export
+/// file dialogs (349 high at their smallest). The test `tests/min_window.rs` measures them all
+/// and fails when a window outgrows this, so the numbers cannot drift.
+pub const MIN_WINDOW_W: f32 = 488.0;
+pub const MIN_WINDOW_H: f32 = 373.0;
+
 /// The modern skin's layout table.
 pub const LAYOUT_TSV: &str = include_str!("../../../assets/ui/layout.tsv");
 

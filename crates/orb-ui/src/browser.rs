@@ -34,6 +34,7 @@ use egui::{
     RichText, Sense, Stroke, TextEdit, Ui, Vec2,
 };
 
+use crate::layout::DIALOG_MARGIN;
 use crate::palette::{AMBER, BG, INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 use crate::settings::{self, Settings};
 use crate::shortcuts;
@@ -179,6 +180,10 @@ pub struct Browser {
     mods: HashMap<PathBuf, ModStatus>,
     scroll: f32,
     view_h: f32,
+    /// The height of the status part (the "All files" row to the buttons) with no error and no
+    /// question, and how much taller it was in the last frame.
+    status_base: f32,
+    status_extra: f32,
     /// The distance between the tops of two rows: the row height plus the item spacing that
     /// `ScrollArea::show_rows` and the layout both add (task-285).
     row_pitch: f32,
@@ -191,6 +196,11 @@ pub struct Browser {
     /// `button:LABEL`): lets tests (and a UI test driver) click them.
     hits: Vec<(String, Rect)>,
 }
+
+/// The height of the Places column with no recent folder: the least the list's row is high.
+const PLACES_H: f32 = 199.0;
+/// The least the list is high when the status lines take room.
+const MIN_BODY_H: f32 = 60.0;
 
 impl Browser {
     /// A browser for `mode`, starting in the folder of the last file chosen in its kind (songs
@@ -222,6 +232,8 @@ impl Browser {
             mods: HashMap::new(),
             scroll: 0.0,
             view_h: 0.0,
+            status_base: 0.0,
+            status_extra: 0.0,
             // Only the value before the first frame: egui's default item spacing is 3; `draw_list`
             // reads the real one.
             row_pitch: ROW_H + 3.0,
@@ -406,6 +418,8 @@ impl Browser {
     pub fn select(&mut self, i: usize) {
         self.selected = Some(i);
         self.scroll_to_selected = true;
+        // A choice in the list replaces a path typed and left in the path bar.
+        self.path_text = self.dir.display().to_string();
         self.confirm = None;
         self.error = None;
         let e = &self.entries[i];
@@ -462,6 +476,23 @@ impl Browser {
         } else {
             self.error = Some(format!("{}: no such folder", text));
             Poll::Open
+        }
+    }
+
+    /// True when the path bar holds something other than the current folder (the user typed or
+    /// pasted a path there).
+    fn path_edited(&self) -> bool {
+        self.path_text.trim() != self.dir.display().to_string()
+    }
+
+    /// The main button (Open, Save, Choose): what Enter does. A path typed in the path bar goes
+    /// first (a folder is entered, a file is chosen, a relative name resolves in the current
+    /// folder), as Enter in the path bar does; otherwise the list's selection or the typed name.
+    pub fn press_button(&mut self, settings: &mut Settings) -> Poll {
+        if self.path_edited() {
+            self.go_to_text(settings)
+        } else {
+            self.activate(settings)
         }
     }
 
@@ -612,8 +643,14 @@ impl Browser {
         let path_id = Id::unique("orb_browser_path");
         let mut poll = Poll::Open;
         let screen = ctx.content_rect();
-        let width = (screen.width() - 24.0).clamp(300.0, 620.0);
+        // the frame (10 points of margin and the stroke) is outside the width
+        let width = (screen.width() - 2.0 * DIALOG_MARGIN - 22.0).clamp(300.0, 620.0);
         let list_h = (screen.height() - 230.0).clamp(80.0, 270.0);
+        // The row of the Places column and the list: the Places column's height with no recent
+        // folder (PLACES_H) at least, as before the list filled the row (task-297); the
+        // status lines the dialog shows (an error, the overwrite question) take their height
+        // from it, so the dialog never grows past the window.
+        let body_h = (list_h.max(PLACES_H) - self.status_extra).max(MIN_BODY_H);
 
         self.hits.clear();
         // Keys first, so the widgets do not take them.
@@ -716,9 +753,11 @@ impl Browser {
             self.path_row(ui, path_id);
             ui.add_space(4.0);
             ui.horizontal_top(|ui| {
-                self.sidebar(ui, settings, list_h);
+                self.sidebar(ui, settings, body_h);
                 ui.vertical(|ui| {
-                    if self.draw_list(ui, list_h) {
+                    // The Places column sets the row's height when it is taller than the list:
+                    // the list takes all of it, so no gap is left below the list.
+                    if self.draw_list(ui, body_h) {
                         poll = self.activate(settings);
                     }
                 });
@@ -751,8 +790,24 @@ impl Browser {
                     ui.memory_mut(|m| m.request_focus(name_id));
                 }
             }
+            let status_top = ui.cursor().top();
             self.status_and_buttons(ui, settings, &mut poll);
+            let status_h = ui.cursor().top() - status_top;
+            if self.error.is_none() && self.confirm.is_none() {
+                self.status_base = status_h;
+            }
+            let extra = if self.status_base > 0.0 {
+                (status_h - self.status_base).max(0.0)
+            } else {
+                0.0
+            };
+            // the list gives it back in the next frame
+            if (extra - self.status_extra).abs() > 0.5 {
+                self.status_extra = extra;
+                ui.ctx().request_repaint();
+            }
         });
+        self.hits.push(("dialog".into(), resp.response.rect));
         if resp.should_close() && self.confirm.is_none() && poll == Poll::Open {
             return Poll::Cancelled;
         }
@@ -785,10 +840,25 @@ impl Browser {
         });
     }
 
+    /// Draws the Places column in `height`: what does not fit scrolls, so the recent folders
+    /// never make the dialog taller.
     fn sidebar(&mut self, ui: &mut Ui, settings: &mut Settings, height: f32) {
-        let size = Vec2::new(130.0, height + 60.0);
+        let size = Vec2::new(130.0, height);
         ui.allocate_ui_with_layout(size, Layout::top_down(Align::Min), |ui| {
             ui.set_width(130.0);
+            egui::ScrollArea::vertical()
+                .id_salt("orb_browser_sidebar")
+                .auto_shrink([false, false])
+                .max_height(height)
+                .show(ui, |ui| {
+                    ui.set_width(124.0);
+                    self.sidebar_body(ui, settings);
+                });
+        });
+    }
+
+    fn sidebar_body(&mut self, ui: &mut Ui, settings: &mut Settings) {
+        {
             let mut places: Vec<(String, PathBuf)> = Vec::new();
             let songs = settings
                 .songs_dir
@@ -847,7 +917,7 @@ impl Browser {
                 settings.set_mods_dir(Some(self.dir.clone()));
                 self.save_settings(settings);
             }
-        });
+        }
     }
 
     fn save_settings(&mut self, settings: &mut Settings) {
@@ -1005,12 +1075,12 @@ impl Browser {
                 ),
             );
             ui.horizontal(|ui| {
-                let replace = ui.button("Replace  (Y)");
+                let replace = ui.button("Replace");
                 self.hits.push(("button:Replace".into(), replace.rect));
                 if replace.clicked() {
                     *poll = self.confirm_overwrite(settings);
                 }
-                let back = ui.button("Back  (Enter, Esc, N)");
+                let back = ui.button("Back");
                 self.hits.push(("button:Back".into(), back.rect));
                 if back.clicked() {
                     self.decline_overwrite();
@@ -1023,9 +1093,14 @@ impl Browser {
             ui.colored_label(RED, e.as_str());
         }
         ui.add_space(4.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button(self.mode.button()).clicked() {
-                *poll = self.activate(settings);
+        // One row high: `with_layout` alone takes all the height left in the window.
+        let row = Vec2::new(ui.available_width(), ui.spacing().interact_size.y);
+        ui.allocate_ui_with_layout(row, Layout::right_to_left(Align::Center), |ui| {
+            let main = ui.button(self.mode.button());
+            self.hits
+                .push((format!("button:{}", self.mode.button()), main.rect));
+            if main.clicked() {
+                *poll = self.press_button(settings);
             }
             if ui.button("Cancel").clicked() {
                 *poll = Poll::Cancelled;

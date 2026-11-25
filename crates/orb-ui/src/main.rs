@@ -48,7 +48,7 @@ use eframe::egui_wgpu::{WgpuError, WgpuSetup, WgpuSetupCreateNew};
 use orb_engine::tables::Tables;
 use orb_ui::app::{App, Shot};
 use orb_ui::browser::Mode;
-use orb_ui::layout::{PANEL_H, PANEL_W};
+use orb_ui::layout::{MIN_WINDOW_H, MIN_WINDOW_W, PANEL_H, PANEL_W};
 use orb_ui::link::Link;
 use orb_ui::menu::MENU_H;
 use orb_ui::model::Panel;
@@ -301,8 +301,9 @@ fn main() -> eframe::Result {
         .with_icon(Arc::new(orb_ui::art::app_icon(256)))
         // the menu bar is above the panel
         .with_inner_size([size[0], size[1] + MENU_H])
-        // The minimum is half the native panel size (decision task-040).
-        .with_min_inner_size([PANEL_W / 2.0, PANEL_H / 2.0 + MENU_H])
+        // The minimum holds every window the user cannot resize (task-297; was half the panel,
+        // decision task-040).
+        .with_min_inner_size([MIN_WINDOW_W, MIN_WINDOW_H])
         .with_maximized(!sized);
     let mut options = eframe::NativeOptions {
         viewport,

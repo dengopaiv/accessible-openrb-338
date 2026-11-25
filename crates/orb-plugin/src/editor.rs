@@ -37,7 +37,7 @@ use orb_engine::song::Song;
 use orb_player::{Command, Snapshot, Tracks};
 use orb_ui::app::App;
 use orb_ui::embed::{Embed, MARGIN_X, MARGIN_Y, MENU_H, PluginFormat, PluginMode, SongView};
-use orb_ui::layout::{PANEL_H, PANEL_W};
+use orb_ui::layout::{MIN_WINDOW_H, MIN_WINDOW_W, PANEL_H, PANEL_W};
 use orb_ui::link::{Link, Port};
 use orb_ui::settings::Settings;
 
@@ -62,15 +62,15 @@ pub const FOLLOW_FRAMES: u64 = 8192;
 
 /// How the host may resize the editor (VST3 `IPlugView::canResize`; the CLAP format, dropped in
 /// task-278, had `gui.can_resize` and `gui.get_resize_hints`) and for baseview's window: both ways,
-/// to any size of at least half the panel (the standalone window's minimum) and its menu bar,
-/// with no aspect ratio. The editor takes any size the host gives ([`adjust_logical`]) and
-/// letterboxes the panel in it (task-234, the user's decision of 2026-11-17; `docs/plugin.md`
-/// section 10).
+/// to any size of at least `MIN_WINDOW_W` x `MIN_WINDOW_H` (488 x 373, the standalone window's
+/// minimum, task-297), with no aspect ratio. The editor takes any size the host gives
+/// ([`adjust_logical`]) and letterboxes the panel in it (task-234, the user's decision of
+/// 2026-11-17; `docs/plugin.md` section 10).
 pub fn resize_hint() -> ResizeHint {
     ResizeHint::RESIZABLE.with_min_max_logical_size(
         Some(LogicalSize {
-            width: PANEL_W / 2.0,
-            height: PANEL_H / 2.0 + MENU_H,
+            width: MIN_WINDOW_W,
+            height: MIN_WINDOW_H,
         }),
         None,
     )
@@ -78,7 +78,7 @@ pub fn resize_hint() -> ResizeHint {
 
 /// The size (logical points) the editor takes for a size `new` the host proposes (CLAP
 /// `gui.adjust_size`, VST3 `IPlugView::checkSizeConstraint`): the host's size itself, at least
-/// the minimum of [`resize_hint`] (half the panel and the menu bar), with no maximum. The panel
+/// the minimum of [`resize_hint`] (488 x 373), with no maximum. The panel
 /// is letterboxed in whatever size the window has (orb-ui `View::fit`). Any answer that changed
 /// the host's size failed somewhere (task-234, `docs/plugin.md` section 10): Live (VST3) and
 /// Bitwig (CLAP) ask on every mouse event of a drag and make the answer the window's size, so
@@ -86,7 +86,7 @@ pub fn resize_hint() -> ResizeHint {
 /// editor to the answer but keeps its own window at the size it asked for, so a larger answer
 /// was cropped.
 pub fn adjust_logical(new: (f64, f64)) -> (f64, f64) {
-    let min = (PANEL_W as f64 / 2.0, PANEL_H as f64 / 2.0 + MENU_H as f64);
+    let min = (MIN_WINDOW_W as f64, MIN_WINDOW_H as f64);
     // NaN (none seen) becomes the minimum
     (new.0.max(min.0), new.1.max(min.1))
 }

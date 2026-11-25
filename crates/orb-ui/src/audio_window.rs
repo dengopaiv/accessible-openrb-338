@@ -14,6 +14,7 @@ use orb_player::devices::{self, Caps, DeviceInfo};
 use orb_player::output::InUse;
 
 use crate::app::App;
+use crate::layout::DIALOG_MARGIN;
 use crate::palette::INK_DIM;
 use crate::settings::AudioChoice;
 
@@ -265,186 +266,208 @@ impl App {
             .resizable(false)
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(screen.center())
+            // inside the window with the dialogs' margin whatever the device names and the
+            // "In use" rows need (task-297): the rest scrolls
+            .max_width(screen.width() - 2.0 * DIALOG_MARGIN)
             .show(ctx, |ui| {
-                egui::Grid::new("audio_settings")
-                    .num_columns(2)
-                    .spacing([12.0, 8.0])
+                egui::ScrollArea::vertical()
+                    .auto_shrink([true, true])
+                    .max_height((screen.height() - 2.0 * DIALOG_MARGIN - 50.0).max(60.0))
                     .show(ui, |ui| {
-                        // Driver
-                        let driver = driver_of(&ui_state.drivers, &choice).to_string();
-                        ui.label("Driver");
-                        egui::ComboBox::from_id_salt("audio_driver")
-                            .selected_text(driver.clone())
-                            .width(280.0)
-                            .show_ui(ui, |ui| {
-                                for d in &ui_state.drivers {
-                                    if ui.selectable_label(*d == driver, d).clicked()
-                                        && *d != driver
-                                    {
-                                        chosen = Some(after_driver(&ui_state.drivers, d));
-                                    }
-                                }
-                            });
-                        ui.end_row();
-                        // Device
-                        ui.label("Device");
-                        let missing = choice
-                            .device
-                            .as_ref()
-                            .is_some_and(|id| !ui_state.devices.iter().any(|d| d.id == *id));
-                        let shown = match (&choice.device, &choice.device_name) {
-                            (None, _) => SYSTEM_DEFAULT.to_string(),
-                            (Some(_), Some(n)) if missing => format!("{n} (not available)"),
-                            (Some(id), n) => ui_state
-                                .devices
-                                .iter()
-                                .find(|d| d.id == *id)
-                                .map(|d| d.name.clone())
-                                .or_else(|| n.clone())
-                                .unwrap_or_else(|| id.clone()),
-                        };
-                        let r = egui::ComboBox::from_id_salt("audio_device")
-                            .selected_text(shown)
-                            .width(280.0)
-                            .show_ui(ui, |ui| {
-                                if ui
-                                    .selectable_label(choice.device.is_none(), SYSTEM_DEFAULT)
-                                    .clicked()
-                                    && choice.device.is_some()
-                                {
-                                    let caps = devices::caps(choice.driver.as_deref(), None).ok();
-                                    chosen = Some(after_device(&choice, None, caps.as_ref()));
-                                }
-                                for d in &ui_state.devices {
-                                    let on = choice.device.as_deref() == Some(d.id.as_str());
-                                    if ui.selectable_label(on, &d.name).clicked() && !on {
-                                        let caps =
-                                            devices::caps(choice.driver.as_deref(), Some(&d.id))
-                                                .ok();
-                                        chosen =
-                                            Some(after_device(&choice, Some(d), caps.as_ref()));
-                                    }
-                                }
-                            });
-                        refresh_devices |= r.response.clicked();
-                        ui.end_row();
-                        // Sample rate
-                        ui.label("Sample rate");
-                        let rate_text = match choice.rate {
-                            None => DEVICE_DEFAULT.to_string(),
-                            Some(r) => format!("{r} Hz"),
-                        };
-                        let r = egui::ComboBox::from_id_salt("audio_rate")
-                            .selected_text(rate_text)
-                            .width(280.0)
-                            .show_ui(ui, |ui| {
-                                if ui
-                                    .selectable_label(choice.rate.is_none(), DEVICE_DEFAULT)
-                                    .clicked()
-                                    && choice.rate.is_some()
-                                {
-                                    chosen = Some(AudioChoice {
-                                        rate: None,
-                                        ..choice.clone()
+                        egui::Grid::new("audio_settings")
+                            .num_columns(2)
+                            .spacing([12.0, 8.0])
+                            .show(ui, |ui| {
+                                // Driver
+                                let driver = driver_of(&ui_state.drivers, &choice).to_string();
+                                ui.label("Driver");
+                                egui::ComboBox::from_id_salt("audio_driver")
+                                    .selected_text(driver.clone())
+                                    .width(280.0)
+                                    .show_ui(ui, |ui| {
+                                        for d in &ui_state.drivers {
+                                            if ui.selectable_label(*d == driver, d).clicked()
+                                                && *d != driver
+                                            {
+                                                chosen = Some(after_driver(&ui_state.drivers, d));
+                                            }
+                                        }
                                     });
-                                }
-                                for &r in ui_state.rates() {
-                                    let on = choice.rate == Some(r);
-                                    if ui.selectable_label(on, format!("{r} Hz")).clicked() && !on {
-                                        chosen = Some(AudioChoice {
-                                            rate: Some(r),
-                                            ..choice.clone()
-                                        });
-                                    }
-                                }
-                            });
-                        refresh_caps |= r.response.clicked();
-                        ui.end_row();
-                        // Buffer size
-                        ui.label("Buffer size");
-                        if buffer_is_the_drivers(&driver) {
-                            // task-193: ASIO sets the buffer in its own panel
-                            ui.label("Set in the driver's own control panel");
-                        } else {
-                            let r = egui::ComboBox::from_id_salt("audio_buffer")
-                                .selected_text(frames_text(shown_buffer, rate))
-                                .width(280.0)
-                                .show_ui(ui, |ui| {
-                                    for n in ui_state.buffers() {
-                                        let on = shown_buffer == n;
-                                        if ui.selectable_label(on, frames_text(n, rate)).clicked()
-                                            && !on
+                                ui.end_row();
+                                // Device
+                                ui.label("Device");
+                                let missing = choice.device.as_ref().is_some_and(|id| {
+                                    !ui_state.devices.iter().any(|d| d.id == *id)
+                                });
+                                let shown = match (&choice.device, &choice.device_name) {
+                                    (None, _) => SYSTEM_DEFAULT.to_string(),
+                                    (Some(_), Some(n)) if missing => format!("{n} (not available)"),
+                                    (Some(id), n) => ui_state
+                                        .devices
+                                        .iter()
+                                        .find(|d| d.id == *id)
+                                        .map(|d| d.name.clone())
+                                        .or_else(|| n.clone())
+                                        .unwrap_or_else(|| id.clone()),
+                                };
+                                let r = egui::ComboBox::from_id_salt("audio_device")
+                                    .selected_text(shown)
+                                    .width(280.0)
+                                    .show_ui(ui, |ui| {
+                                        if ui
+                                            .selectable_label(
+                                                choice.device.is_none(),
+                                                SYSTEM_DEFAULT,
+                                            )
+                                            .clicked()
+                                            && choice.device.is_some()
+                                        {
+                                            let caps =
+                                                devices::caps(choice.driver.as_deref(), None).ok();
+                                            chosen =
+                                                Some(after_device(&choice, None, caps.as_ref()));
+                                        }
+                                        for d in &ui_state.devices {
+                                            let on =
+                                                choice.device.as_deref() == Some(d.id.as_str());
+                                            if ui.selectable_label(on, &d.name).clicked() && !on {
+                                                let caps = devices::caps(
+                                                    choice.driver.as_deref(),
+                                                    Some(&d.id),
+                                                )
+                                                .ok();
+                                                chosen = Some(after_device(
+                                                    &choice,
+                                                    Some(d),
+                                                    caps.as_ref(),
+                                                ));
+                                            }
+                                        }
+                                    });
+                                refresh_devices |= r.response.clicked();
+                                ui.end_row();
+                                // Sample rate
+                                ui.label("Sample rate");
+                                let rate_text = match choice.rate {
+                                    None => DEVICE_DEFAULT.to_string(),
+                                    Some(r) => format!("{r} Hz"),
+                                };
+                                let r = egui::ComboBox::from_id_salt("audio_rate")
+                                    .selected_text(rate_text)
+                                    .width(280.0)
+                                    .show_ui(ui, |ui| {
+                                        if ui
+                                            .selectable_label(choice.rate.is_none(), DEVICE_DEFAULT)
+                                            .clicked()
+                                            && choice.rate.is_some()
                                         {
                                             chosen = Some(AudioChoice {
-                                                buffer: n,
+                                                rate: None,
                                                 ..choice.clone()
                                             });
                                         }
-                                    }
-                                });
-                            refresh_caps |= r.response.clicked();
-                        }
-                        ui.end_row();
-                    });
-                if let Some(p) = &ui_state.problem {
-                    ui.add_space(4.0);
-                    ui.label(RichText::new(p).color(INK_DIM));
-                }
-                ui.add_space(6.0);
-                ui.separator();
-                ui.label(RichText::new("In use").strong());
-                ui.add_space(2.0);
-                egui::Grid::new("audio_in_use")
-                    .num_columns(2)
-                    .spacing([12.0, 4.0])
-                    .show(ui, |ui| match &in_use {
-                        Some(u) => {
-                            ui.label("Device");
-                            ui.label(format!("{}: {}", u.driver, u.device));
-                            ui.end_row();
-                            ui.label("Sample rate");
-                            ui.label(if u.resampled {
-                                format!("{} Hz, resampled from 44100 Hz", u.rate)
-                            } else {
-                                format!("{} Hz, not resampled", u.rate)
-                            });
-                            ui.end_row();
-                            ui.label("Format");
-                            ui.label(format!("{} channels, {}", u.channels, u.format));
-                            ui.end_row();
-                            ui.label("Buffer");
-                            // only the first callback's size: what was asked for is the
-                            // Buffer size list's selection
-                            ui.label(match u.granted {
-                                Some(g) => frames_text(g, u.rate),
-                                None => "no callback yet".to_string(),
-                            });
-                            ui.end_row();
-                            // what the host measured: playback time minus call time
-                            if let Some(ns) = u.output_latency_ns {
-                                ui.label("Output latency");
-                                ui.label(format!(
-                                    "{:.1} ms (measured by the driver)",
-                                    ns as f64 / 1e6
-                                ));
+                                        for &r in ui_state.rates() {
+                                            let on = choice.rate == Some(r);
+                                            if ui.selectable_label(on, format!("{r} Hz")).clicked()
+                                                && !on
+                                            {
+                                                chosen = Some(AudioChoice {
+                                                    rate: Some(r),
+                                                    ..choice.clone()
+                                                });
+                                            }
+                                        }
+                                    });
+                                refresh_caps |= r.response.clicked();
                                 ui.end_row();
-                            }
-                            ui.label("Underruns");
-                            ui.label(u.underruns.to_string());
-                            ui.end_row();
-                        }
-                        None => {
-                            ui.label("Output");
-                            ui.label(if running {
-                                "no sound: the stream did not open"
-                            } else {
-                                "no audio output"
+                                // Buffer size
+                                ui.label("Buffer size");
+                                if buffer_is_the_drivers(&driver) {
+                                    // task-193: ASIO sets the buffer in its own panel
+                                    ui.label("Set in the driver's own control panel");
+                                } else {
+                                    let r = egui::ComboBox::from_id_salt("audio_buffer")
+                                        .selected_text(frames_text(shown_buffer, rate))
+                                        .width(280.0)
+                                        .show_ui(ui, |ui| {
+                                            for n in ui_state.buffers() {
+                                                let on = shown_buffer == n;
+                                                if ui
+                                                    .selectable_label(on, frames_text(n, rate))
+                                                    .clicked()
+                                                    && !on
+                                                {
+                                                    chosen = Some(AudioChoice {
+                                                        buffer: n,
+                                                        ..choice.clone()
+                                                    });
+                                                }
+                                            }
+                                        });
+                                    refresh_caps |= r.response.clicked();
+                                }
+                                ui.end_row();
                             });
-                            ui.end_row();
+                        if let Some(p) = &ui_state.problem {
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(p).color(INK_DIM));
                         }
+                        ui.add_space(6.0);
+                        ui.separator();
+                        ui.label(RichText::new("In use").strong());
+                        ui.add_space(2.0);
+                        egui::Grid::new("audio_in_use")
+                            .num_columns(2)
+                            .spacing([12.0, 4.0])
+                            .show(ui, |ui| match &in_use {
+                                Some(u) => {
+                                    ui.label("Device");
+                                    ui.label(format!("{}: {}", u.driver, u.device));
+                                    ui.end_row();
+                                    ui.label("Sample rate");
+                                    ui.label(if u.resampled {
+                                        format!("{} Hz, resampled from 44100 Hz", u.rate)
+                                    } else {
+                                        format!("{} Hz, not resampled", u.rate)
+                                    });
+                                    ui.end_row();
+                                    ui.label("Format");
+                                    ui.label(format!("{} channels, {}", u.channels, u.format));
+                                    ui.end_row();
+                                    ui.label("Buffer");
+                                    // only the first callback's size: what was asked for is the
+                                    // Buffer size list's selection
+                                    ui.label(match u.granted {
+                                        Some(g) => frames_text(g, u.rate),
+                                        None => "no callback yet".to_string(),
+                                    });
+                                    ui.end_row();
+                                    // what the host measured: playback time minus call time
+                                    if let Some(ns) = u.output_latency_ns {
+                                        ui.label("Output latency");
+                                        ui.label(format!(
+                                            "{:.1} ms (measured by the driver)",
+                                            ns as f64 / 1e6
+                                        ));
+                                        ui.end_row();
+                                    }
+                                    ui.label("Underruns");
+                                    ui.label(u.underruns.to_string());
+                                    ui.end_row();
+                                }
+                                None => {
+                                    ui.label("Output");
+                                    ui.label(if running {
+                                        "no sound: the stream did not open"
+                                    } else {
+                                        "no audio output"
+                                    });
+                                    ui.end_row();
+                                }
+                            });
+                        // the underruns count up while the window is open
+                        ctx.request_repaint_after(Duration::from_millis(500));
                     });
-                // the underruns count up while the window is open
-                ctx.request_repaint_after(Duration::from_millis(500));
             });
         if !open {
             self.audio_open = false;

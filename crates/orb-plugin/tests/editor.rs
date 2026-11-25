@@ -661,11 +661,11 @@ fn the_help_menu_opens_the_plugin_usage_page() {
     assert!(!h.app.plugin_usage_is_open(), "the close button closes it");
 }
 
-/// task-221: the page works at the smallest window the host may give (half the panel).
+/// task-221: the page works at the smallest window the host may give (task-297: 488 x 373).
 #[test]
 fn the_plugin_usage_page_fits_the_smallest_window() {
     let mut h = Harness::new(with("303_accent0"));
-    h.size = Vec2::new(312.0, 255.0 + MENU_H);
+    h.size = Vec2::new(orb_ui::layout::MIN_WINDOW_W, orb_ui::layout::MIN_WINDOW_H);
     h.app.command(orb_ui::menu::Cmd::PluginUsage);
     for _ in 0..30 {
         h.frame(vec![]);
@@ -1087,20 +1087,20 @@ fn the_size_is_kept_in_the_state_and_the_host_gets_sizes_of_the_rule() {
     assert!(hint.can_resize && !hint.preserve_aspect_ratio);
     assert!(hint.can_resize_horizontally && hint.can_resize_vertically);
     assert!(Editor::resize_hint(&e).can_resize);
-    // the host's size is taken as it is, at least the minimum (half the panel and the bar)
+    // the host's size is taken as it is, at least the minimum (488 x 373)
     for s in [
         (624.0, 532.0),
         (721.0, 532.0),
         (1000.0, 540.0),
         (630.0, 1042.0),
-        (312.0, 277.0),
+        (488.0, 373.0),
         (2000.5, 900.25),
     ] {
         assert_eq!(adjust_logical(s), s, "{s:?}");
     }
-    assert_eq!(adjust_logical((10.0, 10.0)), (312.0, 255.0 + MENU_H as f64));
-    assert_eq!(adjust_logical((500.0, 100.0)), (500.0, 277.0));
-    assert_eq!(adjust_logical((f64::NAN, -5.0)), (312.0, 277.0));
+    assert_eq!(adjust_logical((10.0, 10.0)), (488.0, 373.0));
+    assert_eq!(adjust_logical((500.0, 100.0)), (500.0, 373.0));
+    assert_eq!(adjust_logical((f64::NAN, -5.0)), (488.0, 373.0));
     // Live's (VST3) corner drags: the cursor's size asked on each mouse
     // event and the answer made the window's size. The answer is the request, so it follows
     // the cursor; the rule before task-234 (the side that changed more relative to the
