@@ -48,7 +48,7 @@ pub const VST3_CLASS_ID: [u8; 16] = [
     0xEF, 0xAB, 0x08, 0xAF, 0xB3, 0x9D, 0x43, 0x99, 0x8A, 0x80, 0x3D, 0xC1, 0xF8, 0x4E, 0xD3, 0xD6,
 ];
 /// The project's page.
-pub const URL: &str = "https://github.com/pingw33n/OpenRB-338";
+pub const URL: &str = "https://pingw33n.github.io/OpenRB-338/";
 
 /// The main output's name.
 pub const MIX_NAME: &str = "Mix";

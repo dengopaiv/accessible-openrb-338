@@ -460,7 +460,7 @@ fn the_vst3_factory_has_the_identity() {
         let mut fi: PFactoryInfo = std::mem::zeroed();
         assert_eq!((vt.getFactoryInfo)(f, &mut fi), kResultOk);
         assert_eq!(chars(&fi.vendor), "OpenRB-338");
-        assert_eq!(chars(&fi.url), "https://github.com/pingw33n/OpenRB-338");
+        assert_eq!(chars(&fi.url), "https://pingw33n.github.io/OpenRB-338/");
         assert!((vt.countClasses)(f) >= 1);
         let mut f2: *mut c_void = null_mut();
         assert_eq!(

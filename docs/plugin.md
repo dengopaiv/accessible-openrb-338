@@ -86,7 +86,7 @@ Permanent after the first release (task-185):
 |---|---|
 | Name, vendor | `OpenRB-338`, `OpenRB-338` |
 | VST3 class id | `EFAB08AF-B39D-4399-8A80-3DC1F84ED3D6` (made once with `uuidgen`, 2026-11-16; `VST3_CLASS_ID` in `src/lib.rs`); category Instrument\|Synth |
-| URL | https://github.com/pingw33n/OpenRB-338 |
+| URL | https://pingw33n.github.io/OpenRB-338/ |
 | Ports | stereo out, no audio in, one MIDI input (`MidiConfig::MidiCCs`: notes and control changes, section 8) |
 
 `tests/exports.rs` loads the built library and checks them through the VST3 C API.
