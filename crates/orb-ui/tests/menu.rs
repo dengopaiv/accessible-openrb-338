@@ -1000,6 +1000,19 @@ fn click_edit_item(h: &mut Harness, text: &str) {
     h.click(r.center());
 }
 
+/// Task-267 (the user's review, 2026-11-21): the View menu sits between Edit and Mods and holds
+/// the two theme radio items, Classic and Modern, directly: no Themes submenu.
+#[test]
+fn the_view_menu_has_classic_and_modern_directly() {
+    let mut h = Harness::with_menu();
+    let (edit, _) = open_menu_with(&mut h, "Cut Pattern");
+    let (view, shapes) = open_menu_with(&mut h, "\"Classic\"");
+    let (mods, _) = open_menu_with(&mut h, "Refresh List");
+    assert!(edit < view && view < mods, "{edit} {view} {mods}");
+    assert!(shapes.contains("\"Modern\""), "{shapes}");
+    assert!(!shapes.contains("Themes"), "{shapes}");
+}
+
 #[test]
 fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
     let mut h = Harness::with_menu();
@@ -1018,22 +1031,23 @@ fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
         assert!(shapes.contains(&format!("\"{keys}\"")), "{keys}");
     }
 
-    // the 808's A1 copied and pasted into A3; the menu over the TB-303 1 row does not take the
+    // the 808's A1 copied and pasted into A3; the menu over the 303-1 row does not take the
     // focus from the 808
     let bytes = bd_pattern();
     let link = h.app.link.as_mut().unwrap();
     link.set_pattern(2, 0, &bytes, &mut h.app.panel);
     select(&mut h, 2, 0);
     click_edit_item(&mut h, "Copy Pattern");
-    let marker = h.app.clip.as_ref().expect("copied").marker.clone();
+    let json = h.app.clipboard.read().expect("copied");
     assert_eq!(
         h.copied.last(),
-        Some(&marker),
-        "the marker is on the clipboard"
+        Some(&json),
+        "the JSON is on the system clipboard"
     );
+    assert_eq!(orb_ui::pattern_json::parse(&json).unwrap().bytes, bytes);
     select(&mut h, 2, 2);
     click_edit_item(&mut h, "Paste Pattern");
-    // the item asks for the system clipboard, which brings the marker back
+    // the item asks for the system clipboard, which brings the JSON back
     assert!(link::is_empty_pattern(2, &pattern(&h, 2, 2)));
     h.answer_paste_request();
     assert_eq!(pattern(&h, 2, 2), bytes);
@@ -1044,7 +1058,7 @@ fn the_edit_menu_sits_between_file_and_mods_and_runs_its_items() {
     assert_eq!(pattern(&h, 2, 3), bytes);
     click_edit_item(&mut h, "Cut Pattern");
     assert!(link::is_empty_pattern(2, &pattern(&h, 2, 3)));
-    assert_eq!(h.app.status.as_deref(), Some("TR-808: A4 cut"));
+    assert_eq!(h.app.status.as_deref(), Some("808: A4 cut"));
 }
 
 #[test]
@@ -1061,7 +1075,7 @@ fn the_undo_item_names_its_command_and_ctrl_z_runs_it() {
     link.set_pattern(2, 0, &bd_pattern(), &mut h.app.panel);
     select(&mut h, 2, 0);
     h.frame(vec![Event::Copy]);
-    let marker = h.app.clip.as_ref().unwrap().marker.clone();
+    let marker = h.app.clipboard.read().unwrap();
     select(&mut h, 2, 1);
     h.frame(vec![Event::Paste(marker.clone())]);
     let (_, shapes) = open_menu_with(&mut h, "Cut Pattern");
@@ -1106,7 +1120,7 @@ fn the_edit_items_are_disabled_without_a_song() {
         h.click(r.center());
         open_menu_with(&mut h, "Cut Pattern");
     }
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
     let paste = |c: &egui::ViewportCommand| matches!(c, egui::ViewportCommand::RequestPaste);
     assert!(!h.requested.iter().any(paste));
 }
@@ -1120,15 +1134,12 @@ fn the_clipboard_events_and_the_duplicate_key_run_the_pattern_commands() {
     select(&mut h, 2, 0);
     // Ctrl/Cmd+C arrives as egui's Copy event (egui-winit), never as a key
     h.frame(vec![Event::Copy]);
-    let marker = h.app.clip.as_ref().expect("copied").marker.clone();
-    assert!(
-        marker.starts_with("OpenRB-338 pattern: TR-808 A1 "),
-        "{marker}"
-    );
+    let marker = h.app.clipboard.read().expect("copied");
+    assert!(marker.contains("\"device\": \"808\""), "{marker}");
     assert_eq!(h.copied.last(), Some(&marker));
     // a paste of other text pastes nothing
     select(&mut h, 2, 4);
-    h.frame(vec![Event::Paste("OpenRB-338 pattern: TR-808 A1".into())]);
+    h.frame(vec![Event::Paste("OpenRB-338 pattern: 808 A1".into())]);
     assert!(link::is_empty_pattern(2, &pattern(&h, 2, 4)));
     assert_eq!(
         h.app.status.as_deref(),
@@ -1161,11 +1172,11 @@ fn a_focused_field_keeps_the_clipboard_events_and_the_keys() {
     let link = h.app.link.as_mut().unwrap();
     link.set_pattern(2, 0, &bd_pattern(), &mut h.app.panel);
     select(&mut h, 2, 0);
-    // A1 is cut: a paste of the marker would fill it again, Undo too, a Duplicate would select
-    // A2, and a copy or a cut would put another marker on the clipboard
+    // A1 is cut: a paste of its JSON would fill it again, Undo too, a Duplicate would select
+    // A2, and a copy or a cut would put other text on the clipboard
     h.frame(vec![Event::Cut]);
-    let clip = h.app.clip.clone().expect("cut");
-    let marker = clip.marker.clone();
+    let clip = h.app.clipboard.read().expect("cut");
+    let marker = clip.clone();
     assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
     h.app.show_info();
     h.frame(vec![]);
@@ -1188,14 +1199,15 @@ fn a_focused_field_keeps_the_clipboard_events_and_the_keys() {
     assert_eq!(h.app.link.as_ref().unwrap().patterns().to_vec(), before);
     assert_eq!(h.app.panel.rows[2].pattern, 0);
     assert_eq!(
-        h.app.clip,
+        h.app.clipboard.read(),
         Some(clip),
         "the field's copy is not a pattern's"
     );
     assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
     // the paste went into the field
     let web = &h.app.doc.source.usri.web_page;
-    assert!(web.ends_with(&marker), "{web:?}");
+    // (a one-line field takes the text without its line breaks, and only so many characters)
+    assert!(web.contains("\"openrb338\": \"pattern\""), "{web:?}");
 }
 
 #[test]
@@ -1238,13 +1250,9 @@ fn selected_text_of_a_window_copies_as_text() {
     assert!(selected(&h), "no text selected in {line:?}");
     h.copied.clear();
     h.frame(vec![Event::Copy]);
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
     assert_eq!(h.copied.len(), 1, "{:?}", h.copied);
-    assert!(
-        !h.copied[0].starts_with("OpenRB-338 pattern"),
-        "{:?}",
-        h.copied
-    );
+    assert!(!h.copied[0].contains("\"openrb338\""), "{:?}", h.copied);
 }
 
 #[test]
@@ -1950,6 +1958,39 @@ fn the_startup_sound_checkbox_flips_the_preference_and_saves_it() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// task-288: the app's start and File > New hold the template in A1 of each row and the empty
+/// song's patterns elsewhere; a song opened from a file is its own.
+#[test]
+fn start_and_file_new_hold_the_template() {
+    let empty = Harness::new();
+    let empty = empty.app.link.as_ref().unwrap().patterns().clone();
+    let template = orb_ui::template::a1();
+    let check = |h: &Harness, what: &str| {
+        let got = h.app.link.as_ref().unwrap().patterns();
+        for (r, want) in template.iter().enumerate() {
+            let len = want.len();
+            assert_eq!(&got[r][..len], &want[..], "{what}: A1 of row {r}");
+            assert_eq!(
+                &got[r][len..],
+                &empty[r][len..],
+                "{what}: the rest of row {r}"
+            );
+        }
+    };
+    let mut h = Harness::new();
+    h.app.start(None);
+    h.calls(4);
+    check(&h, "start");
+    h.open(&root().join("tests/songs/diag/songs/drums_kit.rbs"));
+    assert_ne!(
+        h.app.link.as_ref().unwrap().patterns()[0][..98],
+        template[0][..]
+    );
+    h.app.command(Cmd::New);
+    h.calls(4);
+    check(&h, "File > New");
+}
+
 /// task-091: File > New is the state of a start without a song: the same code builds both, and
 /// a modified song asks the prompt first.
 #[test]
@@ -1974,14 +2015,18 @@ fn file_new_gives_the_state_of_a_fresh_start() {
     };
 
     // a fresh start without a song argument
+    // (task-288: the start song holds the template, so the app made in is no longer the same
+    // state; a second New on the started app must give the start's state again)
     let mut start = Harness::new();
-    let untouched = state(&start);
     start.app.start(None);
+    start.calls(4);
+    let untouched = state(&start);
+    start.app.new_now();
     start.calls(4);
     assert_eq!(
         state(&start),
         untouched,
-        "the start builds the state the app is made in"
+        "the start builds the state File > New builds"
     );
 
     // a song that plays and was edited, then New through the prompt
@@ -2020,7 +2065,9 @@ fn file_new_gives_the_state_of_a_fresh_start() {
     h.app.panel.set_step808(3, true);
     h.app.command(Cmd::New);
     h.calls(4);
-    let fresh = Harness::new();
+    let mut fresh = Harness::new();
+    fresh.app.start(None);
+    fresh.calls(4);
     let mirror = |h: &Harness| h.app.link.as_ref().unwrap().patterns().clone();
     assert_eq!(
         mirror(&h),
@@ -2439,7 +2486,7 @@ fn the_about_window_opens_centered_and_closes() {
         shapes.contains(orb_ui::about::VERSION),
         "the version is drawn"
     );
-    assert_eq!(orb_ui::about::URL, "https://github.com/pingw33n/OpenRB-338");
+    assert_eq!(orb_ui::about::URL, "https://pingw33n.github.io/OpenRB-338/");
     assert_eq!(
         orb_ui::about::SONGS_URL,
         "https://github.com/pingw33n/rb-songs"
@@ -2775,7 +2822,7 @@ fn the_window_title_is_the_app_name_the_song_and_the_modified_mark() {
 }
 
 /// A ReBirth 1.x song (a MIDI file, docs/song_load.md section 12) whose import gives the mixer
-/// track out of tick order: MIDI track 2 (the 303 #1) sets the mixer's level and pan at time 8
+/// track out of tick order: MIDI track 2 (the 303-1) sets the mixer's level and pan at time 8
 /// (tick 192), then MIDI track 5 sets the PCF's channel (mixer controller 2) at time 2 (tick 48)
 /// and the distortion's at time 8 (four mixer events at tick 192). The 909 buffer starts with
 /// the import's `(0, 0, 0)`.
@@ -2794,7 +2841,7 @@ fn song_1x_unsorted() -> Vec<u8> {
         b[r + 7] = 0x3F;
         b[r + 0x17] = 1;
     }
-    // a 303 #1 pattern with notes, so that the song plays
+    // a 303-1 pattern with notes, so that the song plays
     for s in 0..16 {
         b[352 + 30 + 4 * s] = (s % 12) as u8 + 1;
     }
@@ -3873,4 +3920,200 @@ fn a_click_on_a_window_over_the_status_bar_keeps_the_status() {
     // beside the window, on the bar: dismissed
     h.click(Pos2::new(5.0, h.height - 10.0));
     assert_eq!(h.app.status, None, "a click on the bar");
+}
+
+/// task-279: the About window's icon-only copy button puts exactly `VERSION` on the clipboard,
+/// once per click.
+#[test]
+fn the_about_copy_button_copies_the_version() {
+    let mut h = Harness::with_menu();
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let r = orb_ui::about::copy_button_rect(&h.ctx).expect("the button is drawn");
+    assert!(r.width() <= 16.0 && r.height() <= 16.0, "small: {r:?}");
+    assert!(h.copied.is_empty());
+    h.click(r.center());
+    assert_eq!(h.copied, vec![orb_ui::about::VERSION.to_string()]);
+    assert!(h.app.about_is_open());
+    h.frame(vec![]);
+    assert_eq!(h.copied.len(), 1, "one click, one copy");
+}
+
+/// task-279: the "Copied" feedback lasts 1.5 s; after that the tooltip reads "Copy version"
+/// again (and the sheets are drawn instead of the check mark).
+#[test]
+fn the_about_copy_feedback_reverts_after_1_5_seconds() {
+    let mut h = Harness::with_menu();
+    h.app.command(Cmd::About);
+    for _ in 0..4 {
+        h.frame(vec![]);
+    }
+    let r = orb_ui::about::copy_button_rect(&h.ctx).expect("the button is drawn");
+    assert!(!orb_ui::about::copy_confirmation_shows(&h.ctx));
+    h.click(r.center());
+    h.time += 1.0;
+    h.frame(vec![]);
+    assert!(
+        orb_ui::about::copy_confirmation_shows(&h.ctx),
+        "the check mark and \"Copied\" show 1 s after the click"
+    );
+    h.time += 1.0;
+    h.frame(vec![]);
+    assert!(
+        !orb_ui::about::copy_confirmation_shows(&h.ctx),
+        "the sheets and \"Copy version\" are back after 1.5 s"
+    );
+    assert_eq!(h.copied.len(), 1);
+}
+
+/// The embedded standard mod repacked with `change` applied to its files, under another name.
+fn repacked_mod(dir: &Path, name: &str, change: impl Fn(&str, &mut Vec<u8>) -> bool) -> PathBuf {
+    let r = rbm::Rbm::parse(rbm::standard::EMBEDDED.to_vec()).unwrap();
+    let t = rbm::KeyTable::embedded(&r).unwrap();
+    let mut u = rbm::pack::unpack(&r, &t).unwrap();
+    let mut entries = Vec::new();
+    let mut files = Vec::new();
+    for (e, mut f) in u.manifest.files.drain(..).zip(u.files.drain(..)) {
+        if change(&e.name, &mut f) {
+            entries.push(e);
+            files.push(f);
+        }
+    }
+    u.manifest.files = entries;
+    u.manifest.info.name = name.into();
+    let bytes = rbm::pack::pack(&u.manifest, &files).unwrap();
+    let path = dir.join(format!("{name}.rbm"));
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+/// task-309: the 808's mod window shows the embedded standard mod's splash for a mod with no
+/// splash picture or one that does not decode, and its own for a mod that has one; Mods > Info
+/// keeps saying "This mod has no splash picture." for those two.
+#[test]
+fn the_mod_window_falls_back_to_the_standard_splash_and_info_does_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let is_splash = |n: &str| n.eq_ignore_ascii_case("splash.jpg");
+    let none = repacked_mod(dir.path(), "NoSplash", |n, _| !is_splash(n));
+    let broken = repacked_mod(dir.path(), "BadSplash", |n, f| {
+        if is_splash(n) {
+            *f = b"\xFF\xD8not a jpeg".to_vec();
+        }
+        true
+    });
+    let own = repacked_mod(dir.path(), "OwnSplash", |n, f| {
+        if is_splash(n) {
+            let img = image::RgbImage::from_pixel(16, 24, image::Rgb([9, 9, 9]));
+            let mut out = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut out, image::ImageFormat::Jpeg).unwrap();
+            *f = out.into_inner();
+        }
+        true
+    });
+    let mut h = Harness::with_menu();
+    h.height = 900.0;
+    for _ in 0..3 {
+        h.frame(vec![]);
+    }
+    let standard = h
+        .app
+        .splash_in_frame_size()
+        .expect("the built-in kit's splash");
+    assert_eq!(standard, [256, 256]);
+    for (path, size, info_says_none) in [
+        (&none, standard, true),
+        (&broken, standard, true),
+        (&own, [16, 24], false),
+    ] {
+        h.app.use_kit(Kit::Mod(path.clone()));
+        let mut shapes = String::new();
+        h.app.command(Cmd::ModInfo);
+        for _ in 0..8 {
+            shapes = h.frame_shapes(vec![]);
+        }
+        assert_eq!(
+            h.app.splash_in_frame_size(),
+            Some(size),
+            "{path:?}: the 808's window"
+        );
+        assert_eq!(
+            shapes.contains("This mod has no splash picture."),
+            info_says_none,
+            "{path:?}: Mods > Info"
+        );
+        assert_eq!(
+            h.app.mod_info_splash().is_none(),
+            info_says_none,
+            "{path:?}"
+        );
+        h.app.command(Cmd::ModInfo);
+        h.frame(vec![]);
+    }
+}
+
+/// task-310: Ctrl/Cmd+I opens File > Info, also while a field of the window has the focus,
+/// without the plain I of the pattern-select keys; plain I still selects its pattern.
+#[test]
+fn ctrl_i_opens_the_info_window_and_plain_i_stays_a_panel_key() {
+    use orb_ui::info::Field;
+    let key = |pressed, modifiers| Event::Key {
+        key: egui::Key::I,
+        physical_key: Some(egui::Key::I),
+        pressed,
+        repeat: false,
+        modifiers,
+    };
+    let tap = |h: &mut Harness, m: Modifiers| {
+        h.frame(vec![key(true, m)]);
+        h.frame(vec![key(false, m)]);
+    };
+    // the plain I selects pattern 8 of the second row, and that gives the row the focus
+    let focus = |h: &Harness| h.app.panel.focus;
+    let mut h = Harness::with_menu();
+    h.open(&root().join("tests/songs/diag/songs/303_saw_lowcut.rbs"));
+    h.app.key_mode = KeyMode::Patterns;
+    h.app.panel.focus = 3;
+    h.frame(vec![]);
+
+    // the menu item shows the shortcut
+    let (_, shapes) = open_menu_with(&mut h, "Info...");
+    let text = shortcuts::text(&h.ctx, &shortcuts::INFO);
+    assert!(shapes.contains(&format!("\"{text}\"")), "{text}");
+    egui::Popup::close_all(&h.ctx);
+    h.frame(vec![]);
+
+    // the shortcut opens the window and leaves the panel alone
+    assert!(!h.app.info_is_open());
+    tap(&mut h, Modifiers::COMMAND);
+    assert!(h.app.info_is_open());
+    assert_eq!(focus(&h), 3, "Cmd/Ctrl+I is not the panel's I");
+    assert!(!h.app.doc.modified);
+
+    // with a text field of the window focused it still works, and types nothing
+    h.frame(vec![]);
+    h.ctx
+        .memory_mut(|m| m.request_focus(Field::Title.edit_id()));
+    h.frame(vec![]);
+    assert!(h.ctx.text_edit_focused());
+    tap(&mut h, Modifiers::COMMAND);
+    assert!(h.app.info_is_open());
+    assert!(!h.app.doc.modified, "nothing typed");
+    h.frame(vec![key(true, Modifiers::NONE)]);
+    h.frame(vec![key(false, Modifiers::NONE)]);
+    assert_eq!(focus(&h), 3, "a focused field keeps its plain I");
+
+    // the window closed, the plain I is the panel's again
+    h.frame(vec![Event::Key {
+        key: egui::Key::Escape,
+        physical_key: Some(egui::Key::Escape),
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }]);
+    h.frame(vec![]);
+    assert!(!h.app.info_is_open());
+    tap(&mut h, Modifiers::NONE);
+    assert_eq!(focus(&h), 1, "plain I selects its pattern");
 }

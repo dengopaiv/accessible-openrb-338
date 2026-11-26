@@ -222,9 +222,20 @@ pub trait SongDevice: Send {
     /// reads the byte at note-on, note-off and in its audio (`sub_10013DA0()+0x15`).
     fn set_sound_model(&mut self, _vintage: bool) {}
     /// Slots 7 and 8, called once on every device by the song ctor (0x10011941, 0x10011985,
-    /// slot 8 with tick 0) with the device's own track: the 303's set the track's quantisation
-    /// and insert its initial events.
-    fn init_track(&mut self, _track: &mut crate::seq::TrackMut) {}
+    /// slot 8 with tick 0) with the device's own track: [`SongDevice::quantise`], then
+    /// [`SongDevice::insert_pattern`] at tick 0.
+    fn init_track(&mut self, track: &mut crate::seq::TrackMut) {
+        self.quantise(track);
+        self.insert_pattern(track, 0);
+    }
+    /// Slot 7 (the song ctor, 0x10011941): the 303s', 808's and 909's (0x10026C40) quantise
+    /// controllers 0 and 1 of the track to a bar; every other device's is the no-op 0x1000F4E0.
+    fn quantise(&mut self, _track: &mut crate::seq::TrackMut) {}
+    /// Slot 8: an event at `tick` of every automatable controller with the pattern-mode copy's
+    /// value, into the device's own track (`sub_1001F900` → `sub_10014750`, in the device's
+    /// controller order). The song ctor calls it with tick 0 (0x10011985), song msg 28 with 0
+    /// (0x10012405) and msg 29 with the loop start (0x100124B5).
+    fn insert_pattern(&mut self, _track: &mut crate::seq::TrackMut, _tick: i32) {}
     /// Not a slot: the live parameter block, the bytes the audio reads and the panel polls
     /// (controllers by number, plus the bytes the device writes itself: the 303's, 808's and
     /// 909's last step at 9, 29 and 30, the delay's meter at 5). Empty for a placeholder; the
@@ -257,6 +268,17 @@ pub trait SongDevice: Send {
 pub trait ChannelDevice: SongDevice {
     /// Vtable slot 14 (0x10013580): render one block into `bus`, overwriting all of it.
     fn process(&mut self, bus: &mut Block, ctx: &BlockContext);
+    /// Slot 14 with the drum machine's own outputs (not in the original's export path,
+    /// task-300; ReWire's per-instrument entries, `docs/rewire.md` section 4): as
+    /// [`ChannelDevice::process`], and each output of `split` gets its voices
+    /// ([`crate::drums::render_split`]). Only the 808 and the 909 have outputs; the others
+    /// render as [`ChannelDevice::process`] and zero the outputs of `split`.
+    fn process_split(&mut self, bus: &mut Block, split: Split<'_>, ctx: &BlockContext) {
+        for o in split.outs.iter_mut() {
+            o.fill(0.0);
+        }
+        self.process(bus, ctx);
+    }
     /// Not a slot: the pattern the device plays (the 303's `+0xC94`, the 808's `+0x18D0`, the
     /// 909's `+0x18D3`), latched from controller 1 at a bar line. `None` for a placeholder.
     fn playing_pattern(&self) -> Option<u8> {
@@ -287,6 +309,9 @@ pub trait ChannelDevice: SongDevice {
     fn live_note_on(&mut self, _note: u8, _velocity: u8) {}
     /// Not in the original: a MIDI note-off for [`ChannelDevice::live_note_on`].
     fn live_note_off(&mut self, _note: u8) {}
+    /// Not in the original (task-258): every note [`ChannelDevice::live_note_on`] holds is let
+    /// go (the plugin's all-notes-off and all-sound-off, the host's stop).
+    fn live_notes_off(&mut self) {}
     /// Not in the original: which of the device's sounds are sounding after the last block and
     /// whether their last hit had accent (the plugin's note-mode lights, task-202). Empty for
     /// the 303s and the placeholders.
@@ -721,21 +746,20 @@ impl SongDevice for MixerDevice {
         }
     }
 
-    /// Slot 8, 0x100160F0, with tick 0 from the song ctor (slot 7 is the no-op 0x1000F4E0):
-    /// the pattern copy's compressor id (controller 1, `+0x5C`) and PCF id (2, `+0x60`), then
-    /// for each channel c its level, pan, send and dist (`6..9 + 6c`, `+0x69..+0x6C + 6c`)
-    /// inserted into the mixer's track (`sub_1001F900`). The master and the enables have no
-    /// controller.
-    fn init_track(&mut self, track: &mut crate::seq::TrackMut) {
+    /// Slot 8, 0x100160F0, at `tick` (slot 7 is the no-op 0x1000F4E0): the pattern copy's
+    /// compressor id (controller 1, `+0x5C`) and PCF id (2, `+0x60`), then for each channel c
+    /// its level, pan, send and dist (`6..9 + 6c`, `+0x69..+0x6C + 6c`) inserted into the
+    /// mixer's track (`sub_1001F900`). The master and the enables have no controller.
+    fn insert_pattern(&mut self, track: &mut crate::seq::TrackMut, tick: i32) {
         let p = self.pattern;
-        track.insert(0, 1, p.comp_id);
-        track.insert(0, 2, p.pcf_id);
+        track.insert(tick, 1, p.comp_id);
+        track.insert(tick, 2, p.pcf_id);
         for (c, ch) in p.channels.iter().enumerate() {
             let base = 5 + 6 * c as u8;
-            track.insert(0, base + 1, ch.level);
-            track.insert(0, base + 2, ch.pan);
-            track.insert(0, base + 3, ch.send);
-            track.insert(0, base + 4, ch.dist);
+            track.insert(tick, base + 1, ch.level);
+            track.insert(tick, base + 2, ch.pan);
+            track.insert(tick, base + 3, ch.send);
+            track.insert(tick, base + 4, ch.dist);
         }
     }
 
@@ -899,6 +923,100 @@ pub struct EngineState {
     pub output: OutputState,
 }
 
+/// The mono taps of one block ([`Frame::block_taps`]): `[0..4]` mixer channel c's bus (0
+/// 303-1, 1 303-2, 2 808, 3 909) after its inserts, where ReWire's channels 2, 3, 4 and 11 are
+/// taken (task-256, `docs/rewire.md` section 4); from [`TAP_808`] the 808's own outputs and from
+/// [`TAP_909`] the 909's, one per entry of their tables (task-300, [`crate::tr808::OUTPUTS`],
+/// [`crate::tr909::OUTPUTS`]).
+pub type Taps = [Block; TAP_WIDTH];
+
+/// The first tap of the 808's own outputs.
+pub const TAP_808: usize = 4;
+/// The first tap of the 909's own outputs.
+pub const TAP_909: usize = TAP_808 + crate::tr808::OUTPUTS.len();
+/// The tap values one frame of [`Engine::render_taps`] holds: one per mixer channel, then one
+/// per drum output.
+pub const TAP_WIDTH: usize = TAP_909 + crate::tr909::OUTPUTS.len();
+
+/// The taps of mixer channel c's own outputs (the 808's and the 909's; empty for the 303s).
+pub const fn drum_taps(c: usize) -> std::ops::Range<usize> {
+    match c {
+        2 => TAP_808..TAP_909,
+        3 => TAP_909..TAP_WIDTH,
+        _ => 0..0,
+    }
+}
+
+/// Not in the original's export path (task-300, the plugin's Options > Output Routing): what
+/// goes into the master and into the drum machines' buses, as ReWire's enabled channels decide
+/// it (`docs/rewire.md` section 4). The default, everything in, is the export's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutputRouting {
+    /// Mixer channel c goes to Mix-L/R. Off, the channel skips its gain smoothing and its pan
+    /// and mix loop (ReWire's bypass, 0x100136AB/0x100136B1; its gains freeze, quirk Q-6) but
+    /// keeps its meter and its delay send.
+    pub to_mix: [bool; 4],
+    /// The 808's outputs ([`crate::tr808::OUTPUTS`]) go to its bus. Off, the output's voices add
+    /// into the output only.
+    pub to_808: [bool; crate::tr808::OUTPUTS.len()],
+    /// The same for the 909 ([`crate::tr909::OUTPUTS`]).
+    pub to_909: [bool; crate::tr909::OUTPUTS.len()],
+}
+
+impl Default for OutputRouting {
+    fn default() -> Self {
+        OutputRouting {
+            to_mix: [true; 4],
+            to_808: [true; crate::tr808::OUTPUTS.len()],
+            to_909: [true; crate::tr909::OUTPUTS.len()],
+        }
+    }
+}
+
+impl OutputRouting {
+    /// Which of mixer channel c's own outputs go to its bus (empty for the 303s).
+    pub fn to_bus(&self, c: usize) -> &[bool] {
+        match c {
+            2 => &self.to_808,
+            3 => &self.to_909,
+            _ => &[],
+        }
+    }
+
+    /// The routing as bits, bit k for tap k ([`Taps`]: the mixer channels to the Mix, then
+    /// the 808's and the 909's outputs to their bus); set is in, the default all set.
+    pub fn to_bits(&self) -> u32 {
+        let all = self.to_mix.iter().chain(&self.to_808).chain(&self.to_909);
+        all.enumerate()
+            .fold(0, |b, (k, &on)| b | ((on as u32) << k))
+    }
+
+    /// [`OutputRouting::to_bits`] back; bits past [`TAP_WIDTH`] are ignored.
+    pub fn from_bits(bits: u32) -> OutputRouting {
+        let mut r = OutputRouting::default();
+        let all = r
+            .to_mix
+            .iter_mut()
+            .chain(&mut r.to_808)
+            .chain(&mut r.to_909);
+        for (k, on) in all.enumerate() {
+            *on = bits & (1 << k) != 0;
+        }
+        r
+    }
+}
+
+const _: () = assert!(TAP_WIDTH <= 32, "the routing's bits fit a u32");
+
+/// The drum machine's own outputs of one block ([`ChannelDevice::process_split`],
+/// [`crate::drums::render_split`]): `outs[o]` is output o's block, `to_bus[o]` whether its
+/// voices also go to the bus, and with `copy` an output on the bus gets the same terms too.
+pub struct Split<'a> {
+    pub outs: &'a mut [Block],
+    pub to_bus: &'a [bool],
+    pub copy: bool,
+}
+
 /// The mixer and its devices: everything one block touches.
 pub struct Frame {
     pub state: MixerState,
@@ -934,6 +1052,10 @@ pub struct Frame {
     /// ([`BlockContext::tick`]) in place of the stopped song's, so that the PCF steps through
     /// its wave in the plugin's note mode ([`Engine::set_note_clock`]).
     pub note_clock: Option<f64>,
+    /// Not in the original's export path (task-300): the plugin's output routing.
+    pub routing: OutputRouting,
+    /// Not in the original: where the drum outputs a block renders without taps go.
+    scratch: Box<Taps>,
 }
 
 /// What [`Engine::set_note_clock`] does to the note-mode clock ([`Frame::note_clock`]).
@@ -997,6 +1119,8 @@ impl Frame {
             out_end: None,
             gate_fade: [false; 4],
             note_clock: None,
+            routing: OutputRouting::default(),
+            scratch: Box::new([[0.0; BLOCK]; TAP_WIDTH]),
         }
     }
 
@@ -1083,6 +1207,27 @@ impl Frame {
     /// [`Fault`] ends it where the original's exception does, right after the faulting insert:
     /// the rest of the block (later channels, the send, the master) does not run.
     pub fn block(&mut self, l: &mut Block, r: &mut Block) -> Result<(), Fault> {
+        self.block_taps(l, r, None)
+    }
+
+    /// [`Frame::block`], and with `taps` the signals ReWire's device channels 2, 3, 4 and 11
+    /// carry (not in the original's export path, task-256: the plugin's per-device outputs;
+    /// `docs/rewire.md` section 4), as copies: `taps[c]` is mixer channel c's bus after its
+    /// inserts (0x100135AF..0x100135F1), before its meter, send, level, pan and on switch. The
+    /// bus is stored f32, so the tap is exact. Nothing is taken out of the master, so `l` and
+    /// `r` are bit-identical to [`Frame::block`]'s. A fault leaves the taps of the channels it
+    /// did not reach as they were.
+    ///
+    /// The drum machines' own outputs (task-300) are their taps from [`TAP_808`]: each output's
+    /// voice sum, a copy when the output goes to the bus. [`Frame::routing`] takes channels
+    /// out of the master and drum outputs out of their bus, as ReWire does; with the default
+    /// routing nothing changes.
+    pub fn block_taps(
+        &mut self,
+        l: &mut Block,
+        r: &mut Block,
+        mut taps: Option<&mut Taps>,
+    ) -> Result<(), Fault> {
         self.blocks += 1;
         if self.state.counter & (UPDATE_PERIOD - 1) == 0 {
             self.mixer_update();
@@ -1109,20 +1254,49 @@ impl Frame {
             stack_word: None,
         };
         let bus = &mut self.bus;
+        let routing = self.routing;
+        let copy = taps.is_some();
         for (c, ch) in self.state.channels.iter_mut().enumerate() {
-            self.devices.channels[c].process(bus, &ctx);
+            // task-300: the drum machine's own outputs, when they are tapped or some leave the
+            // bus; else the export's render
+            let to_bus = routing.to_bus(c);
+            let mut outs = if to_bus.is_empty() || (!copy && !to_bus.contains(&false)) {
+                None
+            } else {
+                let r = drum_taps(c);
+                Some(match taps.as_deref_mut() {
+                    Some(t) => &mut t[r],
+                    None => &mut self.scratch[r],
+                })
+            };
+            match outs.as_deref_mut() {
+                None => self.devices.channels[c].process(bus, &ctx),
+                Some(o) => {
+                    let split = Split {
+                        outs: o,
+                        to_bus,
+                        copy,
+                    };
+                    self.devices.channels[c].process_split(bus, split, &ctx);
+                }
+            }
             if self.devices.channels[c].gate().closed() {
                 // not in the original (task-218): a gate that has just closed fades the section
                 // out over this block (task-222), then its voices are silenced (slot 6); a
-                // closed gate's section is silent
+                // closed gate's section is silent, its own outputs too (task-300)
+                let own = outs.into_iter().flat_map(|o| o.iter_mut());
                 if self.gate_fade[c] {
                     self.gate_fade[c] = false;
-                    for (i, x) in bus.iter_mut().enumerate() {
-                        *x = st(*x as f64 * gate_fade_gain(i));
+                    for b in std::iter::once(&mut *bus).chain(own) {
+                        for (i, x) in b.iter_mut().enumerate() {
+                            *x = st(*x as f64 * gate_fade_gain(i));
+                        }
                     }
                     self.devices.channels[c].silence();
                 } else {
-                    bus.fill(0.0);
+                    for b in std::iter::once(&mut *bus).chain(own) {
+                        b.fill(0.0);
+                    }
                 }
             }
             // the word the audio slot leaves at its esp0 - 0x1C (the 303s leave the slot as it
@@ -1146,6 +1320,11 @@ impl Frame {
                     self.stack_word = ins.stack_word(self.stack_word);
                 }
             }
+            // task-256: the channel's tap, where ReWire's channel buffer is (after the inserts
+            // 0x100135AF..0x100135F1, before the meter, the send, the level and the pan)
+            if let Some(t) = taps.as_deref_mut() {
+                t[c] = *bus;
+            }
             // 0x100135FA: the channel's peak meter
             let v = abs_bits(bus[mi]);
             if v > ch.peak {
@@ -1155,6 +1334,11 @@ impl Frame {
             let sg = ch.send as f64;
             for (s, &b) in self.state.send.iter_mut().zip(bus.iter()) {
                 *s = st(b as f64 * sg + *s as f64);
+            }
+            // task-300: a channel out of Mix-L/R skips the smoothing and the pan and mix loop,
+            // as a channel on its ReWire output does (`cmp eax, ebp` 0x100136AB, `jnz` 0x100136B1)
+            if !routing.to_mix[c] {
+                continue;
             }
             // 0x100136B7: smoothing, n = old*0.93 + target*0.07 stored as f32; the ramp steps
             // from the stored old value by (n_unrounded - old)/32 every two samples
@@ -1243,6 +1427,13 @@ pub struct Engine {
     fault: Option<FaultRecord>,
     /// Not in the original: the batch [`Engine::load`] stopped at.
     refused: Option<LoadRefused>,
+    /// Not in the original (task-256): the taps of the whole block being rendered, and those
+    /// of the partial block whose leftover frames the next [`Engine::render_taps`] outputs
+    /// first.
+    taps: Box<[Taps; 2]>,
+    /// Not in the original (task-306): the track lists before the last Initialize command,
+    /// for orb's Undo ([`Engine::keep_undo`], [`Engine::undo_init`]).
+    undo: Option<Box<crate::seq::Pool>>,
 }
 
 fn zero_buf() -> Box<[f32; MAX_FRAMES]> {
@@ -1255,6 +1446,17 @@ fn zero_buf() -> Box<[f32; MAX_FRAMES]> {
 
 fn block_mut(buf: &mut [f32], at: usize) -> &mut Block {
     (&mut buf[at..at + BLOCK]).try_into().unwrap()
+}
+
+/// Frames `src` of the block taps `t` into the frame-interleaved `out` from frame `at`
+/// ([`Engine::render_taps`]).
+fn put_taps(t: &Taps, src: std::ops::Range<usize>, out: &mut [f32], at: usize) {
+    for (k, i) in src.enumerate() {
+        let f = &mut out[TAP_WIDTH * (at + k)..TAP_WIDTH * (at + k + 1)];
+        for (x, tap) in f.iter_mut().zip(t.iter()) {
+            *x = tap[i];
+        }
+    }
 }
 
 impl Engine {
@@ -1288,6 +1490,8 @@ impl Engine {
             out: [zero_buf(), zero_buf()],
             fault: None,
             refused: None,
+            taps: Box::new([[[0.0; BLOCK]; TAP_WIDTH]; 2]),
+            undo: None,
         }
     }
 
@@ -1436,10 +1640,25 @@ impl Engine {
     /// stereo into `buf[..2n]`, through the leftover block. A call with `n = 0` renders nothing
     /// but drops a pending leftover (`L` becomes `L - 64`).
     pub fn render(&mut self, buf: &mut [i16], n: usize) {
+        self.render_with(buf, n, None);
+    }
+
+    /// [`Engine::render`], and the mono taps of the frames rendered (not in the original,
+    /// task-256; [`Frame::block_taps`]): frame i of tap k is `taps[TAP_WIDTH * i + k]`, `taps`
+    /// at least `TAP_WIDTH * n` long. The
+    /// int16 output is bit-identical to [`Engine::render`]'s. A faulting call leaves `taps` as
+    /// the caller had it (or partly written), as it leaves `buf`. The leftover frames of a
+    /// partial block have taps only when the call that rendered it was a `render_taps` too.
+    pub fn render_taps(&mut self, buf: &mut [i16], n: usize, taps: &mut [f32]) {
+        self.render_with(buf, n, Some(taps));
+    }
+
+    fn render_with(&mut self, buf: &mut [i16], n: usize, mut taps: Option<&mut [f32]>) {
         let n = n.min(MAX_FRAMES);
         // 0x10013A5E: the song's try-lock, before the leftover and the first block
         self.frame.stack_word = Some(LOCK_WORD);
         let [ol, or] = &mut self.out;
+        let [tb, tlo] = &mut *self.taps;
         let lp = self.output.leftover_pos;
         let mut pos = 0usize;
         let mut rem = n as i32;
@@ -1453,6 +1672,9 @@ impl Engine {
                 o[..BLOCK - lp].copy_from_slice(&lo[lp..]);
                 lo[lp..].fill(GUARD);
             }
+            if let Some(t) = taps.as_deref_mut() {
+                put_taps(tlo, lp..BLOCK, t, 0);
+            }
             pos = BLOCK - lp;
             rem -= pos as i32;
         }
@@ -1460,13 +1682,19 @@ impl Engine {
             let whole = rem > 63;
             let done = if whole {
                 self.frame.out_end = Some(OUT_RIGHT + 4 * (pos + BLOCK - 1) as i32);
-                self.frame
-                    .block(block_mut(&mut ol[..], pos), block_mut(&mut or[..], pos))
+                let (l, r) = (block_mut(&mut ol[..], pos), block_mut(&mut or[..], pos));
+                match taps.as_deref_mut() {
+                    None => self.frame.block(l, r),
+                    Some(t) => self.frame.block_taps(l, r, Some(tb)).map(|()| {
+                        put_taps(tb, 0..BLOCK, t, pos);
+                    }),
+                }
             } else {
                 // 0x10013BAA: the partial block is rendered whole into the leftover block
                 self.frame.out_end = None;
                 let [ll, lr] = &mut self.output.leftover;
-                self.frame.block(ll, lr)
+                let t = taps.is_some().then_some(&mut *tlo);
+                self.frame.block_taps(ll, lr, t)
             };
             if let Err(f) = done {
                 // a fault ([`Fault`]): the call ends here, before the leftover position is
@@ -1496,6 +1724,9 @@ impl Engine {
             {
                 o[pos..pos + k].copy_from_slice(&lo[..k]);
                 lo[..k].fill(GUARD);
+            }
+            if let Some(t) = taps {
+                put_taps(tlo, 0..k, t, pos);
             }
         }
         for i in 0..n {
@@ -1563,6 +1794,24 @@ impl Engine {
         } else {
             dev.live_note_on(note, velocity);
         }
+    }
+
+    /// Not in the original (task-258): every live note channel device `d` holds is let go
+    /// ([`ChannelDevice::live_notes_off`]; a 303's gate closes as at its last note-off).
+    /// Ignored while the song plays, as [`Engine::live_note`].
+    pub fn live_notes_off(&mut self, d: song::Device) {
+        use song::Device as D;
+        if self.playing() {
+            return;
+        }
+        let c = match d {
+            D::Tb303_1 => 0,
+            D::Tb303_2 => 1,
+            D::Tr808 => 2,
+            D::Tr909 => 3,
+            _ => return,
+        };
+        self.frame.devices.channels[c].live_notes_off();
     }
 
     /// Not in the original (task-218): the gate of channel device `d` (a 303, the 808 or the
@@ -1645,6 +1894,68 @@ impl Engine {
     pub fn set_record(&mut self, v: u8) {
         let f = &mut self.frame;
         f.seq.set_record(v, &mut f.devices);
+    }
+
+    /// Song msg 28 (0x100123C7), the Edit menu's "Initialize Song from Pattern Mode" (command
+    /// 307, `docs/ui_spec.md` section 12): every track loses every event but those at tick 0
+    /// ([`crate::seq::Sequencer::clear_tracks`]), every device inserts its pattern-mode copy at
+    /// tick 0 (slot 8, 0x10012405, [`SongDevice::insert_pattern`]), which replaces the tick-0
+    /// values of its controllers, then in song mode every track is chased to the current tick
+    /// ([`crate::seq::Sequencer::refresh`]).
+    pub fn init_song(&mut self) {
+        let f = &mut self.frame;
+        f.seq.clear_tracks();
+        for d in song::Device::ALL {
+            f.devices
+                .device_mut(d)
+                .insert_pattern(&mut f.seq.track_mut(d.id() as usize), 0);
+        }
+        f.seq.refresh(&mut f.devices);
+    }
+
+    /// Song msg 29 (0x1001243A), the Edit menu's "Initialize Loop from Pattern Mode" (command
+    /// 306): every track's state at the loop end is inserted there and the events of `loop
+    /// start <= tick < loop end` but those at tick 0 are removed
+    /// ([`crate::seq::Sequencer::clear_range`]), every device inserts its pattern-mode copy at
+    /// the loop start (slot 8 with `sub_1001F8C0`, the globals' loop start, 0x100124B5), then
+    /// in song mode every track is chased to the current tick. The loop switch is not read.
+    pub fn init_loop(&mut self) {
+        let f = &mut self.frame;
+        // sub_1001F8E0 / sub_1001F8C0: the global struct's dwords +4 and +3 as int
+        let start = f.seq.globals.loop_start as i32;
+        let end = f.seq.globals.loop_end as i32;
+        f.seq.clear_range(start, end);
+        for d in song::Device::ALL {
+            f.devices
+                .device_mut(d)
+                .insert_pattern(&mut f.seq.track_mut(d.id() as usize), start);
+        }
+        f.seq.refresh(&mut f.devices);
+    }
+
+    /// Not in the original (task-306): before an Initialize command, the track lists as they
+    /// are (every list, the recordings too) are copied into `snapshot`, a pool the caller made
+    /// off the audio thread ([`crate::seq::Pool::new`] reserves its whole capacity, so the copy
+    /// allocates nothing), and kept for [`Engine::undo_init`]. Returns the snapshot it
+    /// replaces, for the caller to drop off the audio thread.
+    pub fn keep_undo(
+        &mut self,
+        mut snapshot: Box<crate::seq::Pool>,
+    ) -> Option<Box<crate::seq::Pool>> {
+        snapshot.copy_from(&self.frame.seq.pool);
+        self.undo.replace(snapshot)
+    }
+
+    /// Not in the original (task-306): orb's Undo of the last Initialize command. The kept
+    /// lists come back in one swap ([`crate::seq::Sequencer::swap_pool`]), and in song mode the
+    /// tracks are applied at the current tick, as the command's last step does. Returns the
+    /// lists the swap let go of (the song as it was before the Undo), for the caller to drop
+    /// off the audio thread; `None` when nothing was kept.
+    pub fn undo_init(&mut self) -> Option<Box<crate::seq::Pool>> {
+        let mut pool = self.undo.take()?;
+        let f = &mut self.frame;
+        f.seq.swap_pool(&mut pool, &mut f.devices);
+        Some(pool)
     }
 
     /// Globals byte 2: record is on.

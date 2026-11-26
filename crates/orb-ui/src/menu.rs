@@ -7,9 +7,14 @@
 //!   As, Info ([`crate::info`]), Export loop as audio file. The browser (task-046) returns paths
 //!   only; the writes happen here and their errors are shown in the message box
 //!   ([`crate::error_box`]).
-//! - **Edit**: Undo (one level), Cut, Copy, Paste and Duplicate Pattern on the focused row's
-//!   selected pattern ([`App::undo`], [`App::copy_pattern`], [`App::paste_pattern`],
-//!   [`App::duplicate_pattern`]), orb's own commands.
+//! - **Edit**: Undo (one level), Cut, Copy, Paste, Duplicate and Clear Pattern on the focused
+//!   pattern editor's pattern, else on the focused row's selected pattern ([`App::undo`],
+//!   [`App::copy_pattern`], [`App::paste_pattern`], [`App::duplicate_pattern`],
+//!   [`App::clear_pattern`], [`App::pattern_target`], task-290), orb's own commands, and the 303-1,
+//!   303-2, 808 and 909 Pattern Editor... (Ctrl/Cmd+E on the focused row's,
+//!   [`crate::pattern_editor`], [`crate::drum_editor`]); the original's Initialize Loop and
+//!   Initialize Song from Pattern Mode, in song mode only ([`App::init_from_pattern`], task-306); a
+//!   plugin's Edit menu has the same items with no shortcut texts.
 //! - **Mods**: "Standard ReBirth", the mods of the Mods folder (one entry per INFO menu name, as
 //!   the original's Mods menu: `sub_40C163`, docs/rbm.md section 14), and a file picked in the
 //!   browser. A choice is the original's `sub_42D80D` -> `sub_426FB3`: the song is marked modified,
@@ -18,6 +23,8 @@
 //!   ([`crate::settings::Settings::startup_sound`]) the new mod's startup sound plays, as it does
 //!   when a song is opened and at the start ([`App::start`]), but only when the kit changes
 //!   (task-099). "Demo Song" opens the `Demo.rbs` of the current mod as an unsaved song (task-094).
+//! - **View** (the standalone app's only): Classic or Modern, the main window's skin (task-267,
+//!   [`App::set_theme`]), kept in the UI settings.
 //! - **Options**: the Vintage ReBirth Synth Sound flag (GLOB byte 482; Edit menu item 323 of the
 //!   original) and the keyboard mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10).
 
@@ -47,6 +54,7 @@ use crate::link::{emptied_pattern, next_empty_pattern};
 use crate::palette::{INK, INK_DIM, SLATE_DARK, SLATE_LINE};
 use crate::screen_reader::ScreenReaderSetting;
 use crate::session;
+use crate::settings::Theme;
 use crate::shortcuts;
 use crate::system_dialog::Folder;
 
@@ -86,8 +94,12 @@ pub enum Cmd {
     Info,
     /// Help > Keyboard Shortcuts.
     KeyHelp,
+    /// Options > Audio Output... (the standalone app only, task-191).
+    AudioOutput,
     /// Help > Plugin Usage (a plugin's editor only, task-221).
     PluginUsage,
+    /// Options > Output Routing... (a plugin's editor only, task-300).
+    OutputRouting,
     /// Help > About.
     About,
     /// "Choose file..." of the Mods menu: the browser for a mod.
@@ -106,6 +118,9 @@ pub enum Cmd {
     RefreshMods,
     /// "Info" of the Mods menu: the current mod's splash and details (task-106).
     ModInfo,
+    /// View > Classic or View > Modern: the main window's skin (task-267,
+    /// [`App::set_theme`]; nothing in a plugin's editor).
+    SetTheme(Theme),
     ToggleVintage,
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
     ToggleStartupSound,
@@ -126,45 +141,49 @@ pub enum Cmd {
     SetPluginMode(crate::embed::PluginMode),
     /// Edit > Undo ([`App::undo`]).
     Undo,
+    /// Edit > 303-1 or 303-2 Pattern Editor..., by the 303 (0 or 1;
+    /// [`App::open_pattern_editor`], tasks 274 and 290).
+    PatternEditor(usize),
+    /// Edit > 808 or 909 Pattern Editor... ([`App::open_drum_editor`], tasks 280 and 281).
+    DrumEditor(crate::drum_editor::Machine),
     /// Edit > Cut Pattern ([`App::copy_pattern`]).
     CutPattern,
     CopyPattern,
     /// Edit > Paste Pattern from the app's clipboard ([`App::paste_pattern`]).
     PastePattern,
     DuplicatePattern,
-}
-
-/// A pattern on the app's clipboard (Edit > Copy Pattern and Cut Pattern).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Clip {
-    /// The row it came from (0..=3): it pastes into a row of the same kind.
-    pub row: usize,
-    /// The whole pattern (98 or 194 bytes).
-    pub bytes: Vec<u8>,
-    /// The text the copy put on the system clipboard: a paste of that text pastes this
-    /// pattern (docs/ui_spec.md section 16).
-    pub marker: String,
+    /// Edit > Clear Pattern, no shortcut ([`App::clear_pattern`], task-290).
+    ClearPattern,
+    /// Edit > Initialize Loop from Pattern Mode, the original's command 306 (song mode only;
+    /// [`App::init_from_pattern`], task-306).
+    InitLoop,
+    /// Edit > Initialize Song from Pattern Mode, the original's command 307: asks first
+    /// ([`App::init_song_ui`]).
+    InitSong,
 }
 
 /// What Edit > Undo puts back: pattern `pattern` of row `row` held `bytes` before the command
 /// `what`; after a Duplicate, `select` is the pattern it came from, until the user selects a
-/// pattern ([`App::note_edits`]).
+/// pattern ([`App::note_edits`]). With `tracks` it is an Initialize command's (task-306): the
+/// engine keeps the track lists from before it, and no pattern is involved (`row` is
+/// `usize::MAX`, so no pattern editor keeps it).
 #[derive(Clone, Debug)]
 pub struct Undo {
     what: &'static str,
-    row: usize,
-    pattern: u8,
+    pub(crate) row: usize,
+    pub(crate) pattern: u8,
     bytes: Vec<u8>,
     select: Option<u8>,
+    tracks: bool,
 }
 
 /// The names of the four rows on the status line.
-const ROW_NAMES: [&str; 4] = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"];
+pub(crate) const ROW_NAMES: [&str; 4] = ["303-1", "303-2", "808", "909"];
 /// The kind of each row's patterns: a pattern pastes into a row of its kind.
-const ROW_KINDS: [&str; 4] = ["TB-303", "TB-303", "TR-808", "TR-909"];
+pub(crate) const ROW_KINDS: [&str; 4] = ["303", "303", "808", "909"];
 
 /// The name of pattern `p` (0..=31): bank and button, A1 to D8.
-fn pattern_name(p: u8) -> String {
+pub(crate) fn pattern_name(p: u8) -> String {
     format!("{}{}", (b'A' + p / 8) as char, p % 8 + 1)
 }
 
@@ -1017,7 +1036,12 @@ impl App {
         if self.is_plugin()
             && matches!(
                 cmd,
-                Cmd::Save | Cmd::SaveAs | Cmd::Export | Cmd::KeyHelp | Cmd::SetKeyMode(_)
+                Cmd::Save
+                    | Cmd::SaveAs
+                    | Cmd::Export
+                    | Cmd::KeyHelp
+                    | Cmd::AudioOutput
+                    | Cmd::SetKeyMode(_)
             )
         {
             return;
@@ -1039,11 +1063,13 @@ impl App {
             }
             Cmd::Info => self.show_info(),
             Cmd::KeyHelp => self.show_key_help(),
+            Cmd::AudioOutput => self.show_audio(),
             Cmd::PluginUsage => {
                 if self.is_plugin() {
                     self.show_plugin_usage();
                 }
             }
+            Cmd::OutputRouting => self.show_routing(),
             Cmd::About => self.show_about(),
             Cmd::ChooseModFile => self.open_browser(Mode::ChooseMod),
             Cmd::ChooseMod => self.show_chooser(),
@@ -1052,6 +1078,7 @@ impl App {
             Cmd::DemoSong => self.demo_song(),
             Cmd::RefreshMods => self.refresh_mods_reported(),
             Cmd::ModInfo => self.show_mod_info(),
+            Cmd::SetTheme(t) => self.set_theme(t),
             Cmd::ToggleVintage => {
                 let on = !self.panel.vintage;
                 self.panel.set_vintage(on);
@@ -1097,29 +1124,67 @@ impl App {
                 }
             }
             Cmd::Undo => self.undo(),
+            Cmd::PatternEditor(k) => self.open_pattern_editor(k),
+            Cmd::DrumEditor(m) => self.open_drum_editor(m),
             Cmd::CutPattern => self.copy_pattern(true),
             Cmd::CopyPattern => self.copy_pattern(false),
             Cmd::PastePattern => self.paste_pattern(),
             Cmd::DuplicatePattern => self.duplicate_pattern(),
+            Cmd::ClearPattern => self.clear_pattern(),
+            Cmd::InitLoop => self.init_from_pattern(false),
+            Cmd::InitSong => {
+                if self.can_init() {
+                    self.confirm_init = true;
+                }
+            }
         }
     }
 
     // ---- patterns -----------------------------------------------------------------------
 
-    /// The row with the focus and its selected pattern, after the panel's pending events were
-    /// noted and sent; `None` without a link (the demo panel).
-    fn pattern_target(&mut self) -> Option<(usize, u8)> {
+    /// The pattern the Edit menu's pattern commands act on (task-290), after the panel's
+    /// pending events were noted and sent: the selected pattern of the focused pattern
+    /// editor's row ([`App::focused_editor`]; the editor shows it), else of the panel's focused
+    /// row; `None` without a link (the demo panel).
+    pub fn pattern_target(&mut self) -> Option<(usize, u8)> {
         self.link.as_ref()?;
         self.note_edits();
         self.link.as_mut()?.forward(&mut self.panel);
-        let r = self.panel.focus;
+        let r = self.focused_editor().unwrap_or(self.panel.focus);
         Some((r, self.panel.rows[r].pattern))
+    }
+
+    /// The row of the pattern editor that has the focus, when its window is open: 0 and 1 the
+    /// 303-1's and the 303-2's, 2 the 808's, 3 the 909's. An editor takes the focus when it
+    /// opens (the Edit menu, Ctrl/Cmd+E) and when a primary press goes down on its window; it
+    /// loses it when a primary press goes down on the panel or its window closes (task-290).
+    pub fn focused_editor(&self) -> Option<usize> {
+        use crate::drum_editor::Machine;
+        let r = self.editor_focus?;
+        let open = match Machine::of_row(r) {
+            Some(m) => self.drum_editors[m.index()].open,
+            None => self.editors[r.min(1)].open,
+        };
+        open.then_some(r)
+    }
+
+    /// The editor of row `r` closed: it no longer has the focus.
+    pub(crate) fn editor_unfocus(&mut self, r: usize) {
+        if self.editor_focus == Some(r) {
+            self.editor_focus = None;
+        }
     }
 
     /// Writes `bytes` into pattern `p` of row `r` ([`crate::link::Link::set_pattern`]) for the
     /// command `what`: when the pattern changes the song is modified and Undo puts its former
     /// bytes back. False when it held `bytes` already.
-    fn write_pattern(&mut self, r: usize, p: u8, bytes: &[u8], what: &'static str) -> bool {
+    pub(crate) fn write_pattern(
+        &mut self,
+        r: usize,
+        p: u8,
+        bytes: &[u8],
+        what: &'static str,
+    ) -> bool {
         let Some(link) = &mut self.link else {
             return false;
         };
@@ -1133,6 +1198,7 @@ impl App {
                 pattern: p,
                 bytes: before,
                 select: None,
+                tracks: false,
             });
         }
         changed
@@ -1148,7 +1214,8 @@ impl App {
     /// (unless a pattern was selected since). The selection goes first: a pattern the row does
     /// not select then reaches the engine only once the engine no longer plays it
     /// ([`crate::link::Link::set_pattern_unplayed`]), so a playing row never plays the emptied
-    /// copy for the rest of the bar.
+    /// copy for the rest of the bar. After Initialize Loop or Song (orb's addition, task-306)
+    /// the engine swaps the track lists it kept back in ([`orb_player::Command::UndoInit`]).
     pub fn undo(&mut self) {
         // the panel's pending edits go first, and may forget the undo
         if self.pattern_target().is_none() {
@@ -1157,6 +1224,16 @@ impl App {
         let Some(u) = self.undo.take() else {
             return;
         };
+        if u.tracks {
+            // orb's own (task-306): the engine swaps the kept track lists back and applies them
+            // at the position, as the command did
+            if let Some(link) = &mut self.link {
+                link.send([orb_player::Command::UndoInit]);
+                self.doc.modified = true;
+                self.set_status(format!("{} undone", u.what));
+            }
+            return;
+        }
         if let Some(p) = u.select {
             // a click's selection: an edit, recorded in song mode with record on
             self.select_pattern(u.row, p);
@@ -1174,32 +1251,28 @@ impl App {
         self.set_status(format!("{}: {} undone", ROW_NAMES[u.row], u.what));
     }
 
-    /// Edit > Copy Pattern, and with `cut` Cut Pattern: the focused row's selected pattern goes
-    /// to the app's clipboard ([`Clip`]) and its marker to the system clipboard; Cut then
-    /// empties its steps, the length and the shuffle flag stay.
+    /// Edit > Copy Pattern, and with `cut` Cut Pattern: the target pattern
+    /// ([`App::pattern_target`]) goes to the system clipboard as JSON ([`crate::pattern_json`], at
+    /// the end of the frame); Cut then empties its steps, the length and the shuffle flag stay.
     pub fn copy_pattern(&mut self, cut: bool) {
-        let Some((r, p)) = self.pattern_target() else {
-            return;
-        };
+        if let Some((r, p)) = self.pattern_target() {
+            self.copy_pattern_at(r, p, cut);
+        }
+    }
+
+    /// [`App::copy_pattern`] of pattern `p` of row `r` (the 303 pattern editor's Copy, after
+    /// the panel's events were sent).
+    pub(crate) fn copy_pattern_at(&mut self, r: usize, p: u8, cut: bool) {
         let Some(link) = &self.link else {
             return;
         };
         let bytes = link.pattern(r, p).to_vec();
         let (row, name) = (ROW_NAMES[r], pattern_name(p));
-        // the process id and the count tell this copy from another instance's
-        self.clip_count += 1;
-        let marker = format!(
-            "OpenRB-338 pattern: {row} {name} [{}.{}]",
-            std::process::id(),
-            self.clip_count
-        );
-        self.clip_text = Some(marker.clone());
+        let text = crate::pattern_json::to_json(r, &bytes);
+        // a memory clipboard has it at once; the system's gets it at the end of the frame
+        self.clipboard.copied(&text);
+        self.clip_text = Some(text);
         let empty = emptied_pattern(r, &bytes);
-        self.clip = Some(Clip {
-            row: r,
-            bytes,
-            marker,
-        });
         if cut {
             self.write_pattern(r, p, &empty, "Cut Pattern");
             self.set_status(format!("{row}: {name} cut"));
@@ -1208,22 +1281,44 @@ impl App {
         }
     }
 
-    /// Edit > Paste Pattern: the app's clipboard into the focused row's selected pattern, when
-    /// the row is of its kind (a TB-303 pattern pastes into either 303).
+    /// Edit > Paste Pattern: the system clipboard's pattern (read directly,
+    /// [`crate::clipboard::Clipboard::read`]) into the target pattern ([`App::pattern_target`]),
+    /// when its row is of the pattern's device (a 303 pattern pastes into either 303).
     pub fn paste_pattern(&mut self) {
-        let Some((r, p)) = self.pattern_target() else {
-            return;
+        if let Some((r, p)) = self.pattern_target() {
+            self.paste_pattern_at(r, p);
+        }
+    }
+
+    /// [`App::paste_pattern`] into pattern `p` of row `r` (the pattern editors' Paste, after
+    /// the panel's events were sent).
+    pub(crate) fn paste_pattern_at(&mut self, r: usize, p: u8) {
+        match self.clipboard.read() {
+            Some(text) => self.paste_text_at(r, p, &text),
+            None => self.set_status("The clipboard holds no pattern"),
+        }
+    }
+
+    /// `text`, the clipboard's text, into pattern `p` of row `r`: nothing is written, and the
+    /// status says why, unless the text is a valid pattern of the row's device.
+    pub(crate) fn paste_text_at(&mut self, r: usize, p: u8, text: &str) {
+        use crate::pattern_json::{Refused, parse};
+        let pattern = match parse(text) {
+            Ok(pattern) => pattern,
+            Err(Refused::NotPattern) => {
+                self.set_status("The clipboard holds no pattern");
+                return;
+            }
+            Err(Refused::Invalid(why)) => {
+                self.set_status(format!("The clipboard's pattern is not valid: {why}"));
+                return;
+            }
         };
-        let Some(clip) = &self.clip else {
-            self.set_status("The clipboard holds no pattern");
-            return;
-        };
-        let kind = ROW_KINDS[clip.row];
-        if kind != ROW_KINDS[r] {
-            self.set_status(format!("The clipboard holds a {kind} pattern"));
+        if pattern.device != ROW_KINDS[r] {
+            self.set_status(format!("The clipboard holds a {} pattern", pattern.device));
             return;
         }
-        let bytes = clip.bytes.clone();
+        let bytes = pattern.bytes;
         let (row, name) = (ROW_NAMES[r], pattern_name(p));
         let text = if self.write_pattern(r, p, &bytes, "Paste Pattern") {
             format!("{row}: pasted into {name}")
@@ -1234,9 +1329,10 @@ impl App {
         self.set_status(text);
     }
 
-    /// Edit > Duplicate Pattern: the focused row's selected pattern goes into the row's next
-    /// empty pattern ([`next_empty_pattern`]), which is then selected as a click on its button
-    /// selects it. The clipboard stays as it is.
+    /// Edit > Duplicate Pattern: the target pattern ([`App::pattern_target`]) goes into its
+    /// row's next empty pattern ([`next_empty_pattern`]), which is then selected as a click on
+    /// its button selects it; a focused editor shows the copy too. The clipboard stays as it
+    /// is.
     pub fn duplicate_pattern(&mut self) {
         let Some((r, p)) = self.pattern_target() else {
             return;
@@ -1267,22 +1363,145 @@ impl App {
             pattern: to,
             bytes: before,
             select: Some(p),
+            tracks: false,
         });
         let (from, to) = (pattern_name(p), pattern_name(to));
         self.set_status(format!("{row}: {from} duplicated to {to}"));
     }
 
-    /// A paste of the system clipboard's `text` (Ctrl/Cmd+V, Edit > Paste Pattern): the app's
-    /// clipboard when `text` is its marker, else nothing. Nothing without a link.
+    /// Edit > Clear Pattern (no shortcut, task-290): the target pattern's steps are emptied as
+    /// the editors' Clear empties them ([`emptied_pattern`]: the shuffle flag and the length
+    /// stay), one write with Undo; the status line says "cleared" also when the pattern was
+    /// empty already (then nothing is written and the Undo stays).
+    pub fn clear_pattern(&mut self) {
+        if let Some((r, p)) = self.pattern_target() {
+            self.clear_pattern_at(r, p);
+        }
+    }
+
+    /// [`App::clear_pattern`] of pattern `p` of row `r` (also the pattern editors' Clear, after
+    /// the panel's events were sent).
+    pub(crate) fn clear_pattern_at(&mut self, r: usize, p: u8) {
+        let Some(link) = &self.link else {
+            return;
+        };
+        let empty = emptied_pattern(r, link.pattern(r, p));
+        // the status also when the pattern was empty already (the user's review, round 1)
+        self.write_pattern(r, p, &empty, "Clear Pattern");
+        self.set_status(format!("{}: {} cleared", ROW_NAMES[r], pattern_name(p)));
+    }
+
+    /// A paste of the system clipboard's `text` (Ctrl/Cmd+V, the standalone's Edit > Paste
+    /// Pattern) into the target pattern ([`App::pattern_target`]). Nothing without a link.
     pub fn paste_text(&mut self, text: &str) {
         if self.link.is_none() {
             return;
         }
-        if self.clip.as_ref().is_some_and(|c| c.marker == text) {
-            self.paste_pattern();
-        } else {
-            self.set_status("The clipboard holds no pattern");
+        if let Some((r, p)) = self.pattern_target() {
+            self.paste_text_at(r, p, text);
         }
+    }
+
+    /// Whether the Initialize commands are enabled: a song in song mode, as the original
+    /// enables commands 306 and 307 only when the song window's song-mode byte is set
+    /// (`sub_42BC83`, 0x42BFB4 and 0x42BFC3, under the test of `+0x1060` at 0x42BF24).
+    pub fn can_init(&self) -> bool {
+        self.link.is_some() && self.panel.transport.song_mode
+    }
+
+    /// Edit > Initialize Loop from Pattern Mode (`song` false) and, once its question is
+    /// answered, Initialize Song from Pattern Mode (`song` true): the original's commands 306 and
+    /// 307 (`sub_42C204`, 0x42C59A and 0x42C5E3), song msgs 29 and 28 to the engine
+    /// ([`orb_engine::frame::Engine::init_loop`], [`orb_engine::frame::Engine::init_song`]),
+    /// then the song is marked modified (`sub_42590B`). Nothing outside song mode.
+    pub fn init_from_pattern(&mut self, song: bool) {
+        if !self.can_init() {
+            return;
+        }
+        let Some(link) = &mut self.link else {
+            return;
+        };
+        // the engine copies its lists into this pool before the command, for Undo; made here,
+        // off the audio thread, with its whole capacity (task-306)
+        let snapshot = Box::new(orb_engine::seq::Pool::new());
+        link.send([if song {
+            orb_player::Command::InitSong(snapshot)
+        } else {
+            orb_player::Command::InitLoop(snapshot)
+        }]);
+        self.doc.modified = true;
+        self.undo = Some(Undo {
+            what: if song {
+                "Initialize Song"
+            } else {
+                "Initialize Loop"
+            },
+            row: usize::MAX,
+            pattern: 0,
+            bytes: Vec::new(),
+            select: None,
+            tracks: true,
+        });
+        self.set_status(if song {
+            "Song initialized from pattern mode"
+        } else {
+            "Loop initialized from pattern mode"
+        });
+    }
+
+    /// The question of Initialize Song from Pattern Mode, the original's alert 500128003 (the
+    /// exe's `SALR` text, group 128 item 3; `sub_475D5C` at 0x42C5B7): its text, with the
+    /// buttons Initialize (the default: Enter) and Cancel (Escape). Initialize sends the
+    /// command (the original sends msg 28 only for the answer 33, 0x42C5CC).
+    pub fn init_song_ui(&mut self, ctx: &Context) {
+        if !self.confirm_init {
+            return;
+        }
+        let key = |k: Key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, k));
+        let mut answer = None;
+        if key(Key::Enter) {
+            answer = Some(true);
+        } else if key(Key::Escape) {
+            answer = Some(false);
+        }
+        let frame = Frame::new()
+            .fill(SLATE_DARK)
+            .stroke(Stroke::new(1.0, SLATE_LINE))
+            .inner_margin(Margin::same(12))
+            .corner_radius(3.0);
+        Modal::new(Id::unique("orb_init_song"))
+            .frame(frame)
+            .backdrop_color(Color32::from_black_alpha(170))
+            .show(ctx, |ui| {
+                ui.set_width(320.0);
+                ui.label(
+                    RichText::new("Initialize Song from Pattern Mode")
+                        .color(INK)
+                        .strong()
+                        .size(15.0),
+                );
+                ui.label(RichText::new(INIT_SONG_TEXT).color(INK_DIM));
+                ui.add_space(8.0);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        answer = Some(false);
+                    }
+                    if ui.button("Initialize").clicked() {
+                        answer = Some(true);
+                    }
+                });
+            });
+        if let Some(yes) = answer {
+            self.confirm_init = false;
+            if yes {
+                self.init_from_pattern(true);
+            }
+        }
+    }
+
+    /// Whether the question of Initialize Song from Pattern Mode is open.
+    pub fn confirming_init(&self) -> bool {
+        self.confirm_init
     }
 
     /// Where the Edit menu drew its items last, by text, and whether each was enabled (for
@@ -1296,7 +1515,7 @@ impl App {
 
     /// Selects pattern `p` of row `r` as a click on its button does (`Panel::press`): the bank
     /// shows it, the row takes the focus, the selection is sent with the panel's events.
-    fn select_pattern(&mut self, r: usize, p: u8) {
+    pub(crate) fn select_pattern(&mut self, r: usize, p: u8) {
         self.panel.rows[r].bank = p / 8;
         let button = format!("pattern{}.pattern{}", r + 1, p % 8 + 1);
         self.panel.press(&button, 0.0);
@@ -1392,6 +1611,12 @@ impl App {
         self.prompt.is_some()
     }
 
+    /// Whether a question is open (the unsaved-changes prompt or Initialize Song's): the panel
+    /// then takes no keys and no clicks of its own.
+    pub(crate) fn asking(&self) -> bool {
+        self.prompt.is_some() || self.confirm_init
+    }
+
     /// Draws the prompt and takes its keys: S or Enter saves, D or N does not, Esc cancels.
     pub fn prompt_ui(&mut self, ctx: &Context) {
         let Some(then) = self.prompt.clone() else {
@@ -1418,7 +1643,7 @@ impl App {
             .stroke(Stroke::new(1.0, SLATE_LINE))
             .inner_margin(Margin::same(12))
             .corner_radius(3.0);
-        Modal::new(Id::unique("orb_unsaved"))
+        let modal = Modal::new(Id::unique("orb_unsaved"))
             .frame(frame)
             .backdrop_color(Color32::from_black_alpha(170))
             .show(ctx, |ui| {
@@ -1450,9 +1675,16 @@ impl App {
                     }
                 });
             });
+        self.prompt_rect = Some(modal.response.rect);
         if let Some(a) = answer {
             self.answer(a);
         }
+    }
+
+    /// The unsaved-changes prompt's rectangle as last drawn (for tests); `None` when it is not
+    /// open.
+    pub fn prompt_rect(&self) -> Option<egui::Rect> {
+        self.prompt.as_ref().and(self.prompt_rect)
     }
 
     /// The window's close request: with unsaved changes it asks first.
@@ -1504,6 +1736,8 @@ impl App {
     /// Draws the menu bar and runs what it chooses.
     pub fn menu_bar(&mut self, ui: &mut Ui) {
         let mut cmd: Option<Cmd> = None;
+        // the Edit menu's places are this frame's only: none while it is closed
+        self.edit_items.clear();
         let enabled =
             !self.browsing() && !self.prompting() && self.replace.is_none() && !self.error_open();
         // F10, or Alt pressed and released alone, focuses the File menu (task-184)
@@ -1540,8 +1774,11 @@ impl App {
         };
         ui.data_mut(|d| d.insert_temp(bar_id(), bar));
         match cmd {
-            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V
-            Some(Cmd::PastePattern) => {
+            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V. A
+            // plugin's window (egui-baseview 0.9) does not answer `RequestPaste` (it reads the
+            // clipboard only on a paste key, which the plugin leaves to the host), so there the
+            // item reads the system clipboard directly (task-274, task-287)
+            Some(Cmd::PastePattern) if !self.is_plugin() => {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
@@ -1565,11 +1802,12 @@ impl App {
         }
     }
 
-    /// The menus of the bar: File, Edit, Mods, Options and Help; what is chosen goes to `cmd`
+    /// The menus of the bar: File, Edit, View, Mods, Options and Help; what is chosen goes to `cmd`
     /// (Edit > Paste Pattern as [`Cmd::PastePattern`], which `menu_bar` turns into a paste of
-    /// the system clipboard). A plugin's File menu has New, Open and Info only, and a plugin's
-    /// editor has no Edit menu (task-201). Each menu's button goes into `bar` (the keyboard
-    /// walk of the bar, task-184); `focus_file` focuses the File button.
+    /// the system clipboard in the standalone app). A plugin's File menu has New, Open and Info
+    /// only (task-201); its Edit menu is the standalone's without shortcut texts (task-274).
+    /// Each menu's button goes into `bar` (the keyboard walk of the bar, task-184);
+    /// `focus_file` focuses the File button.
     fn menu_items(
         &mut self,
         ui: &mut Ui,
@@ -1578,6 +1816,7 @@ impl App {
         focus_file: bool,
     ) {
         let plugin = self.is_plugin();
+        let has_routing = self.has_routing();
         // a plugin's editor has no keyboard shortcuts (task-201): no shortcut texts
         let key = |s| (!plugin).then_some(s);
         let file = ui.menu_button("File", |ui| {
@@ -1593,7 +1832,15 @@ impl App {
             if !plugin && item(ui, "Save As...", None) {
                 *cmd = Some(Cmd::SaveAs);
             }
-            if item(ui, "Info...", None) {
+            // Ctrl/Cmd+I (task-310); disabled without a song, which a plugin always has
+            if item_if(
+                ui,
+                plugin || self.link.is_some(),
+                "Info...",
+                key(&shortcuts::INFO),
+            )
+            .clicked()
+            {
                 *cmd = Some(Cmd::Info);
             }
             if plugin {
@@ -1616,30 +1863,81 @@ impl App {
             file.response.request_focus();
         }
         note_button(bar, &file.response);
-        // the pattern commands paste through the system clipboard and its keys, which a
-        // plugin's editor does not take (task-201)
-        if !plugin {
-            let edit = ui.menu_button("Edit", |ui| {
-                let song = self.link.is_some();
-                self.edit_items.clear();
-                // "Undo Paste Pattern": the item names what it undoes
-                let what = self.undo_name().filter(|_| song);
-                let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
-                let r = item_if(ui, what.is_some(), &text, Some(&shortcuts::UNDO));
-                self.edit_items.push(("Undo", r.rect, what.is_some()));
+        let edit = ui.menu_button("Edit", |ui| {
+            let song = self.link.is_some();
+            // "Undo Paste Pattern": the item names what it undoes (in a plugin's editor too,
+            // with no shortcut text: it takes no keys; task-274)
+            let what = self.undo_name().filter(|_| song);
+            let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
+            let r = item_if(ui, what.is_some(), &text, key(&shortcuts::UNDO));
+            self.edit_items.push(("Undo", r.rect, what.is_some()));
+            if r.clicked() {
+                *cmd = Some(Cmd::Undo);
+            }
+            ui.separator();
+            // the pattern commands, in a plugin's editor too (the user's review of task-274,
+            // round 3), there with no shortcut texts
+            for (text, sc, c) in EDIT_ITEMS {
+                let r = item_if(ui, song, text, sc.and_then(key));
+                self.edit_items.push((text, r.rect, song));
                 if r.clicked() {
-                    *cmd = Some(Cmd::Undo);
+                    *cmd = Some(c);
                 }
+            }
+            ui.separator();
+            // the original's commands 306 and 307, enabled in song mode only (task-306); not in a
+            // plugin's editor, which has no song mode (the user's decision, 2026-11-25)
+            let on = self.can_init();
+            for (text, c) in INIT_ITEMS.into_iter().filter(|_| !plugin) {
+                let r = item_if(ui, on, text, None);
+                self.edit_items.push((text, r.rect, on));
+                let r = if on || !song {
+                    r
+                } else {
+                    r.on_disabled_hover_text("Needs song mode.")
+                };
+                if r.clicked() {
+                    *cmd = Some(c);
+                }
+            }
+            if !plugin {
                 ui.separator();
-                for (text, sc, c) in EDIT_ITEMS {
-                    let r = item_if(ui, song, text, Some(sc));
-                    self.edit_items.push((text, r.rect, song));
-                    if r.clicked() {
-                        *cmd = Some(c);
+            }
+            // the pattern editors; Ctrl/Cmd+E opens the focused row's, so its text is on that
+            // item (the 303-1's or the 303-2's with that 303 focused, the 808's or the 909's
+            // with theirs; tasks 280, 281 and 290)
+            let focus = self.panel.focus;
+            let sc = key(&shortcuts::PATTERN_EDITOR);
+            for k in 0..2 {
+                let text = crate::pattern_editor::menu_item(k);
+                let r = item_if(ui, song, text, sc.filter(|_| focus == k));
+                self.edit_items.push((text, r.rect, song));
+                if r.clicked() {
+                    *cmd = Some(Cmd::PatternEditor(k));
+                }
+            }
+            for m in crate::drum_editor::Machine::ALL {
+                let text = m.menu_item();
+                let r = item_if(ui, song, text, sc.filter(|_| focus == m.row()));
+                self.edit_items.push((text, r.rect, song));
+                if r.clicked() {
+                    *cmd = Some(Cmd::DrumEditor(m));
+                }
+            }
+        });
+        note_button(bar, &edit.response);
+        if !plugin {
+            // the main window's look (task-267): the standalone app's only
+            let view = ui.menu_button("View", |ui| {
+                // two radio items directly in View, no submenu (the user's review, 2026-11-21)
+                for (text, t) in [("Classic", Theme::Classic), ("Modern", Theme::Modern)] {
+                    if ui.radio(self.settings.theme == t, text).clicked() {
+                        *cmd = Some(Cmd::SetTheme(t));
+                        ui.close();
                     }
                 }
             });
-            note_button(bar, &edit.response);
+            note_button(bar, &view.response);
         }
         let mods = ui.menu_button("Mods", |ui| {
             // task-195: only in screen reader mode
@@ -1731,9 +2029,21 @@ impl App {
                 ui.close();
             }
             // the keyboard modes: none in a plugin's editor (task-201); the plugin's mode is the
-            // panel's selector only (task-231), not a menu item
+            // panel's selector only (task-231), not a menu item. Nor is Audio Output: a
+            // plugin's audio is the host's (task-191). The plugin has its Output Routing
+            // instead (task-300)
             if plugin {
+                if has_routing {
+                    ui.separator();
+                    let text = format!("{}...", crate::routing_window::TITLE);
+                    if item(ui, &text, None) {
+                        *cmd = Some(Cmd::OutputRouting);
+                    }
+                }
                 return;
+            }
+            if item(ui, "Audio Output...", None) {
+                *cmd = Some(Cmd::AudioOutput);
             }
             ui.menu_button("Screen Reader Mode", |ui| {
                 for v in ScreenReaderSetting::ALL {
@@ -1904,17 +2214,29 @@ fn menu_bar_key(ui: &Ui) -> bool {
     f10 || alone_released
 }
 
-/// The pattern items of the Edit menu, in order.
-const EDIT_ITEMS: [(&str, &egui::KeyboardShortcut, Cmd); 4] = [
-    ("Cut Pattern", &shortcuts::CUT, Cmd::CutPattern),
-    ("Copy Pattern", &shortcuts::COPY, Cmd::CopyPattern),
-    ("Paste Pattern", &shortcuts::PASTE, Cmd::PastePattern),
+/// The pattern items of the Edit menu, in order, with their shortcuts (Clear Pattern has none,
+/// task-290).
+const EDIT_ITEMS: [(&str, Option<&egui::KeyboardShortcut>, Cmd); 5] = [
+    ("Cut Pattern", Some(&shortcuts::CUT), Cmd::CutPattern),
+    ("Copy Pattern", Some(&shortcuts::COPY), Cmd::CopyPattern),
+    ("Paste Pattern", Some(&shortcuts::PASTE), Cmd::PastePattern),
     (
         "Duplicate Pattern",
-        &shortcuts::DUPLICATE,
+        Some(&shortcuts::DUPLICATE),
         Cmd::DuplicatePattern,
     ),
+    ("Clear Pattern", None, Cmd::ClearPattern),
 ];
+
+/// The Edit menu's Initialize items, in the original's order (`SMNU` 128: ids 306 and 307).
+const INIT_ITEMS: [(&str, Cmd); 2] = [
+    ("Initialize Loop from Pattern Mode", Cmd::InitLoop),
+    ("Initialize Song from Pattern Mode", Cmd::InitSong),
+];
+
+/// The original's question before Initialize Song from Pattern Mode (alert 500128003).
+pub const INIT_SONG_TEXT: &str =
+    "This will overwrite your entire Song - all knob and button automation will be cleared.";
 
 /// The items of the Help menu, in order.
 const HELP_ITEMS: &[(&str, Cmd)] = &[

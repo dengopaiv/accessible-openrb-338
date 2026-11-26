@@ -166,11 +166,13 @@ fn about_can_be_read_line_by_line() {
     let first = spoken(&a, focused(&a));
     assert!(first.starts_with("Version "), "{first}");
     let mut seen = vec![first];
-    for _ in 0..4 {
+    // one more stop since task-233: upstream's copy-version button after the version
+    for _ in 0..6 {
         a.key(Key::Tab);
         seen.push(spoken(&a, focused(&a)));
     }
     println!("{seen:#?}");
+    assert_eq!(seen[1], "Copy version");
     assert!(seen.iter().any(|s| s == "Song collection:"));
     assert!(seen.iter().any(|s| s == "Mod collection:"));
     assert!(seen.iter().any(|s| s.starts_with("https://")));

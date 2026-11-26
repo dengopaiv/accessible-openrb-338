@@ -246,7 +246,7 @@ fn the_step_follows_the_host_position_its_loops_and_jumps() {
     let (p, mut core) = instance();
     let mut host = Host::new(120.0, 0.0);
     host.call(&p, &mut core, 33_075, &[]);
-    // beat 1.5: a note opens 303 #2 mid-pattern, in step with the song
+    // beat 1.5: a note opens 303-2 mid-pattern, in step with the song
     let out = host.call(&p, &mut core, 512, &[on(0, 1, 4)]);
     assert!(peak(&out) > 0.0);
     let check = |core: &Core, host: &Host| {
@@ -417,7 +417,7 @@ fn remote_pattern_notes_select_but_do_not_open_the_gate() {
     p.set_remote_enabled(true);
     let mut host = Host::new(120.0, 0.0);
     host.call(&p, &mut core, 4096, &[]);
-    // the Standard Mapping on channel 16: note 19 selects 303 #1's pattern 3 (A3)
+    // the Standard Mapping on channel 16: note 19 selects 303-1's pattern 3 (A3)
     let remote = HostEvent {
         frame: 0,
         message: Message::NoteOn {
@@ -568,7 +568,7 @@ fn the_stop_fades_out_over_one_block() {
 #[test]
 fn a_mid_step_note_starts_at_once() {
     // 60 BPM: a tick is 230 frames, a step 0.25 s; notes at 10 % and 80 % into step 6 (beat
-    // 1.25..1.5), far from its boundaries, on the 808 (channel 3) and 303 #1 (channel 1)
+    // 1.25..1.5), far from its boundaries, on the 808 (channel 3) and 303-1 (channel 1)
     for frac in [0.1, 0.8] {
         let (p, mut core) = instance();
         // the host plays for a second first (its start triggers the step there, slot 3)

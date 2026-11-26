@@ -9,7 +9,7 @@
 //! "OpenRB-338 developer options"):
 //!
 //! ```text
-//! --demo  --size WxH  --ppp S  --browse open|save|export|mod  --about  --info
+//! --demo  --size WxH  --ppp S  --browse open|save|export|mod  --about  --info  --audio
 //! --screenshot OUT.png  --play
 //! ```
 //!
@@ -28,11 +28,12 @@
 //! overrides the pixel density. `--screenshot` saves the window to a PNG after a few frames and
 //! quits. Ctrl/Cmd+O opens the in-app file browser (task-046) to open a song, Ctrl/Cmd+S saves;
 //! `--about` starts with the About window open (for screenshots, task-115), `--info` with File >
-//! Info's Song Information window (task-117). `--play` presses Play once the song is open (CPU
+//! Info's Song Information window (task-117), `--audio` with Options > Audio Output's window
+//! (task-191). `--play` presses Play once the song is open (CPU
 //! measurements, task-153).
 //! `--browse MODE` starts with the browser open for a mode. The browser's folders are kept in the
-//! settings file (`$ORB_UI_CONFIG`, else in portable mode `data/ui.toml` beside the program,
-//! task-223, else `OpenRB-338/ui.toml` in the configuration folder).
+//! settings file (`$ORB_UI_CONFIG`, else in portable mode `OpenRB-338.toml` beside the program,
+//! task-289, else `OpenRB-338/OpenRB-338.toml` in the configuration folder).
 
 // The Windows release build is a GUI-subsystem program: no console window opens behind the
 // panel (task-111). `orb` is not affected (this attribute is in the UI binary only). A debug
@@ -51,7 +52,7 @@ use eframe::egui_wgpu::wgpu::Backends;
 use orb_engine::tables::Tables;
 use orb_ui::app::{App, Shot};
 use orb_ui::browser::Mode;
-use orb_ui::layout::{PANEL_H, PANEL_W};
+use orb_ui::layout::{MIN_WINDOW_H, MIN_WINDOW_W, PANEL_H, PANEL_W};
 use orb_ui::link::Link;
 use orb_ui::menu::MENU_H;
 use orb_ui::model::Panel;
@@ -69,6 +70,8 @@ struct Args {
     demo: bool,
     about: bool,
     info: bool,
+    /// `--audio`: start with the Audio Output window open (task-191).
+    audio: bool,
     /// `--play`: press Play once the song is open (CPU measurements, task-153).
     play: bool,
     size: [f32; 2],
@@ -121,6 +124,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Exit> {
         demo: false,
         about: false,
         info: false,
+        audio: false,
         play: false,
         size: [PANEL_W, PANEL_H],
         sized: false,
@@ -138,6 +142,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Exit> {
             "--demo" => r.demo = true,
             "--about" => r.about = true,
             "--info" => r.info = true,
+            "--audio" => r.audio = true,
             "--play" => r.play = true,
             "--debug-panic" => r.debug_panic = Some(DebugPanic::Start),
             "--debug-panic-window" => r.debug_panic = Some(DebugPanic::Window),
@@ -260,6 +265,7 @@ fn main() -> ExitCode {
         demo,
         about,
         info,
+        audio,
         play,
         size,
         sized,
@@ -276,19 +282,28 @@ fn main() -> ExitCode {
         _ => runlog::WATCHDOG,
     };
     runlog::start(orb_ui::about::VERSION, watchdog);
-    // portable mode (task-223) and where the settings and the logs really are (ORB_UI_CONFIG
-    // and ORB_UI_LOG_DIR win over it)
+    // portable mode (task-289, the fork's older portable.txt too) and where the settings and
+    // the logs really are (ORB_UI_CONFIG and ORB_UI_LOG_DIR win over it)
     let shown = |p: Option<std::path::PathBuf>| match p {
         Some(p) => p.display().to_string(),
         None => "none".to_string(),
     };
-    let mode = match orb_ui::portable::root() {
-        Some(_) => format!("portable ({} found)", orb_ui::portable::MARKER),
+    let portable = orb_ui::portable::folder();
+    let mode = match &portable {
+        Some(d) if d.join(orb_ui::portable::MARKER_NAME).is_file() => {
+            format!("portable ({} found)", orb_ui::portable::MARKER_NAME)
+        }
+        Some(_) => format!("portable ({} found)", orb_ui::portable::LEGACY_MARKER),
         None => "not portable".to_string(),
+    };
+    let config_set = std::env::var_os("ORB_UI_CONFIG").is_some_and(|p| !p.is_empty());
+    let settings_file = match &portable {
+        Some(d) if !config_set => Some(d.join(orb_ui::portable::FILE_NAME)),
+        _ => orb_ui::settings::default_file(),
     };
     runlog::note(&format!(
         "{mode}: settings file {}; logs in {}",
-        shown(orb_ui::settings::default_file()),
+        shown(settings_file),
         shown(orb_ui::crash::log_dir())
     ));
     if debug_panic == Some(DebugPanic::Start) {
@@ -319,9 +334,12 @@ fn main() -> ExitCode {
     let mut startup = None;
     // errors of the start, shown in the message box once the app is up (task-130)
     let mut start_errors: Vec<String> = Vec::new();
-    // keeps the audio stream alive for the whole run
-    let mut _stream = None;
-    let mut audio_health = None;
+    // the settings, read before the audio opens: the saved Audio Output choice (task-191)
+    let settings = Settings::load();
+    // owns the audio stream for the whole run
+    let mut controller = None;
+    // what the start tells in the status line
+    let mut start_notes: Vec<String> = Vec::new();
     if !demo {
         let samples = Some(rbm::standard::builtin_samples());
         app_samples = samples.clone();
@@ -343,32 +361,42 @@ fn main() -> ExitCode {
             }
         }
         runlog::stage("starting the audio output");
-        match orb_player::output::start(audio) {
-            Ok(s) => {
-                runlog::stage(&format!(
-                    "audio output: \"{}\", {} Hz, {} channels, {}{}, {}",
-                    s.device,
-                    s.config.sample_rate,
-                    s.config.channels,
-                    s.format,
-                    if s.resampled {
-                        ", resampled from 44100"
-                    } else {
-                        ""
-                    },
-                    s.buffer_text()
-                ));
-                audio_health = Some(s.health());
-                _stream = Some(s);
-            }
-            Err(e) => {
-                eprintln!("OpenRB-338: audio output: {e}; the panel runs without sound");
-                runlog::stage(&format!("audio output failed: {e}"));
+        let (c, events) = orb_player::control::Controller::start(audio, settings.audio.request());
+        for e in events {
+            match e {
+                orb_player::control::Event::Note(n) => {
+                    eprintln!("OpenRB-338: {n}");
+                    runlog::stage(&format!("audio output: {n}"));
+                    start_notes.push(n);
+                }
                 // the one failure at the launch is an error the user expects to hear of: the
                 // box. Later audio errors repeat: `App::notify`.
-                start_errors.push(format!("Audio output: {e}; the panel runs without sound"));
+                orb_player::control::Event::Error(e) => {
+                    eprintln!("OpenRB-338: {e}");
+                    runlog::stage(&format!("audio output failed: {e}"));
+                    start_errors.push(e);
+                }
             }
         }
+        if let Some(s) = c.stream() {
+            let line = format!(
+                "audio on {} {} ({} Hz{}, {} channels, {}, {})",
+                s.driver,
+                s.device,
+                s.config.sample_rate,
+                if s.resampled {
+                    ", resampled from 44100"
+                } else {
+                    ""
+                },
+                s.config.channels,
+                s.format,
+                s.buffer_text()
+            );
+            eprintln!("OpenRB-338: {line}");
+            runlog::stage(&line);
+        }
+        controller = Some(c);
         link = Some(l);
     }
 
@@ -379,8 +407,9 @@ fn main() -> ExitCode {
         .with_icon(Arc::new(orb_ui::art::app_icon(256)))
         // the menu bar is above the panel
         .with_inner_size([size[0], size[1] + MENU_H])
-        // The minimum is half the native panel size (decision task-040).
-        .with_min_inner_size([PANEL_W / 2.0, PANEL_H / 2.0 + MENU_H])
+        // The minimum holds every window the user cannot resize (task-297; was half the panel,
+        // decision task-040).
+        .with_min_inner_size([MIN_WINDOW_W, MIN_WINDOW_H])
         .with_maximized(!sized);
     // the graphics adapter: on Windows DirectX 12 first, Vulkan not loaded (task-217)
     let graphics = orb_ui::graphics::Rule::from_env();
@@ -441,13 +470,18 @@ fn main() -> ExitCode {
                 Some(l) => App::with_link(panel, l, shot),
                 None => App::new(panel, shot),
             };
+            app.clipboard = orb_ui::clipboard::Clipboard::System;
             app.samples = app_samples;
-            app.audio_health = audio_health;
+            app.audio = controller;
             app.menu = true;
             app.enable_logo_anim();
-            app.settings = Settings::load();
+            app.settings = settings;
             // the real screen reader check and the system's file dialogs (task-194)
             app.use_system_services();
+            if let Some(n) = start_notes.pop() {
+                // announced in screen reader mode, as every status line of the fork
+                app.set_status(n);
+            }
             // the song (or the new empty song) and its mod's startup sound; nothing in the demo,
             // which has no player
             // (the errors of the start are one box)
@@ -466,6 +500,9 @@ fn main() -> ExitCode {
             if info {
                 app.show_info();
             }
+            if audio {
+                app.show_audio();
+            }
             if play {
                 app.panel.press("transport.play", 0.0);
             }
@@ -473,12 +510,21 @@ fn main() -> ExitCode {
             Ok(Box::new(app))
         }),
     );
+    // The window is closed, the settings are saved and the player has stopped: App and its
+    // Controller (the stream) were dropped inside run_native. When an ASIO driver was loaded
+    // the process ends without the DLLs' detach calls (task-193), also after a start error,
+    // since the audio output opens before the window.
     match run {
         Ok(()) => {
             runlog::end("the window was closed");
+            orb_ui::crash::terminate_if_asio_was_used(0);
             ExitCode::SUCCESS
         }
-        Err(e) => start_failed(&start_error_text(&e)),
+        Err(e) => {
+            let code = start_failed(&start_error_text(&e));
+            orb_ui::crash::terminate_if_asio_was_used(1);
+            code
+        }
     }
 }
 
@@ -532,7 +578,7 @@ mod tests {
     fn no_arguments_is_the_new_song() {
         let a = parse(&[]).unwrap();
         assert_eq!(a.song, None);
-        assert!(!a.demo && !a.about && !a.info && !a.sized && !a.play);
+        assert!(!a.demo && !a.about && !a.info && !a.audio && !a.sized && !a.play);
         assert_eq!(a.size, [PANEL_W, PANEL_H]);
     }
 
@@ -568,12 +614,13 @@ mod tests {
             "export",
             "--about",
             "--info",
+            "--audio",
             "--screenshot",
             "out.png",
             "--play",
         ])
         .unwrap();
-        assert!(a.demo && a.about && a.info && a.sized && a.play);
+        assert!(a.demo && a.about && a.info && a.audio && a.sized && a.play);
         assert_eq!(a.size, [300.0, 200.0]);
         assert_eq!(a.ppp, Some(2.0));
         assert_eq!(a.browse, Some(Mode::Export));
@@ -620,6 +667,7 @@ mod tests {
             "--screenshot",
             "--about",
             "--info",
+            "--audio",
             "--play",
         ] {
             assert!(!USAGE.contains(hidden), "{hidden}");

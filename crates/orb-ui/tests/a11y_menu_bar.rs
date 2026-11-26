@@ -41,6 +41,9 @@ fn f10_focuses_file_right_moves_to_mods_down_opens_it_escape_closes() {
     // upstream's Edit menu (merged by task-230) is the second title
     h.key(Key::ArrowRight);
     assert_eq!(focus(&h), (Role::Button, "Edit".to_string()));
+    // and upstream's View (View > Classic / Modern, merged by task-233) the third
+    h.key(Key::ArrowRight);
+    assert_eq!(focus(&h), (Role::Button, "View".to_string()));
     h.key(Key::ArrowRight);
     assert_eq!(focus(&h), (Role::Button, "Mods".to_string()));
     assert!(!menu_open(&h));
@@ -100,8 +103,8 @@ fn enter_on_an_item_runs_it() {
     let mut h = AppTree::new();
     assert!(!h.app.key_help_is_open());
     h.key(Key::F10);
-    // File, Edit, Mods, Options, Help
-    for _ in 0..4 {
+    // File, Edit, View, Mods, Options, Help
+    for _ in 0..5 {
         h.key(Key::ArrowRight);
     }
     assert_eq!(focus(&h), (Role::Button, "Help".to_string()));
@@ -150,7 +153,7 @@ fn options_open(mode: orb_ui::screen_reader::ScreenReaderSetting) -> AppTree {
     h.app.settings.screen_reader = mode;
     h.frame(vec![]);
     h.key(Key::F10);
-    for _ in 0..3 {
+    for _ in 0..4 {
         h.key(Key::ArrowRight);
     }
     assert_eq!(focus(&h), (Role::Button, "Options".to_string()));
@@ -186,7 +189,7 @@ fn speak_raw_values_shows_in_screen_reader_mode_only() {
 fn the_options_items_read_their_state() {
     let mut h = AppTree::new();
     h.key(Key::F10);
-    for _ in 0..3 {
+    for _ in 0..4 {
         h.key(Key::ArrowRight);
     }
     assert_eq!(focus(&h), (Role::Button, "Options".to_string()));
@@ -321,11 +324,13 @@ fn an_item_that_opens_no_window_gives_the_focus_back() {
     let mut h = on_play();
     assert!(!h.app.settings.step_editor_follows);
     h.key(Key::F10);
-    for _ in 0..3 {
+    for _ in 0..4 {
         h.key(Key::ArrowRight);
     }
     open_with_down(&mut h);
-    for _ in 0..4 {
+    // past Vintage, Startup Sound, upstream's Audio Output... (task-233), Screen Reader Mode and
+    // Speak Raw Values
+    for _ in 0..5 {
         h.key(Key::ArrowDown);
     }
     println!("on: {:?}", focus(&h));
@@ -347,7 +352,7 @@ fn an_item_that_opens_no_window_gives_the_focus_back() {
 fn an_item_that_opens_a_window_returns_to_the_control_when_it_closes() {
     let mut h = on_play();
     h.key(Key::F10);
-    for _ in 0..4 {
+    for _ in 0..5 {
         h.key(Key::ArrowRight);
     }
     open_with_down(&mut h);

@@ -25,10 +25,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::{activate, set, song_bytes, test_mod, with_song};
 use nice_plug::prelude::Params;
+use orb_engine::frame::OutputRouting;
 use orb_engine::song::Device;
 use orb_player::midi::Message;
 use orb_player::{Command, GARBAGE_PER_COMMAND};
-use orb_plugin::core::{Core, HostEvent, HostTransport};
+use orb_plugin::core::{AUX_OUTPUTS, AuxOut, Core, HostEvent, HostTransport};
 use orb_plugin::instance::{Mode, OrbParams};
 
 struct Counting;
@@ -146,19 +147,31 @@ impl Host {
     }
 }
 
-/// `frames` frames in calls of `buf`, armed; the events.
+/// `frames` frames in calls of `buf`, armed; the events. The per-device outputs (task-256)
+/// are connected in a pattern that changes with every call, from none to all 26 (task-300).
 fn run(p: &OrbParams, core: &mut Core, h: &mut Host, frames: usize, buf: usize) -> usize {
     let (mut l, mut r) = (vec![0f32; buf], vec![0f32; buf]);
+    let mut buses = vec![vec![0f32; buf]; 2 * AUX_OUTPUTS];
     let mut n = 0;
     let mut done = 0;
     while done < frames {
         let k = buf.min(frames - done);
         let t = h.transport(core.rate());
         let ev = h.events(k);
+        let mask = match h.calls % 4 {
+            0 => 0,
+            1 => u32::MAX,
+            _ => (h.calls as u32).wrapping_mul(0x9E37_79B9) >> 3,
+        };
+        let mut it = buses.iter_mut();
+        let mut aux: AuxOut = std::array::from_fn(|c| {
+            let (bl, br) = (it.next().unwrap(), it.next().unwrap());
+            (mask >> c & 1 == 1).then_some([&mut bl[..k], &mut br[..k]])
+        });
         // what the plugin's `process` does: read the parameters, then the core
         n += armed(|| {
             let values = p.values();
-            core.process_with(&mut l[..k], &mut r[..k], &values, &t, &ev)
+            core.process_aux(&mut l[..k], &mut r[..k], &mut aux, &values, &t, &ev)
         });
         done += k;
         h.frames += k as u64;
@@ -186,6 +199,8 @@ fn session(rate: u32) {
         set(&p, "g20", 10 * k as i32);
         set(&p, "d5c1", 1 + k as i32);
         set(&p, "d7c6", (k % 2) as i32);
+        // task-300: Options > Output Routing, a device out of the Mix and drums off their bus
+        p.set_routing(OutputRouting::from_bits(!(0b1001_0000_0101 << k)));
         events += run(&p, &mut core, &mut h, 3000, buf);
     }
     // Gate Pattern Mode (task-218) from frame 60000: the gates open, switch and close with the
@@ -251,6 +266,7 @@ fn session(rate: u32) {
         assert!(core.audio().garbage_room() < GARBAGE_PER_COMMAND);
     }
     p.set_mode(Mode::Latch);
+    p.set_routing(OutputRouting::default());
     // a state restore while running
     let saved = p.serialize_fields();
     p.deserialize_fields(&saved);

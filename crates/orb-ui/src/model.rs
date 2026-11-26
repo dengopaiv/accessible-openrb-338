@@ -12,6 +12,10 @@ pub const BAR: i32 = 768;
 pub const MAX_POS: i32 = 766_464;
 const MAX_END: i32 = 767_232;
 
+/// The TR-808's instrument selector knob (docs/ui_spec.md section 6): the classic skin's; the
+/// modern skin shows the mod's window in its place (task-267).
+pub const SELECTOR_808: &str = "tr808.selector";
+
 /// A change the engine must hear.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
@@ -301,10 +305,12 @@ pub struct Panel {
     /// The global PCF and Comp routing ids: 0 none, PCF `c + 1`, Comp `c + 2` (master 1).
     pub pcf_id: u8,
     pub comp_id: u8,
-    /// Meter states 0..=10 by control id (mixer, master, effect input); engine-fed.
+    /// The meter bytes 0..=127 by control id (mixer, master, effect input); engine-fed. The
+    /// modern skin shows [`meter_state`], the classic skin the original's [`peak_meter_frame`].
     pub meters: HashMap<String, u8>,
-    /// The compressor's nine gain-reduction LEDs: 0 off, 1 green, 2 amber, 3 red.
-    pub gr_leds: [u8; 9],
+    /// The compressor's gain byte (its live byte 3, `trunc(min(G*18, 127))`, 18 at unity
+    /// gain, 0 while the compressor gets no audio); [`gr_lit`] gives the LEDs it lights.
+    pub gr_byte: u8,
     /// The song's sound model: the Options menu's "Vintage ReBirth Synth Sound" (GLOB byte 482,
     /// the engine's global byte 21). Changes go through [`Panel::set_vintage`].
     pub vintage: bool,
@@ -326,19 +332,79 @@ impl Default for Panel {
     }
 }
 
-/// `c` for a section name like `mixer3` -> 2.
-/// The lit segments (0..=4) of a header meter (the mixer channels' and the effects') for the
-/// meter's state 0..=10 (`link::meter_state`, the 11 frames of the original's meter): any
-/// signal lights the first segment, the amber third segment lights from 7 and the red top one
-/// from 9, where the master's 10-segment meters light their amber and red segments
-/// (task-179; docs/ui_spec.md section 19).
-pub fn header_meter_segments(state: u8) -> u8 {
-    [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4][state.min(10) as usize]
+/// The main panel's meter state 0..=10 of a meter byte 0..=127: the original's 11-frame master
+/// meter ([`peak_meter_frame`] over 11 frames, decision task-254), so the states step at the
+/// bytes 2, 3, 5, 7, 12, 19, 30, 49, 81 and 127. The modern skin's header meters show it
+/// through their `map` (four segments; `layout.tsv`, task-179).
+pub fn meter_state(byte: u8) -> u8 {
+    peak_meter_frame(byte, 11) as u8
 }
 
-/// The color of each unlit gain-reduction LED, left to right: the center ("0") green, the two
-/// beside it amber and the outer ones red, the colors the link lights them in.
-pub const GR_OFF: [&str; 9] = ["r", "r", "y", "y", "g", "y", "y", "r", "r"];
+/// The original's peak-meter level of a meter byte, the table `sub_424220` (`byte_4DABA8`,
+/// docs/ui_spec.md section 2, "Meters") [C]: `L(0) = 0`,
+/// `L(b) = __ftol(log(b) / log(127.0) * 127.0)` (0x424258..0x424294, `fdivr`: `log(b)` over
+/// `log(127)`, in double precision), so `L(1) = 0`, `L(2) = 18`, `L(127) = 127`. The table has
+/// 128 entries; a byte above 127 (the engine never writes one) counts as 127.
+pub fn peak_meter_level(byte: u8) -> u8 {
+    let b = byte.min(127);
+    if b == 0 {
+        return 0;
+    }
+    ((b as f64).ln() / 127.0f64.ln() * 127.0) as u8
+}
+
+/// The frame a peak meter of the original (`CPeakMeterView`: the mixer channels', the master's
+/// and the effects' input meters) shows for its meter byte, with `frames` frames in its strip:
+/// the draw `sub_4249A8` takes `sub_467F31(L, frames - 1, 127) = trunc(L * (frames - 1) / 127)`
+/// of the level [`peak_meter_level`], `frames` the count the strip's bitmap object was built
+/// with (`sub_46DB82`, its `+4`: 11 for the master's 12557, 4 for the mixer's 12558 and the
+/// effects' 12067; docs/ui_spec.md section 2) [C]. The master's 11 frames step at the bytes 2,
+/// 3, 5, 7, 12, 19, 30, 49, 81 and 127; the four-frame meters are green from 6, amber from 26
+/// and red only at 127.
+pub fn peak_meter_frame(byte: u8, frames: u16) -> u16 {
+    // `fild; fimul; fidiv` then `__ftol`: the exact quotient of integers, truncated
+    (peak_meter_level(byte) as u32 * (frames.max(1) as u32 - 1) / 127) as u16
+}
+
+/// How a control looks in its current state, for a skin to draw (`skin::svg` names the part
+/// of each look; docs/ui_spec.md section 22).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Look {
+    /// The control's part as the table names it (no state: an area, the mod window).
+    Plain,
+    /// On or off: toggles, radios, LEDs, the pattern grids, the gain-reduction LEDs, the 808's
+    /// steps (the pressed look of a held key is the skin's).
+    OnOff(bool),
+    /// A push button: at rest, or pressed while held.
+    Push,
+    /// Lit: Play while playing, Record while recording.
+    Lit,
+    /// A frame by value: a switch's position, a 909 step's 0..=3.
+    Value(u8),
+    /// A peak meter with its meter byte (the skin maps it to its frames).
+    Meter(u8),
+}
+
+/// How many of the compressor's nine gain-reduction LEDs the original lights for its gain
+/// byte, a bar from the left (docs/ui_spec.md section 2, "Gain-reduction meter") [C]. The comp
+/// section's poll `sub_404396` maps the byte through the table `sub_4044FD`,
+/// `t = trunc((ln(b / 16) - ln(0.0625)) / (ln(7.9375) - ln(0.0625)) * 127)` (`t(0) = 0`), and
+/// the view's update `sub_424D5D` lights `trunc(t * 9 / 127)` LEDs (`sub_467F31`): none at
+/// 0 and 1, five at 16 to 25 (18 is unity gain), all nine only at 127. A byte above 127 (the
+/// engine never writes one) counts as 127.
+pub fn gr_lit(byte: u8) -> usize {
+    let b = byte.min(127);
+    if b == 0 {
+        return 0;
+    }
+    // 0x4046AC..0x404708 in double precision, in the original's operand order, then `__ftol`
+    // (truncation)
+    let low = 0.0625f64.ln();
+    let num = (b as f64 / 16.0).ln() - low;
+    let den = 7.9375f64.ln() - low;
+    let t = (num / den * 127.0) as i64;
+    (t * 9 / 127) as usize
+}
 
 fn index_of(section: &str, prefix: &str) -> Option<usize> {
     section
@@ -367,7 +433,7 @@ impl Panel {
             pcf_id: 0,
             comp_id: 0,
             meters: HashMap::new(),
-            gr_leds: [0; 9],
+            gr_byte: 0,
             vintage: false,
             events: Vec::new(),
             held: None,
@@ -467,20 +533,22 @@ impl Panel {
         p.set_knob("mixer4.pan", 800);
         p.set_fader("mixer1.level", 640);
         p.set_fader("mixer3.level", 880);
+        // the meter bytes of the states 6, 5, 8, 3, 8, 7, 4, 3, 2 ([`meter_state`])
         for (id, v) in [
-            ("mixer1.meter", 6),
-            ("mixer2.meter", 5),
-            ("mixer3.meter", 8),
-            ("mixer4.meter", 3),
-            ("master.meter_l", 8),
-            ("master.meter_r", 7),
-            ("pcf.meter", 4),
-            ("comp.meter", 3),
-            ("delay.meter", 2),
+            ("mixer1.meter", 19),
+            ("mixer2.meter", 12),
+            ("mixer3.meter", 49),
+            ("mixer4.meter", 5),
+            ("master.meter_l", 49),
+            ("master.meter_r", 30),
+            ("pcf.meter", 7),
+            ("comp.meter", 5),
+            ("delay.meter", 3),
         ] {
             p.meters.insert(id.into(), v);
         }
-        p.gr_leds = [0, 0, 0, 2, 1, 0, 0, 0, 0];
+        // the idle compressor at unity gain: LEDs 1 to 5
+        p.gr_byte = 18;
         p.events.clear();
         p
     }
@@ -528,12 +596,24 @@ impl Panel {
     // ---- knobs, faders, switches --------------------------------------------------------
 
     pub fn knob(&self, id: &str) -> i32 {
+        if id == SELECTOR_808 {
+            // the knob shows `(127 * i + 5) / 11` for the selected instrument i (`sub_441E79`)
+            let v = (127 * self.inst808.min(11) as i32 + 5) / 11;
+            return behavior::knob_from_engine(v);
+        }
         self.knobs.get(id).copied().unwrap_or(0)
     }
 
-    /// Sets a knob position and sends the value when it changed.
+    /// Sets a knob position and sends the value when it changed. The TR-808's instrument
+    /// selector ([`SELECTOR_808`]) selects instrument `(11 * v + 63) / 127` of its value v and
+    /// sends nothing (docs/ui_spec.md section 6).
     pub fn set_knob(&mut self, id: &str, p: i32) {
         let p = p.clamp(0, KNOB_MAX);
+        if id == SELECTOR_808 {
+            let v = behavior::knob_send(p);
+            self.inst808 = ((11 * v + 63) / 127).clamp(0, 11) as usize;
+            return;
+        }
         let old = self.knobs.insert(id.into(), p).unwrap_or(-1);
         let changed = old < 0 || behavior::knob_send(old) != behavior::knob_send(p);
         if changed {
@@ -1148,74 +1228,61 @@ impl Panel {
     }
 
     /// Whether a pattern or bank button of a pattern section is lit: the selected pattern's
-    /// button when its bank is the shown one, and the shown bank.
-    pub fn grid_lit(&self, c: &crate::layout::Ctl) -> bool {
+    /// button when its bank is the shown one, and the shown bank. The fork's screen reader
+    /// tree reads it too (`a11y`, a grid button's toggled state).
+    pub fn grid_lit(&self, c: &crate::skin::Ctl) -> bool {
         let r = index_of(&c.section, "pattern").unwrap_or(0).min(3);
         let name = c.name();
         if let Some(n) = name.strip_prefix("pattern") {
             let n: u8 = n.parse().unwrap_or(1);
-            self.rows[r].lit_button() == Some(n - 1)
+            self.rows[r].lit_button() == Some(n.max(1) - 1)
         } else {
             let letter = name.strip_prefix("bank").unwrap_or("A").as_bytes()[0] - b'A';
             self.rows[r].bank == letter
         }
     }
 
-    /// The part to draw for a control in its current state. `pressed` is a mouse button held
-    /// on it, `now` the time in seconds.
-    pub fn part_name(&self, c: &crate::layout::Ctl, pressed: bool, now: f64) -> String {
-        let fam = c.family();
+    /// How the control `c` looks in its current state at `now` (seconds); a skin draws it
+    /// (docs/ui_spec.md section 22). Knobs, faders and displays are drawn from their values.
+    pub fn look(&self, c: &crate::skin::Ctl, now: f64) -> Look {
         let name = c.name();
-        // A routing key (`mixsw_`) shows pressed while the mouse is down on it, never after:
-        // its lamp alone shows the state.
-        let held = if pressed && fam == "mixsw_" {
-            "_pressed"
-        } else {
-            ""
-        };
-        let on_off = |on: bool| format!("{fam}{}{held}", if on { "on" } else { "off" });
-        let push = || format!("{fam}{}", if pressed { "pressed" } else { "rest" });
         match c.kind.as_str() {
             "toggle" if c.id == "transport.record" => {
                 if self.transport.recording {
-                    format!("{fam}lit")
+                    Look::Lit
                 } else {
-                    push()
+                    Look::Push
                 }
             }
-            "toggle" if c.id == "tr909.flam_button" => on_off(self.flam_button),
-            "toggle" => on_off(self.toggle_on(&c.id)),
-            "radio" => on_off(self.toggle_on(&c.id)),
-            "switch" | "hswitch" | "vswitch" => format!("{fam}{}", self.switch_position(&c.id)),
+            "toggle" if c.id == "tr909.flam_button" => Look::OnOff(self.flam_button),
+            "toggle" | "radio" => Look::OnOff(self.toggle_on(&c.id)),
+            "switch" | "hswitch" | "vswitch" => Look::Value(self.switch_position(&c.id)),
             "trigger" if c.id == "transport.play" => {
                 if self.transport.playing {
-                    format!("{fam}lit")
+                    Look::Lit
                 } else {
-                    push()
+                    Look::Push
                 }
             }
-            "trigger" | "wind" | "repeat" => push(),
-            "led" => on_off(self.led_on(c, now)),
-            "grid" => on_off(self.grid_lit(c)),
-            "steps" => self.step_part(c),
+            "trigger" | "wind" | "repeat" => Look::Push,
+            "led" => Look::OnOff(self.led_lit(&c.id, now)),
+            "grid" => Look::OnOff(self.grid_lit(c)),
+            "steps" => self.step_look(c),
+            // the gain-reduction LEDs: a bar from the left
             "meter" if name.starts_with("gr") => {
                 let i: usize = name[2..].parse::<usize>().unwrap_or(1).clamp(1, 9);
-                match self.gr_leds[i - 1].min(3) {
-                    // unlit, in the color of its place (task-179)
-                    0 => format!("gr_led_off_{}", GR_OFF[i - 1]),
-                    s => format!("gr_led_{}", ["", "green", "amber", "red"][s as usize]),
-                }
+                Look::OnOff(i <= gr_lit(self.gr_byte))
             }
-            "meter" => {
-                let state = self.meters.get(&c.id).copied().unwrap_or(0).min(10);
-                if fam == "meter_14x14_" {
-                    format!("{fam}{}", header_meter_segments(state))
-                } else {
-                    format!("{fam}{state}")
-                }
-            }
-            _ => c.part.clone(),
+            "meter" => Look::Meter(self.meters.get(&c.id).copied().unwrap_or(0)),
+            _ => Look::Plain,
         }
+    }
+
+    /// The part the modern skin draws for a control in its current state (`pressed`: a mouse
+    /// button or a computer key holds it; `now` the time in seconds): the modern skin's naming
+    /// of [`Panel::look`] (`skin::svg::SvgSkin::part_name`).
+    pub fn part_name(&self, c: &crate::skin::Ctl, pressed: bool, now: f64) -> String {
+        crate::skin::svg::modern().part_name(self, c, pressed, now)
     }
 
     /// The next time after `now` the panel's look changes by itself, not by input or the engine
@@ -1228,8 +1295,10 @@ impl Panel {
             .min_by(f64::total_cmp)
     }
 
-    fn led_on(&self, c: &crate::layout::Ctl, now: f64) -> bool {
-        let Some(k) = index_of(&c.section, "tb303_") else {
+    /// Whether the 303 LED `id` (`tb303_1.key0_led`, `tb303_2.pitch_led`, ...) is lit at `now`.
+    pub fn led_lit(&self, id: &str, now: f64) -> bool {
+        let (section, name) = id.split_once('.').unwrap_or((id, ""));
+        let Some(k) = index_of(section, "tb303_") else {
             return false;
         };
         let k = k.min(1);
@@ -1238,7 +1307,7 @@ impl Panel {
         // step editor's pin in screen reader mode, else the row's)
         let pattern = self.edit_pattern(k);
         let step = s.step(pattern);
-        match c.name() {
+        match name {
             "pitch_led" => s.pitch_mode,
             "down_led" => step.down,
             "up_led" => step.up,
@@ -1254,19 +1323,17 @@ impl Panel {
         }
     }
 
-    fn step_part(&self, c: &crate::layout::Ctl) -> String {
-        let step: usize = c
+    fn step_look(&self, c: &crate::skin::Ctl) -> Look {
+        let step = c
             .name()
             .strip_prefix("step")
-            .unwrap()
-            .parse::<usize>()
-            .unwrap()
+            .and_then(|n| n.parse::<usize>().ok())
+            .unwrap_or(1)
+            .clamp(1, 16)
             - 1;
         if c.section == "tr808" {
             let lit = self.steps808[self.inst808][step];
-            let on = lit != (self.playing_step808 == Some(step));
-            let color = ["red", "orange", "yellow", "white"][step / 4];
-            format!("step808_{color}_{}", if on { "on" } else { "off" })
+            Look::OnOff(lit != (self.playing_step808 == Some(step)))
         } else {
             let mut v = self.steps909[self.inst909][step];
             if self.playing_step909 == Some(step) {
@@ -1276,7 +1343,7 @@ impl Panel {
             // flam frame (0x444F0C..0x444F18, docs/ui_spec.md section 7), and that is what the
             // engine plays: the flam pass retriggers every value above 2 (tr909.rs, 0x1002B320),
             // so 4 is an accent with a flam and 5..=255 the flam hit alone.
-            format!("step909_{}", v.min(3))
+            Look::Value(v.min(3))
         }
     }
 }
@@ -1518,16 +1585,36 @@ mod tests {
     /// lights one and the red one lights where the master's red segments do (state 9).
     #[test]
     fn header_meters_map_the_11_states_to_4_segments() {
-        let seg: Vec<u8> = (0..=10).map(header_meter_segments).collect();
-        assert_eq!(seg, [0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4]);
-        assert!(seg.windows(2).all(|w| w[0] <= w[1]));
         let mut p = Panel::new();
         let c = crate::layout::controls()
             .into_iter()
             .find(|c| c.id == "mixer2.meter")
             .unwrap();
-        for (state, want) in [(0, 0), (1, 1), (6, 2), (8, 3), (10, 4), (200, 4)] {
-            p.meters.insert(c.id.clone(), state);
+        // the map is the modern skin's data (the header meters' `map` in layout.tsv)
+        let seg = c.params.nums("map").unwrap();
+        assert_eq!(seg, [0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]);
+        assert!(seg.windows(2).all(|w| w[0] <= w[1]));
+        for c in crate::layout::controls() {
+            if c.family() == "meter_14x14_" {
+                assert_eq!(c.params.nums("map").as_ref(), Some(&seg), "{}", c.id);
+            }
+        }
+        // the meter bytes on the original's scale (decision task-254): one segment from 2 (state
+        // 1), two from 7 (state 4), three from 30 (state 7), four from 81 (state 9)
+        for (byte, want) in [
+            (0, 0),
+            (1, 0),
+            (2, 1),
+            (6, 1),
+            (7, 2),
+            (29, 2),
+            (30, 3),
+            (80, 3),
+            (81, 4),
+            (127, 4),
+            (200, 4),
+        ] {
+            p.meters.insert(c.id.clone(), byte);
             assert_eq!(p.part_name(&c, false, 0.0), format!("meter_14x14_{want}"));
         }
         // the master's keep their 11 states
@@ -1535,8 +1622,55 @@ mod tests {
             .into_iter()
             .find(|c| c.id == "master.meter_l")
             .unwrap();
-        p.meters.insert(m.id.clone(), 7);
-        assert_eq!(p.part_name(&m, false, 0.0), "meter_15x56_7");
+        for (byte, want) in [(29, 6), (30, 7), (126, 9), (127, 10)] {
+            p.meters.insert(m.id.clone(), byte);
+            assert_eq!(p.part_name(&m, false, 0.0), format!("meter_15x56_{want}"));
+        }
+    }
+
+    /// Decision task-254: the main panel's meter state is the original's 11-frame master meter.
+    #[test]
+    fn main_panel_meter_state_follows_the_originals_scale() {
+        let starts = [0, 2, 3, 5, 7, 12, 19, 30, 49, 81, 127];
+        for (s, &b) in starts.iter().enumerate() {
+            assert_eq!(meter_state(b), s as u8, "byte {b}");
+            if b > 0 {
+                assert_eq!(meter_state(b - 1), s as u8 - 1, "byte {}", b - 1);
+            }
+        }
+        assert_eq!(meter_state(127), 10);
+        assert_eq!(meter_state(255), 10);
+    }
+
+    /// task-253: the original's peak-meter table `sub_424220` and the frame its draw
+    /// `sub_4249A8` shows, at every frame's first byte and the byte before it, for the master's
+    /// 11 frames (12557) and the header meters' 4 (12558, 12067).
+    #[test]
+    fn peak_meter_frames_follow_the_originals_log_scale() {
+        assert_eq!(
+            [0, 1, 2, 3, 30, 81, 126, 127, 128, 255].map(peak_meter_level),
+            [0, 0, 18, 28, 89, 115, 126, 127, 127, 127]
+        );
+        let levels: Vec<u8> = (0..=127).map(peak_meter_level).collect();
+        assert!(levels.windows(2).all(|w| w[0] <= w[1]));
+        for (frames, starts) in [
+            (11, &[0, 2, 3, 5, 7, 12, 19, 30, 49, 81, 127][..]),
+            (4, &[0, 6, 26, 127][..]),
+        ] {
+            for (f, &b) in starts.iter().enumerate() {
+                assert_eq!(
+                    peak_meter_frame(b, frames),
+                    f as u16,
+                    "{frames} frames, byte {b}"
+                );
+                if b > 0 {
+                    let before = peak_meter_frame(b - 1, frames);
+                    assert_eq!(before, f as u16 - 1, "{frames} frames, byte {}", b - 1);
+                }
+            }
+            assert_eq!(peak_meter_frame(255, frames), frames - 1);
+        }
+        assert_eq!(peak_meter_frame(127, 1), 0);
     }
 
     /// task-179 (review round 2): a routing key shows pressed only while the mouse is down on
@@ -1574,12 +1708,41 @@ mod tests {
         assert!(!p.part_name(&fx, true, 0.0).ends_with("_pressed"));
     }
 
-    /// task-179: the gain-reduction LEDs light in the link's colors and are unlit in their
-    /// place's; the 303 has a rest LED beside the note LED.
+    /// task-252: the original's byte-to-LED mapping (`sub_4044FD`, `sub_424D5D`) at each
+    /// threshold (the first byte of each count and the last of the count before) and at 0, 18
+    /// (unity gain) and 127.
+    #[test]
+    fn gain_reduction_byte_to_lit_leds() {
+        let firsts = [
+            (2, 1),
+            (4, 2),
+            (6, 3),
+            (9, 4),
+            (16, 5),
+            (26, 6),
+            (44, 7),
+            (75, 8),
+        ];
+        for (b, n) in firsts {
+            assert_eq!(gr_lit(b), n, "byte {b}");
+            assert_eq!(gr_lit(b - 1), n - 1, "byte {}", b - 1);
+        }
+        assert_eq!(gr_lit(0), 0);
+        assert_eq!(gr_lit(1), 0);
+        assert_eq!(gr_lit(18), 5);
+        assert_eq!(gr_lit(126), 8);
+        assert_eq!(gr_lit(127), 9);
+        assert_eq!(gr_lit(255), 9);
+        // a bar: never fewer LEDs for a larger byte
+        assert!((1..=255u8).all(|b| gr_lit(b) >= gr_lit(b - 1)));
+    }
+
+    /// task-252 (decision task-251): the main panel's gain-reduction LEDs are a bar from the
+    /// left in the colors of their places (green x3, amber x3, red x3), unlit in the same
+    /// colors; task-179: the 303 has a rest LED beside the note LED.
     #[test]
     fn gain_reduction_and_rest_leds() {
         let mut p = Panel::new();
-        p.gr_leds = [3, 2, 0, 0, 1, 0, 0, 0, 0];
         let part = |p: &Panel, id: &str| {
             let c = crate::layout::controls()
                 .into_iter()
@@ -1587,10 +1750,29 @@ mod tests {
                 .unwrap();
             p.part_name(&c, false, 0.0)
         };
-        assert_eq!(part(&p, "comp.gr1"), "gr_led_red");
-        assert_eq!(part(&p, "comp.gr2"), "gr_led_amber");
-        assert_eq!(part(&p, "comp.gr3"), "gr_led_off_y");
-        assert_eq!(part(&p, "comp.gr5"), "gr_led_green");
+        let leds = |p: &Panel| {
+            (1..=9)
+                .map(|i| part(p, &format!("comp.gr{i}")))
+                .collect::<Vec<_>>()
+        };
+        let lit = ["gr_led_green", "gr_led_amber", "gr_led_red"];
+        let off = ["gr_led_off_g", "gr_led_off_y", "gr_led_off_r"];
+        // unity gain: LEDs 1 to 5
+        p.gr_byte = 18;
+        let want: Vec<&str> = (0..9)
+            .map(|i| if i < 5 { lit[i / 3] } else { off[i / 3] })
+            .collect();
+        assert_eq!(leds(&p), want);
+        // the byte at its top: all nine
+        p.gr_byte = 127;
+        let want: Vec<&str> = (0..9).map(|i| lit[i / 3]).collect();
+        assert_eq!(leds(&p), want);
+        // a byte of 0 (the master's COMP off: the engine clears the byte): none
+        p.gr_byte = 0;
+        let want: Vec<&str> = (0..9).map(|i| off[i / 3]).collect();
+        assert_eq!(leds(&p), want);
+        p.gr_byte = 75;
+        assert_eq!(part(&p, "comp.gr8"), "gr_led_red");
         assert_eq!(part(&p, "comp.gr9"), "gr_led_off_r");
         let rest = p.synth[0].step(0).rest;
         let led = |on: bool| if on { "led_303_on" } else { "led_303_off" };

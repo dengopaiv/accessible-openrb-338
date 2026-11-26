@@ -1,8 +1,6 @@
-//! task-197 AC #1 and #2: the plugin library exports a CLAP and a VST3 entry with the plugin's
-//! identity, and a host that loads it through the CLAP API, restores a state with a song and
-//! pattern mode, activates it at 44.1 kHz and processes with the host playing, gets the pattern
-//! playback: the
-//! same samples as the process side run directly.
+//! The plugin library exports a VST3 entry with the plugin's identity (task-197), plays a note
+//! at frame 0 of the first playing block (task-226) and has continuous 0..127 parameters
+//! (task-275), loaded through the VST3 C API.
 //!
 //! The test builds the library (`cargo build -p orb-plugin --lib`, the cdylib the bundles hold;
 //! `cargo xtask bundle orb-plugin` lays out the bundles from the same file) and loads it with the
@@ -11,29 +9,14 @@
 
 mod common;
 
-use std::collections::BTreeMap;
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::{c_char, c_void};
 use std::path::PathBuf;
-use std::ptr::{null, null_mut};
-use std::sync::OnceLock;
+use std::ptr::null_mut;
+use std::sync::{Mutex, OnceLock};
 
-use clap_sys::audio_buffer::clap_audio_buffer;
-use clap_sys::entry::clap_plugin_entry;
-use clap_sys::events::{
-    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_NOTE_ON, CLAP_EVENT_TRANSPORT, CLAP_TRANSPORT_HAS_TEMPO,
-    CLAP_TRANSPORT_IS_PLAYING, clap_event_header, clap_event_note, clap_event_transport,
-    clap_input_events, clap_output_events,
-};
-use clap_sys::ext::latency::{CLAP_EXT_LATENCY, clap_plugin_latency};
-use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
-use clap_sys::factory::plugin_factory::{CLAP_PLUGIN_FACTORY_ID, clap_plugin_factory};
-use clap_sys::host::clap_host;
-use clap_sys::process::{CLAP_PROCESS_ERROR, clap_process};
-use clap_sys::stream::clap_istream;
-use clap_sys::version::CLAP_VERSION;
-use common::{activate, host, with_song};
-use nice_plug::prelude::{Params, Vst3Plugin};
-use orb_plugin::OrbPlugin;
+use common::activate;
+use nice_plug::prelude::Vst3Plugin;
+use orb_plugin::{OrbPlugin, params};
 
 /// The plugin library, built once per test process.
 fn library() -> &'static PathBuf {
@@ -65,8 +48,33 @@ fn load() -> libloading::Library {
     unsafe { libloading::Library::new(library()) }.expect("the plugin library loads")
 }
 
-fn text(p: *const c_char) -> String {
-    unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+/// A new instance of class `cid` of factory `f` with interface `iid`, created one at a time in
+/// the process, as on a host that creates them on one main (UI) thread (task-302).
+///
+/// The tests run in parallel threads, and nice-plug's VST3 `createInstance` registers a window
+/// class for its Windows event loop named `nice-event-loop-{QueryPerformanceCounter ticks}`
+/// (nice-plug 0.4.2 `src/event_loop/windows.rs:78-94`). The counter runs at 10 MHz, so two
+/// threads that create an instance in the same 100 ns register the same name; the second
+/// `RegisterClassExA` fails with ERROR_CLASS_ALREADY_EXISTS (1410), and nice-plug's
+/// `assert_ne!` inside the `extern "system"` entry aborts the process. The threads leave
+/// `library()`'s `OnceLock` (the in-test cargo build) together, so their calls come within
+/// microseconds of each other. On the test machine, 6 runs in 100 aborted this way.
+unsafe fn create_instance(
+    f: *mut vst3::Steinberg::IPluginFactory,
+    cid: &vst3::Steinberg::TUID,
+    iid: &vst3::Steinberg::TUID,
+) -> *mut c_void {
+    static MAIN_THREAD: Mutex<()> = Mutex::new(());
+    let _main = MAIN_THREAD.lock().unwrap_or_else(|e| e.into_inner());
+    let mut obj: *mut c_void = null_mut();
+    unsafe {
+        let vt = &*(*f).vtbl;
+        assert_eq!(
+            (vt.createInstance)(f, cid.as_ptr(), iid.as_ptr(), &mut obj),
+            vst3::Steinberg::kResultOk
+        );
+    }
+    obj
 }
 
 fn chars(b: &[c_char]) -> String {
@@ -78,198 +86,27 @@ fn chars(b: &[c_char]) -> String {
     String::from_utf8_lossy(&b).into_owned()
 }
 
-unsafe extern "C" fn host_extension(_: *const clap_host, _: *const c_char) -> *const c_void {
-    null()
-}
-unsafe extern "C" fn host_request(_: *const clap_host) {}
-
-unsafe extern "C" fn no_events(_: *const clap_input_events) -> u32 {
-    0
-}
-unsafe extern "C" fn no_event(_: *const clap_input_events, _: u32) -> *const clap_event_header {
-    null()
-}
-unsafe extern "C" fn drop_event(_: *const clap_output_events, _: *const clap_event_header) -> bool {
-    true
+/// The per-device output buses a host gives the plugin besides the main one (task-256): each
+/// stereo, `frames` long. A host passes every bus the plugin declares (nice-plug reads the
+/// buffers of all of them).
+struct Aux {
+    chans: Vec<Vec<f32>>,
 }
 
-/// A state blob read by the plugin.
-struct Reader {
-    data: Vec<u8>,
-    pos: usize,
-}
-
-unsafe extern "C" fn read(s: *const clap_istream, buf: *mut c_void, size: u64) -> i64 {
-    let r = unsafe { &mut *((*s).ctx as *mut Reader) };
-    let n = (size as usize).min(r.data.len() - r.pos);
-    unsafe {
-        std::ptr::copy_nonoverlapping(r.data[r.pos..].as_ptr(), buf as *mut u8, n);
+impl Aux {
+    fn new(frames: usize) -> Aux {
+        Aux {
+            chans: vec![vec![0f32; frames]; 2 * orb_plugin::core::AUX_OUTPUTS],
+        }
     }
-    r.pos += n;
-    n as i64
-}
 
-/// nice-plug's CLAP state of an instance: the length (u64, little-endian), then the
-/// `PluginState` as JSON, its parameters by id and its persisted fields.
-fn state_blob(p: &orb_plugin::instance::OrbParams) -> Vec<u8> {
-    let params: BTreeMap<String, serde_json::Value> = p
-        .ids()
-        .iter()
-        .zip(p.values())
-        .map(|(id, v)| (id.clone(), serde_json::json!({ "i32": v })))
-        .collect();
-    let fields: BTreeMap<String, String> = p.serialize_fields();
-    let json = serde_json::to_vec(&serde_json::json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "params": params,
-        "fields": fields,
-    }))
-    .unwrap();
-    let mut blob = (json.len() as u64).to_le_bytes().to_vec();
-    blob.extend(json);
-    blob
-}
-
-/// The CLAP tests init and deinit the one entry of the library: one at a time.
-static CLAP_ENTRY: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[test]
-fn the_clap_entry_has_the_identity_and_plays_a_restored_song() {
-    const FRAMES: usize = 30_000;
-    const BUF: usize = 512;
-    let _entry = CLAP_ENTRY.lock().unwrap_or_else(|e| e.into_inner());
-    let lib = load();
-    let entry: libloading::Symbol<*const clap_plugin_entry> =
-        unsafe { lib.get(b"clap_entry\0") }.unwrap();
-    let entry = unsafe { &**entry };
-    let path = CString::new(library().to_string_lossy().as_bytes()).unwrap();
-    unsafe {
-        assert!((entry.init.unwrap())(path.as_ptr()));
-        let factory = (entry.get_factory.unwrap())(CLAP_PLUGIN_FACTORY_ID.as_ptr())
-            as *const clap_plugin_factory;
-        assert!(!factory.is_null());
-        let f = &*factory;
-        assert_eq!((f.get_plugin_count.unwrap())(factory), 1);
-        let d = &*(f.get_plugin_descriptor.unwrap())(factory, 0);
-        assert_eq!(text(d.id), "io.github.pingw33n.openrb-338");
-        assert_eq!(text(d.name), "OpenRB-338");
-        assert_eq!(text(d.vendor), "OpenRB-338");
-        assert_eq!(text(d.url), "https://github.com/pingw33n/OpenRB-338");
-        let mut features = Vec::new();
-        let mut fp = d.features;
-        while !(*fp).is_null() {
-            features.push(text(*fp));
-            fp = fp.add(1);
-        }
-        // task-185: Instrument|Synth; stereo is the port layout
-        assert_eq!(features, ["instrument", "synthesizer", "stereo"]);
-
-        let host_info = clap_host {
-            clap_version: CLAP_VERSION,
-            host_data: null_mut(),
-            name: c"orb-plugin test".as_ptr(),
-            vendor: c"OpenRB-338".as_ptr(),
-            url: c"".as_ptr(),
-            version: c"0".as_ptr(),
-            get_extension: Some(host_extension),
-            request_restart: Some(host_request),
-            request_process: Some(host_request),
-            request_callback: Some(host_request),
-        };
-        let plugin = (f.create_plugin.unwrap())(factory, &host_info, d.id);
-        assert!(!plugin.is_null());
-        let pl = &*plugin;
-        assert!((pl.init.unwrap())(plugin));
-
-        // the state of an instance with a song in pattern mode
-        let song = with_song("full_mix");
-        let state = (pl.get_extension.unwrap())(plugin, CLAP_EXT_STATE.as_ptr())
-            as *const clap_plugin_state;
-        assert!(!state.is_null());
-        let mut reader = Reader {
-            data: state_blob(&song),
-            pos: 0,
-        };
-        let stream = clap_istream {
-            ctx: &mut reader as *mut Reader as *mut c_void,
-            read: Some(read),
-        };
-        assert!(((*state).load.unwrap())(plugin, &stream), "the state loads");
-
-        assert!((pl.activate.unwrap())(plugin, 44_100.0, 1, BUF as u32));
-        let latency = (pl.get_extension.unwrap())(plugin, CLAP_EXT_LATENCY.as_ptr())
-            as *const clap_plugin_latency;
-        assert_eq!(((*latency).get.unwrap())(plugin), 64);
-        assert!((pl.start_processing.unwrap())(plugin));
-        let (mut l, mut r) = (vec![0f32; FRAMES], vec![0f32; FRAMES]);
-        let in_events = clap_input_events {
-            ctx: null_mut(),
-            size: Some(no_events),
-            get: Some(no_event),
-        };
-        let out_events = clap_output_events {
-            ctx: null_mut(),
-            try_push: Some(drop_event),
-        };
-        // the host plays, without a tempo or a position: pattern mode plays the song
-        // free-running at its tempo (common::PLAYING)
-        let transport = clap_event_transport {
-            header: clap_event_header {
-                size: std::mem::size_of::<clap_event_transport>() as u32,
-                time: 0,
-                space_id: CLAP_CORE_EVENT_SPACE_ID,
-                type_: CLAP_EVENT_TRANSPORT,
-                flags: 0,
-            },
-            flags: CLAP_TRANSPORT_IS_PLAYING,
-            song_pos_beats: 0,
-            song_pos_seconds: 0,
-            tempo: 0.0,
-            tempo_inc: 0.0,
-            loop_start_beats: 0,
-            loop_end_beats: 0,
-            loop_start_seconds: 0,
-            loop_end_seconds: 0,
-            bar_start: 0,
-            bar_number: 0,
-            tsig_num: 4,
-            tsig_denom: 4,
-        };
-        let mut pos = 0;
-        while pos < FRAMES {
-            let n = BUF.min(FRAMES - pos);
-            let mut chans = [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()];
-            let mut out = clap_audio_buffer {
-                data32: chans.as_mut_ptr(),
-                data64: null_mut(),
-                channel_count: 2,
-                latency: 0,
-                constant_mask: 0,
-            };
-            let p = clap_process {
-                steady_time: pos as i64,
-                frames_count: n as u32,
-                transport: &transport,
-                audio_inputs: null(),
-                audio_outputs: &mut out,
-                audio_inputs_count: 0,
-                audio_outputs_count: 1,
-                in_events: &in_events,
-                out_events: &out_events,
-            };
-            assert_ne!((pl.process.unwrap())(plugin, &p), CLAP_PROCESS_ERROR);
-            pos += n;
-        }
-        (pl.stop_processing.unwrap())(plugin);
-        (pl.deactivate.unwrap())(plugin);
-        (pl.destroy.unwrap())(plugin);
-        (entry.deinit.unwrap())();
-
-        let got: Vec<f32> = l.into_iter().zip(r).flat_map(|(a, b)| [a, b]).collect();
-        assert!(common::peak(&got) > 0.05, "the song plays");
-        let want = host(&song, &mut activate(&song, 44_100), FRAMES, BUF, &[]);
-        let first = want.iter().zip(&got).position(|(a, b)| a != b);
-        assert_eq!(first, None, "first difference at sample {first:?}");
+    /// The channel pointers of the buses from frame `pos`.
+    fn ptrs(&mut self, pos: usize) -> [[*mut f32; 2]; orb_plugin::core::AUX_OUTPUTS] {
+        let mut it = self.chans.iter_mut();
+        std::array::from_fn(|_| {
+            let (l, r) = (it.next().unwrap(), it.next().unwrap());
+            [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()]
+        })
     }
 }
 
@@ -301,7 +138,7 @@ const fn first_note(rate: u32, stopped: usize, channel: u8, key: u8) -> FirstNot
     }
 }
 
-/// The 808's bass drum, the 909's and 303 #1's C, in an offline render and in a realtime start
+/// The 808's bass drum, the 909's and 303-1's C, in an offline render and in a realtime start
 /// after a stopped stretch of whole blocks (8192 frames) and of a part of one (7777 frames: the
 /// user's live case of round 3, the 909's bass drum at 48 kHz, whose attack was cut).
 const FIRST_NOTES: [FirstNote; 8] = [
@@ -407,158 +244,6 @@ impl FirstNote {
     }
 }
 
-/// The input events of a CLAP `process` call: `ctx` is a `Vec<clap_event_note>`.
-unsafe extern "C" fn notes_size(l: *const clap_input_events) -> u32 {
-    unsafe { (*((*l).ctx as *const Vec<clap_event_note>)).len() as u32 }
-}
-unsafe extern "C" fn notes_get(l: *const clap_input_events, i: u32) -> *const clap_event_header {
-    let notes = unsafe { &*((*l).ctx as *const Vec<clap_event_note>) };
-    &notes[i as usize].header
-}
-
-/// task-226 through the CLAP wrapper: an offline render as Reaper starts it (activate, then
-/// `process` from steady time 0 with the transport playing and a note-on at time 0), and a
-/// realtime start (stopped calls, then the transport plays with a note-on at time 0 of that
-/// call), the cases of [`FIRST_NOTES`].
-#[test]
-fn a_note_at_frame_0_of_the_first_playing_clap_call_sounds() {
-    let _entry = CLAP_ENTRY.lock().unwrap_or_else(|e| e.into_inner());
-    let lib = load();
-    let entry: libloading::Symbol<*const clap_plugin_entry> =
-        unsafe { lib.get(b"clap_entry\0") }.unwrap();
-    let entry = unsafe { &**entry };
-    let path = CString::new(library().to_string_lossy().as_bytes()).unwrap();
-    unsafe {
-        assert!((entry.init.unwrap())(path.as_ptr()));
-        let factory = (entry.get_factory.unwrap())(CLAP_PLUGIN_FACTORY_ID.as_ptr())
-            as *const clap_plugin_factory;
-        for case in FIRST_NOTES {
-            let (l, r) = clap_first_note(factory, case);
-            case.check("CLAP", l, r);
-        }
-        (entry.deinit.unwrap())();
-    }
-}
-
-/// One [`FirstNote`] run in a new CLAP instance of `factory`.
-unsafe fn clap_first_note(
-    factory: *const clap_plugin_factory,
-    case: FirstNote,
-) -> (Vec<f32>, Vec<f32>) {
-    let frames = case.frames();
-    let (mut l, mut r) = (vec![0f32; frames], vec![0f32; frames]);
-    unsafe {
-        let f = &*factory;
-        let d = &*(f.get_plugin_descriptor.unwrap())(factory, 0);
-        let host_info = clap_host {
-            clap_version: CLAP_VERSION,
-            host_data: null_mut(),
-            name: c"orb-plugin test".as_ptr(),
-            vendor: c"OpenRB-338".as_ptr(),
-            url: c"".as_ptr(),
-            version: c"0".as_ptr(),
-            get_extension: Some(host_extension),
-            request_restart: Some(host_request),
-            request_process: Some(host_request),
-            request_callback: Some(host_request),
-        };
-        let plugin = (f.create_plugin.unwrap())(factory, &host_info, d.id);
-        let pl = &*plugin;
-        assert!((pl.init.unwrap())(plugin));
-        assert!((pl.activate.unwrap())(
-            plugin,
-            case.rate as f64,
-            1,
-            NOTE_BUF as u32
-        ));
-        assert!((pl.start_processing.unwrap())(plugin));
-        let note = clap_event_note {
-            header: clap_event_header {
-                size: std::mem::size_of::<clap_event_note>() as u32,
-                time: 0,
-                space_id: CLAP_CORE_EVENT_SPACE_ID,
-                type_: CLAP_EVENT_NOTE_ON,
-                flags: 0,
-            },
-            note_id: -1,
-            port_index: 0,
-            channel: case.channel as i16,
-            key: case.key as i16,
-            velocity: NOTE_VELOCITY as f64 / 127.0,
-        };
-        let out_events = clap_output_events {
-            ctx: null_mut(),
-            try_push: Some(drop_event),
-        };
-        let mut transport = clap_event_transport {
-            header: clap_event_header {
-                size: std::mem::size_of::<clap_event_transport>() as u32,
-                time: 0,
-                space_id: CLAP_CORE_EVENT_SPACE_ID,
-                type_: CLAP_EVENT_TRANSPORT,
-                flags: 0,
-            },
-            flags: CLAP_TRANSPORT_IS_PLAYING | CLAP_TRANSPORT_HAS_TEMPO,
-            song_pos_beats: 0,
-            song_pos_seconds: 0,
-            tempo: NOTE_BPM,
-            tempo_inc: 0.0,
-            loop_start_beats: 0,
-            loop_end_beats: 0,
-            loop_start_seconds: 0,
-            loop_end_seconds: 0,
-            bar_start: 0,
-            bar_number: 0,
-            tsig_num: 4,
-            tsig_denom: 4,
-        };
-        let mut pos = 0;
-        while pos < frames {
-            let n = case.len_at(pos);
-            transport.flags = if case.playing(pos) {
-                CLAP_TRANSPORT_IS_PLAYING | CLAP_TRANSPORT_HAS_TEMPO
-            } else {
-                CLAP_TRANSPORT_HAS_TEMPO
-            };
-            let mut notes: Vec<clap_event_note> = if case.note_at(pos) {
-                vec![note]
-            } else {
-                Vec::new()
-            };
-            let in_events = clap_input_events {
-                ctx: &mut notes as *mut Vec<clap_event_note> as *mut c_void,
-                size: Some(notes_size),
-                get: Some(notes_get),
-            };
-            let mut chans = [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()];
-            let mut out = clap_audio_buffer {
-                data32: chans.as_mut_ptr(),
-                data64: null_mut(),
-                channel_count: 2,
-                latency: 0,
-                constant_mask: 0,
-            };
-            let p = clap_process {
-                steady_time: pos as i64,
-                frames_count: n as u32,
-                transport: &transport,
-                audio_inputs: null(),
-                audio_outputs: &mut out,
-                audio_inputs_count: 0,
-                audio_outputs_count: 1,
-                in_events: &in_events,
-                out_events: &out_events,
-            };
-            assert_ne!((pl.process.unwrap())(plugin, &p), CLAP_PROCESS_ERROR);
-            pos += n;
-        }
-        (pl.stop_processing.unwrap())(plugin);
-        (pl.deactivate.unwrap())(plugin);
-        (pl.destroy.unwrap())(plugin);
-    }
-    (l, r)
-}
-
 /// The event list of a VST3 `process` call.
 struct Events(std::cell::RefCell<Vec<vst3::Steinberg::Vst::Event>>);
 
@@ -627,31 +312,56 @@ unsafe fn vst3_first_note(
     case: FirstNote,
 ) -> (Vec<f32>, Vec<f32>) {
     use vst3::Steinberg::Vst::{
-        AudioBusBuffers, AudioBusBuffers__type0, Event, Event_::EventTypes_, Event__type0,
-        IAudioProcessor, IAudioProcessorTrait, IComponent, IComponentTrait, IEventList,
-        NoteOnEvent, ProcessContext, ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_,
-        ProcessSetup, SymbolicSampleSizes_,
+        AudioBusBuffers, AudioBusBuffers__type0, BusDirections_, BusInfo, BusTypes_, Event,
+        Event_::EventTypes_, Event__type0, IAudioProcessor, IAudioProcessorTrait, IComponent,
+        IComponentTrait, IEventList, MediaTypes_, NoteOnEvent, ProcessContext,
+        ProcessContext_::StatesAndFlags_, ProcessData, ProcessModes_, ProcessSetup,
+        SymbolicSampleSizes_,
     };
     use vst3::Steinberg::{IPluginBaseTrait, kResultOk};
     use vst3::{ComPtr, ComWrapper};
 
     let frames = case.frames();
     let (mut l, mut r) = (vec![0f32; frames], vec![0f32; frames]);
+    let mut aux = Aux::new(frames);
     let mode: i32 = if case.stopped == 0 {
         ProcessModes_::kOffline as _
     } else {
         ProcessModes_::kRealtime as _
     };
     unsafe {
-        let vt = &*(*f).vtbl;
-        let mut obj: *mut c_void = null_mut();
-        let iid = vst3::Steinberg::Vst::IComponent_iid;
-        assert_eq!(
-            (vt.createInstance)(f, ci.cid.as_ptr(), iid.as_ptr(), &mut obj),
-            kResultOk
-        );
+        let obj = create_instance(f, &ci.cid, &vst3::Steinberg::Vst::IComponent_iid);
         let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
         assert_eq!(component.initialize(null_mut()), kResultOk);
+        // task-256: the main Mix bus and the four per-device aux buses, stereo; task-300:
+        // the 22 per-drum aux buses
+        // `as _`: the vst3 enum constants are i32 on Windows and u32 elsewhere, and clippy's
+        // unnecessary_cast rejects `as i32` on Windows
+        let audio: vst3::Steinberg::Vst::MediaType = MediaTypes_::kAudio as _;
+        let output: vst3::Steinberg::Vst::BusDirection = BusDirections_::kOutput as _;
+        assert_eq!(component.getBusCount(audio, output), 27);
+        let mut names = Vec::new();
+        for i in 0..27 {
+            let mut info: BusInfo = std::mem::zeroed();
+            assert_eq!(component.getBusInfo(audio, output, i, &mut info), kResultOk);
+            assert_eq!(info.channelCount, 2);
+            let kmain: vst3::Steinberg::Vst::BusType = BusTypes_::kMain as _;
+            let main = info.busType == kmain;
+            assert_eq!(main, i == 0);
+            let n = info.name.iter().position(|&c| c == 0).unwrap();
+            names.push(String::from_utf16(&info.name[..n]).unwrap());
+        }
+        // task-300: the 22 drum outputs after the released four, which keep their buses
+        let mut want = vec!["Mix", "303-1", "303-2", "808", "909"];
+        for m in ["808", "909"] {
+            let drums = if m == "808" {
+                "BD SD LT MT HT RS CP CB OH CH CY"
+            } else {
+                "BD SD LT MT HT RS CP CH OH CC RC"
+            };
+            want.extend(drums.split(' ').map(|d| &*format!("{m} {d}").leak()));
+        }
+        assert_eq!(names, want);
         let processor = component.cast::<IAudioProcessor>().unwrap();
         let mut setup = ProcessSetup {
             processMode: mode,
@@ -697,13 +407,18 @@ unsafe fn vst3_first_note(
                 Vec::new()
             };
             let mut chans = [l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr()];
-            let mut out = AudioBusBuffers {
+            let mut ap = aux.ptrs(pos);
+            let stereo = |chans: &mut [*mut f32; 2]| AudioBusBuffers {
                 numChannels: 2,
                 silenceFlags: 0,
                 __field0: AudioBusBuffers__type0 {
                     channelBuffers32: chans.as_mut_ptr(),
                 },
             };
+            // the Mix, then every aux bus (task-256, task-300)
+            let mut out: Vec<AudioBusBuffers> = std::iter::once(stereo(&mut chans))
+                .chain(ap.iter_mut().map(stereo))
+                .collect();
             context.projectTimeSamples = pos as i64;
             context.continousTimeSamples = pos as i64;
             let mut data = ProcessData {
@@ -711,9 +426,9 @@ unsafe fn vst3_first_note(
                 symbolicSampleSize: SymbolicSampleSizes_::kSample32 as _,
                 numSamples: n as i32,
                 numInputs: 0,
-                numOutputs: 1,
+                numOutputs: out.len() as i32,
                 inputs: null_mut(),
-                outputs: &mut out,
+                outputs: out.as_mut_ptr(),
                 inputParameterChanges: null_mut(),
                 outputParameterChanges: null_mut(),
                 inputEvents: list.as_ptr(),
@@ -745,7 +460,7 @@ fn the_vst3_factory_has_the_identity() {
         let mut fi: PFactoryInfo = std::mem::zeroed();
         assert_eq!((vt.getFactoryInfo)(f, &mut fi), kResultOk);
         assert_eq!(chars(&fi.vendor), "OpenRB-338");
-        assert_eq!(chars(&fi.url), "https://github.com/pingw33n/OpenRB-338");
+        assert_eq!(chars(&fi.url), "https://pingw33n.github.io/OpenRB-338/");
         assert!((vt.countClasses)(f) >= 1);
         let mut f2: *mut c_void = null_mut();
         assert_eq!(
@@ -771,7 +486,75 @@ fn the_vst3_factory_has_the_identity() {
         assert_eq!(chars(&ci.category), "Audio Module Class");
         assert_eq!(chars(&ci.subCategories), "Instrument|Synth");
         assert_eq!(chars(&ci.vendor), "OpenRB-338");
+        // the About box's version string, not Cargo's 0.1.0 (task-291). The date and minute are
+        // not compared with the About box's: the cdylib and this test binary are built at
+        // different times, so their build minutes differ. The shape and the git part are.
+        let v = chars(&ci.version);
+        let shape = |s: &str| {
+            let (n, g) = s.split_once(" (")?;
+            let d: Vec<&str> = n.split('.').collect();
+            let ok = d.len() == 3 && d.iter().all(|x| x.chars().all(|c| c.is_ascii_digit()));
+            (ok && g.ends_with(')')).then(|| g.to_string())
+        };
+        let about = shape(orb_ui::about::VERSION).expect("the About box string has its shape");
+        assert_eq!(shape(&v), Some(about), "{v}");
         ((*(*f2).vtbl).base.base.release)(f2 as *mut _);
+        (vt.base.release)(f as *mut _);
+    }
+}
+
+/// task-275: through the VST3 export, the 0..127 values have no step count and every other
+/// parameter its range's; the normalized value of every integer is `(v - min) / (max - min)`,
+/// as the released build's.
+#[test]
+fn the_vst3_parameters_are_continuous() {
+    use vst3::ComPtr;
+    use vst3::Steinberg::Vst::{IComponent, IEditController, IEditControllerTrait, ParameterInfo};
+    use vst3::Steinberg::{IPluginBaseTrait, IPluginFactory, kResultOk};
+    let lib = load();
+    let get: libloading::Symbol<unsafe extern "system" fn() -> *mut IPluginFactory> =
+        unsafe { lib.get(b"GetPluginFactory\0") }.unwrap();
+    unsafe {
+        let f = get();
+        let vt = &*(*f).vtbl;
+        let mut ci: vst3::Steinberg::PClassInfo = std::mem::zeroed();
+        assert_eq!((vt.getClassInfo)(f, 0, &mut ci), kResultOk);
+        let obj = create_instance(f, &ci.cid, &vst3::Steinberg::Vst::IComponent_iid);
+        let component = ComPtr::<IComponent>::from_raw(obj as *mut IComponent).unwrap();
+        assert_eq!(component.initialize(null_mut()), kResultOk);
+        let ctl = component.cast::<IEditController>().unwrap();
+        let mut continuous = 0;
+        let mut seen = 0;
+        for i in 0..ctl.getParameterCount() {
+            let mut info: ParameterInfo = std::mem::zeroed();
+            assert_eq!(ctl.getParameterInfo(i, &mut info), kResultOk);
+            let n = info.title.iter().position(|&c| c == 0).unwrap();
+            let title = String::from_utf16(&info.title[..n]).unwrap();
+            // nice-plug's hidden MIDI CC parameters
+            let Some(s) = params::SPECS
+                .iter()
+                .find(|s| params::name(s.target) == title)
+            else {
+                continue;
+            };
+            seen += 1;
+            let want = if s.continuous() {
+                0
+            } else {
+                (s.max - s.min) as i32
+            };
+            assert_eq!(info.stepCount, want, "{title}");
+            continuous += s.continuous() as usize;
+            for v in s.min..=s.max {
+                let got = ctl.plainParamToNormalized(info.id, v as f64);
+                let old = (v - s.min) as f32 / (s.max - s.min) as f32;
+                assert_eq!(got, old as f64, "{title} {v}");
+            }
+        }
+        assert_eq!((seen, continuous), (params::COUNT, 86));
+        assert_eq!(component.terminate(), kResultOk);
+        drop(ctl);
+        drop(component);
         (vt.base.release)(f as *mut _);
     }
 }

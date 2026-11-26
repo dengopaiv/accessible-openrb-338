@@ -271,11 +271,12 @@ pub fn levels_readout(panel: &Panel) -> String {
         Some(v) => format!("{} of 10", v.min(&10)),
         None => "no reading".into(),
     };
-    let gr = if panel.gr_leds == [0; 9] {
+    // the compressor's nine LEDs, a bar from the left (upstream's task-252, `gr_lit`); a
+    // gain byte of 0 is a compressor with no audio
+    let gr = if panel.gr_byte == 0 {
         "no reading".to_string()
     } else {
-        let n = panel.gr_leds[..4].iter().filter(|&&l| l > 0).count();
-        format!("{n} of 4")
+        format!("{} of 9", crate::model::gr_lit(panel.gr_byte))
     };
     format!(
         "Master left {}, right {}, gain reduction {gr}",
@@ -501,10 +502,11 @@ mod tests {
         );
         p.meters.insert("master.meter_l".into(), 7);
         p.meters.insert("master.meter_r".into(), 6);
-        p.gr_leds = [0, 0, 2, 2, 1, 0, 0, 0, 0];
+        // unity gain: five of the nine LEDs (upstream's task-252)
+        p.gr_byte = 18;
         assert_eq!(
             levels_readout(&p),
-            "Master left 7 of 10, right 6 of 10, gain reduction 2 of 4"
+            "Master left 7 of 10, right 6 of 10, gain reduction 5 of 9"
         );
     }
 

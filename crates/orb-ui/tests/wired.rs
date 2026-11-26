@@ -915,10 +915,10 @@ fn the_909_step_buttons_send_the_values_of_the_modifiers_and_clear_the_other_hih
         h.take_log(),
         [1, 2, 0].map(|v| dev(Device::Tr909, 79, &[0, 0, 1, v]))
     );
-    // Ctrl: 1, Alt: 2, Ctrl+Alt: flam 3
-    click_mods(&mut h, strip(1), Modifiers::CTRL);
+    // the command key (Cmd on macOS, Ctrl elsewhere; task-281): 1, Alt: 2, both: flam 3
+    click_mods(&mut h, strip(1), Modifiers::COMMAND);
     click_mods(&mut h, strip(2), Modifiers::ALT);
-    click_mods(&mut h, strip(3), Modifiers::CTRL | Modifiers::ALT);
+    click_mods(&mut h, strip(3), Modifiers::COMMAND | Modifiers::ALT);
     assert_eq!(
         h.take_log(),
         [(1, 1), (2, 2), (3, 3)].map(|(s, v)| dev(Device::Tr909, 79, &[0, s, 1, v]))
@@ -1638,13 +1638,13 @@ fn copy_then_paste_works_on_every_row_and_from_one_303_to_the_other() {
             );
         }
         assert!(h.app.doc.modified);
-        let name = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"][r];
+        let name = ["303-1", "303-2", "808", "909"][r];
         assert_eq!(
             h.app.status.as_deref(),
             Some(&*format!("{name}: pasted into D8"))
         );
     }
-    // TB-303 1's pattern into TB-303 2
+    // 303-1's pattern into 303-2
     let bytes = full_pattern(0, 9);
     set_pattern(&mut h, 0, 4, &bytes);
     select(&mut h, 0, 4);
@@ -1681,7 +1681,7 @@ fn a_paste_of_another_kind_or_of_no_pattern_changes_nothing() {
         assert!(orb_ui::link::is_empty_pattern(r, link.pattern(r, 1)));
         assert_eq!(
             h.app.status.as_deref(),
-            Some("The clipboard holds a TB-303 pattern")
+            Some("The clipboard holds a 303 pattern")
         );
     }
     // nor an 808 pattern into the 909
@@ -1705,14 +1705,14 @@ fn copy_and_a_paste_that_changes_nothing_leave_the_song_unmodified() {
     h.take_log();
     h.app.command(Cmd::CopyPattern);
     assert!(!h.app.doc.modified);
-    assert_eq!(h.app.status.as_deref(), Some("TR-909: A1 copied"));
+    assert_eq!(h.app.status.as_deref(), Some("909: A1 copied"));
     h.app.command(Cmd::PastePattern);
     h.frame(vec![]);
     assert_eq!(h.take_log(), vec![]);
     assert!(!h.app.doc.modified);
     assert_eq!(
         h.app.status.as_deref(),
-        Some("TR-909: A1 holds the pattern already")
+        Some("909: A1 holds the pattern already")
     );
 }
 
@@ -1772,7 +1772,7 @@ fn duplicate_writes_the_next_empty_pattern_then_selects_it() {
         let row = &h.app.panel.rows[r];
         assert_eq!((row.pattern, row.bank), (9, 1), "row {n}: B2 shown");
         assert_eq!(h.app.panel.focus, r);
-        let name = ["TB-303 1", "TB-303 2", "TR-808", "TR-909"][r];
+        let name = ["303-1", "303-2", "808", "909"][r];
         let want = format!("{name}: A1 duplicated to B2");
         assert_eq!(h.app.status.as_deref(), Some(&*want));
         h.calls(2);
@@ -1808,12 +1808,9 @@ fn duplicate_with_no_empty_pattern_left_sends_nothing() {
     assert_eq!(h.take_log(), vec![]);
     assert!(!h.app.doc.modified);
     assert_eq!(h.app.panel.rows[2].pattern, 3);
-    assert_eq!(
-        h.app.status.as_deref(),
-        Some("TR-808: no empty pattern left")
-    );
+    assert_eq!(h.app.status.as_deref(), Some("808: no empty pattern left"));
     // the clipboard is Copy's only
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
 }
 
 #[test]
@@ -1908,10 +1905,7 @@ fn undo_puts_back_what_paste_cut_and_duplicate_wrote() {
     assert_eq!(h.take_log(), vec![pattern_msg(3, 1, &a2)]);
     assert_eq!(link_pattern(&h, 3, 1), a2);
     assert_eq!(h.app.panel.steps909[3][1], 2, "the strip shows A2 again");
-    assert_eq!(
-        h.app.status.as_deref(),
-        Some("TR-909: Paste Pattern undone")
-    );
+    assert_eq!(h.app.status.as_deref(), Some("909: Paste Pattern undone"));
     // one level: a second Undo does nothing
     h.app.command(Cmd::Undo);
     assert_eq!(h.take_log(), vec![]);

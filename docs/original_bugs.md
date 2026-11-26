@@ -514,6 +514,32 @@ See OB-8 for the unclean buffer.
 - **orb.** Not mapped yet (orb's MIDI layer ignores the Program Synth notes).
 - **Home.** `docs/standard_midi_mapping.md` sections 7 and 9.
 
+## 7. Song saving (Rebirth.exe)
+
+### OB-26: the save leaves stale bytes in GLOB 483..511 and USRI 544..711 [C: the code; C: observed]
+
+- **What.** The RBS writer packs every chunk into one shared buffer and writes the chunk's whole
+  size from it, but the GLOB and USRI packers do not write all of their chunk: the rest holds
+  whatever the buffer held from the chunks read or written before.
+- **Where.** `sub_438025` (the writer): each packer writes into `unk_4DB948`, then
+  `sub_4A029F(tag, size, unk_4DB948)` writes `size` bytes. The GLOB packer `sub_433EC2` writes
+  bytes 0..482 (the mod name and URL fields zero-filled by `sub_465D0E`), never 483..511, while
+  the GLOB chunk is 512 bytes long, so bytes 0..511 go to the file (the packer called at
+  0x43816D, the chunk at 0x43817C); the USRI packer `sub_43489D` writes 0..543, never 544..711,
+  while the USRI chunk is 712 bytes long, so 0..711 go to the file (0x4381F4, 0x438203). The effect chunks' packers clear their buffer first (`memset` in
+  `sub_434605`, `sub_4346E1`, `sub_434567`, `sub_4347D1`), so they are not affected.
+- **Trigger.** Every save.
+- **Effect.** Bytes RBS42.txt calls reserved ("set to zero", GLOB 483..511) and USRI's tail hold
+  leftovers: the four saves of task-306 (`tests/songs/edit_init/*.after_*.rbs`) have GLOB[498]
+  = 1 and five USRI tail bytes set; the shipped songs carry 0, 1 and 2 in scattered GLOB
+  reserved bytes. No reader uses them.
+- **Corpus.** The shipped songs (their GLOB 483..511), `tests/songs/edit_init`.
+- **orb.** Keeps these bytes as read (a new song: zeros); the original's leftovers are not
+  reproducible. `crates/orb-ui/tests/edit_init.rs` (`stale`) leaves them out of its comparison.
+  The effect chunks' bytes the original zeroes are kept as read too (the user's decision of
+  2026-11-25, task-307: saves need not match the original's byte for byte).
+- **Home.** `docs/song_load.md` section 14 (the comparison) and this entry.
+
 ## Quirks that are not claimed as defects
 
 ### Q-1: the export's frame count is one frame short of an exact length [C]
@@ -611,3 +637,46 @@ See OB-8 for the unclean buffer.
 - **Corpus.** [G] Every corpus song with a rising 303 slide; the songs were not counted.
 - **orb.** `crates/orb-engine/src/tb303.rs` (`glide`), the same arithmetic.
 - **Home.** `docs/initial_investigation.md` 6.1; `docs/midi.md` 5.3.
+
+### Q-6: a channel on its own ReWire output freezes its level and pan smoothing [C]
+
+- **What.** In the mixer block, a mixer channel whose output entry is a ReWire host's buffer
+  jumps past both the per-block gain smoothing (`n = old*0.93 + tgt*0.07`) and the pan-and-mix
+  loop. Its current L and R gains (channel block `+0xC` and `+8`, song `+0xB0 + 44c` and
+  `+0xAC + 44c`) stay at the values of the last block it was in the Mix, while the targets
+  keep following the panel. When the host disables the channel again, the smoothing starts from
+  the frozen gains: after a level or pan change made while it was routed out, the channel glides
+  into the Mix from its old level over the next blocks instead of coming back at the new one.
+- **Where.** `sub_10013444`: `mov eax, offset unk_1010012C` (0x100136A2), `cmp eax, ebp`
+  (0x100136AB, ebp the channel's buffer), `jnz loc_10013808` (0x100136B1) past the smoothing
+  (0x100136B7..0x10013732) and the mix loop (0x10013742..0x100137FA). Read in IDA (task-257).
+- **Trigger.** ReWire only: a host enabling 303-1, 303-2, 808-Mix or 909-Mix, a level, pan or on
+  change, then the host disabling the channel. Never in the export or the app's realtime output
+  (entries 2..17 are always null there).
+- **Verdict.** Not claimed as a defect: a short glide, and only in a ReWire host.
+- **Corpus.** None (no corpus song reaches ReWire).
+- **orb.** The plugin models it (task-300): a device unchecked under Options > Output Routing >
+  To Mix-L/R skips the smoothing and the mix loop as here, so its gains freeze and glide back
+  when it is checked again (`Frame::block_taps`, `docs/plugin.md` section 13.1). Not in the CLI
+  or the standalone app (no routing there).
+- **Home.** `docs/rewire.md` section 4.
+
+### Q-7: a disabled ReWire Mix-L or Mix-R bus accumulates in a scratch [C]
+
+- **What.** When a ReWire host disables Mix-L or Mix-R, the mixer block uses the song's scratch
+  `song+0x140C` (L) or `+0x150C` (R) as that master bus and does not fill it with the 1e-6
+  guard, which it does only for a host buffer. Each block then adds the channels and the delay
+  return into the previous block's content, already multiplied by the master gain. Nothing is
+  output from it, but the master compressor (when routed to the master) and the master peak
+  meter read it.
+- **Where.** `sub_10013444`: `mov eax, [esi]; test eax, eax; jnz` at 0x1001349D..0x100134A1 and
+  `lea eax, [edi+140Ch]` (0x100134A3) for L, the same at 0x100134DF..0x100134E6 for R; the
+  1e-6 fill loops at 0x100134BA and 0x100134FF run only on a non-null entry. Read in IDA
+  (task-257).
+- **Trigger.** ReWire only, a host with Mix-L or Mix-R off. The export and the app always pass
+  both.
+- **Verdict.** Not claimed as a defect: no output carries it; the master compressor's gain
+  reduction and the master meter can differ from a run with both enabled.
+- **Corpus.** None.
+- **orb.** Not modeled (no ReWire routing).
+- **Home.** `docs/rewire.md` section 4.

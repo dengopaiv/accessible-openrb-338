@@ -1,12 +1,23 @@
-# The VST® 3/CLAP plugin (`crates/orb-plugin`)
+# The VST® 3 plugin (`crates/orb-plugin`)
 
 VST is a registered trademark of Steinberg Media Technologies GmbH.
+
+**CLAP was dropped** (the user's decision of 2026-11-22, task-278). The plugin ships as VST3
+only, from the release after v2026.1118.0919 (the last with a CLAP bundle). The plugin uses no
+CLAP-only feature, and the CLAP format cost a forked nice-plug (task-275, task-276: its wrapper
+gave a continuous `FloatParam` the CLAP range 0..1, so a patched copy kept the CLAP range 0..127
+of the released stepped parameters) and half the bundle tests. The workspace takes nice-plug
+0.4.2 from crates.io again. Sections 3 to 10 mention CLAP where they report what was found with
+the CLAP bundle (REAPER, Bitwig); that is history. What a user of the CLAP version does is in
+section 7.2: delete the old `OpenRB-338.clap` (the Windows installer and the macOS plugin
+installer do it on an upgrade) and replace the plugin by its VST3 by hand in each project.
 
 OpenRB-338 as an instrument plugin, milestone m-7. The product decisions are task-185's final
 summary (2026-11-15/16); this document describes how the plugin implements them. task-197 built
 the core described here; task-198 the host sync, the pattern selection by notes and the Standard
 Mapping (section 8); task-200 note mode (section 9); task-201 the editor (section 10); task-203
-the pattern drag-out (section 12); packaging and the validators are task-204. task-217 (the
+the pattern drag-out (section 12); packaging and the validators are task-204; task-256 the
+per-device outputs (section 13). task-217 (the
 user's design of 2026-11-16, task-216) replaced the mode parameter `g1` with the pattern/note
 mode setting and made the panel's Play/Stop the pattern preview (section 4.2). task-218 renamed
 pattern mode Latch Pattern Mode and added Gate Pattern Mode (section 11).
@@ -17,18 +28,20 @@ One instance is the whole ReBirth: the two 303s, the 808, the 909, the effects a
 the engine of `orb-engine` driven as orb-player drives it in the standalone app. The plugin is
 built on nice-plug 0.4.2 (codeberg.org/RustAudio/nice-plug, ISC), the community fork of
 nih-plug, with its `vst3` and `editor` features (no logger). Its VST3 bindings are the `vst3`
-crate 0.3.0 (MIT OR Apache-2.0); the editor is on nice-plug-egui 0.6.0 (ISC, egui-baseview
-0.9 with wgpu 30, section 10). These licenses are compatible with the repository's
-GPL-3.0-only.
+crate 0.3.0 (MIT OR Apache-2.0); the editor is on nice-plug-egui 0.6.0 (ISC) and egui-baseview
+0.9 with wgpu 30, egui-baseview from the user's fork that frees textures after the submit
+(MIT OR Apache-2.0, as upstream; section 10). These licenses are compatible with the
+repository's GPL-3.0-only.
 
 | File | Thread | What |
 |---|---|---|
-| `src/lib.rs` | both | the nice-plug `Plugin`, `ClapPlugin` and `Vst3Plugin`, the exports |
+| `src/lib.rs` | both | the nice-plug `Plugin` and `Vst3Plugin`, the export |
 | `src/instance.rs` | main | the parameters, the document the state saves, the editor's calls, the engine build |
 | `src/core.rs` | audio | the 64-frame block scheduler, the parameter changes, the mode and the preview |
 | `src/resample.rs` | audio | the resampler for host rates other than 44.1 kHz |
 | `src/params.rs` | both | the parameter table (a constant) |
 | `src/editor.rs` | main | the editor: orb-ui's panel in the host's window (section 10) |
+| `src/plugin_log.rs` | main, the editor's | the diagnostic log (`ORB_PLUGIN_LOG`, section 10), whose activation lines name the library that runs (section 7.1), and the editor's wgpu adapter |
 
 The process side reuses orb-player's lock-free split (`crates/orb-player/src/lib.rs`): the
 UI half (`Player`) stays on the main thread behind a mutex that `process` never takes, the
@@ -72,16 +85,22 @@ Permanent after the first release (task-185):
 | | |
 |---|---|
 | Name, vendor | `OpenRB-338`, `OpenRB-338` |
-| CLAP id | `io.github.pingw33n.openrb-338`; features instrument, synthesizer (task-185's Instrument\|Synth) and stereo (the port layout) |
 | VST3 class id | `EFAB08AF-B39D-4399-8A80-3DC1F84ED3D6` (made once with `uuidgen`, 2026-11-16; `VST3_CLASS_ID` in `src/lib.rs`); category Instrument\|Synth |
-| URL | https://github.com/pingw33n/OpenRB-338 |
+| URL | https://pingw33n.github.io/OpenRB-338/ |
 | Ports | stereo out, no audio in, one MIDI input (`MidiConfig::MidiCCs`: notes and control changes, section 8) |
 
-`tests/exports.rs` loads the built library and checks them through the CLAP and VST3 C APIs.
+`tests/exports.rs` loads the built library and checks them through the VST3 C API.
+
+**Version (task-291).** `Plugin::VERSION`, which the VST3 class info's `version` and the state's
+`version` carry, is orb-ui's `about::VERSION`: exactly the About box's string
+`YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` (set by `crates/orb-ui/build.rs`, `src/version.rs`;
+docs/building.md), not Cargo's `0.1.0`. Nothing compares the state's `version` (nice-plug only
+writes it; `STATE_VERSION` in `instance.rs` is the plugin's own, separate), so a state of a
+build that reported `0.1.0` loads unchanged (`tests/continuous.rs`).
 
 ## 3. Parameters
 
-One stepped integer parameter per control the plugin's panel shows (119): every controller of
+One parameter per control the plugin's panel shows (119; continuous or stepped, below): every controller of
 the 303s (0..8 each: on/off, pattern, tune, cutoff, resonance, env mod, decay, accent,
 waveform), the 808 (0..28, the voice switches 11, 14, 17, 19, 21 included), the 909 (0..29),
 the delay (0..4), the distortion (0..2), the PCF (0..6) and the compressor (0..2); the mixer's
@@ -106,6 +125,43 @@ state (section 5), not parameters.
 - **Ranges.** 0..127 for the knobs and faders; 0..1 for the switches; 0..31 the patterns (shown
   A1..D8), 1..32 the delay steps, 0..54 the PCF wave, 0..5 the compressor insert (off, master,
   channel 1..4), 0..4 the PCF insert (off, channel 1..4).
+- **Continuous and stepped** (task-275, GitHub issue 21: Studio One 7 drew and played the
+  automation of a stepped parameter, "303-2 Cutoff", as a staircase and would not draw a
+  ramp; REAPER and Ableton do not, which is why no test had caught it). Until task-275 every
+  parameter was a nice-plug `IntParam`, which gives VST3 a `stepCount` of `max - min`.
+  - **Continuous** (86): every value over 0..127 (`params::Spec::continuous`: `Kind::Value`,
+    0..=127): the shuffle, the master level, the four channels' level, pan and delay send, the
+    303s' tune, cutoff, resonance, env mod, decay and accent, the 808's and 909's knobs and
+    levels (controllers 2.. other than the 808's voice switches), the delay's feedback and pan,
+    the distortion's amount and shape, the PCF's frequency, resonance, amount and decay, the
+    compressor's ratio and threshold. Each is a nice-plug `FloatParam`, linear over 0..127, with
+    no step size: VST3 `stepCount` 0.
+  - **Stepped** (33), `IntParam`s as before: the switches (`Kind::Switch`: the devices' and
+    channels' on, the 303s' waveform, the 808's voice switches, the delay's sixteenths, the
+    distortion switches of the channels; `Kind::PcfMode`), the patterns 0..31, the delay steps
+    1..32, the PCF wave 0..54, the compressor insert 0..5 and the PCF insert 0..4.
+  - **Into integers.** The engine, the panel, the display and `OrbParams::values` get a
+    continuous parameter's host value rounded to the nearest integer, a half away from zero
+    (`f32::round`), clamped to the range (NaN: the minimum; `params::round`,
+    `instance::HostParam::value`). The process side compares those integers with the ones of
+    the call before (`Core::apply`), so a host's ramp sends an engine message only when the
+    rounded integer changes, one per integer crossed (`tests/continuous.rs`). The text is the
+    integer's (`params::display` of the rounded value; `params::parse` gives the integer).
+  - **The same meaning as the released build's** (v2026.1118.0919, all `IntParam`s): the ids
+    are unchanged; VST3's normalized value of an integer `v` is `(v - min) / (max - min)` in
+    f32 for both (nice-plug's `IntRange::Linear` and `FloatRange::Linear::normalize`, bit for
+    bit with min 0), and a host's normalized value `n` gives the integer the released build
+    made of it (`round(n * 127)`); stock nice-plug 0.4.2 does this for VST3 (its VST3 wrapper
+    works in normalized values; its CLAP wrapper, no longer built, would have given the CLAP
+    range 0..1). A plugin state of the released build
+    restores (section 5). Checked in REAPER 7.86 with the released bundles (task-275's notes):
+    a project REAPER saved through the released build, with an envelope ramp on "303-1
+    Cutoff" from 0 to its maximum, renders bit for bit the same through the new build, VST3
+    (REAPER saves the envelope normalized, `<PARMENV 27:3029309 0 1 0.5`; 3 renders with each
+    build, all 9 pairs equal). (CLAP, history: REAPER saved the CLAP value, `<PARMENV
+    27:3029309 0 127 63.5`, and its CLAP render of that project was not repeatable.)
+  - **The panel** sets a continuous parameter through `ParamSetter` to the float of its
+    integer, and only when the parameter's rounded value differs (`editor::set_param`).
 - **Defaults** are the song constructor's values (`docs/song_load.md` section 4.9; the shuffle
   64, the sequencer's ctor value): a new instance's parameters change nothing in a new song
   (`the_defaults_are_the_new_songs_values`).
@@ -142,7 +198,8 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   a note fell before the play position, where the host drops it (task-226 round 3: a 909
   bass drum at frame 0 after 7777 stopped frames came 33 frames early). The output is a
   function of the events' frames alone: buffer sizes 1, 63, 64, 512 and 4096 give the same
-  samples (`tests/timing.rs`). A call of no frames takes no changes; they are seen at the next
+  samples (`tests/timing.rs`); not when a block starts exactly on a step's tick while the
+  plugin follows the host's position (section 7.1, task-263). A call of no frames takes no changes; they are seen at the next
   call.
 - **The mode** (task-217, task-218; a setting of the state, not a parameter, section 5) is
   read before each block and at each section note. In **Latch Pattern Mode** (task-217's
@@ -175,7 +232,7 @@ The engine runs only at 44.1 kHz, in blocks of 64 frames; the host's buffers can
   period) reach the gains' f32 fixed point; the song is stopped at the activation, so the
   settle plays nothing (state that runs free in silence, such as the 303s' voices, moves on as
   it would in any silent blocks). A note at frame 0 of the first call now sounds
-  as the same note later (`tests/first_note.rs`; through the CLAP and VST3 wrappers,
+  as the same note later (`tests/first_note.rs`; through the VST3 wrapper and, until task-278, the CLAP one,
   `tests/exports.rs`): for the drums at 44.1 kHz within one LSB, as two later notes differ
   from each other (engine state that runs on in silence shifts the int16 truncation of a
   sample now and then; the 303s' voices, for one, run free, their amp adding 1e-6 every block
@@ -251,7 +308,7 @@ field, `orb`, a JSON object (version 1):
 |---|---|
 | `version` | 1 |
 | `song` | the song file as loaded (`.rbs` or a ReBirth 1.x song), base64; null for a new song. File > Info reads its tempo and text from it |
-| `patterns` | the four pattern arrays as edited (303 #1 and #2: 32 x 98 bytes; 808 and 909: 32 x 194), base64 |
+| `patterns` | the four pattern arrays as edited (303-1 and #2: 32 x 98 bytes; 808 and 909: 32 x 194), base64 |
 | `vintage` | the Vintage sound model |
 | `mod` | null for the built-in kit (never embedded); else `{name, sha256, data}`: the mod's INFO name, the SHA-256 of its bytes and the recrypted `.rbm`, base64 (the mods are 2.6 to 9.4 MB, so about 3.5 to 12.5 MB of text) |
 | `editor_size` | the editor window's size in logical points (section 10); absent: 656 x 532 (624 x 532 before task-234's side margins) |
@@ -259,11 +316,24 @@ field, `orb`, a JSON object (version 1):
 | `remote_channel` | the Standard Mapping's MIDI channel, 0-based (15: channel 16, the default and when absent); a section's channel (0..3, MIDI 1..4) restores as 15 with `last_error` set, the rest of the state kept (section 8) |
 | `mode` | `"latch"`, `"gate"` or `"note"` (section 4; a new instance: note; task-217's `"pattern"` is no longer read) |
 | `preview` | the preview set (section 4.2): an object of parameter id to value, or null before the first preview; an id it lacks takes the parameter's value |
+| `routing` | Options > Output Routing (section 13.1, task-300): an object of a box's stable key ("mix.303-1" .. "mix.909", "808.bd" .. "909.rc") to whether it is checked; absent (a state of the released build) or a key absent: checked |
 
-The plugin is not released: no state of an earlier build is migrated, recognized or tested
-(the user, 2026-11-16: no compatibility work with old plugin states until the plugin is
-released on GitHub Releases; the format changes freely). A state from before task-217 lacks
-`mode` and does not parse (the restore gives a new song and `last_error`).
+Until the first release (v2026.1118.0919) no state of an earlier build was migrated,
+recognized or tested (the user, 2026-11-16: no compatibility work with old plugin states until
+the plugin is released on GitHub Releases). A state from before task-217 lacks `mode` and does
+not parse (the restore gives a new song and `last_error`).
+
+**The parameters in the state** (nice-plug's `PluginState.params`, by id) are nice-plug's
+externally tagged values: `{"i32": v}` for a stepped parameter, `{"f32": x}` for a continuous
+one (section 3; `x` the host's value, which may lie between two integers). The released build
+saved every parameter as `{"i32": v}`, and nice-plug restores only an `F32` into a `FloatParam`
+(`deserialize_object`, `src/wrapper/state.rs`: a mismatched pair is skipped, so the parameter
+would keep its default). The plugin's `Plugin::filter_state`, which nice-plug calls before the
+restore, turns a continuous id's `I32` into the `F32` of the same value
+(`instance::migrate_state`; task-275), so a released build's state restores the same values
+(`tests/continuous.rs`, and through the VST3 export `tests/exports.rs`). A state of this build
+loaded by the released build loses its continuous values (they keep their defaults): no
+downgrade.
 
 A restore (nice-plug sets the parameters, then calls `deserialize_fields`) replaces the
 document and, when the instance runs, builds the engine and sends it; otherwise the next
@@ -333,27 +403,276 @@ For the editor (task-201), on `OrbParams` (`OrbPlugin::orb_params`):
 ## 7. Building and testing
 
 `cargo xtask bundle orb-plugin --release` builds the library and lays out `OpenRB-338.vst3`
-and `OpenRB-338.clap` under `target/bundled/` (`xtask/` on nice-plug-xtask 0.1.1, `bundler.toml`
+under `target/bundled/` (`xtask/` on nice-plug-xtask 0.1.1, `bundler.toml`
 for the bundle name, the alias in `.cargo/config.toml`). The xtask finds the workspace from its
 own manifest: nice-plug-xtask's own entry point takes the topmost ancestor directory with a
 `Cargo.toml` as the workspace, which is the wrong one for a checkout inside another (the
 worktrees under `.claude/worktrees/`). Signing, the packages and the validators
-(clap-validator on the CLAP bundle, pluginval on the VST3 bundle) are task-204: docs/building.md,
+(pluginval on the VST3 bundle) are task-204: docs/building.md,
 "The plugin".
 
 The tests (`cargo test -p orb-plugin`; `tests/` and the resampler's unit tests): the buffer
-sizes and the 48 kHz path (`timing.rs`), the parameter list and defaults (`params.rs`), the state
+sizes and the 48 kHz path (`timing.rs`), the parameter list and defaults (`params.rs`), the
+continuous parameters, their rounding and the released build's mapping and states
+(`continuous.rs`, task-275; their VST3 step counts and normalized values through the export in
+`exports.rs`), the state
 (`state.rs`, with a test mod made from the standard mod: renamed, the 808's and 909's bass drum
 and first snare swapped), no allocation in `process` (`no_alloc.rs`, a counting allocator, and
 the process side's sources checked for lock types), and the exports (`exports.rs`): it builds
-the library, loads it with the dynamic loader, checks the CLAP descriptor and the VST3 factory's
-class info, and runs a minimal CLAP host that restores a state with a song in pattern mode,
-activates at 44.1 kHz, processes with a CLAP transport that plays (no tempo, no position), and
-gets the same samples as the process side run directly. Loading in a real host (Reaper) has not
-been tried by the tests. `sync.rs` (task-198) runs a simulated host transport (section 8),
-`note_mode.rs` (task-200) note mode (section 9), `editor.rs` (task-201) the editor headless
-(section 10), `preview.rs` (task-217) the preview and its set through the process path
-(section 4.2).
+the library, loads it with the dynamic loader, checks the VST3 factory's class info and
+plays a note at frame 0 of the first playing block (task-226) through the VST3 C API. A real host, REAPER, is the opt-in
+`reaper.rs` (task-244, section 7.1). `sync.rs` (task-198) runs a simulated host transport
+(section 8), `note_mode.rs` (task-200) note mode (section 9), `held_notes.rs` (task-258) the
+303's held notes with lost and stray note-offs, CC 123/120 and the host's stop (section 9.1),
+`editor.rs` (task-201) the editor headless (section 10), `preview.rs` (task-217) the preview
+and its set through the process path (section 4.2).
+
+**Instances are created one at a time (task-302).** On Windows, nice-plug 0.4.2's VST3
+`createInstance` makes the instance's event loop (`src/wrapper/vst3/inner.rs:388`), which
+registers a hidden window class named `nice-event-loop-{QueryPerformanceCounter ticks}` with the
+host executable's module handle (`src/event_loop/windows.rs:78-94`) and asserts that
+`RegisterClassExA` succeeded. The counter runs at 10 MHz: two threads of one process that create
+an instance of any nice-plug plugin in the same 100 ns register the same name, the second
+registration fails with ERROR_CLASS_ALREADY_EXISTS (1410), and the panic inside the
+`extern "system"` entry aborts the process (exit 0xC0000409). `exports.rs` creates its
+instances under one process-wide lock, so they are created one at a time. The code path and the
+test machine show that the abort needs two threads creating instances within the same 100 ns; a
+host that creates all its instances on one thread cannot hit it. Which hosts create instances
+on more than one thread was not checked; that open question is task-303 (decided: accept).
+
+**The host check (task-304).** The log (section 10) has a line per creation, written first thing
+in `OrbPlugin::default`, inside the host's `createInstance`:
+`create: instance N thread T clock C unit`. N counts the process's instances from 1, T is the
+OS thread id on Windows (`GetCurrentThreadId`; the Rust `ThreadId` text on other systems, where
+the line is only for tests) and C is `QueryPerformanceCounter` ticks (`qpc`, the clock
+of the class name above; elsewhere nanoseconds of a monotonic clock, `ns`). Each activation
+adds `activate: thread T clock C unit`. A host creates on one thread when every `create:` line
+of a run has the same T; two creations on different threads whose C differ by less than a few
+ticks would be the race. The result of the user's check of REAPER and Studio One on Windows:
+
+| Host and session | Creates | Creating threads | Result |
+|---|---|---|---|
+| REAPER, session 1 | one create (probably the plugin scan) | one: 22408 | one thread |
+| REAPER, session 2 | 25 creates | one: 12560; closest two 4.5 ms apart | one thread; activations on the creating thread |
+| REAPER, session 3 | 50 creates | one: 9572; closest two 4.1 ms apart | one thread; activations on the creating thread |
+| Studio One, session 1 | 32 creates | one: 21400; closest two 34.0 ms apart | one thread |
+| Studio One, session 2 | 32 creates | one: 21400; closest two 12.5 ms apart | one thread |
+| Studio One, session 3 | 32 creates | one: 20528; closest two 12.3 ms apart | one thread |
+
+**Evidence.** On 2026-11-25 the user did the how-to's actions (a plugin rescan, a project of about
+20 instances saved and reopened, tracks duplicated in bulk) in both hosts and sent the logs:
+six sessions, unlabeled, of 1, 25 and 50 creates (REAPER) and 32, 32 and 32 (Studio One). A
+session is a run of the log whose instance counter starts again at 1 (a new process, or the
+library loaded again). The logs do not label which action made which session, so the table is
+per session, not per action; it is not known that each action ran in a session of its own.
+Whether REAPER's live FX multiprocessing was on is unknown. No panic or abort line in either
+log. In every session all creations ran on one thread, and the closest two were about 41,000
+ticks (4.1 ms) apart against the 1 tick (100 ns) the abort needs: in REAPER and Studio One no
+creation on several threads was seen (task-304), so task-303's choice (accept) stands.
+
+**Build of the check.** The user ran the zip built from the uncommitted tree before the commit:
+the logs' first lines read `2026.1125.1211 (dev-6d61023-dirty)`. The crates' sources were not
+changed between that build and the commit (the files' last change precedes the build, `git
+diff HEAD -- crates` is empty), so the build ran the committed code.
+
+### 7.1 The REAPER render test (task-244)
+
+`cargo test -p orb-plugin --test reaper` renders committed REAPER projects through REAPER's
+command line and compares the WAVs with the plugin's process side driven in-process as REAPER
+drives it. Pinned to **REAPER 7.86** (7.86.0_f6d0464u, macOS arm64); the RPP format, the
+`reaper.ini` keys and the command line differ between versions.
+
+- **Opt-in.** The render test runs only with `ORB_REAPER` set to the REAPER executable
+  (`/Applications/REAPER.app/Contents/MacOS/REAPER`); otherwise it prints `skipped: ...` and
+  passes, as the `ORB_CD_ISO` tests do. CI does not run it (REAPER is licensed software), and
+  it knows REAPER's settings for macOS only (elsewhere it skips with a message). It takes about
+  a minute: 14 renders of a few seconds each and the in-process references. The fixtures' freshness
+  test (`the_fixtures_are_current`) always runs.
+- **The fresh build only, nothing installed** (the user's decision, 2026-11-21). The test
+  builds the bundles (`cargo xtask bundle orb-plugin --release`, into `target/bundled`) and
+  runs each render (through `open`, see "Hidden" below) as `REAPER -newinst -nosplash -ignoreerrors -cfgfile
+  target/reaper/<case>.<format>/resources/reaper.ini -renderproject <copy of the fixture>`:
+  - `-newinst` starts an instance of its own: a REAPER the user has open is neither used nor
+    disturbed (without it the render could go to the running instance).
+  - `-cfgfile` moves REAPER's whole resource folder to the ini's folder: the plugin caches
+    (`reaper-vstplugins_arm64.ini`), `reaper-fxtags.ini`,
+    `Scripts/` and the rest are written there, so the user's REAPER configuration and caches
+    are never read or written and no other resource folder is needed.
+  - The scratch `reaper.ini`: `vstpath_arm64` (on x86_64 `vstpath64`; the key is a string of
+    the executable) lists only
+    `target/bundled`. `vstfullstate=33605`: without it REAPER's first start appends
+    `/Library/Audio/Plug-Ins/VST3;~/Library/Audio/Plug-Ins/VST3` to the VST path and scans
+    them (seen on an exploratory first try, which read the user's installed copies into its
+    scratch cache; nothing was written outside it). So the protection is these path settings
+    plus the test's check, after every render, that the scratch `reaper.ini` still lists only
+    `target/bundled` in both keys: the test fails if REAPER added its default folders.
+    `coreaudiobs=512`, `coreaudioindevnew=<none>`, `coreaudiooutdevnew=<none>`: REAPER's
+    dummy audio device; without them a new resource folder stops at the modal "You have not
+    yet selected an audio device" (in REAPER's arm64 code, `OSXhasAudioBeenConfigured`
+    0x1006EF298 wants `coreaudiobs` and both device names, `audioConfigInit` 0x1006EF33C reads
+    them, and the streamer choice 0x1006EF538 takes `audioStreamer_dummy` when both are
+    `<none>`). The evaluation license's nag does not stop `-renderproject`.
+  - **Which copy ran.** The test sets `ORB_PLUGIN_LOG` (section 10) to a scratch file, and the
+    plugin log has a line per activation, `activate: loaded from <path> at <rate> Hz`, with the
+    path of the library that runs (`dladdr` of the plugin's own code;
+    `plugin_log::activated`, `parse_loaded_from`; task-244's `ORB_PLUGIN_LOAD_LOG` was folded
+    into it by task-260). The test fails unless every activation line names `target/bundled/OpenRB-338.<format>/
+    Contents/MacOS/OpenRB-338` at the project's rate, REAPER kept the two paths, and each
+    scratch cache lists one OpenRB-338.
+  - **Hidden, no focus change** (task-277, macOS only; the test is macOS-only anyway, and
+    nothing here is done for Windows, where the test skips). The test starts REAPER through
+    `open -n -g -j -W -a REAPER.app --env ORB_PLUGIN_LOG=<log> --args <the arguments above>`:
+    `-n` a new instance, `-g` not activated, `-j` hidden, `-W` waits for exit, `--env` because
+    `open` does not pass the test's environment. Measured on REAPER 7.86 (arm64, macOS 15.6)
+    with a 20 ms sampler of the on-screen windows (CGWindowList) and the front app
+    (NSWorkspace) while REAPER renders `latch_48k`: started directly, REAPER showed its main
+    window and the render dialog in 52 of 155 samples; through `open -g -j` still in 15 of
+    117, so **`-j` does not keep the windows hidden** (REAPER unhides itself when it opens
+    them; the front app stayed the user's in all runs, so `-g` works). The scratch `reaper.ini`
+    with `wnd_x`/`wnd_y` far off-screen was no fallback: macOS clamps the window back
+    (`wnd_x=68`, `wnd_y=0` were written back). So the test also runs a hider, a JXA loop of
+    `osascript` (started before REAPER, as its start-up takes 0.3 s) that waits for the pid on
+    its standard input and then calls `NSRunningApplication.hide` whenever the app is not
+    hidden (every 5 ms, until the process is gone; no Accessibility permission needed, unlike
+    System Events). The hider keeps looping while the lookup is nil (REAPER not yet known to
+    NSWorkspace) and ends when the app is terminated, or gone after it was seen. With it,
+    over the whole test (11 renders plus the hang test, about 2100 samples in 55 s) REAPER was
+    never the front app in any of 12 runs, and no REAPER window was on screen in 8 of them;
+    the other 4 saw windows in 14, 58, 59 and 131 samples (the last: 3 s in one render). So
+    it is a race, not a guarantee, and a window can show for a few hundred ms. The 3 s case
+    was not reproduced in 4 later runs with the hider logging (each: the hider had the pid
+    and saw REAPER within about 70 ms, and the 48 hiders hid REAPER 160 to 210 times).
+  - **Lifecycle.** `Started` (a `Drop` guard) stops the hider, `open` and the REAPERs found
+    by the scratch `-cfgfile` on every exit, a panic included, and after a timeout looks again
+    three times over 1 s for a REAPER LaunchServices starts late. A Ctrl-C kills the test
+    process without running it, and REAPER (started by launchd) survives. Clean up by the
+    scratch path, never by name. The scratch folder is `<target dir>/reaper/<case>.vst3/`
+    (the target dir is `CARGO_TARGET_DIR` if set, else the workspace's `target`; the test
+    prints it in a failure, and a REAPER's command line shows it). List the processes with a
+    fixed-string match (not `pkill -f`, whose pattern is a regex, so a path with regex
+    characters would need escaping): `ps -axww -o pid=,command= | grep -F -- '-cfgfile
+    <target dir>/reaper/'`, check that each line is a REAPER of the test (or its `open`), and
+    `kill -KILL <pid>` them. The hider is an `osascript -l JavaScript -e ObjC.import(...)`
+    process (its command line has no path: `grep -F 'ObjC.import(' ` on the same list); it ends by itself once its REAPER is gone. The plugin
+    variables `ORB_PLUGIN_LOG_LEVEL` and `ORB_PLUGIN_SIZE_LOG` are passed on by `--env` when
+    set (checked with several `--env` flags: all reach REAPER, task-277 notes).
+  - **The exit status.** `open -W` exits 0 whatever REAPER's status, and REAPER's own is not
+    available, so a render counts only when `project/out/Master.wav` exists, and the plugin-log
+    and length checks below follow as before.
+  - **The timeout.** A render that does not finish in 120 s (a dialog) fails the test. The
+    child is `open`, not REAPER, so the test finds the REAPER it started by its command line in
+    `ps`: the exact pair `-cfgfile <its scratch reaper.ini> -renderproject ` on a process that
+    is an app's executable (not `open`, which carries the same arguments), and kills only it
+    (`reapers_of`, unit-tested on sample `ps` lines with another REAPER, `open`, and a path
+    that only ends like the scratch path; `a_hung_reaper_is_killed_and_fails_the_run` hangs a
+    real REAPER with an unreadable project for 15 s, and checks that it fails and that no
+    process of that scratch configuration is left). A REAPER on any other configuration, the
+    user's included, never matches.
+- **Fixtures.** `crates/orb-plugin/tests/reaper/<case>.vst3.RPP`, made by `cargo run -p orb-plugin --example reaper_fixtures` from
+  `tests/reaper/template.RPP` and the cases of `tests/reaper/cases.rs`. Rerun it when the
+  state format, a case or the template changes; the freshness test fails on a stale fixture.
+  A fixture holds the plugin's block as REAPER 7.86 saves it (from a project REAPER saved
+  through a ReaScript): for VST3 a header line (the class's REAPER id 1476801187 as a
+  little-endian u32, 0xFEED5EEE, 0 inputs, 10 outputs and their u64 pin masks), a line of
+  (data size, 1, 0xFFFF), the data (the component state's size and 1, nice-plug's JSON state,
+  then 8 zero bytes) and 6 zero bytes; base64 lines of 96 bytes. (The CLAP fixtures went with
+  the format, task-278.)
+  The state's JSON holds the song, the patterns, the controls and the mode (section 5). A
+  MIDI item counts in frames (its division is a quarter note's frames), so a note plays at the
+  frame the case gives it. Renders are 32-bit float WAVs (`RENDER_CFG` `ZXZhdyAAAA==`);
+  `RENDER_STEMS 1` is the master mix and a stem per selected track.
+- **REAPER drives the plugin as the in-process host.** At 44.1 kHz REAPER's frame `j` is the
+  plugin's output frame `j + 64` (it compensates the reported latency), at 48 kHz `j + 105`;
+  with the in-process host rolling from beat 0 at the project's tempo and the item's notes at
+  their frames, the master render (the Mix) of every case, in both formats, is bit for bit the
+  in-process one (the in-process render is also checked bit for bit for calls of 64 and 1024
+  frames). The device outputs' tracks are compared with two REAPER exemptions (multi-output,
+  below).
+- **The cases**, all at 120 BPM (below), each also compared as follows:
+  - the 303's slide pattern (`303_slide`), and the 808's and 909's accent patterns
+    (`808_accent_level127`, `909_accent_level127`) with the PCF on their channel (wave 0),
+    dragged out (`clip::notes`, two loops) and played in note mode, against orb-player's
+    pattern-mode render (Latch Pattern Mode through the same process side, the host rolling
+    from beat 0), up to the block where the pattern starts the loop the clip does not have.
+    With each note moved to the first frame of the block where the pattern plays its step
+    (and the 303's first note-off to tick 25, where the pattern's clean start, stepping step 1
+    at tick 1, closes its gate), all three are within one LSB (task-243): the real check. The
+    moved note-off covers a real discrepancy: the clip closes the first gate at tick 24, the
+    pattern at 25, up to 0.0045 apart (task-265). At
+    the clip's own times the difference is task-227's gap (the same hits a block later, and
+    the 303's waveform, which depends on when a note starts); the bounds there are measured
+    ceilings, not a model, catching only gross changes: 0.1497 (303), 1.5874 (808), 1.7431
+    (909), the drums' equal to `tests/note_clock.rs`'s;
+  - `full_mix` at 48 kHz (the resampler, the 105-frame latency): bit-identical to the
+    in-process plugin (`Core`) at 48 kHz, not to orb-player's 44.1 kHz render;
+  - multi-output (section 13): the four device outputs routed (`NCHAN 10`, each device track
+    `AUXRECV` of channels 3/4 .. 9/10 before its fader, no master send) and rendered as stems.
+    The Mix is bit for bit the same project's with no outputs routed. Each device track is the
+    in-process plugin's (`Core`) bus bit for bit, except that REAPER 7.86's VST3 host writes 0
+    for a sample below about 1e-16 (the 909's decay tail, 3e-17; allowed for the VST3 tracks
+    only);
+  - the 22 drum outputs and Options > Output Routing (task-305, section 13, `full_mix` in Latch
+    Pattern Mode, the 54 channels of all 27 outputs mapped, `NCHAN 54`; each of the 26 aux buses
+    on a track of its own, `AUXRECV` of its channels; the older cases keep the released 10
+    channels). Every track is the in-process bus bit for bit (the same 1e-16 exemption), the
+    Master the in-process Mix under the case's routing:
+    - `outputs_drums`: every box checked. The Master is bit for bit `outputs_unrouted`'s: routing
+      the drum outputs changes nothing. Of the drums `full_mix` plays 808 BD, 808 CH, 909 SD,
+      909 CP and 909 OH, which sound on their tracks (peak over 0.01);
+    - `routing_device`: the state's `routing` has `mix.808` unchecked, and the 808's send (`d0c20`)
+      is 100. Every one of the 26 tracks is `outputs_drums`' (the tap is before the level and
+      the send), the Master is not (the 808 is out of Mix-L/R), and the in-process Mix with the
+      send at 0 is another (the device keeps its delay send);
+    - `routing_drums`: `808.bd` and `909.cp` unchecked. The 808 and 909 tracks differ from
+      `outputs_drums`' (the drum is gone from its machine's output) and so does the Master;
+      the other 24 tracks, the 808 BD and 909 CP outputs included, are `outputs_drums`' (an
+      instrument's output carries its voice sum, checked or not);
+  - `loop_ignored`, a limitation pin and not a matching case: Latch Pattern Mode of
+    `full_mix` with a looped time selection (bar 2 to 3, `LOOP 1`). **REAPER's command-line
+    render does not loop**: it renders the linear timeline, bit for bit the project's without
+    the loop (the master renders compared bit for bit), and the test fails once that changes. A looped host transport is not
+    covered (task-264);
+  - `tb303_stuck_note` (task-258, section 9.1): the 303's slide clip (two loops, note mode, the
+    clip's times) with a note-on of key 39 at tick 0 whose note-off never comes, the item
+    running 1.5 s past the clips. The orphan holds the gate (the clip's notes slide) until the
+    clip plays key 39 and lets it go; from half a second after the clips to the item's end the
+    master is silent (peak 0 in both formats). Before task-258 the in-process render kept the
+    303 sounding to the end, and REAPER's differed from it from the item's end (frame 242569,
+    up to 0.092). The inference, not an observation of REAPER's messages: **REAPER most likely
+    closes a note an item left open at the item's end** with a note-off, because the pre-fix
+    plugin changed its output there and reacted to nothing at that point but a note-off of the
+    held key (the item's all-notes-off it ignored); the in-process host sends no such note-off.
+    The in-process events carry the all-notes-off REAPER writes at each item's
+    end (`E ... b0 7b 00`, on channel 1), a no-op in every case since nothing is held there.
+- **120 BPM, not 125** (found by this test): at 125 BPM a block starts exactly on bar 2's tick
+  768 (the host's tick at block `m` is `m * tempo * 512 / 110250`; block 1323), and the
+  plugin's position there, extrapolated from the start of the host's call, comes out as 768.0
+  or 767.9999999999999 by the call's start. The output then depends on the host's buffer size
+  from that bar line on: in-process, Latch Pattern Mode at 48 kHz differs between calls of 256
+  and 512 frames from output frame 92161 (up to 0.16), and the note-mode clock's PCF at
+  44.1 kHz (the 808 case) between calls of 64 and 1024 frames from frame 84608 (up to 0.12);
+  REAPER's VST3 and CLAP renders at 48 kHz matched different call sizes. Section 4's claim that
+  the output does not depend on the buffer sizes holds only away from such exact ticks
+  (task-263). At 120 BPM the first block that starts on a whole tick that is a multiple of 24
+  is 11025 (16 s), after every render's end.
+
+### 7.2 CLAP was dropped: removing the old bundle (task-278)
+
+The user decided on 2026-11-22 to ship VST3 only. A user who installed the CLAP version
+(releases up to v2026.1118.0919) has an `OpenRB-338.clap` that a new release no longer
+replaces, so each way of installing deals with it:
+
+| Install | The old CLAP |
+|---|---|
+| Windows installer (`scripts/installer/openrb.nsi`) | deletes `%COMMONPROGRAMFILES%\CLAP\OpenRB-338.clap` (and the one in the folder the earlier install recorded as `ClapDir`) on every install, whether or not the VST3 component is picked; the uninstaller deletes it too; nothing else in a CLAP folder is touched; the options `/CLAP=` and `/CLAPDIR=` are ignored |
+| macOS plugin `.pkg` (`scripts/pkg/preinstall`) | removes only `/Library/Audio/Plug-Ins/CLAP/OpenRB-338.clap` (never the folder) and forgets the old package's receipt (`pkgutil --forget net.emphased.openrb338.plugin.clap`); a copy in `~/Library/Audio/Plug-Ins/CLAP` is not touched; checked by `scripts/test-pkg-scripts.sh` against a scratch folder (no `/Library`) |
+| `.dmg`, the archives | nothing can run: the `.dmg`'s README and the archives' README.txt say to delete `OpenRB-338.clap` from `/Library/Audio/Plug-Ins/CLAP` or `~/Library/Audio/Plug-Ins/CLAP` (macOS), `~/.clap` or `/usr/lib/clap` (Linux), `%COMMONPROGRAMFILES%\CLAP` or `%LOCALAPPDATA%\Programs\Common\CLAP` (Windows) |
+
+**A project saved with the CLAP plugin** keeps a reference to the CLAP plugin id, which no
+longer exists: the host shows it as missing. Add the VST3 `OpenRB-338` in its place on the same
+track (the song, the patterns and the controls are plugin state: copy them by loading the song
+again, or keep the old project's plugin state by hand in a host that moves it). The two formats
+share the state's document (section 5), but a host does not move state between formats.
 
 ## 8. Host sync, pattern selection by notes, the Standard Mapping (task-198)
 
@@ -363,7 +682,7 @@ follow the host the same way; the section notes differ (Latch: below; Gate: sect
 ### 8.1 How the original follows an external position [C]
 
 The DLL has a host-sync path of its own, for TopHat (ReWire's precursor; out of orb's scope
-otherwise): the export `TopHatDriveAudioProc` (0x1001B800) calls `sub_1001C0F4` (0x1001B891)
+otherwise; its 18 audio outputs are in `docs/rewire.md`): the export `TopHatDriveAudioProc` (0x1001B800) calls `sub_1001C0F4` (0x1001B891)
 with the host's block in each audio call.
 
 - The host's tempo (`+0x950`) becomes the song's tempo (globals `+4`, 0x1001C118) and
@@ -426,8 +745,8 @@ the last record that starts at or before `h`, extrapolated at its tempo while th
   timeline are identical, and with a host whose positions do not depend on where its buffers
   start, so are different buffer sizes (`sync.rs`).
 
-**Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 1..4 (303 #1 = 1, 303 #2 = 2,
-808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303 #1) in Latch
+**Notes.** A note-on (velocity above 0) 0..31 on MIDI channel 1..4 (303-1 = 1, 303-2 = 2,
+808 = 3, 909 = 4; a keyboard or DAW track on its default channel 1 reaches 303-1) in Latch
 Pattern Mode selects pattern n+1 of that section (A1..D8): the pattern controller's panel message (it
 becomes the pending pattern), then, while the song plays, slot 2 on that device, which takes it
 at once (`relocate`: `0x100255E0`, `0x10028030`, `0x1002B670`) where the panel's would wait for
@@ -470,7 +789,7 @@ host sent (also those nothing maps, and in the preview, which ignores them): the
 ## 9. Note mode (task-200)
 
 In note mode (outside the preview) the song is stopped, and a note-on or note-off on MIDI
-channel 1..4 (303 #1, 303 #2, 808, 909) plays that device by the note mapping of
+channel 1..4 (303-1, 303-2, 808, 909) plays that device by the note mapping of
 `docs/midi.md` section 5, at the block holding the event (section 4), whether the host plays or
 not (the no-sound-while-stopped rule is pattern mode's only; the user, 2026-11-16). The original plays no
 device from a note (`docs/midi.md` section 4), so this is new engine behavior; it does not run
@@ -502,14 +821,52 @@ note-on 0x10023CD4 and note-off 0x10023C74 as a pattern would, so the sound is t
   coefficient restart are skipped), and the pitch glides `(11p + t)/12`. The same pitch is a
   tie; its accent still changes the envelope decay and the accent amount, as a tied accented
   step does.
-- **Held notes** (up to 16, a fixed array; a 17th forgets the oldest): the newest sounds
+- **Held notes** (up to 16 keys, a fixed array; a 17th forgets the oldest): the newest sounds
   (last-note priority). Releasing it slides back to the newest note still held, with that
   note's accent (legato; a held note the Tune has since put outside the table is dropped);
   releasing a note that does not sound changes nothing; releasing the last one is the note-off
-  (the gate is the note's length; the release is the note-off's amp constants). A note-off
-  releases the oldest held instance of its note, so two overlapping notes of one pitch (a tie
-  in the pattern drag-out, task-203) sound as one until the second ends.
-- Play (slot 3) and slot 6 (Stop, a song switch, a reset) forget the held notes.
+  (the gate is the note's length; the release is the note-off's amp constants).
+- **A key is held once** (task-258; MIDI's own model, and Gate Pattern Mode's, section 11): a
+  note-on of a key already held presses it again (its old entry goes and it becomes the
+  newest; with another key or itself held it is legato, a tie for itself), and one note-off
+  lets it go. Before task-258 a key was held once per note-on and a note-off let go of the
+  oldest instance; the drag-out never overlaps two notes of one pitch (a tie is one longer
+  note, section 12), so only a host's lost or doubled note gave two.
+- **Missing and stray note-offs** (task-258). A note-off that never comes (the user's report,
+  2026-11-21: a REAPER send to the plugin removed while a 303 note played; REAPER most likely
+  closes the notes of an item at its end, inferred in section 7.1, but the removed send no
+  longer carries them) leaves
+  its key held: every later note slides from it (no attack) and every release slides back to
+  it, so the 303 sounds without a break. It heals at the key's next note-off (a looped clip
+  plays the key again), at an all-notes-off or all-sound-off on the section's channel, and at
+  the host's stop; before task-258 only Play or Stop of the song (a mode switch) cleared it,
+  as the held instances outnumbered the note-offs for good and the plugin ignored both
+  controllers and the stop. A note-off of a key not held (a send added during a note) changes
+  nothing.
+- **A note whose MIDI source is gone** (the user's check, 2026-11-21: a send deleted while a
+  303 note was held). The plugin then gets no more MIDI from that source, so the held key
+  sounds on, as in any MIDI instrument, until the host's transport stops or an all-notes-off
+  or all-sound-off arrives on the section's channel. The user decided on 2026-11-21 to keep
+  this (option A, task-270); neither clearing held notes at a host loop wrap or position jump (B) nor a
+  timeout (C). In REAPER 7.86 the action "Send all-notes-off and all-sounds-off to all MIDI
+  outputs/plug-ins" sends both at once, and its MIDI reset preferences ("Reset on:", "On stop
+  (default, recommended)" or "Reset on playback start"; strings of its executable) choose when
+  it sends reset messages; the plugin also lets go at the stop itself.
+- **All notes off.** In note mode CC 123 (All Notes Off) and CC 120 (All Sound Off) on channel
+  1..4 (`src/core.rs`, `Command::NotesOff`, `Engine::live_notes_off`, `Tb303::key_all_off`)
+  and the host's stop (the first block whose host record stops after one that played; also
+  with the host's position) let go of every held key at once: the slide flag cleared, then the
+  note-off, as the last key's note-off (bit for bit, `tests/held_notes.rs`). All Sound Off is
+  no hard cut: the 303 decays by its release. The reason: the engine has no way to silence a
+  voice but the original's note-off (slot 6, the song's Stop, releases the same way), a cut
+  mid-waveform would click, and hosts send All Sound Off together with All Notes Off at a
+  stop or reset (REAPER's action above), where a release is what a stop sounds like. Nothing when no key is held; the 808 and the 909
+  hold no notes. The messages then reach the Standard Mapping as before, which maps neither
+  (section 8).
+- Play (slot 3) and slot 6 (Stop, a song switch, a reset) forget the held notes. This is what
+  a mode switch reset while the host played: to Latch or Gate the song plays (Play), back to
+  note mode it stops (Stop). With the host stopped a switch to Latch and back sends neither
+  (the song stays stopped).
 
 The unit tests (`src/tb303/note_tests.rs`) play patterns through the step function and the same
 notes through note mode, 12 ticks a block, and require the same samples bit for bit in both
@@ -722,8 +1079,9 @@ the same before and after task-234).
 in both formats and with no format detection. `Editor::resize_hint()` (`editor::resize_hint`;
 nice-plug 0.4.2 answers CLAP `gui.can_resize` and `gui.get_resize_hints` from it,
 `wrapper/clap/wrapper.rs` 2907-2937, and VST3 `IPlugView::canResize`, `wrapper/vst3/view.rs`
-721-732; no patch of nice-plug) is resizable both ways, with a minimum of half the panel and
-the bar (312 x 277), no maximum and no aspect ratio. CLAP `gui.adjust_size` and VST3
+721-732; no patch of nice-plug) is resizable both ways, with a minimum of 536 x 485
+(`MIN_WINDOW_W/H`, task-297: every window the user cannot resize fits in it; it was half the
+panel and the bar, 312 x 277), no maximum and no aspect ratio. CLAP `gui.adjust_size` and VST3
 `checkSizeConstraint` (nice-plug routes both to `OrbHandle`'s `EditorHandle::adjust_size`,
 `view.rs` 734-772) give the host's size back unchanged, raised to the minimum only
 (`editor::adjust_logical`); `EditorHandle::set_size` (egui's) applies it. The editor's own
@@ -818,7 +1176,7 @@ from `checkSizeConstraint` and the view calls no `resizeView` on the test's `IPl
 during that drag, and the corner's sizes (computed by the test with `corner_size`; the test
 cannot drag the egui corner of the loaded library) pass the round trip unchanged.
 `open_editor` checks `gui.can_resize`, `gui.get_resize_hints` and `gui.adjust_size` (1000 x 540,
-721 x 532 and 630 x 1042 unchanged, 10 x 10 to 312 x 277); `the_host_sizes_the_editor` replays
+721 x 532 and 630 x 1042 unchanged, 10 x 10 to 536 x 485); `the_host_sizes_the_editor` replays
 Bitwig's drag through the CLAP API (`gui.adjust_size`, `gui.set_size`, `gui.get_size`): every
 answer is the host's size.
 
@@ -831,6 +1189,108 @@ from a terminal with the variable, e.g. `ORB_PLUGIN_SIZE_LOG=$HOME/orb-sizes.log
 "/Applications/Ableton Live 12 Lite.app/Contents/MacOS/Live"`, or `open -a "Ableton Live 12
 Lite" --env ORB_PLUGIN_SIZE_LOG=$HOME/orb-sizes.log` with Live not running. The variable is
 read once per loaded copy of the library.
+
+**The diagnostic log (task-260).** `src/plugin_log.rs`, in release builds too. nice-plug's
+`NICE_LOG` does nothing in this plugin: nice-plug is built without its `tracing-subscriber`
+feature and the plugin's `Plugin::setup_logger` is nice-plug's default (`None`), so no logger
+exists (`nice-plug-0.4.2/src/wrapper/util.rs` `setup_logger`), whatever the host passes on;
+the `nice_warn!`/`nice_error!` lines of the plugin go nowhere. The plugin's own log is on when:
+- `ORB_PLUGIN_LOG` names a file (appended to), or is `stderr` (Bitwig copies its plugin host's
+  stderr into `~/.BitwigStudio/log/engine.log`: the `libEGL warning` lines of the user's first
+  Linux run are there);
+- or, with the variable unset or empty, the switch file `plugin.log` exists in orb-ui's log
+  folder (`orb_ui::crash::log_dir`, the crash logs' folder; `ORB_UI_LOG_DIR` moves it). Creating
+  the empty file turns the log on for a host that does not pass the environment on; the log is
+  appended to it. Delete the file to turn it off. The switch file is exactly:
+
+  | System | Switch file |
+  |---|---|
+  | Linux | `$XDG_STATE_HOME/OpenRB-338/plugin.log`, or `~/.local/state/OpenRB-338/plugin.log` |
+  | macOS | `~/Library/Logs/OpenRB-338/plugin.log` |
+  | Windows | `%LOCALAPPDATA%\OpenRB-338\logs\plugin.log`; in portable mode (task-289, task-295, docs/building.md) `logs\plugin.log` next to the `OpenRB-338.vst3` file (the zip); the installer's bundle in `%COMMONPROGRAMFILES%\VST3` is portable only when an `OpenRB-338.portable` marker is put beside it |
+
+  It is not in the settings folder (the settings file's: `~/.config/OpenRB-338`, `~/Library/Application
+  Support/OpenRB-338`, `%APPDATA%\OpenRB-338`): a `plugin.log` there does nothing.
+
+It is read once per loaded copy of the library, at the first activation or editor open. It has
+a first line with the version, the system, the process and the variables that choose the
+graphics (`XDG_SESSION_TYPE`, `DISPLAY`, `WAYLAND_DISPLAY`, `WGPU_BACKEND`, `WGPU_POWER_PREF`);
+a line per activation (`Plugin::activate`, main thread, never the audio thread): `activate:
+loaded from <library path> at <rate> Hz` (`dladdr` of the plugin's own code, `?` on Windows;
+the REAPER test reads it, section 7.1; it replaces task-244's `ORB_PLUGIN_LOAD_LOG`); the `log`
+records of wgpu and egui-wgpu at info and above (wgpu-core's `acquire error` and `present
+error`, egui-wgpu's software-rasterizer warning), egui-baseview at debug, and the other crates
+at info; every panic (a chained panic hook: wgpu's uncaptured validation errors panic); and the
+editor's lines: the adapter choice below, `editor: spawn` with the size and the parent,
+`editor: window built` with the window handle, the first five frames and each frame after a
+pause of over a second (size in pixels, the time since the last), the frame count 1, 2, 4, 8,
+16 and 32 s after the window was built, and `editor: closed after N frames`; a line per
+instance creation, `create: instance N thread T clock C unit` (section 7, task-304). The switch is now first read at the first instance creation (with
+the log on, the file's first line follows it), no longer at the first activation or the editor.
+On Windows T is the OS thread id; on other systems it is the Rust `ThreadId` text,
+and an `activate: thread T clock C unit` line after each activation line. At most 20000
+lines per process. `ORB_PLUGIN_LOG_LEVEL=debug` adds wgpu's and egui-wgpu's debug records (the
+instance's backends, each adapter's details, the swapchain configured at each resize, wgpu-core
+device resources, Metal's shader sources), which is why they are off by default: the macOS
+`clap_gui` test (seven editor opens) wrote 3,420 lines with them and 61 at the default level
+(task-260). What it cannot show: egui-baseview's renderer drops a surface acquire of
+`Timeout`, `Occluded`, `Outdated`, `Suboptimal` or `Lost` without a log of its own
+(`egui-baseview-0.9.0/src/renderer/wgpu/renderer.rs` 207-232); a frame counted but never
+presented shows as frames in the log and nothing on the screen.
+
+**The wgpu adapter (task-260).** egui-baseview makes the editor's wgpu instance itself, with
+all backends and no environment (`renderer.rs` 57, `InstanceDescriptor::new_with_display_handle`);
+the plugin cannot change it without patching egui-baseview. It chooses the adapter:
+`plugin_log::graphics_config` gives egui-baseview egui-wgpu's `WgpuSetup::CreateNew` with a
+`native_adapter_selector` and, as the backends to enumerate, those of `WGPU_BACKEND` when it
+is set (wgpu's names, comma-separated: `vulkan`, `gl`, `metal`, `dx12`), else all. The
+selector picks as wgpu-core 30's `request_adapter` does (`instance.rs` `get_order`): the
+adapters that can present to the window's surface, in wgpu's backend order (Vulkan, Metal,
+DX12, GL), stably sorted by device type for egui-wgpu's power preference (`WGPU_POWER_PREF`,
+default high performance: discrete, integrated, other, virtual, CPU), the first wins. So the
+default is the same as before task-260: all backends, wgpu's own choice (on a Linux VM with
+Mesa, the software Vulkan llvmpipe before the software GL llvmpipe, both CPU devices). Unlike
+the standalone app (docs/building.md, Linux runtime), the plugin's default on Windows is not
+DX12 only. The selector logs each adapter, whether it presents to the window, the one taken,
+the surface's formats, present modes and alpha modes, and the format and present mode egui
+takes (`AutoVsync`, frame latency 2: egui-wgpu's `SurfaceConfig::HIGH_THROUGHPUT`). The
+`libEGL warning: DRI3 error` lines when the editor opens come from wgpu making its GL backend
+(EGL) at instance creation, which it does for every backend; they do not show that GL was
+taken.
+
+**Linux: baseview paces every frame on the X server's Present extension (task-260).**
+baseview 0.4.2 on X11 draws (`handler.draw`, egui-baseview's frame and present) only when
+`PresentState::draw_now` is set (`src/platform/x11/present.rs` 72), and with the Present
+extension (`x11_connection.rs` 56) only a Present `CompleteNotify` sets it
+(`handle_present_complete_notify`, 134-158): it must answer baseview's last `PresentNotifyMSC`
+serial and its MSC must be past the last one received (a completion with an MSC that did not
+advance is recorded and draws nothing, 150-153). The next request asks for the last MSC + 2
+and is sent only after the previous one was answered (`handle_present_notify`, 192-226);
+a redraw request (egui's repaint, a mouse event: egui-baseview `window.rs` 520, 938) only asks
+for that notification. The 15 ms fallback timer (`setup_fallback_frame_timer`, 160) runs only
+when the server lacks the extension or refuses the request. So when the X server's MSC for
+the window does not advance (no vblank: a VM's display driver), or a notification is never
+answered, the editor draws its first frame and then no more, and no input brings it back.
+The log's Present probe (X11 only, 1 s after the window is built) asks the same of the X
+server from a connection of its own (six `PresentNotifyMSC` on baseview's window, the first
+for MSC 0, each next for the last MSC + 2, serials `0x4f524200` + n, which baseview ignores)
+and logs each answer's MSC, UST, kind, mode and delay, or that none came in 2 s.
+
+This is the cause of the black (VST3) or stale (CLAP) editor in Bitwig on the user's VM
+(task-260, confirmed 2026-11-21 with build 2026.1121.0857): Ubuntu, kernel 7.0.0-30, a VMware
+SVGA II adapter (VirtualBox VMSVGA), Xorg on modesetting with glamor refused on llvmpipe
+("Refusing to try glamor on llvmpipe"), Present 1.2 initialized, Xfce under gdm. The editor
+took Vulkan llvmpipe (Cpu) over GL llvmpipe, `WGPU_BACKEND` unset. Every probe
+`PresentNotifyMSC` on the editor's window, for MSC 0 and then for MSC 2, completed at once (0
+to 6 ms) with MSC 0 and UST 0 (kind `NOTIFY_MSC`, mode `COPY`): the MSC never advances, and
+the editor drew exactly one frame (the count stayed 1 at 1, 2, 4, 8 and 16 s, "closed after 1
+frames"), for the VST3 (parent none, waiting for it) and the CLAP (parent given) alike. The fix
+is a baseview patch (task-262, after Decide task-261). On closing, the same run logged
+baseview's `Error while closing window: Request to X11 thread failed: Could not receive
+response (X11 thread disconnected)` and then X11 `BadWindow` errors for Present
+`SelectInput` and `DestroyWindow` on the editor's window (destroyed already); whether that
+path causes another user's crash on closing the CLAP editor (Debian 13, Bitwig 6.1) is task-262's
+to check.
 
 **The panel's own resize.** The corner's request does not depend on `can_resize`: CLAP
 `gui.request_resize` and VST3 `IPlugFrame::resizeView` are the plugin's own resize in both APIs
@@ -953,10 +1413,9 @@ are pixel-identical):
   with the guide to the modes, channels, pattern selection, note mappings, host parameters and
   recipes. The text is `docs/plugin_usage.md`, embedded with `include_str!` and drawn from its
   Markdown subset, so the page and the file are one (the README links the file, the release
-  notes can). The VST3 plugin's page ends with Steinberg's terms (assets/README.md, task-233);
-  the file marks that section with `<!-- vst3-only -->` and `<!-- /vst3-only -->` and the CLAP
-  plugin's page leaves it out (the editor knows its format, `Embed::format`; the file keeps it,
-  the user's decision of 2026-11-17). The section: the official VST
+  notes can). The page ends with Steinberg's terms (assets/README.md, task-233; until task-278
+  the file marked that section for the VST3 plugin only, the CLAP plugin's page left it out).
+  The section: the official VST
   Compatible Logo, the variant for the dark window (`VST_Compatible_Logo_Steinberg_negative.svg`,
   drawn unaltered from the file's bytes, 96 x 61.7 points: above 15 x 10 mm, 57 x 38 px at 1x),
   "VST®" at the first VST of the page and "VST is a registered trademark of Steinberg Media
@@ -981,17 +1440,15 @@ are pixel-identical):
   the file browser, a prompt or the error box is open. The standalone app has none of it.
 - **The plugin format's mark**: one mark right of the selector, before the wordmark, right-aligned
   6 px before it, engraved (a dark copy at 0.38 opacity over a light copy 0.6 px lower): the
-  CLAP logo (MIT) in the CLAP plugin, and the plain text "VST3" in the panel's label font
-  (Inter bold, 28 px) in the VST3 plugin (parts `plugin_logo_vst3`, `plugin_logo_clap`, 112 x
-  50 at transport x 344; the CLAP data in `orb-ui-art/src/plugin_logos.rs`; sources and terms
-  in `assets/README.md`). The user's decision of 2026-11-17 (task-232): Steinberg's official
+  plain text "VST3" in the panel's label font (Inter bold, 28 px; part `plugin_logo_vst3`,
+  112 x 50 at transport x 344; the CLAP logo of the first releases went with the format,
+  task-278). The user's decision of 2026-11-17 (task-232): Steinberg's official
   VST Compatible Logo does not fit the panel, so the text names the format (the guidelines'
   section 2 allow "VST" in a standard font to denote compatibility); the logo and the
   attribution go to Help > Plugin Usage only (task-233; the README and the package texts dropped
   them, task-239). VST® is a registered trademark of Steinberg Media Technologies GmbH. The editor
-  knows its format from the wrapper in use: nice-plug's `GuiContext::plugin_api()` is `Vst3` or
-  `Clap` (`Embed::format`, `EditorEmbed::format`); the stand-in host of `editor_preview` takes
-  `--format vst3|clap`.
+  knows its format from the wrapper in use: nice-plug's `GuiContext::plugin_api()` is `Vst3`
+  (`Embed::format`, `EditorEmbed::format`); the stand-in host of `editor_preview` reports `Vst3`.
 - The Sync LED is lit while the snapshot's `host_sync` is; the MIDI LED for 0.1 s after the
   snapshot's `midi_in` count changes (art part `led_transport_on`), in the preview too. The editor redraws at least
   every 50 ms while open so that the LEDs follow.
@@ -1000,13 +1457,15 @@ are pixel-identical):
   sets the song's control values as host parameters; File > Open and File > New keep the
   mode (task-228). The file browser is orb-ui's own, egui-drawn (task-046),
   so no native dialog is opened from the plugin window; its folders and the Mods folder are the
-  standalone's settings file (`OpenRB-338/ui.toml`), shared; a save merges only its own
+  standalone's settings file (`OpenRB-338/OpenRB-338.toml`, or the portable one next to the plugin file or bundle on Windows while `OpenRB-338.portable` is there, docs/building.md), shared; a save merges only its own
   change into the file as it is then, so open instances do not overwrite each other
   (task-229).
 - Mods: a mod chosen (the Mods menu, a song's mod, Choose file) is read and given to the plugin
   (`OrbParams::set_mod`, embedded in the state). An editor that opens on a state's mod names a
   copy of its bytes in the temporary folder (`OpenRB-338/mods/<sha256>.rbm`), or the file an
-  editor of the process chose, for the 808's mod window and Mods > Info.
+  editor of the process chose, for the 808's mod window and Mods > Info. The editor has no
+  View menu and no classic skin: View > Classic / Modern is the standalone app's only (task-267,
+  docs/ui_spec.md section 21; the Theme Viewer of task-187 is gone).
 - **No keyboard** (the user, 2026-11-16): hosts take keys from plugin windows, and the 303
   plugins surveyed (task-185) have no shortcuts. The editor acts on no key: no menu
   accelerators (no shortcut texts in the menus), no Program Synth / Select Patterns modes in
@@ -1048,8 +1507,8 @@ egui has fonts.
 `raw_window_metal::Layer::from_ns_view`) puts a `CAMetalLayer` subclass into the editor's view.
 raw-window-metal 1.1.0 registers that class with objc2's `define_class!` under the fixed name
 `RawWindowMetalLayer` (`src/observer.rs`), and Objective-C classes are process-wide: the second
-image of the plugin in one process (Reaper loads the `.vst3` and the `.clap`, two copies of the
-same binary, when both formats are used; any other plugin linking raw-window-metal does the
+image of the plugin in one process (Reaper loaded the `.vst3` and the `.clap`, two copies of the
+same binary, when both formats were used; any other plugin linking raw-window-metal does the
 same) panicked opening its editor ("could not create new class \"RawWindowMetalLayer\",
 perhaps a class with that name already exists?"). The panic is inside the host's call (CLAP
 `gui.create`, VST3 `IPlugView::attached`), an `extern "C"` function of nice-plug, so it
@@ -1074,11 +1533,37 @@ class with a UUID already. The rest of the plugin's macOS dependency tree regist
 under a fixed name (searched for `define_class!`, `declare_class!`, `ClassBuilder::new` and
 `#[name = ...]` in the 277 crates; objc2-app-kit's `#[name]`s bind AppKit's own classes).
 Upstream issue text (not posted): "raw-window-metal: `RawWindowMetalLayer` has a fixed class
-name, so two dynamic libraries that each link raw-window-metal (audio plugins, e.g. a VST3 and
-a CLAP build of one plugin, or two wgpu plugins) cannot both create a layer in one process: the
+name, so two dynamic libraries that each link raw-window-metal (audio plugins, e.g. two wgpu plugins) cannot both create a layer in one process: the
 second `define_class!` registration panics. Please register the class under a name unique to
 the image (e.g. with a random or address suffix through `ClassBuilder`), as baseview does for
 its NSView subclass."
+
+**The egui-baseview fork (task-292).** The workspace takes egui-baseview from the user's fork
+github.com/pingw33n/egui-baseview, branch `OpenRB-338`, commit
+e3db19695653fb05dead3916a553c514c1c88c23, through `[patch.crates-io]` of the workspace
+`Cargo.toml` pinned to that commit (Cargo.lock's source is the fork's git URL at that rev; its
+one user is nice-plug-egui 0.6.0). The fork is upstream commit 1f645a3
+(codeberg.org/RustAudio/egui-baseview, the published 0.9.0) plus one change to
+`src/renderer/wgpu/renderer.rs` `render`. 0.9.0 freed the frame's `textures_delta.free`
+(egui-wgpu 0.37's `Renderer::free_texture`, which calls `wgpu::Texture::destroy` at once,
+`renderer.rs` 790) after recording the frame's render pass but before `queue.submit` (0.9.0
+`renderer.rs` 278-289), so a texture freed in a frame that drew it was destroyed under the
+submitted draw: wgpu's "Validation Error ... In Queue::submit ... In a draw command, kind:
+Draw ... Texture with 'egui_texid_Managed(1)' label has been destroyed", which panics in
+wgpu's default error handler inside the host's call and aborted REAPER 7.8.6 on Windows
+(0xc0000409, FAST_FAIL_FATAL_APP_EXIT, the user's report of 2026-11-24). The trigger was File
+> Open, another folder, "Use as mods folder" with the editor open: `App::refresh_mods`
+(`crates/orb-ui/src/menu.rs`) drops the mod window's splash picture (`self.splash = None`) in
+a frame that has drawn it; any texture the editor drops in a frame that drew it did the same.
+Choosing the current folder again drops nothing, and the standalone app never crashed: eframe's
+egui-wgpu integration frees after the submit. The fork submits, then frees, then presents. Not
+changed by the fork: a frame whose surface acquire returns `Occluded`, `Timeout`, `Outdated`,
+`Suboptimal` or `Lost` returns before the free (in 0.9.0 too), so the textures freed in that
+frame stay allocated until the editor closes. `tests/texture_free.rs` replays the renderer's
+frame on a headless wgpu device (the old order fails validation with "destroyed", the fork's
+passes; skipped with no adapter) and requires the resolved egui-baseview's source to call
+`free_texture` after `.submit(` and before `.present(`. No upstream pull request has been
+opened.
 
 **No panic reaches the host.** Every method of `OrbEditor` (`spawn`, `size`, `resize_hint`)
 and of `OrbHandle` (`run_until_closed`, `set_parent`, `show`, `hide`, `set_size`,
@@ -1087,21 +1572,8 @@ callbacks), the egui app's `build`, frame, `resized` and `editor_closed`, and th
 resize request run under `editor::guard` (`catch_unwind`): a panic is logged (`nice_error!`)
 and becomes an error or a safe fallback (no adjustment, the default size, the default resize
 hint, the state's size unchanged), so the host gets no editor (`gui.create` false) or an
-empty window instead of an abort. nice-plug has no hook of its own for this. `tests/clap_gui.rs`
-(macOS, no test harness, on the main thread) loads the library twice as two files, as Reaper
-does, and in each makes instances that open their editor through CLAP `gui.create`, process
-audio while it is open and close it; with the old bundle's binary (`ORB_TEST_CLAP_LIBRARY`) it
-aborts on the class name as Reaper did. The VST3 path opens the same `OrbEditor`; a VST3 host
-with an `IPlugFrame` and a parent `NSView` is left to the Reaper check.
-
-**The audio thread's SIGSEGV in the first crash report.** The first report
-(`REAPER-2026-11-16-140356.ips`) also had Reaper's audio worker crashed at a byte write to
-`0x50` in `orb_engine::delay::Delay as SendEffect::process` (from the CLAP instance's
-`process`), while the main thread was still in the panic hook printing the backtrace before
-the abort. Delay's code is safe and the second report (`REAPER-2026-11-16-140655.ips`, same
-trigger) has no audio-thread fault, only the abort. Taken as a consequence of the process
-being torn down by the non-unwinding panic, not a defect of its own; not reproduced
-(`tests/clap_gui.rs` processes 200 blocks per instance with the editor open in both copies).
+empty window instead of an abort. nice-plug has no hook of its own for this. (The test of
+this, `tests/clap_gui.rs`, went with the CLAP format, task-278.)
 
 **The panel's commands** (`PluginPort`, orb-ui's `link::Port`): a control's message becomes its
 host parameter (`params::of_command`; `ParamSetter` begin, set, end), so the host records and
@@ -1125,7 +1597,7 @@ emptied on the main thread at every command and every editor frame (`OrbParams::
 
 **Screenshots without a host.** `cargo run --release -p orb-plugin --example editor_preview --
 [SONG.rbs] [--size WxH] [--ppp S] [--host-playing] [--midi] [--mode latch|gate|note] [--preview]
-[--format vst3|clap] [--click X,Y]... [--scroll Y] [--screenshot OUT.png]` shows the editor in a window of its own with a
+[--click X,Y]... [--scroll Y] [--screenshot OUT.png]` shows the editor in a window of its own with a
 stand-in host that runs the process side (no sound) and applies parameter changes at once;
 `--preview` enters the preview, `--click` clicks a point of the window (one every 6 frames from
 frame 10: `--click 104,11` opens Options at 1:1; `--click 150,11 --click 190,39` opens Help >
@@ -1148,10 +1620,8 @@ asks nothing; a mod from the Mods menu goes into the state; the File menu opens 
 the corner asks for sizes of the rule, through the host's callbacks after the frame (a host
 that sizes the window inside its request finds the window's state free); a window
 1.5 times larger still hits the controls; the size rule of the host's resizing and the state's
-size. `tests/fonts.rs`: the plugin's normal build has egui's fonts. `tests/clap_gui.rs`: two
-copies of the library each open CLAP editors (above), and the corner's request posted to the
-main queue reaches the host once, after the event. The real-host checks (Reaper, VST3 and
-CLAP) are the user's (task-201's notes).
+size. `tests/fonts.rs`: the plugin's normal build has egui's fonts. The real-host checks
+(Reaper, VST3) are the user's (task-201's notes).
 
 ## 11. Gate Pattern Mode (task-218)
 
@@ -1162,7 +1632,7 @@ unchanged; the preview overrides Gate as it overrides the other modes (section 4
 
 **What it does** (`src/core.rs`; tests `tests/gate_mode.rs`):
 
-- **A gate per section.** Each section (303 #1, 303 #2, 808, 909 on MIDI channels 1..4) has a
+- **A gate per section.** Each section (303-1, 303-2, 808, 909 on MIDI channels 1..4) has a
   gate, closed until a note 0..31 on its channel is held; the sections gate independently. A
   closed section is silent and does not step; the song itself plays as in Latch (following
   the host while it plays).
@@ -1276,10 +1746,10 @@ makes a MIDI item of it, as a MIDI file dragged from the file manager. The detai
 
 **The clip** (`src/clip.rs`) is a Standard MIDI File:
 - Type 0, one track, 192 ticks a quarter note, so a MIDI tick is an engine tick.
-- The track is named after the section and the pattern (`303 #1 A1`, `808 C2`), with a 4/4
+- The track is named after the section and the pattern (`303-1 A1`, `808 C2`), with a 4/4
   time signature and no tempo, so the host's tempo plays it.
 - The end of the track is the pattern's length: 48 ticks a step, the length byte cut to 1..16.
-- The notes are on the section's channel (1..4: 303 #1, 303 #2, 808, 909) in the note mapping
+- The notes are on the section's channel (1..4: 303-1, 303-2, 808, 909) in the note mapping
   of `docs/midi.md` section 5. The 303's notes follow its gate, the drums' are 24 ticks long,
   the velocities are the export velocities, and shuffle is baked in (all in `docs/midi.md` 5.6).
 - The data is the plugin's, at the moment of the drag:
@@ -1325,7 +1795,7 @@ Per platform:
   - The source answers copy (`NSDragOperationCopy`) for any destination. Its class is registered
     at run time under a name unique to the loaded image (`OrbClipDragSource_<address>_<n>`,
     `ClassBuilder`), for the reason of the vendored raw-window-metal (section 10): the `.vst3`
-    and the `.clap` may be loaded in one process.
+    and another wgpu plugin may be loaded in one process.
   - The session takes the button's release from the view. When it ends
     (`draggingSession:endedAtPoint:operation:`), the source sends the view a made-up `mouseUp:`
     at the pointer, so that egui sees the release.
@@ -1384,3 +1854,171 @@ Per platform:
 - `drag/windows.rs` (Windows): the data object read as a drop target reads it, and the drop
   source's answers.
 - `drag/x11.rs`: the URI list.
+
+## 13. The per-device outputs (task-256)
+
+Besides the main stereo output, named **Mix**, the plugin has four stereo aux outputs named
+**303-1**, **303-2**, **808** and **909** (VST3 aux buses 1 to 4 after the main bus 0; one layout, `AUDIO_IO_LAYOUTS` in `src/lib.rs`,
+names `OUTPUT_NAMES`), and after them 22 per-drum outputs (section 13.1, task-300). Requested by the user on 2026-11-20 (item 7, "multi-out", of task-196's
+deferred features). The tap point is the user's decision of 2026-11-21 (task-259): ReWire's.
+
+**The tap.** Each bus is its mixer channel's signal where ReBirth's own ReWire output for the
+channel takes it (`docs/rewire.md` section 4, [C]): the device's bus after the channel's
+inserts (the distortion, the PCF and the compressor where the mixer routes them to the
+channel, in that order, 0x100135AF..0x100135F1), before the channel's peak meter (0x100135FA),
+its delay send (0x1001364A), its level, pan and on switch (the gain smoothing 0x100136B7 and
+the pan-and-mix loop 0x10013742). The signal is mono; the plugin puts it on both sides of the
+bus. The bus is a stored f32 block (`unk_1010012C`), so the tap is an exact copy
+(`Frame::block_taps`, `crates/orb-engine/src/frame/mod.rs`). Not on the buses: the channel's
+level, pan and on switch, the delay (a send whose return goes only into the master,
+0x10013844), the master compressor (0x10013883) and the master gain (0x100138AE).
+
+Unlike ReWire, the buses are copies: a connected bus does not take its channel out of the Mix,
+and the Mix is the same whatever the host connects. Options > Output Routing (section 13.1)
+takes a device out of the Mix as ReWire does. The panel's channel on switch (the
+mixer's ON) does it instead: a channel turned off is out of the Mix (its gains go to the 1e-6
+guard, `lev = on ? level : 0`) but still on its own bus, so a device can be taken out of the
+Mix and processed on its own track. Its delay send goes too (`T[lev]*T[send]`), as ReWire's
+does not: an off channel has no echo in the Mix.
+
+With the send off and no master compressor the Mix is
+`int16(f32(f32(1e-6 + bus*g) * m))` for a device playing alone, `g` the channel's ramped gain
+(level and pan) and `m` the master gain (0.6338 at the default master level 100). The buses
+are f32 at full scale 1.0 and not clamped (the Mix is the original's int16 output over 32768).
+A channel whose pattern gate is closed (Gate Pattern Mode, section 11) has a silent bus; the
+preview player (section 4.2) is mixed into the Mix only.
+
+**The Mix does not change.** The main output is bit-identical whether the host connects none,
+some or all of the buses: `block_taps` runs `block`'s code and only copies each channel's bus,
+and the main output's path through the player and the 44.1 kHz ring or the resampler is
+untouched. `cargo test -p orb-engine --test corpus_golden` and `orb compare --manifest
+tests/refs/manifest.json` stay EQUAL (the corpus renders through `Engine::render`, which
+renders no taps).
+
+**How they flow.** `Engine::render_taps` (a sibling of `render`, with its own leftover tap
+block for a partial block) writes the taps frame-interleaved, `TAP_WIDTH` = 4 values per frame
+(channel c at `[4i + c]`). `Audio::enable_taps` (orb-player) allocates the call's tap buffer
+on the main thread (`Core::new`, at the activation); every `render_call` then fills it
+(zero for a faulting call), `Audio::taps`. The process side keeps each block's taps beside its
+int16 block: at 44.1 kHz in a ring slot of their own (copied with the block), resampled in a
+ring indexed as the int16 frames and interpolated with the same weights. So the buses have
+the Mix's latency and timing. `Core::process_aux` takes the host's buses; `process_with` is
+`process_aux` with none.
+
+**Unconnected buses.** nice-plug gives an empty slice for a bus without a host buffer
+(`wrapper/util/buffer_management.rs`); `process` passes such a bus as `None`, and nothing is
+written for it: no copy at 44.1 kHz, no interpolation when resampled (the per-frame cost is the
+copy of the block's taps into the ring, 1 KiB a block). The engine copies the taps whatever is
+connected (one block copy per channel). Nothing allocates in `process` (`tests/no_alloc.rs`
+connects the buses in every combination). One caveat of nice-plug 0.4.2: it calls the
+plugin's `process` only when every output bus has a buffer (`buffer_is_valid` in the VST3
+wrapper), so a host that passes a null buffer for an unconnected bus would get no
+processing at all, the Mix included; and it reads one bus past the count a host passes when
+that count is lower than the plugin's (`aux_output_idx > numOutputs`, an off-by-one). Hosts
+pass every bus they are told of; whether REAPER and Ableton do is the user's check (task-256
+AC 5). Also of nice-plug 0.4.2: the main output is named after `names.main_input`
+(`AudioIOLayout::main_output_name`), so the layout sets both to "Mix".
+
+**Tests.**
+- `crates/orb-engine/src/frame/tests.rs`: the taps are each channel's bus after an insert,
+  exactly, the same for different gains (one channel at the guard, as when turned off), and
+  the master is bit-identical to `block`'s; `render_taps` across the leftover block gives
+  `render`'s int16 and the taps of one whole-call render.
+- `crates/orb-plugin/tests/outputs.rs`: the Mix of `full_mix` (every device, the delay, the PCF
+  and the master compressor) is bit-identical with none, some or all of the buses connected,
+  at 44.1 and 48 kHz and buffers of 1 to 4096 frames, and a bus does not depend on the buffer
+  size; a device alone with an insert (the distortion on the 303-1 in `dist_a100_s64`, the PCF
+  on the 909 in `pcf_on_909`, the compressor on the 808 in `comp_ch_808`) reproduces the Mix
+  from its bus within one LSB, with the same signal on both sides and the other buses silent
+  (an idle 303 outputs about 3e-6); the 303-1's level, pan and on switch change the Mix and
+  leave its bus bit-identical, and with the channel off the Mix is silent.
+- `src/resample.rs`: the buses are resampled as the main output, independent of the chunks.
+- `tests/exports.rs`: the VST3 buses (count, names, stereo, which is main), and the VST3 host
+  passes all of them (27 since task-300).
+
+### 13.1 The drum outputs and Options > Output Routing (task-300)
+
+The user's decision of 2026-11-25 gives the plugin the original's ReWire routing (`docs/rewire.md`
+sections 4 and 6): per-drum outputs, and channels that can be taken out of the mix. VST3's
+`activateBus` cannot drive it (nice-plug 0.4.2 ignores its state, `src/wrapper/vst3/wrapper.rs`
+347, and hosts do not report a connection), so the user chooses in a window, Options > Output
+Routing... (a plugin's editor only; `crates/orb-ui/src/routing_window.rs`, `docs/ui_spec.md`).
+
+**The buses.** After the four per-device buses come 22 stereo buses, one per drum instrument
+(L = R, the mono signal on both sides), so a project saved with the released plugin keeps
+303-1/303-2/808/909 on aux buses 1 to 4 (hosts keep the routing by bus index):
+
+| Aux | Names | What |
+|---|---|---|
+| 1..4 | 303-1, 303-2, 808, 909 | The mixer channel after its inserts (task-256) |
+| 5..15 | 808 BD, 808 SD, 808 LT, 808 MT, 808 HT, 808 RS, 808 CP, 808 CB, 808 OH, 808 CH, 808 CY | One 808 instrument's voice sum |
+| 16..26 | 909 BD, 909 SD, 909 LT, 909 MT, 909 HT, 909 RS, 909 CP, 909 CH, 909 OH, 909 CC, 909 RC | One 909 instrument's voice sum |
+
+The original's ReWire has six groups per machine (BD, SD, Tom, Per, HH, CY; channels 5..10 and
+12..17, `docs/rewire.md` section 4); the plugin splits them further, one output per instrument,
+by the user's decision (2026-11-25). The instruments that share a voice share an output: the
+808's LT/LC, MT/MC, HT/HC, RS/CL and CP/MA (`tr808.rs`: one PITCHED or SIMPLE voice each);
+BD is both bass drum voices. The mapping is one table per machine, `tr808::OUTPUTS` with
+`tr808::VOICE_OUTPUT` (the output of each voice in slot 14's render order, 0x100280B0) and
+`tr909::OUTPUTS` with `tr909::VOICE_OUTPUT` (0x1002B6F0); the engine's taps (`frame::Taps`:
+the four channels, then `TAP_808`, then `TAP_909`), the buses (`routing::OUTPUT_NAMES`), the
+state's keys and the window all follow it. Each entry has a stable `id` (the state's key),
+a `name` (the window's box) and a `bus` (the bus name).
+
+**The window.** Three columns of checkboxes, each labeled with its output's name: "To
+Mix-L/R" (303-1, 303-2, 808, 909), "To 808" (BD .. CY) and "To 909" (BD .. RC). A box's
+tooltip is its output's VST3 bus index, "#N" (Mix is bus 0: 303-1 is #1, 808 BD #5, 909 RC
+#26). The user's review of 2026-11-25 took the numbers off the labels: REAPER numbers the
+plugin's channels flat from 1 (Mix 1/2, bus n 2n+1/2n+2), so they did not match what REAPER
+shows, and other hosts show the names. All are checked by default. A click sets the routing at once (`OrbParams::set_routing`:
+the document and `Shared`'s atomic bits, which the process side reads before every engine
+block and gives the player, `Audio::set_routing`, so a song loaded or switched to keeps it).
+
+**The semantics** (`Frame::block_taps`, `drums::render_split`; [C] addresses of the original
+in `docs/rewire.md` section 4):
+- **A device unchecked under Mix-L/R** leaves Mix-L/R as a channel on its ReWire output does:
+  the block skips its gain smoothing (0x100136B7) and its pan-and-mix loop (0x10013742; the
+  bypass `cmp eax, ebp` 0x100136AB, `jnz` 0x100136B1). Its meter (0x100135FA) and its delay
+  send (`send x level`, 0x1001364A) stay, so its echo stays in the Mix. Its own output is
+  unchanged. Its L and R gains freeze while it is out, and when it is checked again they glide
+  from the frozen values (the original's quirk Q-6, `docs/original_bugs.md`).
+- **A drum instrument unchecked** leaves its machine's bus: its voices add into their own block
+  instead (zeroed first, so an idle instrument is exactly 0, no 1e-6 guard), as a non-null group
+  entry does in the 808's slot 14 (0x100280D8..0x10028273) and the 909's (0x1002B718..
+  0x1002B8AF). So it is out of the machine's inserts, meter, level, pan, delay send, Mix-L/R
+  and the machine's own output (3) or (4). The rest of the bus keeps its voices in their order,
+  so the bus's f32 sum is the same sum without the removed terms (bit-identical to the voices
+  not playing; `frame::tests::routing`).
+- **A drum output** always carries its instrument's raw voice sum: the trigger gain with the
+  level knob, the accent and the envelope, and nothing after it. When the instrument is checked,
+  the output is a copy: each voice adds the same f64 term into the bus and into its output
+  block (`drums::Sink::Both`), so the bus keeps the original's accumulation order and is
+  bit-identical; the bus is never derived from the outputs.
+- **The pattern gate** (section 11) silences a closed section's drum outputs too (the fade-out
+  block fades them as the bus).
+- **The defaults**: with every box checked, the Mix and the four device outputs are bit-identical
+  to task-256's (the corpus, `tests/outputs.rs`). The corpus renders (`Engine::render`) never
+  compute the drum outputs: the export's render is unchanged.
+
+**The state.** The boxes are saved in the `orb` object as `routing`, an object of the box's key
+to a bool: "mix.303-1", "mix.303-2", "mix.808", "mix.909", then each drum output's id
+("808.bd" .. "808.cy", "909.bd" .. "909.rc"; `routing::ROUTING_IDS`). The keys never change once
+released (the names may). A key that is absent is checked, an unknown key is ignored, so a state
+of the released build (v2026.1118.0919, no `routing`) restores with every box checked. They are
+not parameters: the parameter ids and `tests/param_ids.txt` are unchanged.
+
+**nice-plug 0.4.2 with 26 aux buses.** The caveats of section 13 apply to all 26 buses: process
+runs only when every output bus has a buffer, and a host that passes fewer buses than the plugin
+declares meets the off-by-one. Whether REAPER and Ableton pass all 27 buses is the user's check
+(task-300 AC 6).
+
+**Tests.** `crates/orb-engine/src/frame/tests.rs` (`routing`): the default routing leaves the
+master, the send and the meters bit-identical with the drum outputs computed; each drum output
+is its voices' sum on or off the bus; off the bus, the machine's bus, meter, send, the other
+taps and the master equal a render where those voices did not play; a channel out of the Mix
+equals the channel at zero gain with its send, meter and taps kept and its gains frozen.
+`crates/orb-plugin/tests/outputs.rs`: the Mix with every combination of the 26 buses connected;
+a device out of the Mix; a drum instrument out of its bus. `src/routing.rs`: the bus names, the
+keys and the saved routing. `tests/state.rs`: the round trip and a state without `routing`.
+`tests/exports.rs`: the 27 VST3 buses and their names. `tests/no_alloc.rs`: routing changes
+and every bus pattern while playing.

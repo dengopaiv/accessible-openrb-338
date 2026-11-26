@@ -650,10 +650,10 @@ fn the_box_keeps_the_pattern_commands_from_the_panel() {
     used[2..8].copy_from_slice(&[5, 0, 0, 0, 0, 0]);
     link.set_pattern(0, 0, &used, &mut h.app.panel);
     // the control: without the box the cut event cuts the selected pattern. A paste of its
-    // marker would now fill A1 again, Undo too, a Duplicate would select A2, and a copy or a
-    // cut would put another marker on the clipboard
+    // JSON would now fill A1 again, Undo too, a Duplicate would select A2, and a copy or a
+    // cut would put other text on the clipboard
     h.frame(vec![Event::Cut]);
-    let clip = h.app.clip.clone().expect("a cut of A1");
+    let clip = h.app.clipboard.read().expect("a cut of A1");
     assert_eq!(h.app.undo_name(), Some("Cut Pattern"));
     h.app.status = None;
     // an open of a modified song would ask first
@@ -661,12 +661,11 @@ fn the_box_keeps_the_pattern_commands_from_the_panel() {
     open_box(&mut h);
     let before = h.app.link.as_ref().unwrap().patterns().clone();
     h.copied.clear();
-    let marker = clip.marker.clone();
-    h.frame(vec![Event::Copy, Event::Cut, Event::Paste(marker)]);
+    h.frame(vec![Event::Copy, Event::Cut, Event::Paste(clip.clone())]);
     h.key(Key::D, Modifiers::COMMAND);
     h.key(Key::Z, Modifiers::COMMAND);
     assert!(h.app.error_open());
-    assert_eq!(h.app.clip, Some(clip));
+    assert_eq!(h.app.clipboard.read(), Some(clip));
     assert_eq!(h.copied, Vec::<String>::new());
     assert_eq!(h.app.link.as_ref().unwrap().patterns(), &before);
     assert_eq!(h.app.panel.rows[0].pattern, 0);

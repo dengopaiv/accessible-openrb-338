@@ -7,8 +7,8 @@
 #
 # Builds the target with scripts/build.sh first; SKIP_BUILD=1 uses the binaries already in
 # dist/<target>/bin/ and the plugin bundles in dist/<target>/plugins/ (release.yml downloads
-# them from the package jobs; the plugins are the installer's two optional components). makensis runs on any
-# host (macOS: brew install makensis; Ubuntu: apt install nsis; Windows runners: choco install
+# them from the package jobs; the plugin is the installer's optional component). makensis runs
+# on any host (macOS: brew install makensis; Ubuntu: apt install nsis; Windows runners: choco install
 # nsis), so one script serves this Mac and CI. The installer itself is scripts/installer/
 # openrb.nsi; docs/building.md ("The Windows installer") describes it.
 # Environment as scripts/build.sh. MAKENSIS names the makensis to use; MAKENSIS_FLAGS replaces
@@ -49,9 +49,8 @@ for f in OpenRB-338.exe orb.exe; do
     [ -f "$bin/$f" ] || { echo "missing $bin/$f (run scripts/build.sh $target)" >&2; exit 1; }
 done
 plugins=$dist/$target/plugins
-for p in OpenRB-338.vst3 OpenRB-338.clap; do
-    [ -e "$plugins/$p" ] || { echo "missing $plugins/$p (run scripts/build.sh $target)" >&2; exit 1; }
-done
+p=OpenRB-338.vst3
+[ -e "$plugins/$p" ] || { echo "missing $plugins/$p (run scripts/build.sh $target)" >&2; exit 1; }
 
 # The license page and the readme are shown by Windows programs: CRLF line ends.
 stage=$dist/$target/installer-stage
@@ -59,6 +58,14 @@ rm -rf "$stage"
 mkdir -p "$stage"
 crlf() { awk '{ printf "%s\r\n", $0 }' "$1" > "$2"; }
 crlf "$root/LICENSE" "$stage/LICENSE.txt"
+# the x86_64 build carries ASIO: its SDK's license and notices (task-193)
+notices=
+if [ "$arch" = x64 ]; then
+    "$root/scripts/asio-notices.sh" "$stage/notices.in"
+    crlf "$stage/notices.in" "$stage/THIRD-PARTY-NOTICES.txt"
+    rm "$stage/notices.in"
+    notices=1
+fi
 cat > "$stage/readme.in" <<EOF
 OpenRB-338 $version ($arch)
 
@@ -78,27 +85,37 @@ Variables. The uninstaller (Settings > Apps) removes what the installer added; y
 settings file (%APPDATA%\OpenRB-338) are kept.
 
 The installer is for all users and asks for administrator rights: the program goes to Program
-Files, the optional PATH entry to the machine's PATH. The VST3 and CLAP plugins (components
-"VST3 plugin" and "CLAP plugin", on by default) go to the plugin folders every host scans:
-OpenRB-338.vst3 to %COMMONPROGRAMFILES%\VST3 and OpenRB-338.clap to %COMMONPROGRAMFILES%\CLAP.
-Rescan plugins in your host. The uninstaller removes the two plugin files and nothing else in
-these folders. An earlier per-user install (versions before the plugins) is not removed: take it
-out in Settings > Apps.
+Files, the optional PATH entry to the machine's PATH. The VST3 plugin (component "VST3 plugin",
+on by default) goes to the plugin folder every host scans: OpenRB-338.vst3 to
+%COMMONPROGRAMFILES%\VST3. Rescan plugins in your host. The uninstaller removes the plugin and
+nothing else in that folder.
+
+An earlier per-user install (versions before the plugins) is not removed: take it out in
+Settings > Apps.
 
 The installer and the programs are not signed, so Windows SmartScreen may say "Windows protected
 your PC": choose "More info", then "Run anyway".
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE.txt).
 EOF
+if [ -n "$notices" ]; then
+    cat >> "$stage/readme.in" <<'EOF'
+
+OpenRB-338.exe can play through ASIO drivers: Options > Audio Output..., Driver: ASIO. The default
+stays WASAPI; ASIO is never chosen by itself. THIRD-PARTY-NOTICES.txt holds the license of the
+ASIO SDK.
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+EOF
+fi
 crlf "$stage/readme.in" "$stage/README.txt"
 rm "$stage/readme.in"
 # NSIS stores the time of every file it packs: copy all of them here and give them the build
 # time, so two runs of one build make the same installer (BSD date -r, GNU date -d)
 cp "$bin/OpenRB-338.exe" "$bin/orb.exe" "$root/scripts/installer/path.ps1" "$stage/"
-# the plugin bundles (task-237): a .vst3 folder and a .clap file on Windows
+# the plugin bundle (task-237): a .vst3 folder on Windows
 mkdir "$stage/plugins"
-cp -R "$plugins/OpenRB-338.vst3" "$plugins/OpenRB-338.clap" "$stage/plugins/"
-[ -d "$stage/plugins/OpenRB-338.vst3" ] && [ -f "$stage/plugins/OpenRB-338.clap" ] \
-    || { echo "OpenRB-338.vst3 must be a folder and OpenRB-338.clap a file" >&2; exit 1; }
+cp -R "$plugins/OpenRB-338.vst3" "$stage/plugins/"
+[ -d "$stage/plugins/OpenRB-338.vst3" ] \
+    || { echo "OpenRB-338.vst3 must be a folder" >&2; exit 1; }
 stamp=$(TZ=UTC date -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S 2>/dev/null \
     || TZ=UTC date -d "@$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)
 find "$stage" -exec touch -t "$stamp" {} +
@@ -109,7 +126,9 @@ rm -f "$out"
 # -WX (the default of MAKENSIS_FLAGS; set it empty to drop it): a warning fails the build. The time inside the file comes from SOURCE_DATE_EPOCH.
 "$makensis" -V2 ${MAKENSIS_FLAGS--WX} "-DICON=$(nsis_path "$root/assets/app_icon.ico")" \
     "-DVERSION=$version" "-DARCH=$arch" "-DBINDIR=$(nsis_path "$stage")" \
-    "-DSTAGEDIR=$(nsis_path "$stage")" "-DPATHPS1=$(nsis_path "$stage/path.ps1")" \
+    "-DSTAGEDIR=$(nsis_path "$stage")" \
+    ${notices:+"-DNOTICES=$(nsis_path "$stage/THIRD-PARTY-NOTICES.txt")"} \
+    "-DPATHPS1=$(nsis_path "$stage/path.ps1")" \
     "-DPLUGINDIR=$(nsis_path "$stage/plugins")" "-DOUTFILE=$(nsis_path "$out")" \
     "$(nsis_path "$root/scripts/installer/openrb.nsi")"
 rm -rf "$stage"

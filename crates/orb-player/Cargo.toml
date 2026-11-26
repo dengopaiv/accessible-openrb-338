@@ -16,6 +16,13 @@ triple_buffer = "9.0.0"
 # The resampler for a device that does not offer 44.1 kHz (sinc only: no FFT resampler).
 rubato = { version = "5.0.1", default-features = false }
 
+# ASIO on x86_64 Windows (task-193): cpal's `asio` feature builds asio-sys, which needs LLVM
+# (bindgen) and the SDK subset in third_party/asiosdk (CPAL_ASIO_DIR, set by
+# .cargo/config.toml). Not on Windows arm64 (its x64 ASIO drivers load only into an x64
+# process: the x64 package runs there under emulation).
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+cpal = { version = "0.18.2", features = ["asio"] }
+
 [dev-dependencies]
 rbs = { path = "../rbs" }
 # The recrypted mods of the mod-change sessions (tests/live_messages.rs).

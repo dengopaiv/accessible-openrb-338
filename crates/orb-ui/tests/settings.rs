@@ -219,9 +219,10 @@ fn orb_ui_config_names_the_settings_file() {
     unsafe { std::env::set_var("ORB_UI_CONFIG", "") };
     assert_ne!(orb_ui::settings::default_file(), Some(PathBuf::new()));
     unsafe { std::env::remove_var("ORB_UI_CONFIG") };
-    // Without the variable the file is OpenRB-338/ui.toml (there is none when no home is known).
+    // Without the variable the file is OpenRB-338/OpenRB-338.toml (there is none when no home is
+    // known).
     if let Some(default) = orb_ui::settings::default_file() {
-        assert_eq!(default.file_name().unwrap(), "ui.toml");
+        assert_eq!(default.file_name().unwrap(), "OpenRB-338.toml");
         assert_eq!(default.parent().unwrap().file_name().unwrap(), "OpenRB-338");
     }
 }
@@ -354,25 +355,19 @@ fn a_portable_copy_merges_a_recent_folder_named_twice() {
     assert_eq!(Settings::load_from_in(&file, Some(&root)).recent, [full]);
 }
 
-/// Where the settings file is (task-223): `ORB_UI_CONFIG`, then the portable data folder, then
-/// the platform's configuration folder.
+/// Where the settings file is: `ORB_UI_CONFIG`, else the per-user file in the platform's
+/// configuration folder (the portable file is chosen by `Settings::load_resolved`, task-289).
 #[test]
-fn orb_ui_config_wins_over_a_portable_folder() {
+fn orb_ui_config_wins_over_the_per_user_file() {
     use orb_ui::settings::file_for;
     use std::ffi::OsStr;
-    let data = p("E:/OpenRB/data");
     let config = OsStr::new("C:/t/ui.toml");
-    assert_eq!(file_for(Some(config), Some(&data)), Some(p("C:/t/ui.toml")));
-    assert_eq!(file_for(None, Some(&data)), Some(data.join("ui.toml")));
+    assert_eq!(file_for(Some(config)), Some(p("C:/t/ui.toml")));
     // an empty ORB_UI_CONFIG counts as unset
-    assert_eq!(
-        file_for(Some(OsStr::new("")), Some(&data)),
-        Some(data.join("ui.toml"))
-    );
-    // not portable: the platform's folder, not the data folder
-    if let Some(f) = file_for(None, None) {
+    assert_eq!(file_for(Some(OsStr::new(""))), file_for(None));
+    if let Some(f) = file_for(None) {
         assert!(
-            f.ends_with(p("OpenRB-338").join("ui.toml")),
+            f.ends_with(p("OpenRB-338").join("OpenRB-338.toml")),
             "{}",
             f.display()
         );

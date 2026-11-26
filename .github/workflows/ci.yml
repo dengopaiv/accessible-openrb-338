@@ -65,15 +65,20 @@ jobs:
       - name: Install the ALSA headers (cpal)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
+      - name: Install LLVM (bindgen of asio-sys, the ASIO build; task-193)
+        if: runner.os == 'Windows' && runner.arch == 'X64'
+        shell: bash
+        run: scripts/install-llvm-windows.sh
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked --no-fail-fast
 
   plugin:
-    # The plugin bundles (task-204): bundled as in docs/building.md, then clap-validator on the
-    # .clap and pluginval on the .vst3 (scripts/validate-plugin.sh; pinned releases checked by
-    # SHA-256). Any validator failure fails the job. Linux and macOS; Windows has no validator
-    # script (the bundles are still built by the release run).
+    # The plugin bundle (task-204): bundled as in docs/building.md, then pluginval on the .vst3
+    # (scripts/validate-plugin.sh; the pinned release is checked by SHA-256). A validator failure
+    # fails the job. Linux and macOS; Windows has no validator script (the bundle is still built
+    # by the release run). The macOS plugin installer's preinstall script (it removes the old
+    # CLAP bundle, task-278) is checked here too, against a scratch folder.
     name: plugin validators (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -90,3 +95,4 @@ jobs:
           key: plugin
       - run: cargo xtask bundle orb-plugin --release
       - run: scripts/validate-plugin.sh
+      - run: scripts/test-pkg-scripts.sh

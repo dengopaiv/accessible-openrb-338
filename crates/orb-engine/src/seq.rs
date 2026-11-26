@@ -140,6 +140,38 @@ impl Pool {
         }
     }
 
+    /// Keeps the nodes of list k for which `keep(index, node)` holds, in their order, and
+    /// returns how many nodes before index `before` it removed. One pass, so a removal of
+    /// many nodes moves the nodes after the list once.
+    fn retain(&mut self, k: usize, before: usize, mut keep: impl FnMut(&Event) -> bool) -> usize {
+        let (s, e) = (self.start(k), self.ends[k]);
+        let mut w = s;
+        let mut gone_before = 0;
+        for r in s..e {
+            if keep(&self.nodes[r]) {
+                self.nodes[w] = self.nodes[r];
+                w += 1;
+            } else if r - s < before {
+                gone_before += 1;
+            }
+        }
+        let n = e - w;
+        self.nodes.drain(w..e);
+        for end in &mut self.ends[k..] {
+            *end -= n;
+        }
+        gone_before
+    }
+
+    /// This pool becomes a copy of `src`, every list (the recordings too), within its capacity:
+    /// no allocation when `src` fits, as a pool always does (the snapshot of orb's Undo of the
+    /// Initialize commands, task-306).
+    pub fn copy_from(&mut self, src: &Pool) {
+        self.nodes.clear();
+        self.nodes.extend_from_slice(&src.nodes);
+        self.ends = src.ends;
+    }
+
     /// Empties list k.
     fn clear(&mut self, k: usize) {
         let (s, e) = (self.start(k), self.ends[k]);
@@ -255,17 +287,20 @@ pub struct Track {
     quant: [u8; 128],
 }
 
-/// A track with the song's pool: what a device's slots 7 and 8 get from the song ctor
-/// ([`crate::frame::SongDevice::init_track`]).
+/// A track with the song's pool: what a device's slots 7 and 8 get from the song ctor and
+/// from song msgs 28 and 29 ([`crate::frame::SongDevice::init_track`],
+/// [`crate::frame::SongDevice::insert_pattern`]).
 pub struct TrackMut<'a> {
     pub track: &'a mut Track,
     pub pool: &'a mut Pool,
 }
 
 impl TrackMut<'_> {
-    /// [`Track::insert`].
+    /// Slot 8's insert, `sub_1001F900` → `sub_10014750`: [`Track::insert`] taking a node only
+    /// while the pool has more than one free (`sub_10014434`; on the song ctor's empty pool the
+    /// check always passes).
     pub fn insert(&mut self, tick: i32, ctrl: u8, value: u8) -> bool {
-        self.track.insert(self.pool, tick, ctrl, value)
+        self.track.insert_pooled(self.pool, tick, ctrl, value)
     }
 
     /// [`Track::set_quant`].
@@ -400,11 +435,11 @@ impl Track {
     /// event above [`LAST_EVENT_TICK`] is dropped. The new node goes before the first node whose
     /// tick is not below it, unless a node of the same tick has the same controller, whose value
     /// is then replaced. So events of one tick end up in reverse arrival order. Returns whether
-    /// the event was kept. The node is taken from `pool` without the free check (the song
-    /// ctor's and the tests' inserts, at most 128 per track on an empty pool, where the DLL's
-    /// check at 0x1001F967 → `sub_10014434` always passes; [`Sequencer::add_events`] is the
-    /// checked one). Being unchecked, it can grow the pool past [`POOL_NODES`] (the pool's
-    /// `Vec` then reallocates); only the song ctor and the tests call it, never the callback.
+    /// the event was kept. The node is taken from `pool` without the free check (the tests'
+    /// inserts; the song ctor's and every other path's go through the checked
+    /// [`TrackMut::insert`] and [`Sequencer::add_events`]). Being unchecked, it can grow the
+    /// pool past [`POOL_NODES`] (the pool's `Vec` then reallocates); only the tests call it,
+    /// never the callback.
     pub fn insert(&mut self, pool: &mut Pool, tick: i32, ctrl: u8, value: u8) -> bool {
         self.insert_to(pool, tick, ctrl, value, false)
     }
@@ -651,6 +686,14 @@ impl Track {
     /// The chase `sub_100151F0(list, state, p)`: the value of the last event at or before `p` for
     /// each controller (0xFF for none), and the applied pointer moved to that event.
     pub fn chase(&mut self, pool: &Pool, p: i32) -> [u8; 128] {
+        let (state, i) = self.state_at(pool, p);
+        self.next = i;
+        state
+    }
+
+    /// `sub_100151F0` into a buffer of its own, the applied pointer untouched: the state at `p`
+    /// and the index of the first node after `p`.
+    fn state_at(&self, pool: &Pool, p: i32) -> ([u8; 128], usize) {
         let events = self.events(pool);
         let mut state = [0xFF; 128];
         let mut i = 0;
@@ -659,8 +702,41 @@ impl Track {
             state[e.ctrl as usize & 127] = e.value;
             i += 1;
         }
-        self.next = i;
-        state
+        (state, i)
+    }
+
+    /// `sub_10014910(list, start, end)`: every node with `start <= tick < end` is unlinked and
+    /// freed, except the nodes at tick 0 (the walk steps over a node whose tick is 0,
+    /// 0x10014945). The applied pointer is not touched in the DLL (it dangles when its node
+    /// goes; every caller chases right after in song mode, `sub_1001FDC0`); here it moves back
+    /// over the removed nodes before it.
+    fn remove_range(&mut self, pool: &mut Pool, start: i32, end: i32) {
+        let gone = pool.retain(self.list, self.next, |e| {
+            e.tick == 0 || e.tick < start || e.tick >= end
+        });
+        self.next -= gone;
+    }
+
+    /// `sub_10020350(track, t)`: the track's state at `t` (`sub_100151F0` into a local buffer)
+    /// is inserted at `t` (`sub_10015240`: for each controller 0..127 that has a value, the
+    /// tick quantised by `sub_100146E4`, dropped above [`LAST_EVENT_TICK`], a node of the same
+    /// tick and controller taking the value, else a new node from the pool before the tick's
+    /// first node); with record on (`record`, global byte 2, 0x100203D7) the same state goes
+    /// into the recording list too (`+0x198`, quantisation 1), after the first list's.
+    fn insert_state(&mut self, pool: &mut Pool, t: i32, record: bool) {
+        let (state, _) = self.state_at(pool, t);
+        for (c, &v) in state.iter().enumerate() {
+            if v != 0xFF {
+                self.insert_pooled(pool, t, c as u8, v);
+            }
+        }
+        if record {
+            for (c, &v) in state.iter().enumerate() {
+                if v != 0xFF {
+                    insert_into(pool, self.rec(), &[1; 128], t, c as u8, v, true);
+                }
+            }
+        }
     }
 
     /// The clock's apply loop (0x1001F2C6, 0x1001F032, 0x1001FADB): every event after the applied
@@ -981,6 +1057,57 @@ impl Sequencer {
             }
         }
         self.globals.byte2 = v;
+    }
+
+    /// `sub_1001FD70`, song msg 28's first step: every node of every track is removed except
+    /// those at tick 0 (`sub_10014910(0, 0x7FFFFFFF)` on each track's first list; the
+    /// recording lists are not touched).
+    pub fn clear_tracks(&mut self) {
+        for tr in &mut self.tracks {
+            tr.remove_range(&mut self.pool, 0, i32::MAX);
+        }
+        self.revision += 1;
+    }
+
+    /// Song msg 29's first steps (0x1001244A..0x1001247E): `sub_10021520(end)` inserts each
+    /// track's state at `end` there (`sub_10020350`, into the recording list too with record
+    /// on), then `sub_100208A0(start, end)` removes every node of `start <= tick < end` but those
+    /// at tick 0 from every track (`sub_10014910`). So after the range the song goes on as it
+    /// did.
+    pub fn clear_range(&mut self, start: i32, end: i32) {
+        let record = self.globals.byte2 != 0;
+        for tr in &mut self.tracks {
+            tr.insert_state(&mut self.pool, end, record);
+        }
+        for tr in &mut self.tracks {
+            tr.remove_range(&mut self.pool, start, end);
+        }
+        self.revision += 1;
+    }
+
+    /// `sub_1001FDC0(seq, trunc(pos))`, the last step of song msgs 28 and 29: in song mode every
+    /// track is chased to the current tick and each controller that has a value is applied,
+    /// ascending (`sub_10012B40`), as a locate's chase; the position, the last tick and the
+    /// devices' relocate are not touched. Nothing in pattern mode.
+    pub fn refresh(&mut self, devices: &mut Devices) {
+        if self.song_mode() {
+            let t = self.tick_pos();
+            self.chase_all(t, devices);
+        }
+    }
+
+    /// Not in the original: orb's Undo of Edit's Initialize commands (task-306). Every list
+    /// becomes `pool`'s (an O(1) swap; `pool` gets the lists as they were), each track's
+    /// applied pointer goes to the first node after the current tick, and [`Sequencer::refresh`]
+    /// applies the restored tracks as the command's own last step does.
+    pub fn swap_pool(&mut self, pool: &mut Pool, devices: &mut Devices) {
+        std::mem::swap(&mut self.pool, pool);
+        let t = self.tick_pos();
+        for tr in &mut self.tracks {
+            tr.next = tr.state_at(&self.pool, t).1;
+        }
+        self.revision += 1;
+        self.refresh(devices);
     }
 
     /// The nodes this song's pool has free (the module doc).

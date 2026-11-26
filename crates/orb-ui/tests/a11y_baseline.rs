@@ -32,15 +32,16 @@ use a11y::AppTree;
 use eframe::egui::accesskit::{Action, Role};
 
 // one more each since task-230: the menu bar's Edit title (upstream's Edit menu), a focusable
-// named button (BASELINE_FOCUSABLE too)
-const BASELINE_NODES: usize = 204;
-const BASELINE_NAMED: usize = 197;
+// named button (BASELINE_FOCUSABLE too); one more again since task-233: the View title
+const BASELINE_NODES: usize = 205;
+const BASELINE_NAMED: usize = 198;
 const BASELINE_UNKNOWN_ROLE: usize = 0;
 const BASELINE_VALUED: usize = 112;
-const BASELINE_FOCUSABLE: usize = 195;
-const BASELINE_NAMES: [&str; 10] = [
+const BASELINE_FOCUSABLE: usize = 196;
+const BASELINE_NAMES: [&str; 11] = [
     "File",
     "Edit",
+    "View",
     "Mods",
     "Options",
     "Help",

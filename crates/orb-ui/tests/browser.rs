@@ -14,6 +14,7 @@ use orb_ui::settings::Settings;
 struct Harness {
     ctx: egui::Context,
     time: f64,
+    size: Vec2,
 }
 
 impl Harness {
@@ -21,6 +22,7 @@ impl Harness {
         Self {
             ctx: egui::Context::default(),
             time: 0.0,
+            size: Vec2::new(624.0, 510.0),
         }
     }
 
@@ -35,7 +37,7 @@ impl Harness {
     }
 
     fn frame(&mut self, b: &mut Browser, s: &mut Settings, events: Vec<Event>) -> Poll {
-        let input = self.input(events, Vec2::new(624.0, 510.0));
+        let input = self.input(events, self.size);
         let mut poll = Poll::Open;
         let ctx = self.ctx.clone();
         let mut out = self.ctx.run_ui(input, |_| poll = b.show(&ctx, s));
@@ -191,8 +193,9 @@ fn save_asks_before_replacing_a_file() {
 fn at(h: &mut Harness, b: &mut Browser, s: &mut Settings, name: &str) -> Pos2 {
     // A pause, so that the next click is not the second of a double click.
     h.time += 2.0;
-    h.frame(b, s, vec![]);
-    h.frame(b, s, vec![]);
+    for _ in 0..4 {
+        h.frame(b, s, vec![]);
+    }
     b.hit(name).unwrap_or_else(|| panic!("no {name}")).center()
 }
 
@@ -676,4 +679,222 @@ fn the_app_opens_the_browser_with_ctrl_o_and_the_panel_ignores_keys_meanwhile() 
     assert!(!app.browsing());
     run(&mut app, k(Key::Space, Modifiers::NONE));
     assert!(!app.panel.events.is_empty());
+}
+
+/// Types `text` into the path bar (Ctrl+L selects it, the text replaces the content), then
+/// clicks the main button.
+fn type_path_and_press(
+    h: &mut Harness,
+    b: &mut Browser,
+    s: &mut Settings,
+    text: &str,
+    button: &str,
+) -> Poll {
+    h.frame(b, s, vec![]);
+    h.key_mods(b, s, Key::L, Modifiers::COMMAND);
+    h.key_mods(b, s, Key::A, Modifiers::COMMAND);
+    h.text(b, s, text);
+    let pos = at(h, b, s, &format!("button:{button}"));
+    click(h, b, s, pos)
+}
+
+#[test]
+fn the_open_button_takes_a_typed_full_file_path_like_enter() {
+    let d = tree();
+    let file = d.path().join("a.rbs");
+    let (mut b, mut s) = browser(Mode::OpenSong, d.path());
+    let mut h = Harness::new();
+    let p = type_path_and_press(&mut h, &mut b, &mut s, &file.display().to_string(), "Open");
+    assert_eq!(p, Poll::Chosen(file.clone()));
+    // Enter in the path bar gives the same.
+    let (mut b, mut s) = browser(Mode::OpenSong, d.path());
+    let mut h = Harness::new();
+    h.frame(&mut b, &mut s, vec![]);
+    h.key_mods(&mut b, &mut s, Key::L, Modifiers::COMMAND);
+    h.key_mods(&mut b, &mut s, Key::A, Modifiers::COMMAND);
+    h.text(&mut b, &mut s, &file.display().to_string());
+    assert_eq!(h.key(&mut b, &mut s, Key::Enter), Poll::Chosen(file));
+}
+
+#[test]
+fn the_open_button_takes_a_typed_folder_path_and_goes_there() {
+    let d = tree();
+    let sub = d.path().join("sub");
+    let (mut b, mut s) = browser(Mode::OpenSong, d.path());
+    let mut h = Harness::new();
+    let p = type_path_and_press(&mut h, &mut b, &mut s, &sub.display().to_string(), "Open");
+    assert_eq!(p, Poll::Open);
+    assert_eq!(b.dir(), sub.as_path());
+    assert_eq!(b.error(), None);
+}
+
+#[test]
+fn the_open_button_resolves_a_typed_relative_name_in_the_current_folder() {
+    let d = tree();
+    let (mut b, mut s) = browser(Mode::OpenSong, d.path());
+    let mut h = Harness::new();
+    let p = type_path_and_press(&mut h, &mut b, &mut s, "a.rbs", "Open");
+    assert_eq!(p, Poll::Chosen(d.path().join("a.rbs")));
+    let (mut b, mut s) = browser(Mode::OpenSong, d.path());
+    let mut h = Harness::new();
+    let p = type_path_and_press(&mut h, &mut b, &mut s, "sub", "Open");
+    assert_eq!(p, Poll::Open);
+    assert_eq!(b.dir(), d.path().join("sub").as_path());
+}
+
+#[test]
+fn the_buttons_of_the_other_modes_take_a_typed_path_too() {
+    let d = tree();
+    let sub = d.path().join("sub");
+    let (mut b, mut s) = browser(Mode::SaveSong, d.path());
+    let mut h = Harness::new();
+    let p = type_path_and_press(&mut h, &mut b, &mut s, &sub.display().to_string(), "Save");
+    assert_eq!(p, Poll::Open);
+    assert_eq!(b.dir(), sub.as_path());
+    let (mut b, mut s) = browser(Mode::ChooseMod, d.path());
+    let mut h = Harness::new();
+    let p = type_path_and_press(&mut h, &mut b, &mut s, &sub.display().to_string(), "Open");
+    assert_eq!(p, Poll::Open);
+    assert_eq!(b.dir(), sub.as_path());
+}
+
+#[test]
+fn the_button_with_nothing_typed_or_selected_keeps_the_status_error() {
+    let d = tree();
+    let (mut b, mut s) = browser(Mode::OpenSong, d.path());
+    let mut h = Harness::new();
+    let pos = at(&mut h, &mut b, &mut s, "button:Open");
+    assert_eq!(click(&mut h, &mut b, &mut s, pos), Poll::Open);
+    assert_eq!(b.error(), Some("Select a file first."));
+}
+
+/// The dialog keeps the height it had before task-297 (measured at d84e0af, Open Song, window
+/// 624 points wide); the list fills the row it is in, so with the Places column taller than the
+/// list (short windows) the list grows to it, with no gap below.
+#[test]
+fn the_list_fills_the_dialog_and_the_dialog_keeps_its_height() {
+    let d = tree();
+    let (mut b, mut s) = browser(Mode::OpenSong, d.path());
+    let mut h = Harness::new();
+    let mut gaps = Vec::new();
+    for (window, dialog_h) in [
+        (300.0f32, 326.0),
+        (400.0, 326.0),
+        (510.0, 397.0),
+        (600.0, 397.0),
+        (900.0, 397.0),
+    ] {
+        h.size = Vec2::new(624.0, window);
+        for _ in 0..6 {
+            h.frame(&mut b, &mut s, vec![]);
+        }
+        let dialog = b.hit("dialog").unwrap();
+        let list = b.hit("list").unwrap();
+        let open = b.hit("button:Open").unwrap();
+        assert_eq!(dialog.height(), dialog_h, "window {window}");
+        // At least the nominal height (it was 80 at 300 and 170 at 400 before).
+        assert!(
+            list.height() >= (window - 230.0).clamp(80.0, 270.0),
+            "window {window}"
+        );
+        gaps.push(open.top() - list.bottom());
+    }
+    // Below the list there is only the status row and the button row, at any height.
+    assert!(gaps.iter().all(|g| (g - gaps[0]).abs() < 0.5), "{gaps:?}");
+    assert!(gaps[0] < 45.0, "{gaps:?}");
+}
+
+/// task-297, the worst case at the smallest main window and above: every dialog mode with the
+/// most recent folders the app keeps (long names), a long error under the list and the overwrite
+/// question. The dialog is inside the window with the dialogs' margin, never taller than with no
+/// error (the list gives the room), and its buttons are visible.
+#[test]
+fn the_dialog_fits_the_window_with_full_recent_folders_and_status_lines() {
+    use orb_ui::layout::{DIALOG_MARGIN, MIN_WINDOW_H, MIN_WINDOW_W};
+    let d = tree();
+    let recent = tempfile::tempdir().unwrap();
+    let long = "a_very_long_recent_folder_name_that_does_not_fit_the_column_";
+    let mut dirs = Vec::new();
+    for i in 0..orb_ui::settings::MAX_RECENT {
+        let p = recent.path().join(format!("{long}{i}"));
+        fs::create_dir_all(&p).unwrap();
+        dirs.push(p);
+    }
+    let no_such = format!("{}/{}", d.path().display(), "no_such_folder_".repeat(12));
+    for (mode, button) in [
+        (Mode::OpenSong, "Open"),
+        (Mode::SaveSong, "Save"),
+        (Mode::ChooseMod, "Open"),
+        (Mode::Export, "Export"),
+    ] {
+        for size in [
+            Vec2::new(MIN_WINDOW_W, MIN_WINDOW_H),
+            Vec2::new(MIN_WINDOW_W + 40.0, MIN_WINDOW_H + 31.0),
+            Vec2::new(624.0, 510.0),
+            Vec2::new(1000.0, 800.0),
+        ] {
+            let screen = Rect::from_min_size(Pos2::ZERO, size);
+            let inside = screen.shrink(DIALOG_MARGIN - 0.5);
+            let check = |b: &Browser, what: &str| {
+                let dialog = b.hit("dialog").unwrap();
+                let list = b.hit("list").unwrap();
+                let main = b.hit(&format!("button:{button}"));
+                (dialog, list, main, format!("{mode:?} {size:?} {what}"))
+            };
+            let (mut b, mut s) = browser(mode, d.path());
+            for p in &dirs {
+                s.note_recent(p);
+            }
+            let mut h = Harness::new();
+            h.size = size;
+            for _ in 0..8 {
+                h.frame(&mut b, &mut s, vec![]);
+            }
+            let (base, base_list, main, what) = check(&b, "plain");
+            assert!(inside.contains_rect(base), "{what}: {base:?}");
+            assert!(base.contains_rect(main.unwrap()), "{what}");
+            // a long error
+            type_path_and_press(&mut h, &mut b, &mut s, &no_such, button);
+            for _ in 0..8 {
+                h.frame(&mut b, &mut s, vec![]);
+            }
+            assert!(b.error().is_some());
+            let (dialog, list, main, what) = check(&b, "error");
+            assert!(inside.contains_rect(dialog), "{what}: {dialog:?}");
+            assert!(
+                base.height() >= dialog.height() - 0.5,
+                "{what}: {dialog:?} {base:?}"
+            );
+            assert!(
+                list.height() < base_list.height() || size.y > 600.0,
+                "{what}"
+            );
+            assert!(dialog.contains_rect(main.unwrap()), "{what}");
+        }
+    }
+    // the overwrite question
+    let (mut b, mut s) = browser(Mode::SaveSong, d.path());
+    for p in &dirs {
+        s.note_recent(p);
+    }
+    let mut h = Harness::new();
+    h.size = Vec2::new(MIN_WINDOW_W, MIN_WINDOW_H);
+    for _ in 0..8 {
+        h.frame(&mut b, &mut s, vec![]);
+    }
+    let base = b.hit("dialog").unwrap();
+    b.set_name("a");
+    b.accept(&mut s);
+    for _ in 0..8 {
+        h.frame(&mut b, &mut s, vec![]);
+    }
+    assert!(b.pending_overwrite().is_some());
+    let dialog = b.hit("dialog").unwrap();
+    let screen = Rect::from_min_size(Pos2::ZERO, h.size).shrink(DIALOG_MARGIN - 0.5);
+    assert!(screen.contains_rect(dialog), "{dialog:?}");
+    assert!(
+        base.height() >= dialog.height() - 0.5,
+        "{dialog:?} {base:?}"
+    );
+    assert!(dialog.contains_rect(b.hit("button:Replace").unwrap()));
 }

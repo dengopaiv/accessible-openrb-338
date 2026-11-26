@@ -1,4 +1,4 @@
-//! OpenRB-338 as a VST3 and CLAP instrument plugin (milestone m-7; task-185's decisions, task-197
+//! OpenRB-338 as a VST3 instrument plugin (milestone m-7; task-185's decisions, task-197
 //! the core): the whole ReBirth (two 303s, 808, 909, effects, mixer) in one instance, on
 //! nice-plug. `docs/plugin.md` describes it.
 //!
@@ -11,6 +11,8 @@
 //! - [`editor`]: the editor, orb-ui's panel in the host's window (task-201).
 //! - [`clip`] and [`drag`]: the pattern drag-out, a pattern as a MIDI clip dragged to the host
 //!   (task-203).
+//! - [`plugin_log`]: the diagnostic log (task-260), with each activation's library that a test
+//!   reads to tell which copy of the plugin runs (task-244), and the editor's wgpu adapter.
 //!
 //! Host sync, pattern selection by notes and the Standard Mapping are task-198's ([`core`]),
 //! note mode task-200's. Not yet: packaging (task-204).
@@ -21,7 +23,9 @@ pub mod drag;
 pub mod editor;
 pub mod instance;
 pub mod params;
+pub mod plugin_log;
 pub mod resample;
+pub mod routing;
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -31,22 +35,31 @@ use nice_plug::prelude::*;
 
 use orb_player::midi::Message;
 
-use crate::core::{Core, HostEvent, HostTransport};
+use crate::core::{AuxOut, Core, HostEvent, HostTransport};
 use crate::instance::OrbParams;
 
 /// The plugin's name, permanent after the first release (task-185).
 pub const NAME: &str = "OpenRB-338";
 /// The vendor, permanent.
 pub const VENDOR: &str = "OpenRB-338";
-/// The CLAP id, permanent.
-pub const CLAP_ID: &str = "io.github.pingw33n.openrb-338";
 /// The VST3 class id, the GUID EFAB08AF-B39D-4399-8A80-3DC1F84ED3D6 made once with `uuidgen`
 /// (2026-11-16, task-197). It never changes: hosts find the plugin in saved projects by it.
 pub const VST3_CLASS_ID: [u8; 16] = [
     0xEF, 0xAB, 0x08, 0xAF, 0xB3, 0x9D, 0x43, 0x99, 0x8A, 0x80, 0x3D, 0xC1, 0xF8, 0x4E, 0xD3, 0xD6,
 ];
 /// The project's page.
-pub const URL: &str = "https://github.com/pingw33n/OpenRB-338";
+pub const URL: &str = "https://pingw33n.github.io/OpenRB-338/";
+
+/// The main output's name.
+pub const MIX_NAME: &str = "Mix";
+/// The aux outputs' names: the per-device outputs (task-256), the mixer's channels 0 to 3 in
+/// order, each its channel after its inserts and before its level, pan and on switch, as
+/// ReWire's channel outputs; then the drum outputs (task-300), "808 BD" .. "909 RC", each
+/// an instrument's voice sum. Mono on both sides (`docs/plugin.md` section 13,
+/// `docs/rewire.md` section 4; [`routing::OUTPUT_NAMES`]).
+pub const OUTPUT_NAMES: [&str; core::AUX_OUTPUTS] = routing::OUTPUT_NAMES;
+
+const STEREO: NonZeroU32 = NonZeroU32::new(2).unwrap();
 
 /// The host MIDI messages one `process` call takes; more are dropped.
 pub const MAX_EVENTS: usize = 4096;
@@ -62,6 +75,8 @@ pub struct OrbPlugin {
 
 impl Default for OrbPlugin {
     fn default() -> Self {
+        // the earliest point of ours inside the host's createInstance (task-304)
+        plugin_log::created();
         OrbPlugin {
             params: Arc::new(OrbParams::new()),
             core: None,
@@ -75,8 +90,8 @@ fn seven_bits(v: f32) -> u8 {
     (v * 127.0).round().clamp(0.0, 127.0) as u8
 }
 
-/// The MIDI message of a nice-plug note event; `None` for the events that are not MIDI (the
-/// CLAP voice and polyphonic expression events, a note of a wildcard channel or key).
+/// The MIDI message of a nice-plug note event; `None` for the events that are not MIDI (a
+/// note of a wildcard channel or key).
 pub fn midi_message(e: &NoteEvent<()>) -> Option<Message> {
     Some(match *e {
         NoteEvent::NoteOn {
@@ -145,11 +160,26 @@ impl Plugin for OrbPlugin {
     const VENDOR: &'static str = VENDOR;
     const URL: &'static str = URL;
     const EMAIL: &'static str = "";
-    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    /// The About box's version string (`YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)`, task-291), not
+    /// Cargo's `0.1.0`: the host's plugin list and the state's `version` show it.
+    const VERSION: &'static str = orb_ui::about::VERSION;
 
+    /// The stereo Mix, the four stereo per-device outputs (task-256) and the 22 stereo drum
+    /// outputs after them (task-300; [`OUTPUT_NAMES`]). Hosts keep a project's routing by bus
+    /// index, so new buses only ever go after the released ones.
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
         main_input_channels: None,
         main_output_channels: NonZeroU32::new(2),
+        aux_output_ports: &[STEREO; core::AUX_OUTPUTS],
+        names: PortNames {
+            layout: Some("Mix and devices"),
+            // nice-plug 0.4.2 names the main output after `main_input`
+            // (`AudioIOLayout::main_output_name`); there is no main input to name
+            main_input: Some(MIX_NAME),
+            main_output: Some(MIX_NAME),
+            aux_inputs: &[],
+            aux_outputs: &OUTPUT_NAMES,
+        },
         ..AudioIOLayout::const_default()
     }];
 
@@ -163,6 +193,12 @@ impl Plugin for OrbPlugin {
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    /// A state of the released build restores its 0..127 values into the continuous
+    /// parameters (task-275, [`instance::migrate_state`]).
+    fn filter_state(state: &mut PluginState) {
+        instance::migrate_state(state);
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
@@ -179,6 +215,9 @@ impl Plugin for OrbPlugin {
         context: &mut impl ActivateContext<Self>,
     ) -> bool {
         let rate = config.sample_rate.round() as u32;
+        // which library runs, for a test that drives a real host (only with the plugin log on;
+        // task-244, task-260)
+        plugin_log::activated(rate);
         // the old player is dropped here, on the main thread
         self.core = None;
         let core = instance::core(&self.params, rate);
@@ -190,7 +229,7 @@ impl Plugin for OrbPlugin {
     fn process(
         &mut self,
         buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
+        aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // the host's MIDI, into the buffer made at construction (no allocation: a message past
@@ -213,29 +252,34 @@ impl Plugin for OrbPlugin {
             pos_beats: t.pos_beats(),
         };
         let values = self.params.values();
+        // the aux outputs the host gave buffers for: nice-plug gives an empty slice for a bus
+        // without one (`wrapper/util/buffer_management.rs`), which is skipped
+        let mut buses: AuxOut = [const { None }; core::AUX_OUTPUTS];
+        for (slot, b) in buses.iter_mut().zip(aux.outputs.iter_mut()) {
+            if let [l, r, ..] = b.as_slice()
+                && !l.is_empty()
+                && !r.is_empty()
+            {
+                *slot = Some([&mut **l, &mut **r]);
+            }
+        }
         let out = buffer.as_slice();
         match (&mut self.core, out) {
-            (Some(core), [l, r, ..]) => core.process_with(l, r, &values, &transport, &self.events),
+            (Some(core), [l, r, ..]) => {
+                core.process_aux(l, r, &mut buses, &values, &transport, &self.events)
+            }
             (_, out) => {
                 for ch in out.iter_mut() {
                     ch.fill(0.0);
+                }
+                for [l, r] in buses.iter_mut().flatten() {
+                    l.fill(0.0);
+                    r.fill(0.0);
                 }
             }
         }
         ProcessStatus::KeepAlive
     }
-}
-
-impl ClapPlugin for OrbPlugin {
-    const CLAP_ID: &'static str = CLAP_ID;
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("OpenRB-338");
-    const CLAP_MANUAL_URL: Option<&'static str> = Some(URL);
-    const CLAP_SUPPORT_URL: Option<&'static str> = Some(URL);
-    const CLAP_FEATURES: &'static [ClapFeature] = &[
-        ClapFeature::Instrument,
-        ClapFeature::Synthesizer,
-        ClapFeature::Stereo,
-    ];
 }
 
 impl Vst3Plugin for OrbPlugin {
@@ -244,5 +288,4 @@ impl Vst3Plugin for OrbPlugin {
         &[Vst3SubCategory::Instrument, Vst3SubCategory::Synth];
 }
 
-nice_export_clap!(OrbPlugin);
 nice_export_vst3!(OrbPlugin);

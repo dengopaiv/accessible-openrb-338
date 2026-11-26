@@ -14,7 +14,7 @@ section 10. Marks: [C] read in the disassembly, [G] guessed or inferred.
 orb: `crates/orb-player/src/midi.rs` (`StandardMapping`, `control_change`), tested in the module
 and in `crates/orb-ui/tests/midi.rs`.
 
-**The plugin's note mapping is a different one.** The VST3/CLAP plugin has orb's own note
+**The plugin's note mapping is a different one.** The VST3 plugin has orb's own note
 mapping (devices on MIDI channels 1..4, pattern notes 0..31, the 303 played by pitch, General
 MIDI drum notes, accent by velocity): `docs/midi.md` section 5. The two use different channels:
 the device channels are 1..4, and the Standard Mapping, off by default in the plugin, listens on
@@ -65,7 +65,7 @@ section 9. [G] Their intended results are the ones of their neighbors' pattern: 
 `+0x101` and sends `{1, 3, v}`, CC 21 stores `+0x10C` (the byte the send reads) and sends
 `{3, 2, v}`; orb uses these.
 
-### 2.2 Synths (`sub_4405B5`, from 0x42EF0F for 303 #1 and 0x42EF46 for 303 #2; p. 195)
+### 2.2 Synths (`sub_4405B5`, from 0x42EF0F for 303-1 and 0x42EF46 for 303-2; p. 195)
 
 | CC synth 1 | CC synth 2 | Control | 303 controller | Value |
 |---|---|---|---|---|

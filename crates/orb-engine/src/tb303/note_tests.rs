@@ -145,8 +145,79 @@ fn a_same_pitch_overlap_is_a_tie() {
         step(0, true, false, false, false),
         step(0, false, true, false, false),
     ];
-    let events = [(0, 36, 80), (4, 36, 120), (5, 36, 0), (6, 36, 0)];
+    // the key pressed again while held, then one note-off: a key is held once (task-258)
+    let events = [(0, 36, 80), (4, 36, 120), (6, 36, 0)];
     check(&steps, &events, 64);
+}
+
+/// The pitch target of MIDI note `m` at Tune center.
+fn target(m: i32) -> u32 {
+    ((64 * (m - 36) + 3072) * 16) as u32
+}
+
+#[test]
+fn a_key_is_held_once() {
+    let mut d = Tb303::new();
+    d.key_on(36, 64);
+    d.key_on(40, 64);
+    // 36 again: its old entry goes and it is the newest, slid to from 40 (no attack)
+    d.retrig = false;
+    d.key_on(36, 64);
+    assert_eq!(
+        (d.held_len, d.retrig, d.pitch_target),
+        (2, false, target(36))
+    );
+    // one note-off lets it go: back to 40
+    d.key_off(36);
+    assert_eq!((d.held_len, d.pitch_target, d.gate), (1, target(40), 1.0));
+    // a second note-off of it is stray: nothing
+    d.key_off(36);
+    assert_eq!((d.held_len, d.pitch_target, d.gate), (1, target(40), 1.0));
+    d.key_off(40);
+    assert_eq!((d.held_len, d.gate), (0, 0.0));
+}
+
+#[test]
+fn a_lost_note_off_heals_at_the_keys_next_note_off() {
+    // 36's note-off is lost: 40 slides from it, and 40's release slides back to it
+    let mut d = Tb303::new();
+    d.key_on(36, 64);
+    d.retrig = false;
+    d.key_on(40, 64);
+    assert!(!d.retrig);
+    d.key_off(40);
+    assert_eq!((d.held_len, d.gate, d.pitch_target), (1, 1.0, target(36)));
+    // 36 played and let go again: nothing is held, the gate closes
+    d.key_on(36, 64);
+    d.key_off(36);
+    assert_eq!((d.held_len, d.gate), (0, 0.0));
+    // the next note attacks
+    d.key_on(43, 64);
+    assert!(d.retrig);
+}
+
+#[test]
+fn all_off_lets_every_key_go() {
+    let mut d = Tb303::new();
+    // nothing held: nothing changes
+    d.key_all_off();
+    assert_eq!((d.held_len, d.gate, d.amp_in), (0, 0.0, 0.0));
+    d.key_on(36, 64);
+    d.key_on(40, 127);
+    let mut e = d.clone();
+    d.key_all_off();
+    assert_eq!((d.held_len, d.gate, d.slide), (0, 0.0, false));
+    // as the note-offs of both keys
+    e.key_off(36);
+    e.key_off(40);
+    assert_eq!(
+        (d.gate, d.amp_in, d.amp_fb, d.pitch_target),
+        (e.gate, e.amp_in, e.amp_fb, e.pitch_target)
+    );
+    // the next note attacks
+    d.retrig = false;
+    d.key_on(43, 64);
+    assert!(d.retrig);
 }
 
 #[test]

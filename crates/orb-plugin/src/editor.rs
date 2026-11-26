@@ -37,14 +37,15 @@ use orb_engine::song::Song;
 use orb_player::{Command, Snapshot, Tracks};
 use orb_ui::app::App;
 use orb_ui::embed::{Embed, MARGIN_X, MARGIN_Y, MENU_H, PluginFormat, PluginMode, SongView};
-use orb_ui::layout::{PANEL_H, PANEL_W};
+use orb_ui::layout::{MIN_WINDOW_H, MIN_WINDOW_W, PANEL_H, PANEL_W};
 use orb_ui::link::{Link, Port};
 use orb_ui::settings::Settings;
 
 use crate::clip;
 use crate::drag::{self, Pending};
-use crate::instance::{self, Kit, Mode, OrbParams, ROWS};
+use crate::instance::{self, HostParam, Kit, Mode, OrbParams, ROWS};
 use crate::params::{self, SPECS, Target};
+use crate::plugin_log;
 
 /// The editor's size before the state has one, in logical points: the panel at its native
 /// size, the margins of desk beside it (`orb_ui::embed::MARGIN_X`, `MARGIN_Y`) and the menu bar
@@ -59,17 +60,17 @@ pub const DEFAULT_SIZE: (u32, u32) = (
 /// than any buffer a host uses (8192 frames, 186 ms).
 pub const FOLLOW_FRAMES: u64 = 8192;
 
-/// How the host may resize the editor, in both formats (CLAP `gui.can_resize` and
-/// `gui.get_resize_hints`, VST3 `IPlugView::canResize`) and for baseview's window: both ways,
-/// to any size of at least half the panel (the standalone window's minimum) and its menu bar,
-/// with no aspect ratio. The editor takes any size the host gives ([`adjust_logical`]) and
-/// letterboxes the panel in it (task-234, the user's decision of 2026-11-17; `docs/plugin.md`
-/// section 10).
+/// How the host may resize the editor (VST3 `IPlugView::canResize`; the CLAP format, dropped in
+/// task-278, had `gui.can_resize` and `gui.get_resize_hints`) and for baseview's window: both ways,
+/// to any size of at least `MIN_WINDOW_W` x `MIN_WINDOW_H` (536 x 485, the standalone window's
+/// minimum, task-297), with no aspect ratio. The editor takes any size the host gives
+/// ([`adjust_logical`]) and letterboxes the panel in it (task-234, the user's decision of
+/// 2026-11-17; `docs/plugin.md` section 10).
 pub fn resize_hint() -> ResizeHint {
     ResizeHint::RESIZABLE.with_min_max_logical_size(
         Some(LogicalSize {
-            width: PANEL_W / 2.0,
-            height: PANEL_H / 2.0 + MENU_H,
+            width: MIN_WINDOW_W,
+            height: MIN_WINDOW_H,
         }),
         None,
     )
@@ -77,7 +78,7 @@ pub fn resize_hint() -> ResizeHint {
 
 /// The size (logical points) the editor takes for a size `new` the host proposes (CLAP
 /// `gui.adjust_size`, VST3 `IPlugView::checkSizeConstraint`): the host's size itself, at least
-/// the minimum of [`resize_hint`] (half the panel and the menu bar), with no maximum. The panel
+/// the minimum of [`resize_hint`] (536 x 485), with no maximum. The panel
 /// is letterboxed in whatever size the window has (orb-ui `View::fit`). Any answer that changed
 /// the host's size failed somewhere (task-234, `docs/plugin.md` section 10): Live (VST3) and
 /// Bitwig (CLAP) ask on every mouse event of a drag and make the answer the window's size, so
@@ -85,7 +86,7 @@ pub fn resize_hint() -> ResizeHint {
 /// editor to the answer but keeps its own window at the size it asked for, so a larger answer
 /// was cropped.
 pub fn adjust_logical(new: (f64, f64)) -> (f64, f64) {
-    let min = (PANEL_W as f64 / 2.0, PANEL_H as f64 / 2.0 + MENU_H as f64);
+    let min = (MIN_WINDOW_W as f64, MIN_WINDOW_H as f64);
     // NaN (none seen) becomes the minimum
     (new.0.max(min.0), new.1.max(min.1))
 }
@@ -326,9 +327,14 @@ impl OrbEditor {
         let (w, h) = self.logical_size();
         let state =
             EguiEditorState::from_size(Size::Logical(LogicalSize::new(w as f64, h as f64)), 1.0);
+        plugin_log::init();
+        plugin_log::line(format_args!(
+            "editor: spawn, {w}x{h} pt, parent {parent:?}, wait for parent {wait_for_parent}"
+        ));
         let settings = EguiNiceSettings::new()
             .with_tile(crate::NAME)
-            .with_resize_hint(resize_hint());
+            .with_resize_hint(resize_hint())
+            .with_graphics_config(plugin_log::graphics_config());
         // the host's callbacks through a proxy, so that the resize corner reaches them
         let (route, host) = match host {
             Some(h) => {
@@ -355,6 +361,7 @@ impl OrbEditor {
             notifier: notifier.clone(),
             clock: None,
             app: None,
+            probe: None,
         };
         let editor = create_egui_editor(state, notifier, settings, app)
             .ok_or("the egui editor could not be made")?;
@@ -387,6 +394,8 @@ struct EditorApp {
     /// egui's repaint requests, turned into `notifier` at their time ([`RepaintClock`]).
     clock: Option<RepaintClock>,
     app: Option<App>,
+    /// The window's diagnostics while the plugin log is on (task-260).
+    probe: Option<plugin_log::Probe>,
 }
 
 impl NiceEguiApp for EditorApp {
@@ -397,6 +406,11 @@ impl NiceEguiApp for EditorApp {
         frame: &mut Frame,
     ) -> Result<(), HandlerError> {
         frame.set_key_capture(KeyCapture::IgnoreAll);
+        self.probe = guard("build", || {
+            plugin_log::Probe::start(frame.baseview_window())
+        })
+        .ok()
+        .flatten();
         // egui's repaint requests go through the clock, not egui-baseview's waker (RepaintClock)
         let clock = RepaintClock::start({
             let n = self.notifier.clone();
@@ -424,6 +438,9 @@ impl NiceEguiApp for EditorApp {
                 self.route.clone(),
                 Some(self.drag.clone()),
             );
+            // Edit > Paste Pattern reads the system clipboard directly (task-287; the tests
+            // build the app with `editor_app*`, which keep a memory clipboard)
+            app.clipboard = orb_ui::clipboard::Clipboard::System;
             // the logo animation only for a new instance (task-219)
             if self.params.take_intro() {
                 app.enable_logo_anim();
@@ -435,6 +452,9 @@ impl NiceEguiApp for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut Frame) {
+        if let Some(p) = &mut self.probe {
+            p.frame(ui.ctx().content_rect().size(), ui.ctx().pixels_per_point());
+        }
         if let Some(app) = &mut self.app
             && guard("frame", || app.show(ui)).is_err()
         {
@@ -474,8 +494,9 @@ impl NiceEguiApp for EditorApp {
     }
 
     fn editor_closed(&mut self) {
-        // the clock's thread ends (dropping it stops it)
+        // the clock's thread ends (dropping it stops it), and the probe's
         self.clock = None;
+        self.probe = None;
         // dropping the panel; a panic in its drop is logged
         let app = self.app.take();
         let _ = guard("editor_closed", move || drop(app));
@@ -992,17 +1013,26 @@ fn post(_id: u64) -> bool {
     false
 }
 
-/// Sets parameter `i` of [`SPECS`] to `v` through the host, as one gesture; nothing when it
-/// holds `v`.
+/// Sets parameter `i` of [`SPECS`] to `v` through the host, as one gesture (a continuous
+/// parameter to the float of the integer, task-275); nothing when it holds `v` (rounded).
 fn set_param(params: &OrbParams, gui: &GuiContext, i: usize, v: i32) {
     let p = params.param_at(i);
     if p.value() == v {
         return;
     }
     let s = gui.param_setter();
-    s.begin_set_parameter(p);
-    s.set_parameter(p, v);
-    s.end_set_parameter(p);
+    match p {
+        HostParam::Stepped(p) => {
+            s.begin_set_parameter(p);
+            s.set_parameter(p, v);
+            s.end_set_parameter(p);
+        }
+        HostParam::Continuous(p, _) => {
+            s.begin_set_parameter(p);
+            s.set_parameter(p, v as f32);
+            s.end_set_parameter(p);
+        }
+    }
 }
 
 /// The panel's player in the plugin.
@@ -1279,14 +1309,22 @@ impl Embed for EditorEmbed {
         Some(self.params.previewing())
     }
 
-    /// The wrapper in use tells (both formats come from this one crate): nice-plug's
-    /// `GuiContext::plugin_api` is `Vst3` in the VST3 wrapper's editor and `Clap` in the CLAP
-    /// wrapper's (wrapper/vst3/context.rs, wrapper/clap/context.rs); no logo in a standalone.
+    /// Options > Output Routing (task-300), kept in the state.
+    fn routing(&self) -> Option<orb_engine::frame::OutputRouting> {
+        Some(self.params.routing())
+    }
+
+    fn set_routing(&mut self, r: orb_engine::frame::OutputRouting) {
+        self.params.set_routing(r);
+    }
+
+    /// The wrapper in use tells: nice-plug's
+    /// `GuiContext::plugin_api` is `Vst3` in the VST3 wrapper's editor (wrapper/vst3/context.rs);
+    /// no logo in a standalone.
     fn format(&self) -> Option<PluginFormat> {
         match self.gui.plugin_api() {
             PluginApi::Vst3 => Some(PluginFormat::Vst3),
-            PluginApi::Clap => Some(PluginFormat::Clap),
-            PluginApi::Standalone => None,
+            _ => None,
         }
     }
 

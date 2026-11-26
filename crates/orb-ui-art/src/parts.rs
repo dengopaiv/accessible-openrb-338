@@ -969,11 +969,11 @@ fn transport_bg(out: &mut Vec<Part>) {
 /// was removed by the user's decision of 2026-11-16.)
 pub const PLUGIN_BAR: (f32, f32, f32, f32) = (184.0, 27.0, 27.0, 16.0);
 
-/// The plugin format's logo parts (`plugin_logo_vst3`, `plugin_logo_clap`): x, y, w, h in the
-/// transport, where orb-ui paints the one of the plugin's format.
+/// The plugin format's logo part (`plugin_logo_vst3`): x, y, w, h in the transport, where
+/// orb-ui paints it.
 pub const PLUGIN_LOGO: (f32, f32, f32, f32) = (344.0, 0.0, 112.0, 50.0);
 /// The size of the "VST3" text (`plugin_logo_vst3`) and the x of its right edge in the logo
-/// part (the CLAP logo is placed by its own shift).
+/// part.
 const PLUGIN_VST_TEXT_SIZE: f32 = 28.0;
 const PLUGIN_LOGO_RIGHT: f32 = 107.5;
 
@@ -1077,8 +1077,8 @@ fn transport_plugin_bg(out: &mut Vec<Part>) {
     }));
     // the plugin format's mark in a part of PLUGIN_LOGO (112 x 50 at x = 344 of the transport),
     // right-aligned 6 px before the wordmark. VST3 (task-232, the user's decision of
-    // 2026-11-17): the plain text "VST3" in the panel's label font (Inter, bold), engraved as
-    // the CLAP logo, not Steinberg's logo (which does not fit the panel)
+    // 2026-11-17): the plain text "VST3" in the panel's label font (Inter, bold), engraved, not
+    // Steinberg's logo (which does not fit the panel)
     out.push(Part::new("plugin_logo_vst3", 112.0, 50.0, |s| {
         let (size, right) = (PLUGIN_VST_TEXT_SIZE, PLUGIN_LOGO_RIGHT);
         // the baseline puts the capitals' middle (0.727 of the size high) at y = 25
@@ -1089,30 +1089,6 @@ fn transport_plugin_bg(out: &mut Vec<Part>) {
             s.raw(&format!(r#"<path d="{d}" fill="{fill}" opacity="{op}"/>"#));
         }
     }));
-    // the CLAP logo (MIT), engraved: a dark copy over a light copy 0.6 px lower
-    // (the path, its center, scale, the shift of its center from the part's)
-    {
-        let (d, (mx, my), k, dx) = (
-            crate::plugin_logos::CLAP,
-            (127.5, 133.5),
-            42.0 / 203.0,
-            32.0,
-        );
-        out.push(Part::new("plugin_logo_clap", 112.0, 50.0, |s| {
-            for (dy, fill, op) in [(0.6, "#edf1f3", 0.22), (0.0, "#1b262c", 0.38)] {
-                s.g(
-                    &format!(
-                        "translate({} {}) scale({k})",
-                        n(56.0 + dx - mx * k),
-                        n(25.0 + dy - my * k)
-                    ),
-                    &format!(r#"fill="{fill}" opacity="{op}""#),
-                );
-                s.raw(&format!(r#"<path d="{d}"/>"#));
-                s.end_g();
-            }
-        }));
-    }
     // the mode selector's labels, 62 x 10 each: bold when selected
     for (i, (_, label)) in PLUGIN_MODE_LABELS.into_iter().enumerate() {
         // unselected as Sync and MIDI; selected bold and in the labels' bright color
@@ -2661,8 +2637,8 @@ fn fx_bg(out: &mut Vec<Part>) {
             |s| slide_v(s, 0.0, 0.0, 9.0, 18.0, pos),
         ));
     }
-    // the compressor's nine gain-reduction LEDs, 7 x 7 around the lamp: lit in the color the
-    // app gives, unlit in their place's color (`GR_OFF`)
+    // the compressor's nine gain-reduction LEDs, 7 x 7 around the lamp: in the color of their
+    // place (`GR_COLORS`), lit or unlit
     for (name, c, on) in [
         ("gr_led_green", "G", true),
         ("gr_led_amber", "Y", true),
@@ -2677,9 +2653,10 @@ fn fx_bg(out: &mut Vec<Part>) {
     }
 }
 
-/// The unlit color of each gain-reduction LED, left to right: the center (0) green, the two
-/// beside it amber and the outer ones red, as the app lights them (docs/ui_spec.md section 16).
-pub const GR_OFF: [&str; 9] = ["r", "r", "y", "y", "g", "y", "y", "r", "r"];
+/// The color of each gain-reduction LED by its place, left to right, lit or not: three green,
+/// three amber, three red; the app lights a bar from the left (decision task-251,
+/// docs/ui_spec.md section 16).
+pub const GR_COLORS: [&str; 9] = ["g", "g", "g", "y", "y", "y", "r", "r", "r"];
 
 // ---------------------------------------------------------------- seven-segment digits
 

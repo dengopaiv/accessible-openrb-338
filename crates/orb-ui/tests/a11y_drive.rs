@@ -95,7 +95,7 @@ fn drag_by(h: &mut AppTree, p: Pos2, dy: f32) {
 /// Where the mouse grabs a slider: a knob's center, a fader's handle.
 fn grab(h: &AppTree, c: &Ctl) -> Pos2 {
     if c.kind == "fader" {
-        let top = behavior::fader_handle_top(h.app.panel.fader(&c.id));
+        let top = behavior::fader_handle_top(h.app.panel.fader(&c.id), &c.fader());
         Pos2::new(c.x + c.w / 2.0, c.y + top + 5.5)
     } else {
         center(c)

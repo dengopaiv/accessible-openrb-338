@@ -5,7 +5,6 @@
 pub mod font;
 pub mod layout;
 pub mod parts;
-pub mod plugin_logos;
 pub mod svg;
 pub mod text;
 
@@ -26,7 +25,7 @@ pub fn generate() -> Vec<(String, String)> {
         .map(|p| (format!("{}.svg", p.name), p.to_svg()))
         .collect();
     files.push(("panel.svg".into(), layout::compose(&parts, &l)));
-    files.push(("layout.tsv".into(), layout::tsv(&l)));
+    files.push(("layout.tsv".into(), layout::tsv(&parts, &l)));
     files
 }
 

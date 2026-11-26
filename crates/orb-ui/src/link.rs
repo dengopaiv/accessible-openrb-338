@@ -418,12 +418,6 @@ fn new_song_knobs(
     knobs
 }
 
-/// The meter state 0..=10 of a meter byte 0..=127: linear, rounded up so that any signal shows
-/// [G: the scale was not read, `sub_424220`].
-pub fn meter_state(byte: u8) -> u8 {
-    ((byte as u32 * 10).div_ceil(127)).min(10) as u8
-}
-
 /// The panel's player link.
 pub struct Link {
     player: Box<dyn Port>,
@@ -439,6 +433,11 @@ pub struct Link {
     backlog: VecDeque<Command>,
     /// The engine's frame count when the last commands were queued.
     mark: u64,
+    /// The `mark` whose engine values the panel took last ([`Link::follow`]).
+    taken: u64,
+    /// The panel took engine values this turn: the window draws the panel before it takes them,
+    /// so one more frame must show them ([`Link::moving`]).
+    fresh: bool,
     /// The messages sent so far, when turned on (`Some`).
     pub log: Option<Vec<Msg>>,
     /// The drum samples of the newest song (its mod's), whose startup sound
@@ -456,8 +455,8 @@ pub struct Link {
     /// The open song's saved blocks while the engine plays it in song mode
     /// ([`Link::song_mode_blocks`]).
     saved: Option<SavedBlocks>,
-    /// The gain-reduction LEDs [`Link::moving`] saw last.
-    shown_gr: Option<[u8; 9]>,
+    /// The number of lit gain-reduction LEDs [`Link::moving`] saw last.
+    shown_gr: Option<usize>,
     /// A pattern written into the mirror whose message waits until the engine no longer plays
     /// it ([`Link::set_pattern_unplayed`]).
     deferred: Option<Deferred>,
@@ -540,6 +539,8 @@ impl Link {
             shown: [None; 4],
             backlog: VecDeque::new(),
             mark: 0,
+            taken: u64::MAX,
+            fresh: false,
             log: None,
             kit,
             recorded_at: None,
@@ -611,18 +612,22 @@ impl Link {
 
     /// Whether what the panel shows of the engine can still change by itself, after
     /// [`Link::sync`] (task-153, the repaint rule of `docs/ui_spec.md` section 16): the song
-    /// plays, a meter is lit, the gain-reduction LEDs changed, or the snapshot does
-    /// not show the last commands sent yet. While this holds the window repaints at the meter
-    /// rate; otherwise only input (or an animation of its own) repaints it. A loaded song that
-    /// waits for Play is not followed (module doc), so it moves nothing.
+    /// plays, a meter is lit, the gain-reduction LEDs changed, the snapshot does
+    /// not show the last commands sent yet, or the panel took the engine's first values since
+    /// a send this turn (one more frame draws them, task-186). While this holds the window repaints
+    /// at the meter rate; otherwise only input (or an animation of its own) repaints it. A
+    /// loaded song that waits for Play is not followed (module doc), so it moves nothing.
     pub fn moving(&mut self, panel: &Panel) -> bool {
         let mark = self.mark;
         let s = self.player.snapshot();
         let (playing, frames) = (s.playing, s.frames);
         // the compressor's reduction holds its last value in silence: it moves only when it
         // changes
-        let gr_moved = self.shown_gr.replace(panel.gr_leds) != Some(panel.gr_leds);
+        let gr = crate::model::gr_lit(panel.gr_byte);
+        let gr_moved = self.shown_gr.replace(gr) != Some(gr);
+        let fresh = std::mem::take(&mut self.fresh);
         playing
+            || fresh
             || frames <= mark
             || !self.backlog.is_empty()
             || self.deferred.is_some()
@@ -806,11 +811,12 @@ impl Link {
         Ok(())
     }
 
-    /// File > New: a new empty song as the song constructor makes it (the state of the player
-    /// at the app's start, [`Link::new`]), queued as [`Link::load`] queues a song: the open
-    /// song stops, the panel is new and takes the engine's values at the next snapshot.
+    /// File > New: a new song, the song constructor's empty song with the template's four
+    /// patterns in A1 ([`crate::template`], task-288), queued as [`Link::load`] queues a song: the
+    /// open song stops, the panel is new and takes the engine's values at the next snapshot.
     pub fn load_new(&mut self, samples: Option<Arc<SampleSet>>, panel: &mut Panel) {
         let mut engine = self.player.build_new(samples.clone());
+        crate::template::apply(&mut engine);
         let patterns = std::array::from_fn(|c| {
             engine.frame.devices.channels[c]
                 .patterns_mut()
@@ -1260,19 +1266,20 @@ impl Link {
             self.flush_marked();
         }
         self.refresh_tracks();
-        // the meters and the running lights follow every call
+        // the meters and the running lights follow every call; the meters keep the engine's
+        // byte, which the modern skin (`model::meter_state`) and the classic skin
+        // (`model::peak_meter_frame`, the original's scale) map each their way
         for c in 0..4 {
-            panel.meters.insert(
-                format!("mixer{}.meter", c + 1),
-                meter_state(s.channel_meters[c]),
-            );
+            panel
+                .meters
+                .insert(format!("mixer{}.meter", c + 1), s.channel_meters[c]);
         }
         panel
             .meters
-            .insert("master.meter_l".into(), meter_state(s.master_meters[0]));
+            .insert("master.meter_l".into(), s.master_meters[0]);
         panel
             .meters
-            .insert("master.meter_r".into(), meter_state(s.master_meters[1]));
+            .insert("master.meter_r".into(), s.master_meters[1]);
         let live = |d: Device, i: usize| s.live[d as usize].as_slice().get(i).copied();
         for (id, d, i) in [
             ("delay.meter", Device::Delay, 5),
@@ -1280,17 +1287,10 @@ impl Link {
             ("pcf.meter", Device::Pcf, 7),
             ("comp.meter", Device::Compressor, 4),
         ] {
-            panel
-                .meters
-                .insert(id.into(), meter_state(live(d, i).unwrap_or(0)));
+            panel.meters.insert(id.into(), live(d, i).unwrap_or(0));
         }
-        // the gain reduction: the centre LED is "0", the reduction lights the ones to its left
-        let n = ((live(Device::Compressor, 3).unwrap_or(0) as u32 * 4 + 63) / 127) as usize;
-        panel.gr_leds = [0; 9];
-        panel.gr_leds[4] = 1;
-        for k in 1..=n.min(4) {
-            panel.gr_leds[4 - k] = if k <= 2 { 2 } else { 3 };
-        }
+        // the compressor's gain byte, which the gain-reduction LEDs show (`model::gr_lit`)
+        panel.gr_byte = live(Device::Compressor, 3).unwrap_or(0);
         // a section whose pattern gate is closed (the plugin's Gate Pattern Mode) lights no step
         let step = |d: Device, i: usize| {
             live(d, i)
@@ -1304,6 +1304,13 @@ impl Link {
         // the values only from a call that ran the commands sent, and not of a waiting song
         if s.frames > self.mark && !s.pending {
             self.follow_values(panel, &s, &live);
+            // the first values after the commands sent: the frame has drawn the panel before
+            // this, so it is drawn once more with them (a File > New or Open of a stopped song
+            // would otherwise show the old values until the next input)
+            if self.taken != self.mark {
+                self.taken = self.mark;
+                self.fresh = true;
+            }
         }
         self.fill_views(panel);
     }

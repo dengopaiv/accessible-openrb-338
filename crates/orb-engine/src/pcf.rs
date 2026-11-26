@@ -402,11 +402,11 @@ impl SongDevice for Pcf {
         }
     }
 
-    /// Slot 8, 0x10017200, with tick 0 from the song ctor: controllers 0..6 of the pattern copy
+    /// Slot 8, 0x10017200, at `tick`: controllers 0..6 of the pattern copy
     /// inserted into the PCF's track (`sub_1001F900`; controller 7 is skipped).
-    fn init_track(&mut self, track: &mut TrackMut) {
+    fn insert_pattern(&mut self, track: &mut TrackMut, tick: i32) {
         for c in 0..=MODE {
-            track.insert(0, c as u8, self.pattern[c]);
+            track.insert(tick, c as u8, self.pattern[c]);
         }
     }
 }

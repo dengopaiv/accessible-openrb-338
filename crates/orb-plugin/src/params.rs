@@ -1,5 +1,6 @@
-//! The host parameters (task-197): one stepped integer per control the plugin's panel shows,
-//! mirroring the u8 controller it sets (`docs/plugin.md` section 3).
+//! The host parameters (task-197): one per control the plugin's panel shows, mirroring the u8
+//! controller it sets (`docs/plugin.md` section 3): continuous for the host over 0..127 and
+//! rounded to the integer ([`Spec::continuous`], [`round`]; task-275), stepped otherwise.
 //!
 //! The table [`SPECS`] is a constant, so the process side reads it without allocating: what each
 //! parameter sets ([`Target`]), its range and its default, the device constructors' value
@@ -50,6 +51,27 @@ pub struct Spec {
     pub min: u8,
     pub max: u8,
     pub default: u8,
+}
+
+impl Spec {
+    /// Whether the host sees the parameter as continuous (task-275, `docs/plugin.md` section 3):
+    /// a [`Kind::Value`] over 0..=127 (the knobs, faders, levels, pans, sends and the shuffle).
+    /// A host draws and plays a stepped parameter's automation as steps (Studio One, GitHub
+    /// issue 21); the engine still gets the integer ([`round`]). The switches, the patterns,
+    /// the delay steps, the PCF wave and the inserts stay stepped.
+    pub const fn continuous(&self) -> bool {
+        matches!(self.kind, Kind::Value) && self.min == 0 && self.max == 127
+    }
+}
+
+/// The integer a continuous parameter's host value `x` stands for: the nearest one, a half
+/// rounded away from zero (`f32::round`), within the range; NaN gives the minimum. The engine,
+/// the panel and the display get this integer.
+pub fn round(s: &Spec, x: f32) -> i32 {
+    if x.is_nan() {
+        return s.min as i32;
+    }
+    (x.round() as i32).clamp(s.min as i32, s.max as i32)
 }
 
 /// The number of parameters. The mode (`g1`, orb's Play/Stop) was one until task-217: it is the
@@ -248,10 +270,10 @@ pub fn group(t: Target) -> &'static str {
 fn device_name(d: Device) -> &'static str {
     match d {
         Device::Mixer => "Mixer",
-        Device::Tb303_1 => "ORB-303 1",
-        Device::Tb303_2 => "ORB-303 2",
-        Device::Tr808 => "ORB-808",
-        Device::Tr909 => "ORB-909",
+        Device::Tb303_1 => "303-1",
+        Device::Tb303_2 => "303-2",
+        Device::Tr808 => "808",
+        Device::Tr909 => "909",
         Device::Delay => "Delay",
         Device::Distortion => "Distortion",
         Device::Pcf => "PCF",
@@ -329,14 +351,14 @@ const TR909: [&str; 30] = [
     "HH Level",
     "CH Decay",
     "OH Decay",
-    "Crash Level",
-    "Crash Tune",
-    "Ride Level",
-    "Ride Tune",
+    "CC Level",
+    "CC Tune",
+    "RC Level",
+    "RC Tune",
     "Flam",
 ];
 
-/// The parameter's name, with its device: "ORB-303 1 Cutoff".
+/// The parameter's name, with its device: "303-1 Cutoff".
 pub fn name(t: Target) -> String {
     let ctrl = |d: Device, c: u8| -> &'static str {
         let c = c as usize;

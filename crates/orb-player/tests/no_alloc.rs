@@ -6,7 +6,8 @@
 //! unarmed UI side in between: transport, song and pattern mode, loop, tempo, shuffle, Vintage,
 //! device controllers, the mixer's master and mutes, a data block, the panel's device and
 //! pattern messages (task-055, a whole pattern's box included), the mod change (task-056),
-//! the preview player's startup sound, its replacement, stop and end (task-074), songs loaded over
+//! the preview player's startup sound, its replacement, stop and end (task-074), Edit's Initialize
+//! commands and their Undo (task-306), songs loaded over
 //! a stopped song, over a playing one (pending) and switched to by Play, through the direct 44.1
 //! kHz path and the resampled one, with stereo, mono and six-channel devices. The callback's songs
 //! play the drum machines, the 303s and every effect (the corpus song `full_mix`).
@@ -31,7 +32,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use common::{kit, manifest, samples, send, song, tables};
 use orb_engine::samples::Sample;
 use orb_engine::song::Device;
-use orb_player::output::Output;
+use orb_player::output::{CallbackBook, CallbackStats, Health, Output};
 use orb_player::{Audio, CALL_FRAMES, Command, Player, Preview};
 
 struct Counting;
@@ -270,6 +271,25 @@ fn the_callback_does_not_allocate() {
     for t in 0..9 {
         assert_eq!(&copy.events[t], seq.events(t));
     }
+    // Edit's Initialize commands and orb's Undo of them (task-306), playing in song mode: each
+    // snapshot pool is made here, unarmed; the callback copies the lists into it, hands back
+    // the snapshot it replaces, and the Undo swaps one back and hands back the lists it let go
+    // of, all through the garbage queue
+    let snapshot = || Box::new(orb_engine::seq::Pool::new());
+    p.collect_garbage();
+    let before = a.current().frame.seq.events(1).to_vec();
+    send(&mut p, Command::InitLoop(snapshot()));
+    events += render(&mut a, &mut buf, 3);
+    send(&mut p, Command::InitSong(snapshot()));
+    events += render(&mut a, &mut buf, 3);
+    assert_eq!(p.collect_garbage(), 1, "the snapshot InitSong replaced");
+    assert_ne!(a.current().frame.seq.events(1), &before[..]);
+    send(&mut p, Command::UndoInit);
+    events += render(&mut a, &mut buf, 3);
+    assert_eq!(p.collect_garbage(), 1, "the lists the Undo let go of");
+    send(&mut p, Command::UndoInit);
+    events += render(&mut a, &mut buf, 1);
+    assert_eq!(p.collect_garbage(), 0, "one level");
     // the Mods menu's change on the playing song (task-056), twice: the second lets go of a
     // kit only the song held (its table and the samples its voices played), which would be
     // freed if the callback dropped it
@@ -350,6 +370,21 @@ fn the_callback_does_not_allocate() {
     assert_eq!(
         n, 0,
         "the six-channel callback allocated or freed {n} times"
+    );
+    // the callback's bookkeeping around the engine call (gap check, underrun, latency, stats)
+    let mut book = CallbackBook::new(Health::started(), CallbackStats::new(), 48_000);
+    let t0 = std::time::Instant::now();
+    let n = armed(|| {
+        for k in 0..4u64 {
+            // the third call comes far later than its buffer: an underrun is counted
+            let at = t0 + std::time::Duration::from_millis(if k < 2 { 40 * k } else { 600 * k });
+            book.enter(at, 1024, std::time::Duration::from_millis(50));
+            book.leave(1024, 1_000_000);
+        }
+    });
+    assert_eq!(
+        n, 0,
+        "the callback bookkeeping allocated or freed {n} times"
     );
     let (_p3, a3) = Player::new(tables(), Some(samples()));
     let mut mono = Output::new(a3, 1, 22_050).unwrap();

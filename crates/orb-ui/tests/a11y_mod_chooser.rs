@@ -658,7 +658,8 @@ impl H {
     /// F10, Right, Down: the Mods menu open with the focus on its first entry.
     fn open_mods_menu(&mut self) {
         self.press(Key::F10);
-        // past File and upstream's Edit (task-230)
+        // past File, upstream's Edit (task-230) and its View (task-233)
+        self.press(Key::ArrowRight);
         self.press(Key::ArrowRight);
         self.press(Key::ArrowRight);
         self.press(Key::ArrowDown);

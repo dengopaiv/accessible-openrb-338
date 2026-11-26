@@ -32,28 +32,28 @@ pub const KEEP: usize = 20;
 /// The exit code after a panic (what Rust's own unhandled panic gives).
 pub const EXIT_CODE: i32 = 101;
 
-/// The folder of the logs, from the environment: `ORB_UI_LOG_DIR` if set (tests), else in
-/// portable mode `data/logs` beside the program ([`crate::portable`], task-223), else the
-/// platform's.
+/// The folder of the logs, from the environment: `ORB_UI_LOG_DIR` if set (tests); else, on
+/// Windows in portable mode, `logs` in the portable folder (`portable.rs`; the fork's older
+/// `data\logs` is left as it is); else the platform's.
 pub fn log_dir() -> Option<PathBuf> {
     log_dir_for(
         std::env::consts::OS,
         |k| std::env::var_os(k),
-        crate::portable::data_dir().as_deref(),
+        crate::portable::folder().as_deref(),
     )
 }
 
-/// [`log_dir`] for the system `os`, an environment lookup and the portable data folder
-/// (`portable_data`, task-223): `ORB_UI_LOG_DIR` (empty counts as unset), then
-/// `portable_data/logs`, then [`platform_dir`].
+/// [`log_dir`] for the system `os`, an environment lookup and the portable folder (`portable`,
+/// task-289): `ORB_UI_LOG_DIR` (empty counts as unset), then `portable/logs`, then
+/// [`platform_dir`].
 pub fn log_dir_for(
     os: &str,
     env: impl Fn(&str) -> Option<OsString>,
-    portable_data: Option<&Path>,
+    portable: Option<&Path>,
 ) -> Option<PathBuf> {
     let set = env("ORB_UI_LOG_DIR").is_some_and(|v| !v.is_empty());
-    if !set && let Some(data) = portable_data {
-        return Some(data.join("logs"));
+    if !set && let Some(dir) = portable {
+        return Some(dir.join("logs"));
     }
     platform_dir(os, env)
 }
@@ -258,6 +258,41 @@ thread_local! {
     static IN_HOOK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Ends the process with `code`, after the caller's own work (the error message, the crash log
+/// written and flushed): by [`terminate_if_asio_was_used`] when an ASIO driver was loaded, else
+/// by `std::process::exit`. Every `exit` of the program goes through it (task-193).
+pub fn end_process(code: i32) -> ! {
+    terminate_if_asio_was_used(code);
+    std::process::exit(code)
+}
+
+/// When an ASIO driver was loaded, ends the process with `TerminateProcess` (task-193).
+/// `ExitProcess`, which a return from `main` and `std::process::exit` end in, runs every DLL's
+/// `DLL_PROCESS_DETACH`, and ASIO4ALL's `DllMain` waits there for a thread of its own that
+/// `ExitProcess` has killed already when the driver's panel is open: the process hung, "Not
+/// Responding", with no window (found with a minidump: the main thread in
+/// `LdrShutdownProcess`, then asio4all64.dll, then `Sleep`). Returns when no ASIO driver was
+/// loaded (and off Windows). `TerminateProcess` skips destructors, so the caller has stopped
+/// the player and saved what it keeps first; on the panic path the crash log is written
+/// before.
+pub fn terminate_if_asio_was_used(code: i32) {
+    #[cfg(windows)]
+    if orb_player::devices::asio_was_used() {
+        unsafe extern "system" {
+            fn GetCurrentProcess() -> isize;
+            fn TerminateProcess(process: isize, exit_code: u32) -> i32;
+        }
+        let _ = std::io::stdout().flush();
+        let _ = std::io::stderr().flush();
+        // SAFETY: plain Win32 calls; the pseudo handle of the current process needs no closing.
+        unsafe {
+            TerminateProcess(GetCurrentProcess(), code as u32);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = code;
+}
+
 /// Installs the hook; `version` is the text of the About box.
 pub fn install(version: &'static str) {
     let default = std::panic::take_hook();
@@ -273,10 +308,10 @@ pub fn install(version: &'static str) {
             // thread may need it (macOS runs the box on the main queue).
             std::thread::sleep(WAIT);
             say("OpenRB-338: a second panic; the first one did not end the process in time");
-            std::process::exit(EXIT_CODE);
+            end_process(EXIT_CODE);
         }
         let _ = std::panic::catch_unwind(AssertUnwindSafe(|| handle(version, info)));
-        std::process::exit(EXIT_CODE);
+        end_process(EXIT_CODE);
     }));
 }
 
@@ -529,7 +564,8 @@ mod tests {
         assert_eq!(platform_dir("linux", env(&[])), None);
     }
 
-    /// Portable mode (task-223): `data/logs`, unless `ORB_UI_LOG_DIR` names another folder.
+    /// Portable mode (task-289; the fork's task-223 had `data/logs`): `logs` in the portable
+    /// folder, unless `ORB_UI_LOG_DIR` names another folder.
     #[test]
     fn a_portable_copy_logs_beside_itself_unless_overridden() {
         let env = |pairs: &'static [(&'static str, &'static str)]| {
@@ -540,7 +576,7 @@ mod tests {
                     .map(|(_, v)| OsString::from(v))
             }
         };
-        let data = Path::new("E:\\OpenRB\\data");
+        let data = Path::new("E:\\OpenRB");
         let win = env(&[("LOCALAPPDATA", "C:\\L")]);
         assert_eq!(
             log_dir_for("windows", win, Some(data)),

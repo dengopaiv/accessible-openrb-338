@@ -400,9 +400,9 @@ fn screen_reader_group(is_mac: bool) -> Group {
             ),
             sr_row(
                 "PgUp / PgDn",
-                "On a knob or fader: by 8 or more, to a value spoken differently, nothing when none \
-                 lies that way (by 8 with Speak Raw Values on). On a spin button: 10 clicks. On a pattern \
-                 selector: the next / previous bank",
+                "On a knob or fader: by 8 or more, to a value spoken differently, nothing when \
+                 none lies that way (by 8 with Speak Raw Values on). On a spin button: 10 clicks. \
+                 On a pattern selector: the next / previous bank",
                 value_keys[2..4]
                     .iter()
                     .map(|&k| sr(k, Any, SrWant::Nothing))
@@ -589,11 +589,12 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
         Group {
             title: "Menu shortcuts",
             mode: None,
-            note: "Keys with the command key held are left to the menu.",
+            note: "",
             rows: vec![
                 menu_row(is_mac, &shortcuts::NEW, "File > New"),
                 menu_row(is_mac, &shortcuts::OPEN, "File > Open..."),
                 menu_row(is_mac, &shortcuts::SAVE, "File > Save"),
+                menu_row(is_mac, &shortcuts::INFO, "File > Info..."),
                 menu_row(is_mac, &shortcuts::UNDO, "Edit > Undo"),
                 menu_row(is_mac, &shortcuts::CUT, "Edit > Cut Pattern"),
                 menu_row(is_mac, &shortcuts::COPY, "Edit > Copy Pattern"),
@@ -612,9 +613,9 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
             ],
         },
         Group {
-            title: "Always active",
+            title: "Global",
             mode: None,
-            note: "Both keyboard modes, whatever row has the focus.",
+            note: "",
             rows: vec![
                 row(
                     "Space",
@@ -734,8 +735,7 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
         Group {
             title: "Main-keyboard transport keys that depend on the mode",
             mode: None,
-            note: "The main keyboard's keys that the original keeps on the same codes as the \
-                   numpad's, so they are resolved by the mode and the focus.",
+            note: "",
             rows: vec![
                 row(
                     "Enter",
@@ -786,7 +786,7 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
             ],
         },
         Group {
-            title: "Program Synth mode, a TB-303 focused",
+            title: "Program Synth mode, a 303 focused",
             mode: Some(KeyMode::Synth),
             note: "The keys press the focused 303's panel keys.",
             rows: vec![
@@ -854,8 +854,8 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
                 ),
                 row(
                     "A S D F G H J K L ; '",
-                    "Instruments 1..11. TR-808: BD SD LT MT HT RS CP CB CY OH CH. \
-                     TR-909: BD SD LT MT HT RS CP CH OH CC RC",
+                    "Instruments 1..11. 808: BD SD LT MT HT RS CP CB CY OH CH. \
+                     909: BD SD LT MT HT RS CP CH OH CC RC",
                     drums,
                 ),
             ],
@@ -866,10 +866,10 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
             note: "Each key row selects patterns 1..8 of one section, as a click on the \
                    pattern button.",
             rows: vec![
-                patterns(0, "TB-303 #1", "1 2 3 4 5 6 7 8"),
-                patterns(1, "TB-303 #2", "Q W E R T Y U I"),
-                patterns(2, "TR-808", "A S D F G H J K"),
-                patterns(3, "TR-909", "Z X C V B N M ,"),
+                patterns(0, "303-1", "1 2 3 4 5 6 7 8"),
+                patterns(1, "303-2", "Q W E R T Y U I"),
+                patterns(2, "808", "A S D F G H J K"),
+                patterns(3, "909", "Z X C V B N M ,"),
             ],
         },
         Group {
@@ -891,7 +891,11 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
                 row("Home / End", "First / last entry of the browser", vec![]),
                 row("Enter", "Open the selected entry", vec![]),
                 row(
-                    "Backspace  or  Alt+Up",
+                    if is_mac {
+                        "Backspace  or  Option+Up"
+                    } else {
+                        "Backspace  or  Alt+Up"
+                    },
                     "The browser goes to the parent folder",
                     vec![],
                 ),
@@ -901,12 +905,14 @@ fn original_groups(is_mac: bool) -> Vec<Group> {
         Group {
             title: "Prompts and questions",
             mode: None,
-            note: "Listed by hand from the code (the prompt in menu.rs, the browser's question \
-                   in browser.rs); no test checks these lines.",
+            note: "Listed by hand from the code (the prompt and Initialize Song's question in \
+                   menu.rs, the browser's question in browser.rs); no test checks these lines.",
             rows: vec![
                 row("S  Y  Enter", "Unsaved-changes prompt: save", vec![]),
                 row("D  N", "Unsaved-changes prompt: do not save", vec![]),
                 row("Escape", "Unsaved-changes prompt: cancel", vec![]),
+                row("Enter", "Initialize Song question: initialize", vec![]),
+                row("Escape", "Initialize Song question: cancel", vec![]),
                 row(
                     "Y",
                     "Overwrite question of the browser: replace the file",
@@ -946,6 +952,8 @@ impl App {
         if !self.key_help_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.key_help_serial += 1;
+        } else {
+            self.raise_window(self.key_help_id());
         }
         self.key_help_open = true;
     }
@@ -1292,9 +1300,99 @@ mod tests {
                 .map(|r| r.keys.clone())
                 .collect()
         };
-        let keys = ["N", "O", "S", "Z", "X", "C", "V", "D", "F", "G"];
+        let keys = ["N", "O", "S", "I", "Z", "X", "C", "V", "D", "F", "G"];
         assert_eq!(text(true), keys.map(|k| format!("Cmd+{k}")));
         assert_eq!(text(false), keys.map(|k| format!("Ctrl+{k}")));
+    }
+
+    /// The user's cuts of 2026-11-22 (task-284): the groups, rows and notes they removed stay
+    /// removed, "Always active" is "Global", and no text names the Roland hardware.
+    #[test]
+    fn the_users_cuts_and_renames_hold() {
+        for is_mac in [false, true] {
+            let gs = groups(is_mac, false);
+            let titles: Vec<&str> = gs.iter().map(|g| g.title).collect();
+            assert_eq!(
+                titles,
+                [
+                    "Menu shortcuts",
+                    "Global",
+                    // the fork's numpad keys apart from the main keyboard's (task-225)
+                    "The numpad",
+                    "Main-keyboard transport keys that depend on the mode",
+                    "Program Synth mode, a 303 focused",
+                    "Program Synth mode, a drum machine focused",
+                    "Select Patterns mode",
+                    "Windows and the file browser",
+                    "Prompts and questions",
+                ]
+            );
+            let notes: Vec<&str> = gs.iter().map(|g| g.note).collect();
+            let rows: Vec<(&str, &str)> = gs
+                .iter()
+                .flat_map(|g| &g.rows)
+                .map(|r| (r.keys.as_str(), r.what))
+                .collect();
+            // no menu repeats: the pattern editor's key is in the Edit menu only
+            let cmd = if is_mac { "Cmd" } else { "Ctrl" };
+            assert!(!rows.iter().any(|r| r.0 == format!("{cmd}+E")), "{rows:?}");
+            assert!(!rows.iter().any(|r| r.1.contains("Opens the focused row")));
+            assert_eq!(rows.iter().filter(|r| r.0 == format!("{cmd}+Z")).count(), 1);
+            for gone in [
+                "Keys with the command key held",
+                "Both keyboard modes, whatever row",
+                "egui cannot tell the numpad",
+                "Every key and mouse action of the editor",
+            ] {
+                assert!(!notes.iter().any(|n| n.contains(gone)), "{gone}");
+            }
+            // upstream cut its Numpad * row (egui gives that key no event); the fork's
+            // numpad.rs hook does (task-225), so the row is in the fork's numpad group only
+            let numpad = gs.iter().find(|g| g.title == "The numpad").unwrap();
+            assert!(numpad.rows.iter().any(|r| r.keys == "Numpad *"));
+            let elsewhere = gs.iter().filter(|g| g.title != "The numpad");
+            assert!(
+                !elsewhere
+                    .flat_map(|g| &g.rows)
+                    .any(|r| r.keys == "Numpad *")
+            );
+            // no mouse-only rows: no click, drag, held-modifier or DragValue line
+            for (k, w) in &rows {
+                let (kl, wl) = (k.to_lowercase(), w.to_lowercase());
+                for bad in ["click", "drag", "hold ", "length", "pattern number"] {
+                    assert!(!kl.contains(bad) && !wl.contains(bad), "{k}: {w}");
+                }
+            }
+            // no Roland prefixes anywhere in the help's text
+            for g in &gs {
+                for t in [g.title, g.note]
+                    .into_iter()
+                    .chain(g.rows.iter().flat_map(|r| [r.keys.as_str(), r.what]))
+                {
+                    assert!(!t.contains("TR-") && !t.contains("TB-"), "{t}");
+                }
+            }
+            // the renamed rows are there
+            assert!(
+                rows.iter()
+                    .any(|r| r.0 == "A S D F G H J K" && r.1 == "808")
+            );
+            assert!(rows.iter().any(|r| r.1 == "303-1"));
+            assert!(rows.iter().any(|r| r.1.contains("808: BD SD")));
+            // task-285's row stays, with the platform's key
+            let up = if is_mac { "Option+Up" } else { "Alt+Up" };
+            assert!(rows.iter().any(|r| r.0 == format!("Backspace  or  {up}")));
+        }
+    }
+
+    /// The Theme Viewer and its Space key are gone (task-267): no row names them.
+    #[test]
+    fn no_row_names_the_theme_viewer() {
+        for g in groups(false, false).iter().chain(groups(true, true).iter()) {
+            for r in &g.rows {
+                assert!(!r.what.contains("Theme Viewer"), "{}", r.what);
+            }
+        }
     }
 
     /// The current-mode mark: Synth marks exactly the two Program Synth groups, Patterns only
@@ -1311,7 +1409,7 @@ mod tests {
         assert_eq!(
             marked(KeyMode::Synth),
             [
-                "Program Synth mode, a TB-303 focused",
+                "Program Synth mode, a 303 focused",
                 "Program Synth mode, a drum machine focused"
             ]
         );

@@ -76,12 +76,10 @@ build_docker() {
             exit 1
         }
     done
-    for b in OpenRB-338.vst3 OpenRB-338.clap; do
-        [ -e "$dist/$target/plugins/$b" ] || {
-            echo "docker build finished but $dist/$target/plugins/$b is missing" >&2
-            exit 1
-        }
-    done
+    [ -e "$dist/$target/plugins/OpenRB-338.vst3" ] || {
+        echo "docker build finished but $dist/$target/plugins/OpenRB-338.vst3 is missing" >&2
+        exit 1
+    }
     echo "built $target -> $bin_dir"
 }
 
@@ -117,6 +115,10 @@ case $os in
             # MSVC's cl accepts that with a warning; clang-cl 21+ makes it an error. cargo-xwin
             # overwrites CFLAGS_<target> and CC_<target>, but clang-cl reads CL itself.
             export CL=-Wno-incompatible-pointer-types
+            # asio-sys (cpal's asio feature, x86_64 only, task-193) looks for vcvarsall.bat on a
+            # Windows host unless VCINSTALLDIR is set; cargo-xwin has the headers and libraries
+            # already, so any value does
+            export VCINSTALLDIR=${VCINSTALLDIR:-/xwin}
             # the first run downloads the Microsoft CRT and SDK into the cargo-xwin cache
             # (~/Library/Caches/cargo-xwin on macOS, ~/.cache/cargo-xwin on Linux)
             XWIN_ACCEPT_LICENSE=1 cargo xwin build "${cargo_args[@]}"
@@ -142,20 +144,19 @@ for b in orb OpenRB-338; do
 done
 
 # The plugin (task-204): the library was built with the apps above; the xtask only lays out
-# OpenRB-338.vst3 and OpenRB-338.clap (docs/plugin.md section 7; macOS bundles are signed ad hoc by
-# the bundler) and they are copied to dist/<target>/plugins/, which package.sh and
+# OpenRB-338.vst3 (docs/plugin.md section 7; the macOS bundle is signed ad hoc by the bundler)
+# and it is copied to dist/<target>/plugins/, which package.sh and
 # package-dmg.sh pack. The xtask is a host tool: `cargo xtask` builds it for the host.
-# target/bundled is shared by all targets and a macOS .clap is a directory where a Windows one
-# is a file, so the bundler fails on the leftovers of another target: start empty
+# target/bundled is shared by all targets, so the bundler could meet the leftovers of another
+# target: start empty
 rm -rf "$target_dir/bundled"
 plugin_dir=$dist/$target/plugins
 rm -rf "$plugin_dir"
 mkdir -p "$plugin_dir"
 (cd "$root" && cargo xtask bundle orb-plugin --no-build --profile "$profile" --target "$target")
-for p in OpenRB-338.vst3 OpenRB-338.clap; do
-    [ -e "$target_dir/bundled/$p" ] || { echo "the bundler made no $p" >&2; exit 1; }
-    # -R: a macOS bundle is a folder (cp -R keeps its signature files)
-    cp -R "$target_dir/bundled/$p" "$plugin_dir/$p"
-done
+p=OpenRB-338.vst3
+[ -e "$target_dir/bundled/$p" ] || { echo "the bundler made no $p" >&2; exit 1; }
+# -R: a bundle is a folder (cp -R keeps a macOS bundle's signature files)
+cp -R "$target_dir/bundled/$p" "$plugin_dir/$p"
 echo "bundled the plugin -> $plugin_dir"
 echo "built $target -> $bin_dir"

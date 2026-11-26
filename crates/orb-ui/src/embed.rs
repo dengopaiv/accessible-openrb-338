@@ -73,7 +73,7 @@ pub trait Embed: Send {
         None
     }
     /// The resize corner: asks the host for a window of `size` points (VST3
-    /// `IPlugFrame::resizeView`, CLAP `gui.request_resize`); the host then sizes the window.
+    /// `IPlugFrame::resizeView`); the host then sizes the window.
     /// The plugin makes the request after the frame, not from this call (a host may resize the
     /// window at once, which must not happen inside the frame). `Some(_)` when the request
     /// goes to the host, `None` when the plugin has no way to it (the window then resizes
@@ -110,6 +110,15 @@ pub trait Embed: Send {
         let _ = (row, pattern);
         false
     }
+    /// The plugin's output routing (task-300), which Options > Output Routing... shows and
+    /// sets; `None` (the default) when the plugin has none, and then the menu has no such item.
+    fn routing(&self) -> Option<orb_engine::frame::OutputRouting> {
+        None
+    }
+    /// The routing window changed a box: the plugin's routing is now `r`.
+    fn set_routing(&mut self, r: orb_engine::frame::OutputRouting) {
+        let _ = r;
+    }
 }
 
 /// How far (points) a press on a pattern button must move to drag the pattern out
@@ -133,7 +142,6 @@ pub enum PluginMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginFormat {
     Vst3,
-    Clap,
 }
 
 /// The modes of [`PluginMode`] in the order of the mode selector's rows (top to bottom), with
@@ -227,7 +235,8 @@ pub const MARGIN_X: f32 = 16.0;
 /// menu bar and the window's bottom edge.
 pub const MARGIN_Y: f32 = 0.0;
 
-/// The smallest window the corner asks for: half the panel (as the standalone's minimum).
+/// The smallest scale the corner asks for: half the panel. This floor is separate from the
+/// host's minimum window (`layout::MIN_WINDOW_W/H`, 536 x 485, enforced by `adjust_logical`).
 pub const MIN_SCALE: f32 = 0.5;
 
 /// While the editor is open, the panel is drawn at least this often, so that the LEDs follow
@@ -513,12 +522,13 @@ impl App {
             // 3 cells of 9 x 16, centered in the display, as the panel's displays
             let ((x, y, w, h), n) = (PLUGIN_BAR, 3);
             let x0 = x + (w - 9.0 * n as f32) / 2.0;
-            for (i, f) in crate::behavior::digit_frames(p.position, n)
+            for (i, d) in crate::behavior::digit_frames(p.position, n)
                 .into_iter()
                 .enumerate()
             {
                 let r = view.rect(x0 + 9.0 * i as f32, y, 9.0, h);
-                crate::app::paint_part(ui, f, r);
+                let f = d.map_or("seg_blank".to_string(), |d| format!("seg_{d}"));
+                crate::app::paint_part(ui, &f, r);
             }
         }
         if let Some(m) = midi {
@@ -562,7 +572,6 @@ impl App {
         if let Some(format) = p.embed.format() {
             let name = match format {
                 PluginFormat::Vst3 => "plugin_logo_vst3",
-                PluginFormat::Clap => "plugin_logo_clap",
             };
             let (x, y, w, h) = PLUGIN_LOGO;
             crate::app::paint_part(ui, name, view.rect(x, y, w, h));
@@ -932,10 +941,8 @@ mod tests {
         }
         let (x, y, w, h) = art::PLUGIN_LOGO;
         assert_eq!(PLUGIN_LOGO, (16.0 + x, y, w, h));
-        for name in ["plugin_logo_vst3", "plugin_logo_clap"] {
-            let p = crate::art::part(name).expect(name);
-            assert_eq!((p.w, p.h), (w, h), "{name}");
-        }
+        let p = crate::art::part("plugin_logo_vst3").expect("plugin_logo_vst3");
+        assert_eq!((p.w, p.h), (w, h));
         let led = crate::art::part("led_mode_on").expect("the lit mode LED");
         assert_eq!((led.w, led.h), (11.0, 11.0));
         for i in 0..3 {

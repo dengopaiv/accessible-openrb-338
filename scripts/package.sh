@@ -26,13 +26,27 @@ rm -rf "$dist/$target/stage"
 mkdir -p "$stage"
 cp "$dist/$target/bin/"* "$stage/"
 cp "$root/LICENSE" "$stage/LICENSE"
-# the plugin bundles (task-204; scripts/build.sh made them): the folder holds both
-for p in OpenRB-338.vst3 OpenRB-338.clap; do
-    [ -e "$dist/$target/plugins/$p" ] || { echo "missing $dist/$target/plugins/$p" >&2; exit 1; }
-done
-mkdir -p "$stage/plugins"
-cp -R "$dist/$target/plugins/OpenRB-338.vst3" "$dist/$target/plugins/OpenRB-338.clap" \
-    "$stage/plugins/"
+# the plugin bundle (task-204; scripts/build.sh made it)
+p=OpenRB-338.vst3
+[ -e "$dist/$target/plugins/$p" ] || { echo "missing $dist/$target/plugins/$p" >&2; exit 1; }
+case $target in
+    *-windows-*)
+        # portable by default (task-289): the app, the plugin as the single file (the binary
+        # of the bundle, which hosts on Windows accept as it is) and the portable marker in one
+        # folder; no OpenRB-338.toml, so unzipping over an old folder keeps its settings (task-295)
+        cp "$dist/$target/plugins/$p"/Contents/*-win/"$p" "$stage/$p"
+        printf '%s\n' 'Portable mode is on while this file exists (see README.txt). Its content is ignored.' \
+            > "$stage/OpenRB-338.portable"
+        # the ASIO SDK's license and notices (task-193): ASIO is in the x86_64 build only
+        case $target in
+            x86_64-*) "$root/scripts/asio-notices.sh" "$stage/THIRD-PARTY-NOTICES.txt" ;;
+        esac
+        ;;
+    *)
+        mkdir -p "$stage/plugins"
+        cp -R "$dist/$target/plugins/$p" "$stage/plugins/"
+        ;;
+esac
 
 case $target in
     *-linux-*)
@@ -50,15 +64,16 @@ case $target in
         run="OpenRB-338.exe (the app) and orb.exe (the command line)"
         unsigned='The programs are not signed, so Windows SmartScreen may say "Windows protected
 your PC" when one of them first starts: choose "More info", then "Run anyway".'
-        # the fork's Windows zip is portable (task-223; the user's decision, task-222)
-        cp "$root/scripts/portable.txt" "$stage/portable.txt"
+        # the fork's Windows zip is portable (the user's decision, task-222): since the merge of
+        # upstream f83c54f by upstream's marker OpenRB-338.portable above, which replaced the
+        # fork's portable.txt (the user's choice, 2026-11-26)
         # the fork's changes per release as plain text with CRLF (task-228): no heading marks,
         # bold, backticks or link targets, which a screen reader would read out
         sed -E -e 's/^#+ +//' -e 's/\*\*//g' -e 's/`//g' -e 's/\[([^]]*)\]\([^)]*\)/\1/g' \
             "$root/CHANGELOG.md" | awk '{ printf "%s\r\n", $0 }' >"$stage/CHANGELOG.txt"
         portable='This copy is portable: unpack the folder anywhere, a USB stick too, and run
-OpenRB-338.exe. While portable.txt lies next to it, the settings and the logs are kept in the
-folder data beside it and nothing is written to AppData (portable.txt says more).
+OpenRB-338.exe. The settings and the logs are kept in this folder and nothing is written to
+AppData (Portable mode, below, says more).
 CHANGELOG.txt lists what changed in each release of the fork.'
         ;;
     *)
@@ -86,25 +101,85 @@ $(cat "$root/scripts/fork-readme.txt")
 $unsigned
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE).
 
-Plugin (VST 3 and CLAP instrument)
-----------------------------------
+Plugin (VST 3 instrument)
+-------------------------
 
-plugins/ holds OpenRB-338.vst3 and OpenRB-338.clap. Copy the one your host loads (or both)
-into a plugin folder, then rescan plugins in the host:
 EOF
 case $target in
-    *-linux-*) plugin_dirs='  VST3: ~/.vst3/           CLAP: ~/.clap/        (or /usr/lib/vst3, /usr/lib/clap)' ;;
-    *-windows-*) plugin_dirs='  VST3: %COMMONPROGRAMFILES%\VST3\    CLAP: %COMMONPROGRAMFILES%\CLAP\
-  (or %LOCALAPPDATA%\Programs\Common\VST3\ and \CLAP\ for the current user only)
-  The installer (OpenRB-338-*-setup.exe) can do this for you: its "VST3 plugin" and "CLAP plugin"
-  components, on by default, copy the bundles to the %COMMONPROGRAMFILES% folders above (the
-  installer is for all users and asks for administrator rights); the uninstaller removes them.' ;;
-    *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/    CLAP: ~/Library/Audio/Plug-Ins/CLAP/
-  (or the same under /Library for all users). The bundles are signed ad hoc only; if the host
-  refuses them after a download, run in this folder (and again, with sudo, on the copies in
-  /Library if you installed them there): xattr -dr com.apple.quarantine OpenRB-338.vst3 OpenRB-338.clap' ;;
+    *-windows-*) ;;
+    *) cat >> "$stage/README.txt" <<'EOF'
+plugins/ holds OpenRB-338.vst3. Copy it into a plugin folder, then rescan plugins in the host:
+EOF
+    ;;
+esac
+case $target in
+    *-linux-*) plugin_dirs='  VST3: ~/.vst3/   (or /usr/lib/vst3)' ;;
+    *-windows-*) plugin_dirs='The plugin is the file OpenRB-338.vst3 in this same folder as OpenRB-338.exe. Point the host'"'"'s VST3
+plugin path (its custom VST3 folder setting) at this folder and rescan plugins; the plugin is then
+portable (see below). Or copy the file into a plugin folder, where it is not portable:
+
+  VST3: %COMMONPROGRAMFILES%\VST3\
+  (or %LOCALAPPDATA%\Programs\Common\VST3\ for the current user only)
+  The installer (OpenRB-338-*-setup.exe) can do this for you: its "VST3 plugin" component, on by
+  default, copies the bundle to the %COMMONPROGRAMFILES% folder above (the installer is for all
+  users and asks for administrator rights); the uninstaller removes it.' ;;
+    *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/
+  (or the same under /Library for all users). The bundle is signed ad hoc only; if the host
+  refuses it after a download, run in this folder (and again, with sudo, on the copy in
+  /Library if you installed it there): xattr -dr com.apple.quarantine OpenRB-338.vst3' ;;
 esac
 printf '%s\n' "$plugin_dirs" >> "$stage/README.txt"
+case $target in
+    *-windows-*)
+        cat >> "$stage/README.txt" <<'EOF'
+
+Portable mode
+-------------
+The file OpenRB-338.portable in this folder makes OpenRB-338.exe and the plugin file next to it
+portable while it exists (its content is ignored): they keep their settings in OpenRB-338.toml
+here, and the crash logs and the plugin's log (turned on by a file plugin.log in logs\) in the
+logs\ folder here, and write nothing in your user profile. The app and the plugin share the one
+OpenRB-338.toml. It is not in the zip: the first start copies your per-user settings
+(%APPDATA%\OpenRB-338\OpenRB-338.toml, or the older ui.toml there when there is no
+OpenRB-338.toml yet) into it, so the settings you have come along; the per-user files are not
+changed. The plugin is portable only when the host loads it from this folder (the host's custom
+VST3 path); a copy in a plugin folder uses the per-user settings.
+
+The songs and mods folders you choose inside this folder are remembered relative to it, so they
+still work when a USB stick gets another drive letter; folders elsewhere are remembered as full
+paths. A folder unpacked from an older release of this fork (one with portable.txt and the
+folder data) stays portable: its first start copies the settings in data\ui.toml into
+OpenRB-338.toml. After that portable.txt and data are no longer used, and you may delete them
+once OpenRB-338.portable is in the folder (unzipping this release over it puts it there).
+
+  To upgrade: unzip the new version over this folder. OpenRB-338.toml is not in the zip, so your
+  settings stay.
+  To turn portable mode off: delete OpenRB-338.portable, and move OpenRB-338.toml to
+  %APPDATA%\OpenRB-338\, replacing the OpenRB-338.toml there, to keep the settings. Without
+  the marker the program uses the per-user settings and ignores a local OpenRB-338.toml.
+  To turn it on again: create a file OpenRB-338.portable (it may be empty) next to
+  OpenRB-338.exe.
+
+If the folder cannot be written (for instance under Program Files), the app runs with the
+settings it read and says once that they cannot be saved; move the folder somewhere you can
+write, or turn portable mode off as above.
+EOF
+        ;;
+esac
+case $target in
+    x86_64-pc-windows-msvc)
+        cat >> "$stage/README.txt" <<'EOF'
+
+ASIO
+----
+OpenRB-338.exe can play through ASIO drivers: Options > Audio Output..., Driver: ASIO. The
+default stays WASAPI; ASIO is never chosen by itself. An ASIO driver sets its buffer size in its
+own control panel, and many drivers allow one program at a time. THIRD-PARTY-NOTICES.txt holds
+the license of the ASIO SDK.
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+EOF
+        ;;
+esac
 case $target in
     *-linux-*)
         cat >> "$stage/README.txt" <<'EOF'

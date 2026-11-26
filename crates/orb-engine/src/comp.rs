@@ -270,11 +270,11 @@ impl SongDevice for Compressor {
         }
     }
 
-    /// Slot 8, 0x1000F420, with tick 0 from the song ctor: controllers 0..2 of the pattern copy
+    /// Slot 8, 0x1000F420, at `tick`: controllers 0..2 of the pattern copy
     /// inserted into the compressor's track (`sub_1001F900`; controllers 3 and 4 are skipped).
-    fn init_track(&mut self, track: &mut TrackMut) {
+    fn insert_pattern(&mut self, track: &mut TrackMut, tick: i32) {
         for c in 0..=THRESHOLD {
-            track.insert(0, c as u8, self.pattern[c]);
+            track.insert(tick, c as u8, self.pattern[c]);
         }
     }
 }

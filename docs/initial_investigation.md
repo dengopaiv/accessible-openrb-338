@@ -150,7 +150,10 @@ every block:   if (blk & 15) == 0: mixer_update()    // 0x10012C14; blk starts a
   non-null (a null one is replaced by the unfilled scratch `song+0x140C`/`+0x150C`).
 - Channel c's own output entry is 2, 3, 4 or 11. It is always null in the app, so the device
   renders into the shared scratch `unk_1010012C` (a process global, overwritten by each device in
-  turn), and only then is the channel mixed into the master (`cmp eax, ebp; jnz` at 0x100136B1).
+  turn), and only then is the channel mixed into the master (`cmp eax, ebp` at 0x100136AB, eax
+  the scratch's address from 0x100136A2 and ebp the channel's buffer; `jnz` at 0x100136B1).
+  A non-null entry (a ReWire host's buffer, task-257) gets the channel after its inserts and
+  takes it out of the master, its delay send kept (`docs/rewire.md` section 4).
   A device gets `float **` (slot 14, 0x10013580), an insert `float *` (slot 15).
 - Each block first advances the meter index `song+0xA0`: `i = (i + 23) & 63` (0x10013481). The
   channel peak (`+0xB8` of the channel block) and the master peaks (`song+0`, `+4`, after the
@@ -170,6 +173,8 @@ every block:   if (blk & 15) == 0: mixer_update()    // 0x10012C14; blk starts a
   `(n - old) * (1/32)` (`dbl_10151F58`) is kept as a double. The mix loop runs in x87 registers
   from the stored old gains: samples 2p and 2p+1 use `old + p` steps, added one at a time, and
   each output sample is `f32(bus*g + master)`. The L gain mixes into entry 0, the R gain into 1.
+  The plugin's per-device outputs (task-256, `docs/plugin.md` section 13) copy the channel's bus
+  where ReWire takes it, after the inserts and before this loop.
 - Master (0x100138AE): `m = mOld*0.93 + mTgt*0.07`, `f32(m)` stored, every master sample becomes
   `f32(x * m)` with the unrounded m, after the send effect (slot 14 with `(song+0x1FC[i], L, R)`)
   and the master compressor (slot 14 with `(L, R)`).
@@ -428,7 +433,9 @@ returned for the song (top-level msg 52), not a device.
 | 36 | Bulk-set the global struct (23 bytes) |
 | 37 | Track events: `[track, u32, u32]`, then 7 bytes each `[99, u32 tick, ctrl, val]` |
 | 22 `{track, u32 from, u32 to}` | [C] task-057: the track query (0x10012346 → `sub_10020EC0`): nodes `from..to` (clamped to the count, `sub_10014670`) of the track's first list, replied at once on the DLL->Panel port (`sub_1001DED0`, engine `+4`) as `[78, slot, 37, track, u32 from, u32 to, then 7 bytes each [99, u32 tick, ctrl, val]]`. The exe's TRAK writer `sub_437CFF` asks with it in batches of 1284 (0x437DE6) and writes each tick as `8*tick/192` (0x437E9E): a saved song has the DLL's tracks, ctor events and recording included |
-| 30, 31 | Not modelled (task-057): 30 (0x100124EA → `sub_1001FEB0`) calls `sub_1001FFE0(0, 0x7FFFFFFF)` on every track, 31 (0x10012508 → `sub_100201E0`) `sub_10020350(loopEnd)` and `sub_1001FFE0(loopStart, loopEnd)`; both then merge every track at `trunc(pos)` (`sub_1001F520`) and reset the applied pointers [C for the calls; G: an edit command that clears a range of the tracks, not read further]; no path rb models sends them |
+| 28 | [C] task-306: Edit > Initialize Song from Pattern Mode (exe command 307, after its alert): every track loses every event but those at tick 0 (`sub_1001FD70`), every device inserts its pattern-mode copy at tick 0 (slot 8), then the song-mode chase to the position (`sub_1001FDC0`); `docs/song_load.md` section 14, `Engine::init_song` |
+| 29 | [C] task-306: Edit > Initialize Loop from Pattern Mode (exe command 306): every track's state at the loop end is inserted there (`sub_10021520`), the loop's events but tick 0 are removed (`sub_100208A0`), every device inserts its pattern-mode copy at the loop start (slot 8), then the chase (`sub_1001FDC0`); `docs/song_load.md` section 14, `Engine::init_loop` |
+| 30, 31 | Not modelled (task-057): 30 (0x100124EA → `sub_1001FEB0`) calls `sub_1001FFE0(0, 0x7FFFFFFF)` on every track, 31 (0x10012508 → `sub_100201E0`) `sub_10020350(loopEnd)` and `sub_1001FFE0(loopStart, loopEnd)`; both then merge every track at `trunc(pos)` (`sub_1001F520`) and reset the applied pointers [C for the calls; C (task-306): the exe sends 31 for Edit > Copy Touched Controls to Loop (command 308) and 30 for ... to Song (309), both only with record on (`sub_42C204`, 0x42C61F and 0x42C65B); their DLL side is not read further]; no path rb models sends them |
 | 33 | Full reset |
 | 41 | Device data `[dev, sub, payload]` (parameters and patterns) |
 | 55 / 56 | Load a mod sample bank / select the built-in bank |
@@ -799,7 +806,11 @@ after each pair.
   - **909:** BD-A, BD-B, SD, LT, MT, HT, RS, CP, CH, OH, Crash, Ride. [C] task-025: the audio slot
     0x1002B6F0 calls FILTER `+0x1904`, `+0x1908`, DUAL `+0x190C`, PITCHED `+0x18F0`, `+0x18F4`,
     `+0x18F8`, SIMPLE `+0x18E0`..`+0x18EC`, PITCHED `+0x18FC`, `+0x1900` in this order.
-  - [G] For export the per-instrument ReWire outputs are null, so everything sums into bus 0.
+  - [C] task-257: the audio slot gets the device's entry of the 18-entry output array and reads
+    the six after it (808: entries 5..10 from 0x100280B0, 909: 12..17 from 0x1002B6F0), one per
+    voice group (BD, SD, Tom, Per, HH, CY). For export they are null, so every voice sums into
+    the device's bus; a non-null entry (a ReWire host's buffer) is zeroed and its group renders
+    there instead, out of the bus. `docs/rewire.md`.
 
 ### 7.2 Triggering and accent [C]
 

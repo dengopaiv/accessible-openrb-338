@@ -104,7 +104,7 @@ fn a_restored_state_plays_as_the_saved_one() {
 }
 
 /// A new instance is in Note Mode, and each mode survives a save and a restore (the persisted
-/// fields are what CLAP and VST3 state both carry, through nice-plug).
+/// fields are what the VST3 state carries, through nice-plug).
 #[test]
 fn the_mode_defaults_to_note_and_is_kept_in_the_state() {
     use orb_plugin::instance::Mode;
@@ -123,6 +123,47 @@ fn the_mode_defaults_to_note_and_is_kept_in_the_state() {
         restore(&b, &saved);
         assert_eq!(b.mode(), m, "{m:?} survives the state");
     }
+}
+
+/// task-300: Options > Output Routing survives a save and a restore, by its stable keys; a state
+/// without it (the released build's, v2026.1118.0919) restores with every box checked.
+#[test]
+fn the_output_routing_is_kept_in_the_state() {
+    use orb_engine::frame::OutputRouting;
+    assert_eq!(OrbParams::new().routing(), OutputRouting::default());
+    let a = with_song("full_mix");
+    let mut r = OutputRouting::default();
+    r.to_mix[1] = false;
+    r.to_808[2] = false;
+    r.to_909[10] = false;
+    a.set_routing(r);
+    let saved = save(&a);
+    let json = &saved.1["orb"];
+    for key in [
+        "\"mix.303-2\":false",
+        "\"808.lt\":false",
+        "\"909.rc\":false",
+        "\"808.bd\":true",
+    ] {
+        assert!(json.contains(key), "{key} in {json:.200}");
+    }
+    let b = OrbParams::new();
+    restore(&b, &saved);
+    assert_eq!(b.routing(), r);
+    // File > New keeps it
+    b.new_song().unwrap();
+    assert_eq!(b.routing(), r);
+    // a state without the key: everything checked, the rest restored
+    let mut old = saved.clone();
+    let mut v: serde_json::Value = serde_json::from_str(&old.1["orb"]).unwrap();
+    v.as_object_mut().unwrap().remove("routing").unwrap();
+    old.1.insert("orb".into(), v.to_string());
+    let c = OrbParams::new();
+    c.set_routing(r);
+    restore(&c, &old);
+    assert_eq!(c.routing(), OutputRouting::default());
+    assert_eq!(c.main().last_error, None);
+    assert_eq!(c.main().doc.song, a.main().doc.song);
 }
 
 #[test]
@@ -178,6 +219,58 @@ fn a_bad_state_gives_a_new_song() {
     assert_eq!(p.main().doc.song, None);
     let mut core = activate(&p, 44_100);
     host(&p, &mut core, 1000, 100, &[]);
+}
+
+/// The bytes of pattern `p` of row `r` in the patterns of a view.
+fn pattern_of(patterns: &[Vec<u8>; 4], r: usize, p: usize) -> &[u8] {
+    let len = if r < 2 { 98 } else { 194 };
+    &patterns[r][p * len..(p + 1) * len]
+}
+
+/// task-288: a new instance, and File > New, hold the template in A1 of each row; every other
+/// pattern is the same empty one.
+#[test]
+fn a_new_instance_and_file_new_hold_the_template() {
+    let template = orb_ui::template::a1();
+    let check = |p: &OrbParams, what: &str| {
+        let (_, patterns) = p.view(&p.values());
+        for (r, want) in template.iter().enumerate() {
+            assert_eq!(pattern_of(&patterns, r, 0), want, "{what}: A1 of row {r}");
+            for q in 2..32 {
+                assert_eq!(
+                    pattern_of(&patterns, r, q),
+                    pattern_of(&patterns, r, 1),
+                    "{what}: pattern {q} of row {r}"
+                );
+            }
+            assert_ne!(pattern_of(&patterns, r, 1), want, "{what}: row {r}");
+        }
+    };
+    check(&OrbParams::new(), "new instance");
+    let q = with_song("full_mix");
+    q.new_song().unwrap();
+    check(&q, "File > New");
+}
+
+/// task-288: a saved state loads unchanged: one with no patterns of its own (saved before the
+/// first build) does not get the template.
+#[test]
+fn a_saved_state_does_not_get_the_template() {
+    let p = OrbParams::new();
+    let mut f = BTreeMap::new();
+    f.insert(
+        "orb".to_string(),
+        concat!(
+            "{\"version\":1,\"song\":null,\"patterns\":[\"\",\"\",\"\",\"\"],\"vintage\":null,",
+            "\"mod\":null,\"editor_size\":null,\"mode\":\"latch\",\"preview\":null}"
+        )
+        .to_string(),
+    );
+    p.deserialize_fields(&f);
+    assert!(p.main().last_error.is_none(), "{:?}", p.main().last_error);
+    assert!(p.main().doc.patterns.iter().all(|a| a.is_empty()));
+    let (_, patterns) = p.view(&p.values());
+    assert_ne!(pattern_of(&patterns, 0, 0), orb_ui::template::a1()[0]);
 }
 
 #[test]

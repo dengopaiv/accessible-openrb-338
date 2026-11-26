@@ -974,3 +974,144 @@ fn a_pool_copy_keeps_the_capacity() {
     }
     assert_eq!(s.recorded(4).len(), 1);
 }
+
+fn tev(tick: u32, ctrl: u8, value: u8) -> song::TrackEvent {
+    song::TrackEvent { tick, ctrl, value }
+}
+
+fn listed(s: &Sequencer, i: usize) -> Vec<(i32, u8, u8)> {
+    s.events(i)
+        .iter()
+        .map(|e| (e.tick, e.ctrl, e.value))
+        .collect()
+}
+
+/// Song msg 28's delete (`sub_1001FD70` → `sub_10014910(0, 0x7FFFFFFF)`): every node but those
+/// at tick 0 goes; the recording lists stay; the applied pointer stays on its node or moves
+/// back over the removed ones.
+#[test]
+fn clear_tracks_keeps_tick_0() {
+    let mut s = Sequencer::default();
+    let evs = [
+        tev(0, 2, 1),
+        tev(0, 3, 1),
+        tev(24, 2, 2),
+        tev(768, 3, 4),
+        tev(767_208, 2, 9),
+    ];
+    assert!(s.add_events(1, &evs));
+    s.tracks[1].chase(&s.pool, 768);
+    assert_eq!(s.tracks[1].next(), 4);
+    let mut d = probes(&Log::default());
+    s.set_song_mode(1, &mut d);
+    s.set_record(1, &mut d);
+    s.record_hook(Device::Tb303_1, 4, 7);
+    let rev = s.revision;
+    s.clear_tracks();
+    assert_eq!(listed(&s, 1), [(0, 3, 1), (0, 2, 1)]);
+    assert_eq!(s.tracks[1].next(), 2);
+    assert_eq!(s.recorded(1).len(), 1);
+    assert!(s.revision > rev);
+}
+
+/// Song msg 29's first steps: the state at the loop end goes in there (controllers ascending,
+/// each before the tick's first node, an existing node of the controller taking the value in
+/// its place), then `start <= tick < end` is cleared but tick 0; with record on the state also
+/// goes into the recording list (`sub_10020350`, 0x100203DE).
+#[test]
+fn clear_range_carries_the_end_state() {
+    for record in [false, true] {
+        let mut s = Sequencer::default();
+        let evs = [
+            tev(0, 2, 1),
+            tev(768, 2, 2),
+            tev(1536, 5, 3),
+            tev(2304, 2, 4),
+            tev(2304, 3, 6),
+            tev(3072, 2, 5),
+        ];
+        assert!(s.add_events(1, &evs));
+        s.globals.byte2 = record as u8;
+        s.clear_range(768, 2304);
+        assert_eq!(
+            listed(&s, 1),
+            [
+                (0, 2, 1),
+                (2304, 5, 3),
+                (2304, 3, 6),
+                (2304, 2, 4),
+                (3072, 2, 5)
+            ],
+            "record {record}"
+        );
+        let rec: Vec<_> = s
+            .recorded(1)
+            .iter()
+            .map(|e| (e.tick, e.ctrl, e.value))
+            .collect();
+        if record {
+            assert_eq!(rec, [(2304, 5, 3), (2304, 3, 6), (2304, 2, 4)]);
+        } else {
+            assert!(rec.is_empty());
+        }
+    }
+}
+
+/// `sub_1001FDC0`: in song mode every track is chased to the current tick and applied; in
+/// pattern mode nothing.
+#[test]
+fn refresh_chases_in_song_mode_only() {
+    let mut r = Rig::new(120_000);
+    assert!(r.seq.add_events(3, &[tev(0, 2, 7), tev(48, 2, 8)]));
+    r.seq.refresh(&mut r.dev);
+    assert!(r.take().is_empty());
+    r.seq.set_song_mode(1, &mut r.dev);
+    r.seq.pos = 30.0;
+    r.take();
+    r.seq.refresh(&mut r.dev);
+    assert_eq!(r.take(), ["808 p2=7"]);
+    assert_eq!(r.seq.pos, 30.0);
+}
+
+/// The cost of msg 29's track work, orb's Undo snapshot and its Undo on a song of 99000
+/// events, which orb runs in the audio callback (`cargo test --release -p orb-engine --lib --
+/// --ignored init_cost --nocapture`).
+#[test]
+#[ignore]
+fn init_cost() {
+    let mut s = Sequencer::default();
+    for t in 0..9 {
+        let evs: Vec<_> = (0..11_000u32)
+            .map(|k| tev(24 * (k / 4 + 1), 2 + (k % 4) as u8, (k % 100) as u8))
+            .collect();
+        assert!(s.add_events(t, &evs));
+    }
+    // orb's Undo (task-306): the snapshot copy before the command, in the callback
+    let mut snapshot = Pool::new();
+    let t0 = std::time::Instant::now();
+    snapshot.copy_from(&s.pool);
+    let copy_cost = t0.elapsed();
+    let t0 = std::time::Instant::now();
+    s.clear_range(768 * 100, 768 * 200);
+    for t in 0..9 {
+        for c in 0..30 {
+            s.track_mut(t).insert(768 * 100, c, 1);
+        }
+    }
+    let loop_cost = t0.elapsed();
+    // the Undo: one swap, the applied pointers and the song-mode chase at the position
+    let mut d = probes(&Log::default());
+    s.set_song_mode(1, &mut d);
+    s.pos = 768.0 * 150.0;
+    let t0 = std::time::Instant::now();
+    s.swap_pool(&mut snapshot, &mut d);
+    let undo_cost = t0.elapsed();
+    assert_eq!(s.pool.used(), 99_000);
+    let t0 = std::time::Instant::now();
+    s.clear_tracks();
+    println!(
+        "snapshot {copy_cost:?}, loop {loop_cost:?}, undo {undo_cost:?}, song {:?}, nodes left {}",
+        t0.elapsed(),
+        s.pool.used()
+    );
+}

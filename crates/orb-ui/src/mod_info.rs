@@ -249,6 +249,8 @@ impl App {
         if !self.mod_info_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.mod_info_serial += 1;
+        } else {
+            self.raise_window(self.mod_info_id());
         }
         self.mod_info_open = true;
     }
@@ -333,7 +335,7 @@ impl App {
         };
         let basis = self.splash_basis(ctx);
         let screen = ctx.content_rect();
-        let max_width = (screen.width() - 56.0)
+        let max_width = (screen.width() - 64.0)
             // the facts (about 330 high with the notes) go under the splash
             .min(screen.height() - 400.0)
             .max(64.0);
@@ -349,7 +351,7 @@ impl App {
             .resizable(false)
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(screen.center())
-            .max_size(screen.size() - egui::vec2(16.0, 16.0))
+            .max_size(screen.size() - egui::vec2(24.0, 24.0))
             // else the content may use only the default area height (400)
             .default_height(screen.height() - 60.0)
             .show(ctx, |ui| {
@@ -358,7 +360,7 @@ impl App {
                 // a window with `vscroll` starts 400 high; this one is as high as its content
                 egui::ScrollArea::vertical()
                     .auto_shrink([true, true])
-                    .max_height(screen.height() - 70.0)
+                    .max_height(screen.height() - 78.0)
                     .show(ui, |ui| {
                         shown = body(ui, sr, &missing, &tex, &details, basis, (ppp, max_width));
                     });

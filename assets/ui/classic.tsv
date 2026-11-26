@@ -1,0 +1,408 @@
+id	section	kind	part	x	y	w	h	params
+panel	-	panel	-	0	0	624	510
+wood_left.bg	wood_left	bg	12062	0	0	16	510
+wood_right.bg	wood_right	bg	12062	608	0	16	510
+transport.bg	transport	bg	12057	16	0	592	50
+pattern1.bg	pattern1	bg	12058	16	50	70	115
+pattern1.focus	pattern1	focus	12068	86	50	4	115	n=2 row=0
+tb303_1.bg	tb303_1	bg	12500	90	50	366	115
+mixer1.bg	mixer1	bg	12060	456	50	70	115
+pattern2.bg	pattern2	bg	12058	16	165	70	115
+pattern2.focus	pattern2	focus	12068	86	165	4	115	n=2 row=1
+tb303_2.bg	tb303_2	bg	12500	90	165	366	115
+mixer2.bg	mixer2	bg	12060	456	165	70	115
+pattern3.bg	pattern3	bg	12058	16	280	70	115
+pattern3.focus	pattern3	focus	12068	86	280	4	115	n=2 row=2
+tr808.bg	tr808	bg	12520	90	280	366	115
+mixer3.bg	mixer3	bg	12060	456	280	70	115
+pattern4.bg	pattern4	bg	12058	16	395	70	115
+pattern4.focus	pattern4	focus	12068	86	395	4	115	n=2 row=3
+tr909.bg	tr909	bg	12564	90	395	366	115
+mixer4.bg	mixer4	bg	12060	456	395	70	115
+master.bg	master	bg	12061	526	50	82	98
+pcf.bg	pcf	bg	12064	526	148	82	111
+delay.bg	delay	bg	12063	526	259	82	93
+dist.bg	dist	bg	12065	526	352	82	65
+comp.bg	comp	bg	12569	526	417	82	93
+logo	transport	logo	-	474	1	134	48
+pattern1.row	pattern1	row	-	16	50	510	115	row=0
+pattern2.row	pattern2	row	-	16	165	510	115	row=1
+pattern3.row	pattern3	row	-	16	280	510	115	row=2
+pattern4.row	pattern4	row	-	16	395	510	115	row=3
+transport.shuffle	transport	knob	12552	27	13	18	19	n=32 span=64
+transport.sync_led	transport	bg	12041	55	2	11	11	n=3
+transport.midi_led	transport	bg	12041	90	2	11	11	n=3
+transport.tempo	transport	display	12015	60	27	27	16	n=11 digits=3
+transport.tempo_up	transport	repeat	12019	89	26	11	9	n=2
+transport.tempo_down	transport	repeat	12020	89	35	11	9	n=2
+transport.mode	transport	switch	12016	177	2	26	19	n=2
+transport.play	transport	trigger	12559	112	21	32	25	n=2
+transport.stop	transport	trigger	12560	144	21	32	25	n=2
+transport.rewind	transport	wind	12561	176	21	32	25	n=2
+transport.ff	transport	wind	12562	208	21	32	25	n=2
+transport.record	transport	toggle	12563	240	21	32	25	n=2
+transport.bar	transport	display	12015	287	27	27	16	n=11 digits=3
+transport.bar_up	transport	wind	12019	316	26	11	9	n=2
+transport.bar_down	transport	wind	12020	316	35	11	9	n=2
+transport.loop	transport	toggle	12551	331	2	17	21	n=2
+transport.loop_start	transport	display	12015	345	27	27	16	n=11 digits=3
+transport.loop_start_up	transport	repeat	12019	374	26	11	9	n=2
+transport.loop_start_down	transport	repeat	12020	374	35	11	9	n=2
+transport.loop_length	transport	display	12015	388	27	27	16	n=11 digits=3
+transport.loop_length_up	transport	repeat	12019	417	26	11	9	n=2
+transport.loop_length_down	transport	repeat	12020	417	35	11	9	n=2
+pattern1.on	pattern1	toggle	12556	20	54	13	14	n=2
+pattern1.pattern1	pattern1	grid	-	17	69	17	20
+pattern1.pattern2	pattern1	grid	-	34	69	17	20
+pattern1.pattern3	pattern1	grid	-	51	69	17	20
+pattern1.pattern4	pattern1	grid	-	68	69	17	20
+pattern1.pattern5	pattern1	grid	-	17	89	17	20
+pattern1.pattern6	pattern1	grid	-	34	89	17	20
+pattern1.pattern7	pattern1	grid	-	51	89	17	20
+pattern1.pattern8	pattern1	grid	-	68	89	17	20
+pattern1.bankA	pattern1	grid	-	17	108	17	30
+pattern1.bankB	pattern1	grid	-	34	108	17	30
+pattern1.bankC	pattern1	grid	-	51	108	17	30
+pattern1.bankD	pattern1	grid	-	68	108	17	30
+pattern1.grid	pattern1	pick	12554	17	69	68	40	n=9 v=1 base=1 of=pattern1.pattern1,pattern1.pattern2,pattern1.pattern3,pattern1.pattern4,pattern1.pattern5,pattern1.pattern6,pattern1.pattern7,pattern1.pattern8
+pattern1.banks	pattern1	pick	12555	17	108	68	30	n=4 v=1 of=pattern1.bankA,pattern1.bankB,pattern1.bankC,pattern1.bankD
+pattern1.shuffle	pattern1	toggle	12571	19	143	18	20	n=2
+pattern1.steps	pattern1	display	12015	52	145	19	16	n=11 digits=2
+pattern1.steps_up	pattern1	repeat	12019	72	144	11	9	n=2
+pattern1.steps_down	pattern1	repeat	12020	72	153	11	9	n=2
+pattern2.on	pattern2	toggle	12556	20	169	13	14	n=2
+pattern2.pattern1	pattern2	grid	-	17	184	17	20
+pattern2.pattern2	pattern2	grid	-	34	184	17	20
+pattern2.pattern3	pattern2	grid	-	51	184	17	20
+pattern2.pattern4	pattern2	grid	-	68	184	17	20
+pattern2.pattern5	pattern2	grid	-	17	204	17	20
+pattern2.pattern6	pattern2	grid	-	34	204	17	20
+pattern2.pattern7	pattern2	grid	-	51	204	17	20
+pattern2.pattern8	pattern2	grid	-	68	204	17	20
+pattern2.bankA	pattern2	grid	-	17	223	17	30
+pattern2.bankB	pattern2	grid	-	34	223	17	30
+pattern2.bankC	pattern2	grid	-	51	223	17	30
+pattern2.bankD	pattern2	grid	-	68	223	17	30
+pattern2.grid	pattern2	pick	12554	17	184	68	40	n=9 v=1 base=1 of=pattern2.pattern1,pattern2.pattern2,pattern2.pattern3,pattern2.pattern4,pattern2.pattern5,pattern2.pattern6,pattern2.pattern7,pattern2.pattern8
+pattern2.banks	pattern2	pick	12555	17	223	68	30	n=4 v=1 of=pattern2.bankA,pattern2.bankB,pattern2.bankC,pattern2.bankD
+pattern2.shuffle	pattern2	toggle	12571	19	258	18	20	n=2
+pattern2.steps	pattern2	display	12015	52	260	19	16	n=11 digits=2
+pattern2.steps_up	pattern2	repeat	12019	72	259	11	9	n=2
+pattern2.steps_down	pattern2	repeat	12020	72	268	11	9	n=2
+pattern3.on	pattern3	toggle	12556	20	284	13	14	n=2
+pattern3.pattern1	pattern3	grid	-	17	299	17	20
+pattern3.pattern2	pattern3	grid	-	34	299	17	20
+pattern3.pattern3	pattern3	grid	-	51	299	17	20
+pattern3.pattern4	pattern3	grid	-	68	299	17	20
+pattern3.pattern5	pattern3	grid	-	17	319	17	20
+pattern3.pattern6	pattern3	grid	-	34	319	17	20
+pattern3.pattern7	pattern3	grid	-	51	319	17	20
+pattern3.pattern8	pattern3	grid	-	68	319	17	20
+pattern3.bankA	pattern3	grid	-	17	338	17	30
+pattern3.bankB	pattern3	grid	-	34	338	17	30
+pattern3.bankC	pattern3	grid	-	51	338	17	30
+pattern3.bankD	pattern3	grid	-	68	338	17	30
+pattern3.grid	pattern3	pick	12554	17	299	68	40	n=9 v=1 base=1 of=pattern3.pattern1,pattern3.pattern2,pattern3.pattern3,pattern3.pattern4,pattern3.pattern5,pattern3.pattern6,pattern3.pattern7,pattern3.pattern8
+pattern3.banks	pattern3	pick	12555	17	338	68	30	n=4 v=1 of=pattern3.bankA,pattern3.bankB,pattern3.bankC,pattern3.bankD
+pattern3.shuffle	pattern3	toggle	12571	19	373	18	20	n=2
+pattern3.steps	pattern3	display	12015	52	375	19	16	n=11 digits=2
+pattern3.steps_up	pattern3	repeat	12019	72	374	11	9	n=2
+pattern3.steps_down	pattern3	repeat	12020	72	383	11	9	n=2
+pattern4.on	pattern4	toggle	12556	20	399	13	14	n=2
+pattern4.pattern1	pattern4	grid	-	17	414	17	20
+pattern4.pattern2	pattern4	grid	-	34	414	17	20
+pattern4.pattern3	pattern4	grid	-	51	414	17	20
+pattern4.pattern4	pattern4	grid	-	68	414	17	20
+pattern4.pattern5	pattern4	grid	-	17	434	17	20
+pattern4.pattern6	pattern4	grid	-	34	434	17	20
+pattern4.pattern7	pattern4	grid	-	51	434	17	20
+pattern4.pattern8	pattern4	grid	-	68	434	17	20
+pattern4.bankA	pattern4	grid	-	17	453	17	30
+pattern4.bankB	pattern4	grid	-	34	453	17	30
+pattern4.bankC	pattern4	grid	-	51	453	17	30
+pattern4.bankD	pattern4	grid	-	68	453	17	30
+pattern4.grid	pattern4	pick	12554	17	414	68	40	n=9 v=1 base=1 of=pattern4.pattern1,pattern4.pattern2,pattern4.pattern3,pattern4.pattern4,pattern4.pattern5,pattern4.pattern6,pattern4.pattern7,pattern4.pattern8
+pattern4.banks	pattern4	pick	12555	17	453	68	30	n=4 v=1 of=pattern4.bankA,pattern4.bankB,pattern4.bankC,pattern4.bankD
+pattern4.shuffle	pattern4	toggle	12571	19	488	18	20	n=2
+pattern4.steps	pattern4	display	12015	52	490	19	16	n=11 digits=2
+pattern4.steps_up	pattern4	repeat	12019	72	489	11	9	n=2
+pattern4.steps_down	pattern4	repeat	12020	72	498	11	9	n=2
+tb303_1.wave	tb303_1	hswitch	12504	114	60	16	12	n=2
+tb303_1.tune	tb303_1	knob	12507	162	62	30	30	n=54 span=62
+tb303_1.cutoff	tb303_1	knob	12507	195	62	30	30	n=54 span=62
+tb303_1.reso	tb303_1	knob	12507	228	62	30	30	n=54 span=62
+tb303_1.envmod	tb303_1	knob	12507	261	62	30	30	n=54 span=62
+tb303_1.decay	tb303_1	knob	12507	294	62	30	30	n=54 span=62
+tb303_1.accent	tb303_1	knob	12507	327	62	30	30	n=54 span=62
+tb303_1.edit_step	tb303_1	display	12015	420	75	19	16	n=11 digits=2
+tb303_1.pitch_button	tb303_1	trigger	12510	110	124	15	8	n=2
+tb303_1.pitch_led	tb303_1	led	12506	113	116	8	8	n=2
+tb303_1.clear	tb303_1	trigger	12502	108	146	17	10	n=2
+tb303_1.key0	tb303_1	trigger	12501	142	139	9	16	n=2
+tb303_1.key0_led	tb303_1	led	12505	142	131	8	8	n=2
+tb303_1.key2	tb303_1	trigger	12501	163	139	9	16	n=2
+tb303_1.key2_led	tb303_1	led	12505	163	131	8	8	n=2
+tb303_1.key4	tb303_1	trigger	12501	184	139	9	16	n=2
+tb303_1.key4_led	tb303_1	led	12505	184	131	8	8	n=2
+tb303_1.key5	tb303_1	trigger	12501	205	139	9	16	n=2
+tb303_1.key5_led	tb303_1	led	12505	205	131	8	8	n=2
+tb303_1.key7	tb303_1	trigger	12501	226	139	9	16	n=2
+tb303_1.key7_led	tb303_1	led	12505	226	131	8	8	n=2
+tb303_1.key9	tb303_1	trigger	12501	247	139	9	16	n=2
+tb303_1.key9_led	tb303_1	led	12505	247	131	8	8	n=2
+tb303_1.key11	tb303_1	trigger	12501	268	139	9	16	n=2
+tb303_1.key11_led	tb303_1	led	12505	268	131	8	8	n=2
+tb303_1.key12	tb303_1	trigger	12501	289	139	9	16	n=2
+tb303_1.key12_led	tb303_1	led	12505	289	131	8	8	n=2
+tb303_1.key1	tb303_1	trigger	12509	153	113	8	15	n=2
+tb303_1.key1_led	tb303_1	led	12506	152	105	8	8	n=2
+tb303_1.key3	tb303_1	trigger	12509	174	113	8	15	n=2
+tb303_1.key3_led	tb303_1	led	12506	173	105	8	8	n=2
+tb303_1.key6	tb303_1	trigger	12509	216	113	8	15	n=2
+tb303_1.key6_led	tb303_1	led	12506	215	105	8	8	n=2
+tb303_1.key8	tb303_1	trigger	12509	237	113	8	15	n=2
+tb303_1.key8_led	tb303_1	led	12506	236	105	8	8	n=2
+tb303_1.key10	tb303_1	trigger	12509	258	113	8	15	n=2
+tb303_1.key10_led	tb303_1	led	12506	257	105	8	8	n=2
+tb303_1.down	tb303_1	trigger	12501	314	139	9	16	n=2
+tb303_1.down_led	tb303_1	led	12505	314	131	8	8	n=2
+tb303_1.up	tb303_1	trigger	12501	339	139	9	16	n=2
+tb303_1.up_led	tb303_1	led	12505	339	131	8	8	n=2
+tb303_1.accent	tb303_1	trigger	12501	364	139	9	16	n=2
+tb303_1.accent_led	tb303_1	led	12505	364	131	8	8	n=2
+tb303_1.slide	tb303_1	trigger	12501	389	139	9	16	n=2
+tb303_1.slide_led	tb303_1	led	12505	389	131	8	8	n=2
+tb303_1.note_led	tb303_1	led	12505	336	109	8	8	n=2
+tb303_1.rest_led	tb303_1	led	12505	374	109	8	8	n=2
+tb303_1.note_pause	tb303_1	trigger	12502	384	108	17	10	n=2
+tb303_1.back	tb303_1	trigger	12502	418	112	17	10	n=2
+tb303_1.step	tb303_1	trigger	12503	415	140	25	17	n=2
+tb303_2.wave	tb303_2	hswitch	12504	114	175	16	12	n=2
+tb303_2.tune	tb303_2	knob	12507	162	177	30	30	n=54 span=62
+tb303_2.cutoff	tb303_2	knob	12507	195	177	30	30	n=54 span=62
+tb303_2.reso	tb303_2	knob	12507	228	177	30	30	n=54 span=62
+tb303_2.envmod	tb303_2	knob	12507	261	177	30	30	n=54 span=62
+tb303_2.decay	tb303_2	knob	12507	294	177	30	30	n=54 span=62
+tb303_2.accent	tb303_2	knob	12507	327	177	30	30	n=54 span=62
+tb303_2.edit_step	tb303_2	display	12015	420	190	19	16	n=11 digits=2
+tb303_2.pitch_button	tb303_2	trigger	12510	110	239	15	8	n=2
+tb303_2.pitch_led	tb303_2	led	12506	113	231	8	8	n=2
+tb303_2.clear	tb303_2	trigger	12502	108	261	17	10	n=2
+tb303_2.key0	tb303_2	trigger	12501	142	254	9	16	n=2
+tb303_2.key0_led	tb303_2	led	12505	142	246	8	8	n=2
+tb303_2.key2	tb303_2	trigger	12501	163	254	9	16	n=2
+tb303_2.key2_led	tb303_2	led	12505	163	246	8	8	n=2
+tb303_2.key4	tb303_2	trigger	12501	184	254	9	16	n=2
+tb303_2.key4_led	tb303_2	led	12505	184	246	8	8	n=2
+tb303_2.key5	tb303_2	trigger	12501	205	254	9	16	n=2
+tb303_2.key5_led	tb303_2	led	12505	205	246	8	8	n=2
+tb303_2.key7	tb303_2	trigger	12501	226	254	9	16	n=2
+tb303_2.key7_led	tb303_2	led	12505	226	246	8	8	n=2
+tb303_2.key9	tb303_2	trigger	12501	247	254	9	16	n=2
+tb303_2.key9_led	tb303_2	led	12505	247	246	8	8	n=2
+tb303_2.key11	tb303_2	trigger	12501	268	254	9	16	n=2
+tb303_2.key11_led	tb303_2	led	12505	268	246	8	8	n=2
+tb303_2.key12	tb303_2	trigger	12501	289	254	9	16	n=2
+tb303_2.key12_led	tb303_2	led	12505	289	246	8	8	n=2
+tb303_2.key1	tb303_2	trigger	12509	153	228	8	15	n=2
+tb303_2.key1_led	tb303_2	led	12506	152	220	8	8	n=2
+tb303_2.key3	tb303_2	trigger	12509	174	228	8	15	n=2
+tb303_2.key3_led	tb303_2	led	12506	173	220	8	8	n=2
+tb303_2.key6	tb303_2	trigger	12509	216	228	8	15	n=2
+tb303_2.key6_led	tb303_2	led	12506	215	220	8	8	n=2
+tb303_2.key8	tb303_2	trigger	12509	237	228	8	15	n=2
+tb303_2.key8_led	tb303_2	led	12506	236	220	8	8	n=2
+tb303_2.key10	tb303_2	trigger	12509	258	228	8	15	n=2
+tb303_2.key10_led	tb303_2	led	12506	257	220	8	8	n=2
+tb303_2.down	tb303_2	trigger	12501	314	254	9	16	n=2
+tb303_2.down_led	tb303_2	led	12505	314	246	8	8	n=2
+tb303_2.up	tb303_2	trigger	12501	339	254	9	16	n=2
+tb303_2.up_led	tb303_2	led	12505	339	246	8	8	n=2
+tb303_2.accent	tb303_2	trigger	12501	364	254	9	16	n=2
+tb303_2.accent_led	tb303_2	led	12505	364	246	8	8	n=2
+tb303_2.slide	tb303_2	trigger	12501	389	254	9	16	n=2
+tb303_2.slide_led	tb303_2	led	12505	389	246	8	8	n=2
+tb303_2.note_led	tb303_2	led	12505	336	224	8	8	n=2
+tb303_2.rest_led	tb303_2	led	12505	374	224	8	8	n=2
+tb303_2.note_pause	tb303_2	trigger	12502	384	223	17	10	n=2
+tb303_2.back	tb303_2	trigger	12502	418	227	17	10	n=2
+tb303_2.step	tb303_2	trigger	12503	415	255	25	17	n=2
+tr808.ac_level	tr808	knob	12521	104	289	13	13	n=36 span=36
+tr808.bd_level	tr808	knob	12521	126	289	13	13	n=36 span=36
+tr808.sd_level	tr808	knob	12521	148	289	13	13	n=36 span=36
+tr808.lt_level	tr808	knob	12521	170	289	13	13	n=36 span=36
+tr808.mt_level	tr808	knob	12521	192	289	13	13	n=36 span=36
+tr808.ht_level	tr808	knob	12521	214	289	13	13	n=36 span=36
+tr808.rs_level	tr808	knob	12521	236	289	13	13	n=36 span=36
+tr808.cp_level	tr808	knob	12521	258	289	13	13	n=36 span=36
+tr808.cb_level	tr808	knob	12521	280	289	13	13	n=36 span=36
+tr808.cy_level	tr808	knob	12521	302	289	13	13	n=36 span=36
+tr808.oh_level	tr808	knob	12521	324	289	13	13	n=36 span=36
+tr808.ch_level	tr808	knob	12521	346	289	13	13	n=36 span=36
+tr808.bd_tone	tr808	knob	12522	126	311	13	13	n=36 span=36
+tr808.bd_decay	tr808	knob	12522	126	334	13	13	n=36 span=36
+tr808.sd_tone	tr808	knob	12522	148	311	13	13	n=36 span=36
+tr808.sd_snappy	tr808	knob	12522	148	334	13	13	n=36 span=36
+tr808.lt_tuning	tr808	knob	12522	170	311	13	13	n=36 span=36
+tr808.mt_tuning	tr808	knob	12522	192	311	13	13	n=36 span=36
+tr808.ht_tuning	tr808	knob	12522	214	311	13	13	n=36 span=36
+tr808.cy_tone	tr808	knob	12522	302	311	13	13	n=36 span=36
+tr808.cy_decay	tr808	knob	12522	302	334	13	13	n=36 span=36
+tr808.oh_decay	tr808	knob	12522	324	334	13	13	n=36 span=36
+tr808.slot3_switch	tr808	vswitch	12523	171	335	11	17	n=2
+tr808.slot4_switch	tr808	vswitch	12523	193	335	11	17	n=2
+tr808.slot5_switch	tr808	vswitch	12523	215	335	11	17	n=2
+tr808.slot6_switch	tr808	vswitch	12523	236	335	11	17	n=2
+tr808.slot7_switch	tr808	vswitch	12523	259	335	11	17	n=2
+tr808.selector	tr808	knob	12525	396	321	29	31	n=12 span=40
+tr808.step1	tr808	steps	12524	106	371	11	5	n=4 frames=-,0
+tr808.step2	tr808	steps	12524	122	371	11	5	n=4 frames=-,0
+tr808.step3	tr808	steps	12524	138	371	11	5	n=4 frames=-,0
+tr808.step4	tr808	steps	12524	154	371	11	5	n=4 frames=-,0
+tr808.step5	tr808	steps	12524	170	371	11	5	n=4 frames=-,1
+tr808.step6	tr808	steps	12524	186	371	11	5	n=4 frames=-,1
+tr808.step7	tr808	steps	12524	202	371	11	5	n=4 frames=-,1
+tr808.step8	tr808	steps	12524	218	371	11	5	n=4 frames=-,1
+tr808.step9	tr808	steps	12524	234	371	11	5	n=4 frames=-,2
+tr808.step10	tr808	steps	12524	250	371	11	5	n=4 frames=-,2
+tr808.step11	tr808	steps	12524	266	371	11	5	n=4 frames=-,2
+tr808.step12	tr808	steps	12524	282	371	11	5	n=4 frames=-,2
+tr808.step13	tr808	steps	12524	298	371	11	5	n=4 frames=-,3
+tr808.step14	tr808	steps	12524	314	371	11	5	n=4 frames=-,3
+tr808.step15	tr808	steps	12524	330	371	11	5	n=4 frames=-,3
+tr808.step16	tr808	steps	12524	346	371	11	5	n=4 frames=-,3
+tr808.strip	tr808	strip	-	106	371	256	17	cells=16
+tr808.legend	tr808	select	-	100	351	356	14	cells=100:22:0 count=12
+tr808.upper	tr808	select	-	168	323	106	12	cells=168:22:3 count=12
+tr909.ac_level	tr909	knob	12565	99	423	12	12	n=41 span=41
+tr909.bd_tune	tr909	knob	12565	120	423	12	12	n=41 span=41
+tr909.bd_attack	tr909	knob	12565	120	449	12	12	n=41 span=41
+tr909.bd_level	tr909	knob	12565	140	423	12	12	n=41 span=41
+tr909.bd_decay	tr909	knob	12565	140	449	12	12	n=41 span=41
+tr909.sd_tune	tr909	knob	12565	162	423	12	12	n=41 span=41
+tr909.sd_tone	tr909	knob	12565	162	449	12	12	n=41 span=41
+tr909.sd_level	tr909	knob	12565	182	423	12	12	n=41 span=41
+tr909.sd_snappy	tr909	knob	12565	182	449	12	12	n=41 span=41
+tr909.lt_tune	tr909	knob	12565	204	423	12	12	n=41 span=41
+tr909.lt_decay	tr909	knob	12565	204	449	12	12	n=41 span=41
+tr909.lt_level	tr909	knob	12565	224	423	12	12	n=41 span=41
+tr909.mt_tune	tr909	knob	12565	246	423	12	12	n=41 span=41
+tr909.mt_decay	tr909	knob	12565	246	449	12	12	n=41 span=41
+tr909.mt_level	tr909	knob	12565	266	423	12	12	n=41 span=41
+tr909.ht_tune	tr909	knob	12565	288	423	12	12	n=41 span=41
+tr909.ht_decay	tr909	knob	12565	288	449	12	12	n=41 span=41
+tr909.ht_level	tr909	knob	12565	308	423	12	12	n=41 span=41
+tr909.rs_level	tr909	knob	12565	330	423	12	12	n=41 span=41
+tr909.cp_level	tr909	knob	12565	350	423	12	12	n=41 span=41
+tr909.ch_decay	tr909	knob	12565	372	449	12	12	n=41 span=41
+tr909.hh_level	tr909	knob	12565	392	423	12	12	n=41 span=41
+tr909.oh_decay	tr909	knob	12565	392	449	12	12	n=41 span=41
+tr909.cc_level	tr909	knob	12565	414	423	12	12	n=41 span=41
+tr909.cc_tune	tr909	knob	12565	414	449	12	12	n=41 span=41
+tr909.rc_level	tr909	knob	12565	434	423	12	12	n=41 span=41
+tr909.rc_tune	tr909	knob	12565	434	449	12	12	n=41 span=41
+tr909.flam	tr909	knob	12565	99	471	12	12	n=41 span=41
+tr909.flam_button	tr909	toggle	12568	98	488	14	14	n=2
+tr909.led_AC	tr909	mark	12567	97	447	6	6	slot=0
+tr909.led_BD	tr909	mark	12567	119	471	6	6	slot=1
+tr909.led_SD	tr909	mark	12567	161	471	6	6	slot=2
+tr909.led_LT	tr909	mark	12567	203	471	6	6	slot=3
+tr909.led_MT	tr909	mark	12567	246	471	6	6	slot=4
+tr909.led_HT	tr909	mark	12567	288	471	6	6	slot=5
+tr909.led_RS	tr909	mark	12567	330	471	6	6	slot=6
+tr909.led_CP	tr909	mark	12567	357	471	6	6	slot=7
+tr909.led_CH	tr909	mark	12567	372	471	6	6	slot=8
+tr909.led_OH	tr909	mark	12567	399	471	6	6	slot=9
+tr909.led_CC	tr909	mark	12567	414	471	6	6	slot=10
+tr909.led_RC	tr909	mark	12567	441	471	6	6	slot=11
+tr909.step1	tr909	steps	12566	120	481	14	8	n=4 frames=-,0,1,3
+tr909.step2	tr909	steps	12566	141	481	14	8	n=4 frames=-,0,1,3
+tr909.step3	tr909	steps	12566	162	481	14	8	n=4 frames=-,0,1,3
+tr909.step4	tr909	steps	12566	183	481	14	8	n=4 frames=-,0,1,3
+tr909.step5	tr909	steps	12566	204	481	14	8	n=4 frames=-,0,1,3
+tr909.step6	tr909	steps	12566	225	481	14	8	n=4 frames=-,0,1,3
+tr909.step7	tr909	steps	12566	246	481	14	8	n=4 frames=-,0,1,3
+tr909.step8	tr909	steps	12566	267	481	14	8	n=4 frames=-,0,1,3
+tr909.step9	tr909	steps	12566	288	481	14	8	n=4 frames=-,0,1,3
+tr909.step10	tr909	steps	12566	309	481	14	8	n=4 frames=-,0,1,3
+tr909.step11	tr909	steps	12566	330	481	14	8	n=4 frames=-,0,1,3
+tr909.step12	tr909	steps	12566	351	481	14	8	n=4 frames=-,0,1,3
+tr909.step13	tr909	steps	12566	372	481	14	8	n=4 frames=-,0,1,3
+tr909.step14	tr909	steps	12566	393	481	14	8	n=4 frames=-,0,1,3
+tr909.step15	tr909	steps	12566	414	481	14	8	n=4 frames=-,0,1,3
+tr909.step16	tr909	steps	12566	435	481	14	8	n=4 frames=-,0,1,3
+tr909.strip	tr909	strip	-	119	481	336	16	cells=16
+tr909.legend	tr909	select	-	94	399	362	14	cells=94:22:0,116:42:1,326:21:6 count=12
+tr909.names	tr909	select	-	116	465	340	15	cells=94:22:0,116:42:1,326:21:6 count=12
+tr909.ac	tr909	select	-	94	439	22	18	cells=94:22:0 count=12
+mixer1.mute	mixer1	toggle	12550	459	54	17	15	n=2
+mixer1.meter	mixer1	meter	12558	507	54	14	15	n=4
+mixer1.dist	mixer1	toggle	12040	498	69	24	11	n=2
+mixer1.pcf	mixer1	radio	12040	498	87	24	11	n=2
+mixer1.comp	mixer1	radio	12040	498	105	24	11	n=2
+mixer1.pan	mixer1	knob	12552	466	75	18	19	n=32 span=64
+mixer1.level	mixer1	fader	12032	466	109	15	54	handle=11 cap=12031
+mixer1.delay	mixer1	knob	12552	498	129	18	19	n=32 span=64
+mixer2.mute	mixer2	toggle	12550	459	169	17	15	n=2
+mixer2.meter	mixer2	meter	12558	507	169	14	15	n=4
+mixer2.dist	mixer2	toggle	12040	498	184	24	11	n=2
+mixer2.pcf	mixer2	radio	12040	498	202	24	11	n=2
+mixer2.comp	mixer2	radio	12040	498	220	24	11	n=2
+mixer2.pan	mixer2	knob	12552	466	190	18	19	n=32 span=64
+mixer2.level	mixer2	fader	12032	466	224	15	54	handle=11 cap=12031
+mixer2.delay	mixer2	knob	12552	498	244	18	19	n=32 span=64
+mixer3.mute	mixer3	toggle	12550	459	284	17	15	n=2
+mixer3.meter	mixer3	meter	12558	507	284	14	15	n=4
+mixer3.dist	mixer3	toggle	12040	498	299	24	11	n=2
+mixer3.pcf	mixer3	radio	12040	498	317	24	11	n=2
+mixer3.comp	mixer3	radio	12040	498	335	24	11	n=2
+mixer3.pan	mixer3	knob	12552	466	305	18	19	n=32 span=64
+mixer3.level	mixer3	fader	12032	466	339	15	54	handle=11 cap=12031
+mixer3.delay	mixer3	knob	12552	498	359	18	19	n=32 span=64
+mixer4.mute	mixer4	toggle	12550	459	399	17	15	n=2
+mixer4.meter	mixer4	meter	12558	507	399	14	15	n=4
+mixer4.dist	mixer4	toggle	12040	498	414	24	11	n=2
+mixer4.pcf	mixer4	radio	12040	498	432	24	11	n=2
+mixer4.comp	mixer4	radio	12040	498	450	24	11	n=2
+mixer4.pan	mixer4	knob	12552	466	420	18	19	n=32 span=64
+mixer4.level	mixer4	fader	12032	466	454	15	54	handle=11 cap=12031
+mixer4.delay	mixer4	knob	12552	498	474	18	19	n=32 span=64
+master.meter_l	master	meter	12557	542	74	15	56	n=11 v=1
+master.meter_r	master	meter	12557	576	74	15	56	n=11 v=1
+master.fader	master	fader	12032	559	75	15	54	handle=11 cap=12031
+master.comp	master	radio	12040	568	131	24	11	n=2
+pcf.on	pcf	toggle	12066	529	150	16	16	n=2
+pcf.meter	pcf	meter	12067	590	150	13	16	n=4
+pcf.pattern	pcf	display	12015	536	171	18	16	n=11 digits=2
+pcf.pattern_up	pcf	repeat	12019	555	170	11	9	n=2
+pcf.pattern_down	pcf	repeat	12020	555	179	11	9	n=2
+pcf.mode	pcf	vswitch	12017	575	169	9	18	n=2
+pcf.freq	pcf	fader	12030	530	203	15	45	handle=11 cap=12031
+pcf.q	pcf	fader	12030	549	203	15	45	handle=11 cap=12031
+pcf.amt	pcf	fader	12030	568	203	15	45	handle=11 cap=12031
+pcf.dec	pcf	fader	12030	587	203	15	45	handle=11 cap=12031
+delay.on	delay	toggle	12066	529	262	16	16	n=2
+delay.meter	delay	meter	12067	590	262	13	16	n=4
+delay.steps	delay	display	12015	535	282	19	16	n=11 digits=2
+delay.steps_up	delay	repeat	12019	555	281	11	9	n=2
+delay.steps_down	delay	repeat	12020	555	290	11	9	n=2
+delay.triplet	delay	vswitch	12017	575	281	9	18	n=2
+delay.pan	delay	knob	12552	538	317	18	19	n=32 span=64
+delay.feedback	delay	knob	12552	579	317	18	19	n=32 span=64
+dist.on	dist	toggle	12066	529	355	16	16	n=2
+dist.meter	dist	meter	12067	590	355	13	16	n=4
+dist.amount	dist	knob	12552	538	380	18	19	n=32 span=64
+dist.shape	dist	knob	12552	579	380	18	19	n=32 span=64
+comp.on	comp	toggle	12066	529	420	16	16	n=2
+comp.meter	comp	meter	12067	590	420	13	16	n=4
+comp.gr1	comp	meter	12570	534	442	7	10	n=2 v=1 src=0,0
+comp.gr2	comp	meter	12570	541	442	7	10	n=2 v=1 src=7,0
+comp.gr3	comp	meter	12570	548	442	7	10	n=2 v=1 src=14,0
+comp.gr4	comp	meter	12570	555	442	7	10	n=2 v=1 src=21,0
+comp.gr5	comp	meter	12570	562	442	7	10	n=2 v=1 src=28,0
+comp.gr6	comp	meter	12570	569	442	7	10	n=2 v=1 src=35,0
+comp.gr7	comp	meter	12570	576	442	7	10	n=2 v=1 src=42,0
+comp.gr8	comp	meter	12570	583	442	7	10	n=2 v=1 src=49,0
+comp.gr9	comp	meter	12570	590	442	7	10	n=2 v=1 src=56,0
+comp.ratio	comp	knob	12552	538	473	18	19	n=32 span=64
+comp.threshold	comp	knob	12552	579	473	18	19	n=32 span=64

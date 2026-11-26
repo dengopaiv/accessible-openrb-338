@@ -76,10 +76,12 @@ the font files themselves are not shipped with the app. The wordmark keeps its o
 - Draw a part at scale `s` (window scale times pixels per point) by rasterizing it at
   `((w + 2b) s, (h + 2b) s)` pixels (decision task-040). All art is vector; the one bitmap the
   panel shows is the mod's splash, which the app paints.
-- `layout.tsv` has one line per control (`id section kind part x y w h`): the control's
-  rectangle in **panel pixels** (origin top-left of the 624 x 510 panel). `kind` is the spec's
-  class. `part` is the part to draw (the default state), or the family name for a composed
-  control (see below).
+- `layout.tsv` is the modern skin's layout table (docs/ui_spec.md section 22): one line per
+  control or piece of the skin (`id section kind part x y w h [params]`), the rectangle in
+  **panel pixels** (origin top-left of the 624 x 510 panel). For a control `kind` is the
+  spec's class and `part` is the part to draw (the default state), or the family name for a
+  composed control (see below). See "The layout table" below for the other kinds and the
+  parameters.
 - `panel.svg` is the whole panel composed from the parts in the mockup's demo state (song mode,
   playing, loop on, tempo 140, bar 9; row 1 focused; pattern row 2 off with SHUFFLE lit; 303
   number 1 in pitch mode with a square wave and a rest, number 2 with BACK and STEP held; BD
@@ -268,11 +270,57 @@ track and handle; display: digit cells), then the foregrounds, then the selectio
 `docs/ui_spec.md` has the behavior (which values the controls show and send). The test
 `controls_are_inside_the_panel` checks that every control of `layout.tsv` lies inside the panel.
 
+## The layout table
+
+`layout.tsv` is all the app knows of this art besides the parts (task-266, docs/ui_spec.md
+section 22): the app's generic SVG renderer names no part itself, so another SVG theme is
+another table and another part set. Columns: `id section kind part x y w h params`, tab
+separated, a header line; `params` (optional) is `key=value` pairs separated by spaces; a part
+`-` is none.
+
+| Kind | What | Parameters |
+|---|---|---|
+| `panel` | the skin's size (its units; the aspect is 624:510) | |
+| `bg` | a background, drawn first, in the table's order | `plugin=` the plugin's variant |
+| `logo` | the wordmark (drawn with the backgrounds; animated when the set has `<part>_open` and its other pieces) and the logo's click area | |
+| `focus` | a row's focus bar: `part` when the row has no focus | `row=` 0..3, `on=` |
+| `row` | a row's focus click area | `row=` |
+| a control kind | a control (section 2's classes; the ids are the model's) | below |
+| `fg` | static art over the controls | |
+| `strip` | a drum machine's step strip (the section names it) | `cells=` (16) |
+| `select` | a drum machine's instrument hit area, tested in the table's order | `cells=x0:w:first,...`, `count=`, `open=1` |
+| `mark` | a selection mark: `part` while its instrument is selected | `slot=`, `upper=1` (the 808's upper labels), `lit=`, `litsel=` |
+
+The controls' parameters: a knob's `span` (its vertical drag for the full range, the original's
+62, 36, 41 or 64); a fader's `handle` (its track is the rectangle's height); a header meter's
+`map` (the part number of each of the 11 meter states); a gain-reduction LED's `on` and `off`;
+the mod window's `glass`, `picture` and `name` (x,y,w,h in the window), `font` and `ink`
+(`rrggbb`).
+
+The part names the renderer composes from a row's part: the family (the name up to its last
+`_`) and a state (`on`, `off`, `rest`, `pressed`, `lit`, a number); `<family><on|off>_pressed`
+while a key is held, where the set has it; `<part>_body` and `<part>_pointer` for a knob (the
+pointer turns about the rectangle's center); `<family>handle` for a fader, at the handle part's
+size; `<prefix><digit>` and the blank part of a display's `<prefix>0..9,<blank>`, a cell the
+size of `<prefix>0`.
+
+## The classic table
+
+`classic.tsv` is the classic skin's table (task-267, docs/ui_spec.md section 21), in the same
+format, read by its own renderer (`crates/orb-ui/src/skin/classic.rs`): the original's view
+rectangles and hit areas, each row's `part` a bitmap id of the kit's 58 (`-` for an input-only
+control), drawn in the table's order. Its parameters: `n` (frames), `v=1` (a vertical strip),
+`frame`, `frames=` (state to frame, `-` none), `src=sx,sy` (a part of the frame), `digits=` and
+`pitch=` (a display), `cap=` (a fader's handle bitmap), and the kind `pick` (a strip whose frame
+is `base=` plus the index of the first `of=` control that is on: the pattern grid, the bank
+row). It is written by hand, not by orb-ui-art; edits to `layout.tsv` do not touch it.
+
 ## Notes
 
 - The 8 pattern keys and the bank keys carry their number or letter in the part.
 - `layout.tsv` ids are not unique: `tb303_N.accent` is both the accent knob and the accent flag
-  button. The app keys controls by kind and id.
+  button. The app keys controls by kind, id and place in the table (a skin may show one control
+  twice).
 - The filters (blurs and noise) make the parts slower to rasterize than flat art; the app
   rasterizes the missing parts of a frame in parallel and keeps the old size's textures during a
   resize (docs/ui_spec.md section 19 has the measurements).

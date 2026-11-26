@@ -2,8 +2,8 @@
 id: doc-001
 title: agent-brief
 type: guide
-created_date: '2026-10-26 09:03'
-updated_date: '2026-10-29 08:30'
+created_date: 2026-10-26 09:03
+updated_date: '2026-11-24T09:45:00Z'
 ---
 The shared brief for agents working on OpenRB-338 (the command is `orb`), the Rust reimplementation of the ReBirth RB-338 2.01 audio engine. Read in this order:
 1. The root `AGENTS.md` (the backlog and commit rules).
@@ -101,7 +101,6 @@ Rebase once onto main after your tests pass and before the final commit.
 
 ## Rules that apply to everyone
 
-- **Edit with Edit/Write.** Source is edited with the Edit/Write tools, not sed or python.
 - **Don't expand the task.** A design decision the task does not take, or a change outside its area, becomes a `Decide:` task for @pingw33n with a dependency, and you stop there.
 - **Verify before acting.** Check a claim from written evidence (including `docs/initial_investigation.md`, which was written from a survey and marks guesses with [G]) against the binary before you rely on it. List what you could not confirm.
 - **Report through the backlog.** Your final chat message is the task id plus what the supervisor must do (merge, decide). Nothing is reported only in chat.

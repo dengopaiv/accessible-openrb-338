@@ -8,6 +8,8 @@ use egui::{Context, Key, KeyboardShortcut, ModifierNames, Modifiers, Ui};
 pub const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::N);
 pub const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 pub const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
+/// File > Info.
+pub const INFO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::I);
 /// Edit > Undo.
 pub const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
 /// Edit > Cut, Copy and Paste Pattern, for their text only: the keys arrive as egui's Cut, Copy
@@ -17,13 +19,17 @@ pub const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key
 pub const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
 /// Edit > Duplicate Pattern.
 pub const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
+/// Ctrl/Cmd+E: the focused row's pattern editor, Edit > 303-1, 303-2, 808 or 909 Pattern
+/// Editor... (tasks 274, 280, 281 and 290).
+pub const PATTERN_EDITOR: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::E);
 /// "Program Synth from Keyboard".
 pub const KEYS_SYNTH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);
 /// "Select Patterns from Keyboard".
 pub const KEYS_PATTERNS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
 /// "Choose Mod...", screen reader mode only (task-195).
 pub const CHOOSE_MOD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::M);
-/// In the mod chooser: Mod Info of the selected entry (task-195).
+/// In the mod chooser: Mod Info of the selected entry (task-195). The same key as [`INFO`]
+/// (File > Info): while the chooser is open it takes the key first, elsewhere File > Info does.
 pub const CHOOSER_INFO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::I);
 /// The file browser's path field.
 pub const EDIT_PATH: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::L);
@@ -54,11 +60,13 @@ mod tests {
             NEW,
             OPEN,
             SAVE,
+            INFO,
             UNDO,
             CUT,
             COPY,
             PASTE,
             DUPLICATE,
+            PATTERN_EDITOR,
             KEYS_SYNTH,
             KEYS_PATTERNS,
             CHOOSE_MOD,
@@ -66,7 +74,7 @@ mod tests {
             EDIT_PATH,
         ];
         let keys = [
-            "N", "O", "S", "Z", "X", "C", "V", "D", "F", "G", "M", "I", "L",
+            "N", "O", "S", "I", "Z", "X", "C", "V", "D", "E", "F", "G", "M", "I", "L",
         ];
         for (sc, k) in all.iter().zip(keys) {
             assert_eq!(text_for(sc, true), format!("Cmd+{k}"));

@@ -63,7 +63,7 @@
 //!
 //! # MIDI
 //!
-//! A note-on 0..31 on channel 1..4 (303 #1, 303 #2, 808, 909) in Latch Pattern Mode selects
+//! A note-on 0..31 on channel 1..4 (303-1, 303-2, 808, 909) in Latch Pattern Mode selects
 //! that section's pattern: the pattern controller (as the panel's message), then, while the song
 //! plays, slot 2 on that device (`Command::Relocate`), which takes a pending pattern at once
 //! where the panel's waits for the bar line; with the host stopped only the selection changes.
@@ -73,7 +73,9 @@
 //! open gate plays the song from step 1, free-running. In note mode (task-200) a note-on or
 //! note-off on those channels
 //! plays the device (`Command::Note`, `docs/plugin.md` section 9), whatever the host's
-//! transport does. Every other message goes, when the Standard Mapping is on (off by default),
+//! transport does; there an all-notes-off or all-sound-off (CC 123, CC 120) on one of those
+//! channels, and the host's stop, let go of the notes held (`Command::NotesOff`, task-258).
+//! Every other message goes, when the Standard Mapping is on (off by default),
 //! to it on the remote channel (default 16, [`crate::instance::Shared`]); of its actions the
 //! controls are applied, the transport ones (Play, Stop, Record, Locate) are not: the
 //! transport is the host's. The preview ignores every message.
@@ -92,7 +94,7 @@
 
 use std::sync::Arc;
 
-use orb_engine::frame::{Gate, NoteClock};
+use orb_engine::frame::{Gate, NoteClock, OutputRouting, TAP_WIDTH};
 use orb_engine::seq::TEMPO_STEP;
 use orb_engine::song::Device;
 use orb_player::midi::{Action, Message, StandardMapping, Timed};
@@ -104,6 +106,21 @@ use crate::resample::{Blocks, ENGINE_RATE, Resampler};
 
 /// The frames of one engine block, and of the reported latency at 44.1 kHz.
 pub const BLOCK: usize = 64;
+
+pub use crate::routing::{AUX_OUTPUTS, DEVICE_OUTPUTS};
+
+/// The host's aux output buffers of one call: `aux[k]` is tap k's left and right (as long as
+/// the call's main output; the per-device outputs, task-256, then the drum outputs, task-300,
+/// [`crate::routing`]), `None` when the host gave no buffer: such a bus is skipped.
+pub type AuxOut<'a> = [Option<[&'a mut [f32]; 2]>; AUX_OUTPUTS];
+
+/// One engine block as [`Blocks::next_block`] gives it: the main output, [`BLOCK`] frames of
+/// interleaved stereo int16, and the per-channel taps, [`TAP_WIDTH`] f32 values per frame
+/// ([`orb_player::Audio::taps`]).
+pub struct BlockOut<'a> {
+    pub main: &'a [i16],
+    pub taps: &'a [f32],
+}
 /// The engine's ticks per quarter note (`docs/initial_investigation.md` section 5).
 pub const TICKS_PER_BEAT: f64 = 192.0;
 /// The transport records kept: more than the calls one block can lie back (a call has at least
@@ -113,6 +130,10 @@ const RECORDS: usize = 1024;
 const MAX_TICK: f64 = 1.0e9;
 /// The MIDI actions one message can give (the Standard Mapping gives at most two).
 const ACTIONS: usize = 8;
+/// The channel mode messages that let go of note mode's held notes (task-258): All Sound Off
+/// and All Notes Off.
+const ALL_SOUND_OFF: u8 = 120;
+const ALL_NOTES_OFF: u8 = 123;
 
 /// What the host says about its transport at a call's first frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -188,6 +209,8 @@ struct Engine {
     /// and finds the garbage queue full (`Audio::room_for`), and the process side sends none,
     /// so this stays 0 (task-225); a diagnostic.
     dropped: u64,
+    /// The parameter messages sent ([`Engine::apply_one`]); a diagnostic (task-275).
+    param_messages: u64,
     /// The host rate.
     rate: u32,
     /// The blocks rendered.
@@ -199,6 +222,9 @@ struct Engine {
     /// The block before followed the host's position, which was `last_tick`.
     following: bool,
     last_tick: f64,
+    /// The host played at the block before (its record's transport): its stop lets go of
+    /// note mode's held notes (task-258).
+    host_was_playing: bool,
     /// The newest song seen (the player's load count when it came) and its own tempo,
     /// BPM*1000.
     song: Option<u64>,
@@ -250,6 +276,7 @@ impl Engine {
             return;
         }
         if let Some(c) = params::command(s, v) {
+            self.param_messages += 1;
             self.send(c);
         }
     }
@@ -411,6 +438,12 @@ impl Engine {
         // the block's host timeline frame
         let h = (self.blocks * BLOCK as u64) as f64 * self.rate as f64 / ENGINE_RATE as f64;
         let rec = self.record_at(h);
+        // the host stops: note mode lets go of every held note, which a note-off the host
+        // lost would otherwise keep sliding (task-258)
+        if self.host_was_playing && !rec.t.playing && self.mode == Mode::Note && !self.preview {
+            self.notes_off_all();
+        }
+        self.host_was_playing = rec.t.playing;
         // the host's tempo also in the preview and while the host is stopped (hosts report it
         // then; the user, 2026-11-16); the song's only when the host reports none
         let host_tempo = rec.t.tempo.filter(|t| t.is_finite() && *t > 0.0);
@@ -497,12 +530,31 @@ impl Engine {
         self.send(Command::NoteClock(c));
     }
 
+    /// Note mode's held notes on the four devices are let go (task-258).
+    fn notes_off_all(&mut self) {
+        for device in ROWS {
+            self.send(Command::NotesOff(device));
+        }
+    }
+
     /// One host MIDI message.
     fn message(&mut self, m: &Message) {
         // the MIDI LED counts it even in the preview, which ignores it
         self.audio.midi_received(1);
         if self.previewing() {
             return;
+        }
+        if let Message::ControlChange {
+            channel: c @ 0..=3,
+            controller: ALL_SOUND_OFF | ALL_NOTES_OFF,
+            ..
+        } = *m
+        {
+            // note mode: the section's held notes are let go (task-258); the message then goes
+            // on to the Standard Mapping as any other, which maps neither
+            if self.shared.mode() == Mode::Note {
+                self.send(Command::NotesOff(ROWS[c as usize]));
+            }
         }
         let (c, note, velocity) = match *m {
             Message::NoteOn {
@@ -576,14 +628,21 @@ impl Engine {
 impl Blocks for Engine {
     /// One engine call: the UI side's queued commands, the mode and the preview, the host
     /// sync, then the block.
-    fn next_block(&mut self) -> &[i16] {
+    fn next_block(&mut self) -> BlockOut<'_> {
         self.audio.drain();
         self.modes();
         self.sync();
+        // task-300: Options > Output Routing, read before each block as the mode is
+        self.audio
+            .set_routing(OutputRouting::from_bits(self.shared.routing_bits()));
         self.audio.render_call();
         self.blocks += 1;
         self.mapping.follow(self.audio.last_snapshot());
-        self.audio.output()
+        BlockOut {
+            main: self.audio.output(),
+            // enabled by `Core::new`
+            taps: self.audio.taps().unwrap_or(&[0.0; TAP_WIDTH * BLOCK]),
+        }
     }
 }
 
@@ -618,6 +677,8 @@ enum Out {
     /// `k` in `0..=queued` (the front one is being handed out, its next frame `pos`).
     Direct {
         ring: Box<[[i16; 2 * BLOCK]; AHEAD]>,
+        /// The taps of the blocks in `ring`, slot for slot.
+        taps: Box<[[f32; TAP_WIDTH * BLOCK]; AHEAD]>,
         front: usize,
         queued: usize,
         pos: usize,
@@ -644,12 +705,15 @@ impl Core {
     /// the mixer's full gain (task-226).
     pub fn new(mut audio: Audio, rate: u32, values: &[i32; COUNT], shared: Arc<Shared>) -> Core {
         assert_eq!(audio.call_frames(), BLOCK);
+        // the per-device outputs' taps (task-256), allocated here, on the main thread
+        audio.enable_taps();
         settle(&mut audio);
         let out = if rate == ENGINE_RATE {
             // the block ahead: the first 64 host frames are silence
             Out::Direct {
                 // made here, on the main thread
                 ring: Box::new([[0; 2 * BLOCK]; AHEAD]),
+                taps: Box::new([[0.0; TAP_WIDTH * BLOCK]; AHEAD]),
                 front: 0,
                 queued: 0,
                 pos: 0,
@@ -671,6 +735,7 @@ impl Core {
                 host: *values,
                 shown: *values,
                 dropped: 0,
+                param_messages: 0,
                 rate,
                 blocks: 0,
                 records: vec![Record::default(); RECORDS].into_boxed_slice(),
@@ -678,6 +743,7 @@ impl Core {
                 len: 0,
                 following: false,
                 last_tick: 0.0,
+                host_was_playing: false,
                 song: None,
                 song_tempo: 0,
                 mapping,
@@ -714,6 +780,12 @@ impl Core {
         self.engine.dropped
     }
 
+    /// The parameter messages sent to the engine since the activation (for tests: a host's
+    /// changes that keep a continuous parameter's rounded integer send none, task-275).
+    pub fn param_messages(&self) -> u64 {
+        self.engine.param_messages
+    }
+
     /// Whether the last block followed the host's position (the Sync LED).
     pub fn following(&self) -> bool {
         self.engine.following
@@ -743,7 +815,38 @@ impl Core {
         transport: &HostTransport,
         events: &[HostEvent],
     ) {
+        self.process_aux(
+            l,
+            r,
+            &mut [const { None }; AUX_OUTPUTS],
+            values,
+            transport,
+            events,
+        );
+    }
+
+    /// [`Core::process_with`], and the aux outputs `aux` (task-256, task-300): each bus the
+    /// host gave a buffer for gets its tap over the same frames as `l` and `r`, at the same
+    /// latency; a `None` bus is skipped. `l` and `r` do not depend on `aux` (they do on the
+    /// routing, [`crate::instance::OrbParams::set_routing`]).
+    pub fn process_aux(
+        &mut self,
+        l: &mut [f32],
+        r: &mut [f32],
+        aux: &mut AuxOut,
+        values: &[i32; COUNT],
+        transport: &HostTransport,
+        events: &[HostEvent],
+    ) {
         let n = l.len().min(r.len());
+        // a bus shorter than the call (a host's error) is skipped too
+        for a in aux.iter_mut() {
+            if a.as_ref()
+                .is_some_and(|[al, ar]| al.len() < n || ar.len() < n)
+            {
+                *a = None;
+            }
+        }
         if n == 0 {
             return;
         }
@@ -756,13 +859,13 @@ impl Core {
         for e in events {
             let t = (e.frame as usize).min(n - 1);
             if t > done {
-                self.produce(&mut l[done..t], &mut r[done..t]);
+                self.produce(&mut l[done..t], &mut r[done..t], aux, done);
                 done = t;
             }
             self.render_before(self.frames + t as u64);
             self.engine.message(&e.message);
         }
-        self.produce(&mut l[done..n], &mut r[done..n]);
+        self.produce(&mut l[done..n], &mut r[done..n], aux, done);
         self.frames += n as u64;
     }
 
@@ -794,6 +897,7 @@ impl Core {
         match &mut self.out {
             Out::Direct {
                 ring,
+                taps,
                 front,
                 queued,
                 ..
@@ -802,7 +906,9 @@ impl Core {
                     // at most the playing block and one more (`host` is the next frame to play)
                     assert!(*queued + 1 < AHEAD, "the blocks ahead fit");
                     let slot = (*front + 1 + *queued) % AHEAD;
-                    ring[slot].copy_from_slice(self.engine.next_block());
+                    let b = self.engine.next_block();
+                    ring[slot].copy_from_slice(b.main);
+                    taps[slot].copy_from_slice(b.taps);
                     *queued += 1;
                 }
             }
@@ -810,19 +916,23 @@ impl Core {
         }
     }
 
-    fn produce(&mut self, l: &mut [f32], r: &mut [f32]) {
+    /// Fills `l` and `r`, and frames `at..at + l.len()` of the buses of `aux`.
+    fn produce(&mut self, l: &mut [f32], r: &mut [f32], aux: &mut AuxOut, at: usize) {
         match &mut self.out {
             Out::Direct {
                 ring,
+                taps,
                 front,
                 queued,
                 pos,
             } => {
-                for (ol, or) in l.iter_mut().zip(r.iter_mut()) {
+                for (k, (ol, or)) in l.iter_mut().zip(r.iter_mut()).enumerate() {
                     if *pos == BLOCK {
                         if *queued == 0 {
                             let slot = (*front + 1) % AHEAD;
-                            ring[slot].copy_from_slice(self.engine.next_block());
+                            let b = self.engine.next_block();
+                            ring[slot].copy_from_slice(b.main);
+                            taps[slot].copy_from_slice(b.taps);
                             *queued = 1;
                         }
                         *front = (*front + 1) % AHEAD;
@@ -833,10 +943,18 @@ impl Core {
                     // exact: an int16 over 32768
                     *ol = block[2 * *pos] as f32 / 32768.0;
                     *or = block[2 * *pos + 1] as f32 / 32768.0;
+                    let t = &taps[*front][TAP_WIDTH * *pos..TAP_WIDTH * (*pos + 1)];
+                    for (c, a) in aux.iter_mut().enumerate() {
+                        if let Some([al, ar]) = a {
+                            // the mono tap on both sides
+                            al[at + k] = t[c];
+                            ar[at + k] = t[c];
+                        }
+                    }
                     *pos += 1;
                 }
             }
-            Out::Resampled(rs) => rs.fill(l, r, &mut self.engine),
+            Out::Resampled(rs) => rs.fill(l, r, aux, at, &mut self.engine),
         }
     }
 }

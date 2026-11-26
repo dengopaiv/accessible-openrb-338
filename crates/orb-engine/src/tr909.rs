@@ -23,9 +23,9 @@ mod tests;
 
 use std::sync::Arc;
 
-use crate::drums::{Dual, Filter, Pitched, Simple};
+use crate::drums::{DrumOutput, Dual, Filter, Pitched, Simple, VoiceMut, render_split};
 use crate::frame::{
-    Block, BlockContext, ChannelDevice, Gate, GateClock, SongDevice, Sounding, gate_arm,
+    Block, BlockContext, ChannelDevice, Gate, GateClock, SongDevice, Sounding, Split, gate_arm,
 };
 use crate::process::ProcessState;
 use crate::samples::{Retired, Sample, SampleSet};
@@ -291,6 +291,71 @@ pub struct Tr909 {
     pub note_flam: [Option<NoteFlam>; 12],
 }
 
+/// The 909's own outputs, one per instrument (task-300, the user's decision of 2026-11-25; the
+/// original's ReWire has six groups, channels 12..17, `docs/rewire.md` section 4, 909 slot 14
+/// 0x1002B6F0): the plugin's per-drum outputs and the routing window follow this table and
+/// [`VOICE_OUTPUT`].
+pub const OUTPUTS: [DrumOutput; 11] = [
+    DrumOutput {
+        id: "909.bd",
+        name: "BD",
+        bus: "909 BD",
+    },
+    DrumOutput {
+        id: "909.sd",
+        name: "SD",
+        bus: "909 SD",
+    },
+    DrumOutput {
+        id: "909.lt",
+        name: "LT",
+        bus: "909 LT",
+    },
+    DrumOutput {
+        id: "909.mt",
+        name: "MT",
+        bus: "909 MT",
+    },
+    DrumOutput {
+        id: "909.ht",
+        name: "HT",
+        bus: "909 HT",
+    },
+    DrumOutput {
+        id: "909.rs",
+        name: "RS",
+        bus: "909 RS",
+    },
+    DrumOutput {
+        id: "909.cp",
+        name: "CP",
+        bus: "909 CP",
+    },
+    DrumOutput {
+        id: "909.ch",
+        name: "CH",
+        bus: "909 CH",
+    },
+    DrumOutput {
+        id: "909.oh",
+        name: "OH",
+        bus: "909 OH",
+    },
+    DrumOutput {
+        id: "909.cc",
+        name: "CC",
+        bus: "909 CC",
+    },
+    DrumOutput {
+        id: "909.rc",
+        name: "RC",
+        bus: "909 RC",
+    },
+];
+/// The output of each voice in the render order ([`Tr909::voices`]: BD A, BD B, SD, LT, MT, HT,
+/// RS, CP, CH, OH, crash, ride), an index of [`OUTPUTS`].
+pub const VOICE_OUTPUT: [usize; 12] = [0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
 const SIMPLE_RS: usize = 0;
 const SIMPLE_CP: usize = 1;
 const SIMPLE_CH: usize = 2;
@@ -299,6 +364,28 @@ const FILTER_BD_A: usize = 0;
 const FILTER_BD_B: usize = 1;
 
 impl Tr909 {
+    /// The voices in slot 14's order (0x1002B6F0): BD A, BD B, SD, LT, MT, HT, RS, CP, CH, OH,
+    /// crash, ride.
+    pub fn voices(&mut self) -> [VoiceMut<'_>; 12] {
+        let [a, b] = &mut self.filter;
+        let [lt, mt, ht, cc, rc] = &mut self.pitched;
+        let [rs, cp, ch, oh] = &mut self.simple;
+        [
+            VoiceMut::Filter(a),
+            VoiceMut::Filter(b),
+            VoiceMut::Dual(&mut self.dual),
+            VoiceMut::Pitched(lt),
+            VoiceMut::Pitched(mt),
+            VoiceMut::Pitched(ht),
+            VoiceMut::Simple(rs),
+            VoiceMut::Simple(cp),
+            VoiceMut::Simple(ch),
+            VoiceMut::Simple(oh),
+            VoiceMut::Pitched(cc),
+            VoiceMut::Pitched(rc),
+        ]
+    }
+
     /// The ctor `sub_1002A380`: the parameter defaults in both copies, every pattern 16 empty
     /// steps (`sub_10018D20`, `sub_100197C0`), pattern 0, the enable latch 1, the flam unarmed,
     /// the voices silent.
@@ -775,15 +862,18 @@ impl SongDevice for Tr909 {
         }
     }
 
-    /// Slots 7 (0x10026C40, the 303's) and 8 (0x1002D480) from the song ctor: controllers 0 and
-    /// 1 of the track are quantised to a bar, and a tick-0 event of every controller 0..29 with
-    /// the pattern-mode copy's value in RBS order (`sub_10019624`) is inserted (`sub_1001F900`).
-    fn init_track(&mut self, track: &mut TrackMut) {
+    /// Slot 7 (0x10026C40, the 303's): controllers 0 and 1 of the track are quantised to a bar.
+    fn quantise(&mut self, track: &mut TrackMut) {
         track.set_quant(ENABLED as u8, 32);
         track.set_quant(PATTERN as u8, 32);
+    }
+
+    /// Slot 8 (0x1002D480): an event at `tick` of every controller 0..29 with the pattern-mode
+    /// copy's value in RBS order (`sub_10019624`) is inserted (`sub_1001F900`).
+    fn insert_pattern(&mut self, track: &mut TrackMut, tick: i32) {
         let p = self.params_rbs_order();
         for (c, &v) in p.iter().enumerate().take(INIT_CTRLS) {
-            track.insert(0, c as u8, v);
+            track.insert(tick, c as u8, v);
         }
     }
 }
@@ -874,18 +964,19 @@ impl ChannelDevice for Tr909 {
             self.note_flams(ctx.tick, ctx.tempo as i32);
         }
         bus.fill(0.0);
-        for v in &mut self.filter {
+        for v in self.voices() {
             v.process(bus);
         }
-        self.dual.process(bus);
-        let [lt, mt, ht, cc, rc] = &mut self.pitched;
-        lt.process(bus);
-        mt.process(bus);
-        ht.process(bus);
-        for v in &mut self.simple {
-            v.process(bus);
+    }
+
+    /// Slot 14 with the per-instrument outputs (task-300): an instrument's voices add into its own
+    /// output instead of the bus, as ReWire's group channels 12..17 do (0x1002B718..0x1002B8AF),
+    /// one output per instrument ([`OUTPUTS`], [`render_split`]); the note-mode flams first, as
+    /// [`ChannelDevice::process`].
+    fn process_split(&mut self, bus: &mut Block, split: Split<'_>, ctx: &BlockContext) {
+        if self.note_flam.iter().any(Option::is_some) {
+            self.note_flams(ctx.tick, ctx.tempo as i32);
         }
-        cc.process(bus);
-        rc.process(bus);
+        render_split(self.voices(), &VOICE_OUTPUT, bus, split);
     }
 }

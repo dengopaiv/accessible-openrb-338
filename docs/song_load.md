@@ -370,7 +370,9 @@ there, to the default below.
 | PCF (7) | `sub_10019C10`: 0x100164ED live `+0x38`; 0x100164F8 pattern `+0x40` | `0x10017200`: 0..6, pattern copy |
 | Compressor (8) | `sub_10019B90`: 0x1000E9ED live `+0x38`; 0x1000E9F8 pattern `+0x3D` | `0x1000F420`: 0..2, pattern copy |
 
-Both blocks get the same values, so which one slot 8 reads does not matter at the ctor.
+Both blocks get the same values, so which one slot 8 reads does not matter at the ctor. Slot 8
+takes the tick as its argument: song msgs 28 and 29, Edit's Initialize commands, call it with
+tick 0 and with the loop start, when the pattern copy and the live block can differ (section 14).
 
 The defaults, by controller (= RBS chunk byte, §5), from the stores of the default functions:
 
@@ -1173,3 +1175,112 @@ its tail when the original opens it (and a Save of it writes the shortened text;
 page and copyright are editable with the limits 40, 400 (a line break counting two, so the
 original reads the text whole), 100 and 128 bytes. orb's Save writes the copyright the document
 holds.
+
+## 14. The Edit menu's Initialize commands: song msgs 28 and 29 (task-306) [C]
+
+Edit > Initialize Song from Pattern Mode (exe command 307) and Initialize Loop from Pattern Mode
+(306) exist only in song mode; their menu side (names, enable, the alert, the modified mark) is
+`docs/ui_spec.md` section 12. The exe sends one song message without payload (`sub_40B194`): 28
+for the song, 29 for the loop. The DLL's song handler `0x10011ED0` jumps through the table at
+`0x10151D6C + 4*msg` (indexed by the msg itself; `ebx = msg - 19` is only the range check,
+`cmp edx, 16h` at 0x10011F55): msg 28 to 0x100123C7, msg 29 to 0x1001243A. Neither replies.
+
+**Msg 28 (0x100123C7..0x10012429), Initialize Song:**
+1. `sub_1001FD70` on the sequencer (`song+8`): for every track (`[seq+0x14+4i]`, `i < [seq+0xC]`)
+   `sub_10014910(list +0x108, 0, 0x7FFFFFFF)` (`mov esi, 0; mov edi, 7FFFFFFFh` at 0x1001FD86).
+2. Every device (`[song+0x18C+4i]`, `i < [song+0x1C4]`): slot 8 (vtable `+0x20`, `call eax` at
+   0x10012405) with the tick 0 (`edi = 0` at 0x100123EB).
+3. `sub_1001FDC0(seq, sub_1001F870(seq))`: the refresh chase at `trunc(pos)` (below).
+
+**Msg 29 (0x1001243A..0x100124D9), Initialize Loop:**
+1. `sub_10021520(seq, loopEnd)` (`sub_1001F8E0`: dword `+4` of the global struct, byte 16): every
+   track `sub_10020350(track, loopEnd)`.
+2. `sub_100208A0(seq, loopStart, loopEnd)` (`sub_1001F8C0`: dword `+3`, byte 12): every track
+   `sub_10014910(list +0x108, loopStart, loopEnd)`.
+3. Every device: slot 8 with the loop start (`sub_1001F8C0` read again, `var_20`, `call eax` at
+   0x100124B5).
+4. `sub_1001FDC0(seq, trunc(pos))`.
+
+The loop switch (global byte 3) is not read: the loop points are used whether the loop is on or
+off.
+
+**The pieces.**
+- `sub_10014910(list, start, end)` walks to the last node whose tick is below `start`, then
+  unlinks and frees (`sub_10014484`) every following node whose tick is below `end`, **except a
+  node whose tick is 0** (0x10014945 tests the node's tick and steps over a zero), and sets the
+  list's `+12` flag. So no tick-0 event is ever removed, and the tracks keep their constructor
+  events.
+- Slot 8 inserts an event at the tick for every automatable controller with the **pattern-mode
+  copy**'s value (section 4.9: the 303's `+0x30` packed by `sub_10018C60` at 0x10025669, then
+  `sub_1001F900` → `sub_10014750` for controllers 0..8, 0x100256B7; the 808 0..28; the 909 0..29
+  in RBS order; the mixer 1, 2, `6..9 + 6c`; delay 0..4; distortion 0..2; PCF 0..6; compressor
+  0..2). `sub_10014750` quantises the tick (`sub_100146E4`: the 303s', 808's and 909's
+  controllers 0 and 1 to a bar), gives the value to a node of the same tick and controller in its
+  place, and otherwise links a new node from the pool before the tick's first node, so the new
+  nodes of one tick end in the reverse of the insert order. The pattern copy is the msg-41 block
+  of the load, or the live block at the last switch into song mode (slot 9, section 4.11): what
+  pattern mode had.
+- `sub_10020350(track, t)`: `sub_100151F0` builds the track's state at `t` into a local buffer
+  (each controller's last value with `tick <= t`, 0xFF for none; the applied pointer is not
+  touched), then `sub_10015240(list +0x108, t, state)` inserts it: for each controller 0..127
+  that has a value, ascending, the tick quantised by `sub_100146E4`, dropped above 0xBB4FF
+  (0x1001528B), a node of the same tick and controller taking the value in its place
+  (0x10015326), else a pool node (`sub_10014434`) linked before the tick's first node
+  (0x1001531C). With record on (global byte 2, 0x100203D7) the same state also goes into the
+  recording list `+0x198` (quantisation 1).
+- `sub_1001FDC0(seq, t)`, only in song mode (`sub_10013DA0(...)[0]`, 0x1001FDD8): every track
+  is chased to `t` (`sub_100151F0` into the chase state `+0x84`, the applied pointer `+0x228`
+  set to its result), the list flag cleared (`sub_10014660`), and every controller that has a
+  value is applied, ascending (`sub_10012B40`). The position, the last tick and the devices'
+  relocate (slot 2) are not touched, so a playing song goes on and takes the new values at once.
+
+**What the song holds afterwards.**
+- Initialize Song: each track holds only its tick-0 events, and every automatable controller's
+  has the pattern-mode value (the song's own tick-0 events of those controllers keep their place
+  in the list, with the new value). The song then plays the pattern-mode state from bar 1 on,
+  with no automation.
+- Initialize Loop: before the loop start nothing changes; at the loop start every automatable
+  controller has the pattern-mode value; every event of `start <= tick < end` is gone (tick 0
+  excepted: with the loop at bar 1 the tick-0 events stay and take the pattern values); at the
+  loop end every controller the track had a value for has the value it had there before the
+  command (the events at the loop end included), so the song after the loop plays as before. In
+  the saved file the loop end's group lists the new nodes in descending controller order, then
+  the nodes that were there.
+- The device chunks, the patterns, the globals and the position do not change. The exe marks
+  the song modified; a save writes the new tracks (msg 22, `sub_437CFF`).
+
+**Checked on the test machine (2026-11-25).** `tests/songs/edit_init` holds two songs made from
+the Silent Default Song template whose device chunks differ from their tracks (`build.py`), and
+the files the original saved after each command on each (its README). Their TRAK chunks equal
+orb's tracks after the same command node for node (`crates/orb-engine/tests/edit_init.rs`), and
+orb's whole saved file equals the original's except the bytes of OB-26 and the effect chunks'
+zeros orb keeps as read (`crates/orb-ui/tests/edit_init.rs`; the user decided on 2026-11-25,
+task-307, that saves need not match the original's byte for byte). The original's export of the loop after
+Initialize Loop on `init_loop.rbs` equals orb's render of the saved file at `--idle-blocks 32752`
+(the export came 48 s after the open), and so does a second export of the same command on
+the same song in a fresh session, made with the committed `tests/songs/edit_init/export.sh`, at
+`--idle-blocks 6016` with about 9 s from the open to the export [C: the match, measured with
+`fit.sh`, README of that folder]: 9 s x 44100 / 64 is about 6200 blocks, so N follows the idle
+time as the explanation below assumes. **Open (task-308):** six other exports match orb's render
+of the saved file at no idle count N searched (steps of 16): in fresh sessions (one start of
+ReBirth per export), Initialize Song on `init_loop.rbs` and both commands on `init_zero.rbs`,
+N 0..30000; in the first session (several songs opened in one ReBirth), the same three, N
+0..60000. Each first differs at frame 66, the loop's first 303 sample, and in each the command
+changed the live 303 tune at the position (66 to 70), while in the matching one it did not.
+[G] The cause: the 303's oscillator phase runs free while idle
+(`docs/initial_investigation.md`, the idle blocks) with an increment that depends on the tune,
+so it depends on the time before and after the command, which a render of the saved file with
+one idle count cannot reproduce. So the tracks are shown equal (node for node, 4 of 4) and two
+exports of Initialize Loop on `init_loop.rbs` equal (two sessions); the six exports after a
+command that changes the live values are not shown equal.
+
+**orb.** `Engine::init_song` and `Engine::init_loop` (`crates/orb-engine/src/frame/mod.rs`),
+`Sequencer::clear_tracks`, `clear_range` and `refresh`, `Track::remove_range` and `insert_state`
+(`crates/orb-engine/src/seq.rs`), each device's `SongDevice::insert_pattern` (slot 8 at a tick;
+the song ctor's `init_track` is slot 7 `quantise` and slot 8 at tick 0);
+`orb_player::Command::InitSong` and `InitLoop`. orb adds a one-level Undo of both, which the
+original does not have (`docs/ui_spec.md` section 18; `Engine::keep_undo`, `Engine::undo_init`).
+One difference: orb removes the nodes of a range
+in one pass and an insert moves the pool's later nodes (`seq::Pool`), so Initialize Loop on a song of
+99000 events costs about 3 ms in the audio callback (`seq::tests::init_cost`, release build, the
+developer's Mac), where the DLL relinks nodes.

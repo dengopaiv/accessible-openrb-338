@@ -141,6 +141,70 @@ fn knob_with_shift_at_mouse_down_is_five_times_finer() {
     assert_eq!(sent, Some(13));
 }
 
+/// Shift held from before the press, as a hand does it, through the controller. The
+/// window gets one `ModifiersChanged` when Shift goes down (egui-winit sends it only on a
+/// change) and the press and the drag come later in frames of their own, whose events carry
+/// Shift. The drag is 5 times finer: 31 px up from 0 is 100, the value 13 (docs/ui_spec.md
+/// section 2).
+#[test]
+fn knob_with_shift_held_before_the_press_is_five_times_finer() {
+    let mut h = Harness::new();
+    h.app.panel.set_knob("tb303_1.reso", 0);
+    let start = Harness::center("tb303_1.reso");
+    let raw = |h: &mut Harness, events: Vec<Event>| {
+        h.time += 0.016;
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(PANEL_W, PANEL_H))),
+            time: Some(h.time),
+            events,
+            ..Default::default()
+        };
+        let app = &mut h.app;
+        let mut out = h.ctx.run_ui(input, |ui| app.show(ui));
+        out.textures_delta.clear();
+    };
+    // egui-winit 0.37 sends Shift itself as a key (`Key::ShiftLeft`) besides the change
+    raw(
+        &mut h,
+        vec![
+            Event::ModifiersChanged(Modifiers::SHIFT),
+            Event::Key {
+                key: egui::Key::ShiftLeft,
+                physical_key: Some(egui::Key::ShiftLeft),
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::SHIFT,
+            },
+        ],
+    );
+    raw(&mut h, vec![Event::PointerMoved(start)]);
+    raw(&mut h, vec![]);
+    raw(
+        &mut h,
+        vec![Event::PointerButton {
+            pos: start,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::SHIFT,
+        }],
+    );
+    for k in 1..=4 {
+        let p = start - Vec2::new(0.0, 31.0 * k as f32 / 4.0);
+        raw(&mut h, vec![Event::PointerMoved(p)]);
+    }
+    assert_eq!(h.app.panel.knob("tb303_1.reso"), 100);
+    raw(
+        &mut h,
+        vec![Event::PointerButton {
+            pos: start - Vec2::new(0.0, 31.0),
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::SHIFT,
+        }],
+    );
+    assert_eq!(h.app.panel.knob("tb303_1.reso"), 100);
+}
+
 #[test]
 fn fader_jumps_to_the_pointer_and_drags() {
     let mut h = Harness::new();
@@ -305,10 +369,23 @@ fn tr909_step_click_cycles_and_modifiers_pick_the_value() {
     h.down(Modifiers::NONE);
     h.up();
     assert_eq!(h.app.panel.steps909[1][0], 0);
+    // The original's Ctrl is the command key (Cmd on macOS, Ctrl elsewhere), its Alt is Alt
+    // (Option on macOS), task-281
     h.move_to(step(2));
-    h.down(Modifiers::CTRL | Modifiers::ALT);
+    h.down(Modifiers::COMMAND | Modifiers::ALT);
     h.up();
     assert_eq!(h.app.panel.steps909[1][2], 3);
+    h.move_to(step(3));
+    h.down(Modifiers::COMMAND);
+    h.up();
+    assert_eq!(h.app.panel.steps909[1][3], 1);
+    h.down(Modifiers::ALT);
+    h.up();
+    assert_eq!(h.app.panel.steps909[1][3], 2);
+    // macOS's Ctrl (no command key) is no modifier: the plain cycle, 2 -> 0
+    h.down(Modifiers::CTRL);
+    h.up();
+    assert_eq!(h.app.panel.steps909[1][3], 0);
     // A drag sets every crossed step to the new value.
     h.move_to(step(5));
     h.down(Modifiers::NONE);
@@ -507,7 +584,7 @@ fn the_pattern_commands_do_nothing_on_the_panel_without_a_song() {
     }
     assert_eq!(h.app.panel.synth[0].patterns, steps);
     assert_eq!(h.app.panel.rows[0].pattern, 0);
-    assert_eq!(h.app.clip, None);
+    assert_eq!(h.app.clipboard.read(), None);
     assert_eq!(h.app.status, None);
     assert!(!h.app.doc.modified);
 }

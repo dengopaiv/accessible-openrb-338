@@ -130,7 +130,7 @@ fn host_ticks(core: &Core, tl: &Timeline) -> (f64, f64) {
     (t, t + tempo as f64 * TEMPO_STEP)
 }
 
-/// The 303 #1's step check: when the position is well inside a step (26..44 ticks in, the
+/// The 303-1's step check: when the position is well inside a step (26..44 ticks in, the
 /// gate's 24 ticks past), the device's last step (live byte 9) is the step the position gives.
 fn step_matches(p: &OrbParams, core: &Core) -> Option<bool> {
     let e = core.audio().current();
@@ -406,7 +406,7 @@ fn notes_select_patterns_at_once_and_latch() {
             note_on(35_000, 15, 21),
             note_on(130_000, 0, 2),
         ];
-        // the panel selects 303 #1's pattern 12 at frame 40000: it waits for the bar line
+        // the panel selects 303-1's pattern 12 at frame 40000: it waits for the bar line
         let changes = [Change {
             at: 40_000,
             id: "d1c1",

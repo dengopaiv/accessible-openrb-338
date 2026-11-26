@@ -528,9 +528,18 @@ fn playback_moving_the_pattern_is_silent_on_a_grid() {
     for follows in [false, true] {
         let (mut h, mut audio) = player();
         h.app.settings.step_editor_follows = follows;
+        // a new song's A1 holds upstream's sample pattern (its task-288): Edit > Clear Pattern
+        // of the 808's A1 first, as a user would, so the steps below start from nothing
+        h.app.panel.focus = 2;
+        h.app.clear_pattern();
+        for _ in 0..2 {
+            calls(&mut audio, 2);
+            h.frame(vec![]);
+        }
+        sent808(&mut h);
         assert_eq!(
             h.app.panel.steps808, [[false; 16]; 12],
-            "a new song's A1 is empty"
+            "the 808's A1 is empty after Clear Pattern"
         );
         // A2 (pattern 1): a bass drum on step 3, sent to the engine directly
         h.app.panel.events.push(Out::Step808 {

@@ -350,7 +350,7 @@ fn nothing_is_announced_by_itself_during_10_seconds_of_playback() {
         positions.push(h.app.panel.transport.position);
         steps.push(h.app.panel.playing_step909);
         lit += h.app.panel.meters.values().any(|&m| m > 0) as usize;
-        grs.push(h.app.panel.gr_leds);
+        grs.push(h.app.panel.gr_byte);
         assert_eq!(h.app.announcer.serial(), serial, "frame {f}");
         assert_eq!(said(&h).as_deref(), Some("Playing"));
     }
@@ -364,7 +364,7 @@ fn nothing_is_announced_by_itself_during_10_seconds_of_playback() {
     assert!(changes >= 60, "{changes} running light changes");
     assert!(lit > f / 2, "meters lit in {lit} of {f} frames");
     let gr_changes = grs.windows(2).filter(|w| w[0] != w[1]).count();
-    assert!(gr_changes > 0, "the gain-reduction LEDs moved");
+    assert!(gr_changes > 0, "the gain-reduction byte moved");
     // the node is the one of "Playing" still
     assert_eq!(h.app.announcer.node_id(), node);
     assert_eq!(node_text(&h).as_deref(), Some("Playing"));
@@ -394,7 +394,8 @@ fn the_read_out_keys_on_a_known_song() {
     );
     assert_eq!(
         f4,
-        "Master left 0 of 10, right 0 of 10, gain reduction 1 of 4"
+        // nine LEDs since the merge of upstream's task-252 (task-233)
+        "Master left 0 of 10, right 0 of 10, gain reduction 5 of 9"
     );
     assert_eq!(node_text(&h).as_deref(), Some(f4.as_str()));
 

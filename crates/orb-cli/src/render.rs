@@ -88,7 +88,7 @@ pub fn warn_unsupported(song: &Song) {
     }
 }
 
-/// The drum machines that play in the song: "TR-808" and "TR-909".
+/// The drum machines that play in the song: "808" and "909".
 pub fn drums_playing(song: &Song) -> Vec<&'static str> {
     // A drum machine is audible when it is enabled and a pattern it plays has a step: the
     // initial selection (controller 1, `params[1]`) plus the values of its controller-1 track
@@ -112,10 +112,10 @@ pub fn drums_playing(song: &Song) -> Vec<&'static str> {
     };
     let mut v = Vec::new();
     if plays(&song.tr808.params, 3, &song.tr808.patterns) {
-        v.push("TR-808");
+        v.push("808");
     }
     if plays(&song.tr909.params, 4, &song.tr909.patterns) {
-        v.push("TR-909");
+        v.push("909");
     }
     v
 }

@@ -21,13 +21,12 @@ fn calls(audio: &mut Audio, n: usize) {
     }
 }
 
-/// A link on the new empty song with the built-in kit, as File > New makes it, after two
-/// engine calls.
+/// A link on the engine's new empty song with the built-in kit, after two engine calls. It is
+/// not File > New's song: that one holds the template (task-288), which is not silent.
 fn new_song() -> (Link, Audio, Panel) {
     let samples = Some(rbm::standard::builtin_samples());
-    let (mut link, mut audio) = Link::new(Arc::new(Tables::new()), samples.clone());
-    let mut panel = Panel::new();
-    link.load_new(samples, &mut panel);
+    let (link, mut audio) = Link::new(Arc::new(Tables::new()), samples);
+    let panel = Panel::new();
     calls(&mut audio, 2);
     (link, audio, panel)
 }
@@ -177,4 +176,208 @@ fn a_lit_303_note_repaints_when_it_goes_out() {
         d <= Duration::from_secs_f64(t - 4.0) + Duration::from_millis(1),
         "{d:?}"
     );
+}
+
+/// A window with the menu bar on a link with a sounding stream, driven frame by frame as a
+/// window is: after a click a frame is run again only while the last one asked for a repaint.
+struct Window {
+    ctx: egui::Context,
+    app: App,
+    audio: Audio,
+    time: f64,
+    /// The values of the panel the last frame drew (a frame draws the panel before it takes the
+    /// engine's values).
+    painted: Vec<i32>,
+}
+
+impl Window {
+    fn new() -> Self {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let (link, audio, panel) = new_song();
+        let mut app = sounding(link, panel);
+        app.samples = Some(rbm::standard::builtin_samples());
+        app.menu = true;
+        Self {
+            ctx,
+            app,
+            audio,
+            time: 0.0,
+            painted: Vec::new(),
+        }
+    }
+
+    /// A frame with `events`: the repaint it asks for and where it painted `needle`.
+    fn frame(&mut self, events: Vec<egui::Event>, needle: &str) -> (Duration, Option<Rect>) {
+        self.time += 0.016;
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(PANEL_W, PANEL_H + orb_ui::menu::MENU_H),
+            )),
+            time: Some(self.time),
+            events,
+            ..Default::default()
+        };
+        self.painted = values(&self.app.panel);
+        let app = &mut self.app;
+        let mut out = self.ctx.run_ui(input, |ui| app.show(ui));
+        out.textures_delta.clear();
+        let at = out.shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Text(t) if t.galley.text() == needle => {
+                Some(Rect::from_min_size(t.pos, t.galley.size()))
+            }
+            _ => None,
+        });
+        let delay = out
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map_or(Duration::MAX, |v| v.repaint_delay);
+        (delay, at)
+    }
+
+    /// Frames with the engine running, until one asks for no repaint (at most 400).
+    fn idle(&mut self) -> usize {
+        for n in 1..400 {
+            calls(&mut self.audio, 1);
+            if self.frame(vec![], "").0 > Duration::from_secs(1) {
+                return n;
+            }
+        }
+        400
+    }
+
+    /// Clicks the menu text `label`; the label shows once the menu above it is open.
+    fn click_text(&mut self, label: &str) {
+        let r = self.frame(vec![], label).1.expect(label);
+        let p = r.center();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        self.frame(vec![egui::Event::PointerMoved(p)], "");
+        self.frame(vec![button(true)], "");
+        self.frame(vec![button(false)], "");
+    }
+}
+
+/// Some of the panel's values: a few knobs and faders and the tempo.
+fn values(p: &Panel) -> Vec<i32> {
+    let mut v = vec![p.transport.tempo, p.fader("master.fader")];
+    for id in [
+        "tb303_1.cutoff",
+        "tb303_1.reso",
+        "tb303_2.cutoff",
+        "tr909.volume",
+    ] {
+        v.push(p.knob(id));
+    }
+    for id in ["mixer1.level", "mixer2.level", "mixer1.pan"] {
+        v.push(p.fader(id));
+        v.push(p.knob(id));
+    }
+    v
+}
+
+#[test]
+fn file_new_shows_the_new_songs_values_without_input() {
+    let mut w = Window::new();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let song = orb_ui::session::load_song(&root.join("tests/songs/shipped/Trakka Rekka.rbs"))
+        .expect("the song opens");
+    let samples = Some(rbm::standard::builtin_samples());
+    let mut panel = std::mem::replace(&mut w.app.panel, Panel::new());
+    w.app
+        .link
+        .as_mut()
+        .unwrap()
+        .load(&song, samples, &mut panel)
+        .unwrap();
+    w.app.panel = panel;
+    calls(&mut w.audio, 2);
+    w.idle();
+    let song_values = values(&w.app.panel);
+    w.app.panel.press("transport.play", 0.0);
+    for _ in 0..30 {
+        calls(&mut w.audio, 1);
+        w.frame(vec![], "");
+    }
+    assert!(w.app.panel.transport.playing);
+    w.click_text("File");
+    w.click_text("New");
+    // no more input: the window repaints by itself while it has to
+    let frames = w.idle();
+    let shown = values(&w.app.panel);
+    // what the last frame drew is what the panel holds: the frame that took the values asked
+    // for the one that draws them
+    assert_eq!(
+        w.painted, shown,
+        "the last frame drew the old values ({frames} frames)"
+    );
+    // one more call and frame, as the next mouse move would bring
+    calls(&mut w.audio, 3);
+    w.frame(vec![], "");
+    let later = values(&w.app.panel);
+    eprintln!("song {song_values:?}\nidle-end {shown:?} ({frames} frames)\nlater {later:?}");
+    assert_ne!(song_values, later, "File > New was made");
+    assert_eq!(
+        shown, later,
+        "the panel stopped repainting before the new values came"
+    );
+}
+
+/// What the window shows after `change` replaced the song, with no input: the frames run while
+/// they ask for a repaint, and the last one must have drawn the panel as it is now.
+fn after_change(change: impl FnOnce(&mut Window)) -> (Vec<i32>, Vec<i32>) {
+    let mut w = Window::new();
+    w.idle();
+    let before = values(&w.app.panel);
+    change(&mut w);
+    w.idle();
+    assert!(w.app.errors.is_empty(), "{:?}", w.app.errors);
+    assert_eq!(
+        w.painted,
+        values(&w.app.panel),
+        "the last frame drew the old values"
+    );
+    (before, w.painted)
+}
+
+#[test]
+fn open_shows_the_songs_values_without_input() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (before, after) = after_change(|w| {
+        w.app
+            .open_song(&root.join("tests/songs/shipped/Trakka Rekka.rbs"));
+    });
+    assert_ne!(before, after, "the song was opened");
+}
+
+#[test]
+fn demo_song_shows_the_demos_values_without_input() {
+    let Some(dir) = orb_testkit::recrypted_mods() else {
+        eprintln!("skipped: ORB_CD_ISO is not set");
+        return;
+    };
+    let pbe2 = dir.join("PBE2.rbm");
+    let (before, after) = after_change(|w| {
+        w.app.open_demo_now(&pbe2);
+    });
+    assert_ne!(before, after, "the demo was opened");
+}
+
+#[test]
+fn a_mod_change_draws_the_panel_after_the_engine_took_it() {
+    let Some(dir) = orb_testkit::recrypted_mods() else {
+        eprintln!("skipped: ORB_CD_ISO is not set");
+        return;
+    };
+    let pbe2 = dir.join("PBE2.rbm");
+    // the mod changes sound, not the panel's values: what the last frame drew still is what the
+    // panel holds
+    after_change(|w| {
+        w.app.use_kit(orb_cli::mods::Kit::Mod(pbe2.clone()));
+    });
 }

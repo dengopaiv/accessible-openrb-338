@@ -229,13 +229,15 @@ function Get-ExitKind {
 }
 
 # The program's log folder, by its own rule (crates/orb-ui/src/crash.rs log_dir):
-# ORB_UI_LOG_DIR, else data\logs beside a portable program (portable.txt next to it, task-223),
-# else %LOCALAPPDATA%\OpenRB-338\logs.
+# ORB_UI_LOG_DIR, else logs beside a portable program (OpenRB-338.portable or the fork's older
+# portable.txt next to it, task-289, task-223), else %LOCALAPPDATA%\OpenRB-338\logs.
 function Get-LogDir {
     param([string]$ExeDir)
     if ($env:ORB_UI_LOG_DIR) { return $env:ORB_UI_LOG_DIR }
-    if (Test-Path -LiteralPath (Join-Path $ExeDir 'portable.txt') -PathType Leaf) {
-        return (Join-Path $ExeDir 'data\logs')
+    foreach ($marker in 'OpenRB-338.portable', 'portable.txt') {
+        if (Test-Path -LiteralPath (Join-Path $ExeDir $marker) -PathType Leaf) {
+            return (Join-Path $ExeDir 'logs')
+        }
     }
     return (Join-Path $env:LOCALAPPDATA 'OpenRB-338\logs')
 }
@@ -540,6 +542,11 @@ if ($argText -ne '') { $argReport = $argText }
 Add-Line ("Settings: $Runs run(s), timeout $Timeout s, graphics backend: $backendText, " +
     "ORB_LOG=$LogLevel, arguments: $argReport")
 Add-Line "Log folder: $logDir"
+# Logs of older portable versions (the fork's task-223) are in data\logs beside the program.
+$oldLogDir = Join-Path $exeDir 'data\logs'
+if (Test-Path -LiteralPath $oldLogDir -PathType Container) {
+    Add-Line "Older logs (data\logs): $oldLogDir"
+}
 if ($dumpsNote -ne '') { Add-Line $dumpsNote }
 Add-Line
 

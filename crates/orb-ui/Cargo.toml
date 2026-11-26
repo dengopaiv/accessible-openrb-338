@@ -62,11 +62,20 @@ raw-window-handle = "0.6"
 [target.'cfg(windows)'.dependencies]
 winit = { version = "0.30.13", default-features = false }
 
+# The pattern as JSON on the clipboard (task-287).
+serde_json = "1"
+# The plugin's direct clipboard read (task-287; egui-baseview reads the clipboard only on a
+# paste key, which a plugin leaves to the host). The version egui-winit already links. No
+# default features: the image support is not needed. On Linux it speaks X11 only (a pure
+# Wayland session without XWayland reads nothing, and Paste shows "holds no pattern").
+arboard = { version = "3.7", default-features = false }
+
 [dev-dependencies]
 orb-ui-art = { path = "../orb-ui-art" }
 # The gated tests' external inputs (task-121).
 orb-testkit = { path = "../orb-testkit" }
 tempfile = "3.27.0"
+sha2 = "0.10"
 
 [build-dependencies]
 embed-resource = "3"

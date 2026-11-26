@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{
     BufferSize, ErrorKind, FromSample, SampleFormat, SizedSample, StreamConfig, SupportedBufferSize,
 };
@@ -27,6 +27,8 @@ use rubato::{
     WindowFunction,
 };
 
+use crate::devices;
+pub use crate::devices::Request;
 use crate::{Audio, CALL_FRAMES, RATE};
 
 /// The frames converted per step of a device callback.
@@ -50,7 +52,16 @@ fn err(what: &str, e: impl std::fmt::Display) -> Error {
 
 /// A running output stream; dropping it stops the sound.
 pub struct Stream {
-    _stream: cpal::Stream,
+    stream: cpal::Stream,
+    /// The engine, handed back by the callback when the stream is dropped ([`Stream::stop`]).
+    recover: rtrb::Consumer<Audio>,
+    /// The driver (cpal host) the stream runs on, e.g. `CoreAudio`.
+    pub driver: String,
+    /// The device's id ([`devices::device_id`]), the one [`Request::device`] names.
+    pub device_id: String,
+    /// Whether the stream was asked for on the system default device ([`Request::device`] is
+    /// `None`): the one that follows the system.
+    pub follows_default: bool,
     /// The device's name.
     pub device: String,
     /// The stream's configuration.
@@ -64,6 +75,8 @@ pub struct Stream {
     pub requested: Option<u32>,
     health: Health,
     stats: CallbackStats,
+    /// Marks an ASIO driver as held while the stream lives ([`devices::DriverHold`]).
+    _hold: Option<devices::DriverHold>,
 }
 
 impl Stream {
@@ -71,6 +84,44 @@ impl Stream {
     /// before it ran). cpal exposes no period getter, and the hosts hand out whole periods.
     pub fn granted(&self) -> Option<u32> {
         Some(self.stats.snapshot().first).filter(|&n| n > 0)
+    }
+
+    /// Stops the stream and takes the engine back, so that another stream can run it. `None`
+    /// when the callback did not hand it back within two seconds (the stream's thread is stuck).
+    pub fn stop(self) -> Option<Audio> {
+        let Stream {
+            stream,
+            mut recover,
+            ..
+        } = self;
+        drop(stream);
+        let t = Instant::now();
+        loop {
+            if let Ok(a) = recover.pop() {
+                return Some(a);
+            }
+            if t.elapsed().as_millis() > 2000 {
+                return None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
+
+    /// What is in use, for the Audio Output window.
+    pub fn in_use(&self) -> InUse {
+        InUse {
+            driver: self.driver.clone(),
+            device: self.device.clone(),
+            follows_default: self.follows_default,
+            rate: self.config.sample_rate,
+            resampled: self.resampled,
+            channels: self.config.channels,
+            format: self.format.to_string(),
+            requested: self.requested,
+            granted: self.granted(),
+            output_latency_ns: self.stats.latency_ns(),
+            underruns: self.health.underruns(),
+        }
     }
 
     /// The data callback's statistics, which outlive borrowing the stream.
@@ -106,6 +157,30 @@ impl Stream {
     pub fn health(&self) -> Health {
         self.health.clone()
     }
+}
+
+/// What a running stream is using ([`Stream::in_use`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InUse {
+    pub driver: String,
+    pub device: String,
+    /// The stream follows the system default device.
+    pub follows_default: bool,
+    /// The device's rate, in Hz.
+    pub rate: u32,
+    /// The engine's 44.1 kHz output is resampled to `rate`.
+    pub resampled: bool,
+    pub channels: u16,
+    pub format: String,
+    /// The buffer asked for, in frames (`None`: the device's default).
+    pub requested: Option<u32>,
+    /// The first callback's size, in frames (`None` before it ran).
+    pub granted: Option<u32>,
+    /// The last callback's predicted playback time minus its call time, in nanoseconds, as the
+    /// host reports it (`None` before a callback, or when the host gives none).
+    pub output_latency_ns: Option<u64>,
+    /// Xrun errors and callback gaps clearly longer than the buffer since the stream opened.
+    pub underruns: u64,
 }
 
 /// How long the data callback may stay silent after a stream error before the sound counts as
@@ -149,6 +224,8 @@ struct HealthInner {
     pending: AtomicBool,
     /// Set by a device-gone error.
     fatal: AtomicBool,
+    /// The underruns counted since the stream opened ([`Health::underrun`]).
+    underruns: AtomicU64,
     /// The last error's text (cut to [`TEXT_WORDS`] * 8 bytes), packed little-endian into
     /// atomics so that the audio thread's code holds no lock (tests/no_alloc.rs); a read racing
     /// a write may show a mix of two texts, which only the message sees.
@@ -168,6 +245,7 @@ impl Health {
             last_data: AtomicU64::new(now),
             pending: AtomicBool::new(false),
             fatal: AtomicBool::new(false),
+            underruns: AtomicU64::new(0),
             text: std::array::from_fn(|_| AtomicU64::new(0)),
             text_len: AtomicUsize::new(0),
             held: AtomicU64::new(0),
@@ -193,8 +271,28 @@ impl Health {
         self.0.pending.store(false, Ordering::Release);
     }
 
+    /// One underrun: an xrun error, or a callback gap clearly longer than the buffer
+    /// ([`is_gap`]). Atomics only, so the audio thread may call it.
+    pub fn underrun(&self) {
+        self.0.underruns.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The underruns since the stream opened.
+    pub fn underruns(&self) -> u64 {
+        self.0.underruns.load(Ordering::Relaxed)
+    }
+
+    /// Whether the stream's device is gone for good (a fatal error was reported), as against a
+    /// stall: the one case where reopening on another device helps.
+    pub fn device_gone(&self) -> bool {
+        self.0.fatal.load(Ordering::Relaxed)
+    }
+
     /// The error callback got an error of `kind` with `text`.
     pub fn error(&self, kind: ErrorKind, text: &str) {
+        if kind == ErrorKind::Xrun {
+            self.underrun();
+        }
         match kind {
             ErrorKind::DeviceNotAvailable
             | ErrorKind::HostUnavailable
@@ -386,20 +484,31 @@ impl Resample {
 impl Output {
     /// `audio` for a device of `channels` channels at `rate` Hz (resampled unless 44100).
     pub fn new(audio: Audio, channels: usize, rate: u32) -> Result<Self, Error> {
+        let resampler = Self::resampler(channels, rate)?;
+        Ok(Self::with(audio, channels, resampler))
+    }
+
+    /// The resampler a device of `channels` channels at `rate` Hz needs (`None` at 44100): the
+    /// part of [`Output::new`] that can fail, so that [`open`] can make it before it hands the
+    /// engine over and get the engine back from a refused stream.
+    fn resampler(channels: usize, rate: u32) -> Result<Option<Resample>, Error> {
         if channels == 0 {
             return Err(Error("a device with no channels".into()));
         }
-        let resampler = if rate == RATE {
-            None
+        if rate == RATE {
+            Ok(None)
         } else {
-            Some(Resample::new(rate)?)
-        };
-        Ok(Output {
+            Resample::new(rate).map(Some)
+        }
+    }
+
+    fn with(audio: Audio, channels: usize, resampler: Option<Resample>) -> Self {
+        Output {
             audio,
             channels,
             resampler,
             scratch: Box::new([0.0; 2 * SCRATCH_FRAMES]),
-        })
+        }
     }
 
     /// The callback: fills `data` (interleaved, the device's channels). A resampler error makes
@@ -475,13 +584,72 @@ pub const BUFFER_FRAMES: u32 = 2048;
 /// The buffer to request from a device whose buffer range is `range`: [`BUFFER_FRAMES`] clamped
 /// into a stated range, `None` (the default buffer) when the range is unknown.
 pub fn buffer_request(range: &SupportedBufferSize) -> Option<u32> {
+    buffer_request_for(BUFFER_FRAMES, range)
+}
+
+/// [`buffer_request`] for a buffer of `want` frames.
+pub fn buffer_request_for(want: u32, range: &SupportedBufferSize) -> Option<u32> {
     match *range {
-        SupportedBufferSize::Range { min, max } if min <= max => {
-            Some(BUFFER_FRAMES.clamp(min, max))
-        }
+        SupportedBufferSize::Range { min, max } if min <= max => Some(want.clamp(min, max)),
         _ => None,
     }
 }
+
+/// Whether a data callback that came `gap_ns` after the previous one, with `frames` frames at
+/// `rate` Hz, is a gap clearly longer than the buffer: more than two buffers and 20 ms. A
+/// callback that late means the device ran dry.
+pub fn is_gap(gap_ns: u64, frames: u32, rate: u32) -> bool {
+    let buffer_ns = frames as u64 * 1_000_000_000 / rate.max(1) as u64;
+    gap_ns > 2 * buffer_ns + 20_000_000
+}
+
+/// The data callback's bookkeeping around the engine call: the gap check, the playback latency
+/// the host reports, the statistics and the health clock. Atomics and the clock only, so it
+/// allocates nothing (tests/no_alloc.rs calls it inside the armed region); the callback of
+/// [`start`] and [`open`] is `enter`, the engine call, `leave`.
+pub struct CallbackBook {
+    health: Health,
+    stats: CallbackStats,
+    rate: u32,
+    last: Option<Instant>,
+}
+
+impl CallbackBook {
+    pub fn new(health: Health, stats: CallbackStats, rate: u32) -> Self {
+        CallbackBook {
+            health,
+            stats,
+            rate,
+            last: None,
+        }
+    }
+
+    /// A callback of `frames` frames starts at `now`; the host predicts the data plays
+    /// `latency` later. A callback far later than its buffer ([`is_gap`]) is an underrun the
+    /// device did not report.
+    pub fn enter(&mut self, now: Instant, frames: u32, latency: std::time::Duration) {
+        if let Some(prev) = self.last
+            && is_gap(
+                now.duration_since(prev).as_nanos() as u64,
+                frames,
+                self.rate,
+            )
+        {
+            self.health.underrun();
+        }
+        self.last = Some(now);
+        self.stats.note_latency(latency.as_nanos() as u64);
+    }
+
+    /// The callback ended after `ns` nanoseconds.
+    pub fn leave(&self, frames: u32, ns: u64) {
+        self.stats.record(frames, ns);
+        self.health.data(self.health.now());
+    }
+}
+
+/// `latency_ns` before the first callback.
+const NO_LATENCY: u64 = u64::MAX;
 
 /// What the data callback saw: all atomics, written with no allocation or lock.
 struct StatsInner {
@@ -490,6 +658,8 @@ struct StatsInner {
     min: AtomicU32,
     max: AtomicU32,
     longest_ns: AtomicU64,
+    /// The last callback's playback minus callback time (`NO_LATENCY` for none).
+    latency_ns: AtomicU64,
 }
 
 /// The data callback's statistics ([`Stream::stats`]).
@@ -511,15 +681,33 @@ pub struct CallbackSnapshot {
     pub longest_ns: u64,
 }
 
+impl Default for CallbackStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CallbackStats {
-    fn new() -> Self {
+    pub fn new() -> Self {
         CallbackStats(Arc::new(StatsInner {
             calls: AtomicU64::new(0),
             first: AtomicU32::new(0),
             min: AtomicU32::new(u32::MAX),
             max: AtomicU32::new(0),
             longest_ns: AtomicU64::new(0),
+            latency_ns: AtomicU64::new(NO_LATENCY),
         }))
+    }
+
+    /// The playback time minus the call time the host gave the last callback (audio thread: one
+    /// store).
+    fn note_latency(&self, ns: u64) {
+        self.0.latency_ns.store(ns, Ordering::Relaxed);
+    }
+
+    /// The last [`CallbackStats::note_latency`] value, if any.
+    pub fn latency_ns(&self) -> Option<u64> {
+        Some(self.0.latency_ns.load(Ordering::Relaxed)).filter(|&n| n != NO_LATENCY)
     }
 
     /// One callback of `frames` frames that took `ns` nanoseconds (audio thread; the stores only
@@ -568,16 +756,19 @@ impl CallbackSnapshot {
     }
 }
 
-/// The configuration to open: 44.1 kHz with two channels when offered (f32 preferred), else
-/// 44.1 kHz with any channel count, else the device's default (resampled). The third value is
-/// the device's buffer range for that configuration.
+/// The configuration to open. With no rate asked for: 44.1 kHz with two channels when offered
+/// (f32 preferred), else 44.1 kHz with any channel count, else the device's default (resampled).
+/// With a rate asked for: that rate in the same order of preference, or an error when the device
+/// does not offer it. The third value is the device's buffer range for that configuration.
 fn choose(
     device: &cpal::Device,
+    rate: Option<u32>,
 ) -> Result<(StreamConfig, SampleFormat, SupportedBufferSize), Error> {
+    let want = rate.unwrap_or(RATE);
     let ranges: Vec<_> = device
         .supported_output_configs()
         .map_err(|e| err("the output configurations", e))?
-        .filter(|r| r.min_sample_rate() <= RATE && RATE <= r.max_sample_rate())
+        .filter(|r| r.min_sample_rate() <= want && want <= r.max_sample_rate())
         .collect();
     let score = |r: &cpal::SupportedStreamConfigRange| {
         (
@@ -587,8 +778,11 @@ fn choose(
         )
     };
     if let Some(r) = ranges.iter().max_by_key(|r| score(r)) {
-        let c = r.with_sample_rate(RATE);
+        let c = r.with_sample_rate(want);
         return Ok((c.config(), c.sample_format(), *r.buffer_size()));
+    }
+    if rate.is_some() {
+        return Err(Error(format!("the device does not offer {want} Hz")));
     }
     let c = device
         .default_output_config()
@@ -620,25 +814,29 @@ fn build<T: SizedSample + FromSample<f32>>(
     health: Health,
     stats: CallbackStats,
 ) -> Result<cpal::Stream, Error> {
-    let h = health.clone();
     let channels = out.channels;
+    let rate = config.sample_rate;
     let mut keeper = Keeper {
         out: Some(out),
         back,
     };
+    let mut book = CallbackBook::new(health.clone(), stats.clone(), rate);
     device
         .build_output_stream::<T, _, _>(
             config,
-            move |data: &mut [T], _| {
+            move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
                 let t = Instant::now();
+                let frames = (data.len() / channels) as u32;
+                let ts = info.timestamp();
+                book.enter(
+                    t,
+                    frames,
+                    ts.playback.saturating_duration_since(ts.callback),
+                );
                 if let Some(out) = &mut keeper.out {
                     out.fill(data);
                 }
-                stats.record(
-                    (data.len() / channels) as u32,
-                    t.elapsed().as_nanos() as u64,
-                );
-                h.data(h.now());
+                book.leave(frames, t.elapsed().as_nanos() as u64);
             },
             move |e: cpal::Error| {
                 // the rule is in `Health`; the log is one line a second, with a count
@@ -656,26 +854,67 @@ fn build<T: SizedSample + FromSample<f32>>(
         .map_err(|e| err("the output stream", e))
 }
 
-/// Plays `audio` through the default output device.
+/// Plays `audio` through the default output device (what `orb play` does).
 pub fn start(audio: Audio) -> Result<Stream, Error> {
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| Error("no default output device".into()))?;
-    let name = device
-        .description()
-        .map(|d| d.to_string())
-        .unwrap_or_else(|_| "?".into());
-    let (config, format, range) = choose(&device)?;
-    let requested = buffer_request(&range);
+    open(audio, &Request::default()).map_err(|r| r.error)
+}
+
+/// A stream that could not be opened, and the engine, which is handed back when it can be
+/// (`None` only when the refused stream's thread never gave it up).
+pub struct Refused {
+    pub error: Error,
+    pub audio: Option<Audio>,
+}
+
+/// Opens a stream for `request` and runs `audio` in it. Only the default request falls back to
+/// the device's own buffer when the device refuses the size asked for (task-176); any other
+/// request that the device refuses is an error, and the engine comes back with it.
+pub fn open(audio: Audio, request: &Request) -> Result<Stream, Box<Refused>> {
+    let mut audio = Some(audio);
+    let refuse = |error: Error, audio: &mut Option<Audio>| {
+        Box::new(Refused {
+            error,
+            audio: audio.take(),
+        })
+    };
+    let host = match devices::host(request.driver.as_deref()) {
+        Ok(h) => h,
+        Err(e) => return Err(refuse(e, &mut audio)),
+    };
+    let driver = host.id().name().to_string();
+    let found = match &request.device {
+        Some(d) => devices::find_device(&host, &d.id),
+        None => devices::default_device(&host),
+    };
+    let Some(device) = found else {
+        let e = match &request.device {
+            Some(d) => Error(format!("the audio device {} is not available", d.name)),
+            None => Error("no default output device".into()),
+        };
+        return Err(refuse(e, &mut audio));
+    };
+    let name = devices::device_name(&device);
+    let device_id = devices::device_id(&device).unwrap_or_default();
+    let (config, format, range) = match choose(&device, request.rate) {
+        Ok(c) => c,
+        Err(e) => return Err(refuse(e, &mut audio)),
+    };
+    // ASIO's buffer is set in the driver's own control panel: the driver's size is used
+    let requested = if devices::is_asio(Some(&driver)) {
+        None
+    } else {
+        buffer_request_for(request.buffer, &range)
+    };
     let resampled = config.sample_rate != RATE;
     let health = Health::started();
     let stats = CallbackStats::new();
-    let mut audio = Some(audio);
-    // the buffer as requested, then (when that fails) the default one
-    let mut tries = vec![(None, BufferSize::Default)];
+    // the buffer as requested, then (for the default request only) the device's default one
+    let mut tries = Vec::new();
     if let Some(n) = requested {
-        tries.insert(0, (Some(n), BufferSize::Fixed(n)));
+        tries.push((Some(n), BufferSize::Fixed(n)));
+    }
+    if requested.is_none() || request.is_default() {
+        tries.push((None, BufferSize::Default));
     }
     let mut last = Error("no output stream".into());
     for (req, buffer_size) in tries {
@@ -683,7 +922,11 @@ pub fn start(audio: Audio) -> Result<Stream, Error> {
             break;
         };
         let (back, mut recover) = rtrb::RingBuffer::new(1);
-        let out = Output::new(a, config.channels as usize, config.sample_rate)?;
+        let resampler = match Output::resampler(config.channels as usize, config.sample_rate) {
+            Ok(r) => r,
+            Err(e) => return Err(refuse(e, &mut Some(a))),
+        };
+        let out = Output::with(a, config.channels as usize, resampler);
         let config = StreamConfig {
             buffer_size,
             ..config
@@ -702,14 +945,23 @@ pub fn start(audio: Audio) -> Result<Stream, Error> {
         };
         match built {
             Ok(stream) => {
-                stream.play().map_err(|e| err("starting the stream", e))?;
+                if let Err(e) = stream.play() {
+                    drop(stream);
+                    audio = recover.pop().ok();
+                    return Err(refuse(err("starting the stream", e), &mut audio));
+                }
                 // the first callback tells the granted size; it comes within a few periods
                 let t = Instant::now();
                 while stats.snapshot().calls == 0 && t.elapsed().as_millis() < 300 {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
+                let _hold = devices::DriverHold::new(&driver);
                 return Ok(Stream {
-                    _stream: stream,
+                    stream,
+                    recover,
+                    driver,
+                    device_id,
+                    follows_default: request.device.is_none(),
                     device: name,
                     config,
                     format,
@@ -717,6 +969,7 @@ pub fn start(audio: Audio) -> Result<Stream, Error> {
                     requested: req,
                     health,
                     stats,
+                    _hold,
                 });
             }
             Err(e) => {
@@ -726,7 +979,7 @@ pub fn start(audio: Audio) -> Result<Stream, Error> {
             }
         }
     }
-    Err(last)
+    Err(refuse(last, &mut audio))
 }
 
 #[cfg(test)]
@@ -747,6 +1000,40 @@ mod tests {
         // unknown (or a nonsensical range): the default buffer
         assert_eq!(buffer_request(&SupportedBufferSize::Unknown), None);
         assert_eq!(buffer_request(&r(512, 16)), None);
+    }
+
+    #[test]
+    fn a_gap_is_more_than_two_buffers_and_twenty_milliseconds() {
+        // 2048 frames at 48 kHz is 42.7 ms: the limit is 105.3 ms
+        assert!(!is_gap(42_000_000, 2048, 48_000));
+        assert!(!is_gap(105_000_000, 2048, 48_000));
+        assert!(is_gap(106_000_000, 2048, 48_000));
+        // a small buffer is judged with the 20 ms floor
+        assert!(!is_gap(31_000_000, 256, 44_100));
+        assert!(is_gap(32_000_000, 256, 44_100));
+        assert!(!is_gap(1, 0, 0));
+    }
+
+    #[test]
+    fn underruns_count_from_xruns_and_gaps() {
+        let h = Health::new(0);
+        assert_eq!(h.underruns(), 0);
+        h.error(ErrorKind::Xrun, "xrun");
+        h.underrun();
+        h.error(ErrorKind::BackendError, "other");
+        assert_eq!(h.underruns(), 2);
+        assert!(!h.device_gone());
+        h.error(ErrorKind::DeviceNotAvailable, "gone");
+        assert!(h.device_gone());
+    }
+
+    #[test]
+    fn a_requested_size_is_clamped_into_the_range() {
+        let r = |min, max| SupportedBufferSize::Range { min, max };
+        assert_eq!(buffer_request_for(256, &r(64, 8192)), Some(256));
+        assert_eq!(buffer_request_for(256, &r(480, 480)), Some(480));
+        assert_eq!(buffer_request_for(8192, &r(64, 4096)), Some(4096));
+        assert_eq!(buffer_request_for(256, &SupportedBufferSize::Unknown), None);
     }
 
     #[test]

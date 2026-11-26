@@ -36,7 +36,7 @@ const ROW0: f32 = 110.0;
 /// The name of the app.
 pub const NAME: &str = "OpenRB-338";
 /// The project page.
-pub const URL: &str = "https://github.com/pingw33n/OpenRB-338";
+pub const URL: &str = "https://pingw33n.github.io/OpenRB-338/";
 /// The user's public collections, shown under the project page as `label url` (task-138).
 /// The user's song collection.
 pub const SONGS_URL: &str = "https://github.com/pingw33n/rb-songs";
@@ -49,6 +49,82 @@ pub const COLLECTIONS: [(&str, &str); 2] = [
 ];
 /// The version: `YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` (`src/version.rs`).
 pub const VERSION: &str = env!("ORB_UI_VERSION");
+
+/// The side of the copy button, a text line's height.
+const COPY_SIZE: f32 = 14.0;
+/// How long the check mark shows after a copy.
+const COPIED_FOR: f64 = 1.5;
+
+fn copy_data_id() -> egui::Id {
+    egui::Id::unique("orb_about_copy_version")
+}
+
+/// Where the copy button was drawn last frame (for tests to click it).
+pub fn copy_button_rect(ctx: &Context) -> Option<egui::Rect> {
+    ctx.data(|d| d.get_temp::<egui::Rect>(copy_data_id()))
+}
+
+/// Seconds since the last copy while its confirmation (the check mark, "Copied") still shows.
+fn copied_since(ctx: &Context, now: f64) -> Option<f64> {
+    let t = ctx.data(|d| d.get_temp::<f64>(copy_data_id().with("at")))?;
+    Some(now - t).filter(|s| (0.0..COPIED_FOR).contains(s))
+}
+
+/// Whether the copy button shows its confirmation now (for tests).
+pub fn copy_confirmation_shows(ctx: &Context) -> bool {
+    copied_since(ctx, ctx.input(|i| i.time)).is_some()
+}
+
+/// The icon-only copy button (task-279): two overlapping sheets, a check mark for 1.5 s after a
+/// click, a "Copy version" tooltip. A click copies `VERSION` through `ctx.copy_text`, which
+/// egui-baseview also writes to the system clipboard in the plugin.
+fn copy_button(ui: &mut egui::Ui) {
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(COPY_SIZE, COPY_SIZE), egui::Sense::click());
+    let ctx = ui.ctx().clone();
+    ctx.data_mut(|d| d.insert_temp(copy_data_id(), rect));
+    let now = ctx.input(|i| i.time);
+    let at_id = copy_data_id().with("at");
+    if resp.clicked() {
+        ctx.copy_text(VERSION.to_string());
+        ctx.data_mut(|d| d.insert_temp(at_id, now));
+    }
+    let since = copied_since(&ctx, now);
+    let copied = since.is_some();
+    if let Some(s) = since {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(COPIED_FOR - s));
+    }
+    let color = if resp.hovered() || copied {
+        egui::Color32::WHITE
+    } else {
+        INK_DIM
+    };
+    let p = ui.painter();
+    let stroke = egui::Stroke::new(1.2, color);
+    if copied {
+        let c = rect.center();
+        p.add(egui::Shape::line(
+            vec![
+                c + egui::vec2(-4.5, 0.5),
+                c + egui::vec2(-1.5, 3.5),
+                c + egui::vec2(4.5, -3.5),
+            ],
+            egui::Stroke::new(1.8, color),
+        ));
+    } else {
+        // the back sheet up left, the front one down right
+        let s = 8.5;
+        let back = egui::Rect::from_min_size(rect.min + egui::vec2(1.5, 1.5), egui::vec2(s, s));
+        let front = back.translate(egui::vec2(3.0, 3.0));
+        p.rect_stroke(back, 1.0, stroke, egui::StrokeKind::Inside);
+        p.rect_filled(front, 1.0, ui.visuals().window_fill);
+        p.rect_stroke(front, 1.0, stroke, egui::StrokeKind::Inside);
+    }
+    // a screen reader names the icon-only button (the fork's m-7; no change to what is drawn)
+    let name = if copied { "Copied" } else { "Copy version" };
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
+    resp.on_hover_text(name);
+}
 
 /// The id of the About window of an open (`App::about_serial`).
 pub fn about_window_id(serial: u32) -> egui::Id {
@@ -63,6 +139,8 @@ impl App {
             self.about_serial += 1;
             // the logo animation starts with the window's first frame (`about_ui`)
             self.about_start_due = true;
+        } else {
+            self.raise_window(self.about_id());
         }
         self.about_open = true;
     }
@@ -142,8 +220,12 @@ impl App {
                     line_at(ui, TEXT_X, y, f);
                 };
                 line(ui, ROW0, &|ui| {
-                    let version = RichText::new(format!("Version {VERSION}")).color(INK_DIM);
-                    win::line(ui, sr, version, false, None);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let version = RichText::new(format!("Version {VERSION}")).color(INK_DIM);
+                        win::line(ui, sr, version, false, None);
+                        copy_button(ui);
+                    });
                 });
                 line(ui, ROW0 + 22.0, &|ui| {
                     ui.hyperlink_to(URL, URL);
@@ -181,11 +263,9 @@ mod tests {
             format!("width=\"{LOGO_W}\" height=\"{LOGO_H}\" viewBox=\"0 0 {LOGO_W} {LOGO_H}\"");
         assert!(svg.contains(&want), "{want} in the part's header");
         // the panel draws the same part over its transport background
-        assert!(
-            crate::layout::backgrounds()
-                .iter()
-                .any(|b| b.0 == LOGO_PART)
-        );
+        let skin = crate::skin::svg::modern();
+        let logo = crate::skin::Skin::layout(&*skin).logo.clone();
+        assert_eq!(logo.map(|l| l.part), Some(LOGO_PART.to_string()));
     }
 
     /// The wordmark's plate (task-179) is the art generator's, under the logo at 2x, and the

@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@agent-worker'
 created_date: '2026-11-18T19:10:00Z'
-updated_date: '2026-11-18T20:20:00Z'
+updated_date: '2026-11-26T12:28:00Z'
 labels:
   - tools
   - ui
@@ -41,3 +41,9 @@ Also from task-230's review: the merge made orb-ui's App `Send` for the plugin's
 - [ ] #4 The standalone app is unchanged: cargo build --release, cargo test --release, clippy -D warnings and nightly fmt --check pass
 - [ ] #5 CHANGELOG.md's next section says, in plain language, that the plugin from upstream is not part of the fork
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Supervisor, 2026-11-26 (merge of upstream f83c54f, task-233): upstream's plugin grew since this task was written, and all of it came in with the merge. CLAP is gone (VST3 only, stock nice-plug again, upstream's task-278); new plugin parts to remove as well: the egui-baseview fork dependency (task-292), crates/orb-ui/src/routing_window.rs and Options > Output Routing... (plugin only, task-300), the per-device and per-drum outputs in orb-player (tasks 256, 300; check what the standalone shares before removing engine code), the REAPER render tests behind ORB_REAPER (tests of orb-plugin and orb-player, task-244, 277, 305), the texture_free and exports tests of orb-plugin (task-302), and the plugin log (task-289: logs\plugin.log). In scripts/package.sh the Windows zip now copies the plugin as the single file OpenRB-338.vst3 beside the exe; the README.txt plugin and 'Portable mode' paragraphs name it. upstream's portable mode (portable.rs folder_of) knows the plugin's bundle path: that can stay, as shared code.
+<!-- SECTION:NOTES:END -->

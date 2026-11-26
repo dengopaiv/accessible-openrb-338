@@ -6,11 +6,18 @@ exclude = ["vendor"]
 
 # raw-window-metal 1.1.0 (MIT OR Apache-2.0, wgpu's macOS surface) with its layer class
 # registered under a name unique to the loaded image: with the fixed name
-# "RawWindowMetalLayer" the second plugin image in one process (the VST3 and the CLAP bundle,
-# or another wgpu plugin) panicked opening its editor and aborted the host (task-201,
+# "RawWindowMetalLayer" the second plugin image in one process (a second
+# wgpu plugin in the host) panicked opening its editor and aborted the host (task-201,
 # docs/plugin.md "The vendored raw-window-metal").
+# egui-baseview 0.9.0 (MIT OR Apache-2.0, the plugin's editor window) from the fork
+# github.com/pingw33n/egui-baseview, branch OpenRB-338, commit e3db196 on upstream 1f645a3 (the
+# published 0.9.0): its wgpu renderer freed egui's freed textures before `queue.submit`, so a
+# texture dropped in a frame that drew it was destroyed under that frame's draw, a wgpu
+# validation error that aborted the host (task-292, docs/plugin.md "The egui-baseview fork").
+# The fork frees them after the submit, as eframe does, and presents last.
 [patch.crates-io]
 raw-window-metal = { path = "vendor/raw-window-metal" }
+egui-baseview = { git = "https://github.com/pingw33n/egui-baseview", rev = "e3db19695653fb05dead3916a553c514c1c88c23" }
 
 [workspace.package]
 version = "0.1.0"

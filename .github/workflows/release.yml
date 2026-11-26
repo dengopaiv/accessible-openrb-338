@@ -109,6 +109,9 @@ jobs:
       - name: Install the ALSA headers (cpal)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
+      - name: Install LLVM (bindgen of asio-sys, the ASIO build; task-193)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: scripts/install-llvm-windows.sh
       - name: Install rustup (the Windows arm64 image has none)
         if: matrix.target == 'aarch64-pc-windows-msvc'
         run: |
@@ -191,8 +194,9 @@ jobs:
           path: dist/${{ matrix.target }}/OpenRB-338-*.dmg
           if-no-files-found: error
       - name: Build the plugin .pkg
-        # task-238: the VST3 and CLAP installer, its own release asset (not in the .dmg); it
-        # needs the plugins-<target> bundles downloaded above and pkgbuild/productbuild (Xcode)
+        # task-238: the VST3 installer (it also deletes the old CLAP bundle, task-278), its own
+        # release asset (not in the .dmg); it needs the plugins-<target> bundles downloaded above
+        # and pkgbuild/productbuild (Xcode)
         run: scripts/package-pkg.sh "${{ matrix.target }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -233,7 +237,7 @@ jobs:
           path: dist/${{ matrix.target }}/bin
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          # the optional VST3 and CLAP components (task-237)
+          # the optional VST3 component (task-237)
           name: plugins-${{ matrix.target }}
           path: dist/${{ matrix.target }}/plugins
       - name: Build the installer

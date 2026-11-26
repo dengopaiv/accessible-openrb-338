@@ -16,19 +16,20 @@
 </p>
 
 OpenRB-338 is a reimplementation of [ReBirth RB-338](https://en.wikipedia.org/wiki/ReBirth_RB-338),
-the 1997 software synth of two TB-303 bass lines, a TR-808 and a TR-909, for today's macOS, Linux
+the 1997 software synth of two 303 bass lines, an 808 and a 909, for today's macOS, Linux
 and Windows.
 
 ## Features
 
 - **Sounds exactly like the original.** The audio engine was rebuilt from ReBirth 2.01 to the
   bit. A song's exported loop equals the original's "Export Loop as Audio File" byte for byte. This
-  is tested on 1,268 songs of the song collection, 531 of them on 43 third-party mods, and on a
-  175-render reference corpus.
+  is tested on over 5,000 songs, 2,693 of them on 135 third-party mods.
 - **The whole machine on screen:** the two 303s, the 808 and the 909, the mixer, the delay,
   distortion, PCF and compressor, with pattern and song mode, the loop, shuffle and recording.
 - **A scalable vector-graphics panel** in the original's layout and look, drawn from scratch,
   that stays sharp at any window size and pixel density.
+- **A classic theme:** View > Classic / Modern switches the standalone's panel to the loaded
+  mod's original panel art, fully playable, with a short crossfade between the two.
 - **Songs:** opens ReBirth 2.x songs (`.rbs`, RBS 4.0 to 4.2) and ReBirth 1.x songs, and saves
   RBS 4.2 files that the original opens. File > Info shows and edits the song's title, text, web
   page and copyright.
@@ -39,6 +40,9 @@ and Windows.
   (Help > Keyboard Shortcuts).
 - **Pattern commands:** cut, copy, paste and duplicate a pattern, with one level of undo (the
   Edit menu).
+- **A VST 3 instrument plugin** with the same engine and panel (see The plugin below).
+  Besides the Mix it has outputs for the 303-1, 303-2, 808 and 909, tapped like ReBirth's
+  ReWire channels, after each channel's effects and before its level and pan.
 - **`orb`, a command-line tool,** to work with songs and mods from the terminal:
   - `orb render`: render a song's loop to WAV, FLAC or Ogg, far faster than real time (a
     five-minute song takes about a second and a half);
@@ -50,9 +54,10 @@ and Windows.
 
 ## Not implemented
 
-- ReWire, and MIDI input or sync in the standalone application (the VST 3/CLAP plugin below takes
+- ReWire, and MIDI input or sync in the standalone application (the VST 3 plugin below takes
   the MIDI of its host).
-- Mod themes: a mod changes the drum sounds, not the look of the panel.
+- Mod themes other than the classic panel: a mod's panel art is drawn as it is, with no
+  higher-resolution sets.
 - The original's other Edit menu functions on patterns (clear, shift, randomize and the like).
 - The original's preferences and its Windows menu.
 - Export to AIFF (use WAV, FLAC or Ogg).
@@ -169,8 +174,8 @@ without loading it, and Escape closes the dialog.
 
 ## The plugin
 
-OpenRB-338 upstream also comes as an instrument plugin in the VST 3 and CLAP formats
-(`OpenRB-338.vst3` and `OpenRB-338.clap`), with the same engine and panel inside a DAW;
+OpenRB-338 upstream also comes as an instrument plugin in the VST 3 format
+(`OpenRB-338.vst3`), with the same engine and panel inside a DAW;
 [docs/plugin_usage.md](docs/plugin_usage.md) is the guide to its modes and MIDI mappings. This
 fork leaves the plugin out (the user's decision of 2026-11-18): it is being removed, and this
 section with it.
@@ -198,12 +203,15 @@ section with it.
    binaries.
 
 2. **Install it.**
-   - macOS: open the `.dmg` and drag OpenRB-338 to Applications.
+   - macOS: open the `.dmg` and drag OpenRB-338 to Applications. The image opens normally;
+     macOS refuses the unsigned app the first time you start it (Open Anyway in System Settings >
+     Privacy & Security on macOS 15, or right-click > Open on macOS 14 and older).
    - Windows, this fork's zip: unpack it anywhere you can write to, a USB stick too, and run
-     `OpenRB-338.exe` in the unpacked folder. It is portable: while `portable.txt` lies next to
-     the program, the settings and the logs are kept in the folder `data` beside it, not in
+     `OpenRB-338.exe` in the unpacked folder. It is portable: while the file
+     `OpenRB-338.portable` (or the fork's older `portable.txt`) lies next to the program, the
+     settings (`OpenRB-338.toml`) and the logs (the folder `logs`) are kept beside it, not in
      AppData, and the songs and mods folders chosen inside the folder are remembered relative
-     to it, so they work under any drive letter. Delete `portable.txt` to use AppData instead.
+     to it, so they work under any drive letter. Delete the marker file to use AppData instead.
    - Windows, OpenRB-338's installer: run it. It can add `orb` to the PATH.
    - Linux: make the AppImage executable (`chmod +x OpenRB-338-*.AppImage`).
      It holds its own icon and menu entry: for a menu item, open it with an AppImage tool such
@@ -270,6 +278,10 @@ See [docs/building.md](docs/building.md).
 
 OpenRB-338 is free software under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only).
 Copyright (C) 2026 the OpenRB-338 authors.
+
+The Windows x86_64 build can play through ASIO drivers, with Steinberg's ASIO SDK under the GPL
+Version 3 option of its license ([third_party/asiosdk](third_party/asiosdk/README.md)).
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.
 
 ReBirth RB-338 is a trademark of Propellerhead Software (now Reason Studios). OpenRB-338 is not
 affiliated with or endorsed by them. The built-in standard kit (`assets/Standard.rbm`) holds

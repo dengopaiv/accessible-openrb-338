@@ -518,7 +518,9 @@ mod win {
 
     unsafe extern "system" {
         fn SetUnhandledExceptionFilter(filter: Option<Filter>) -> Option<Filter>;
-        fn GetModuleHandleExW(flags: u32, name: *const u16, module: *mut *mut c_void) -> i32;
+        // the same signature as portable.rs declares (a clash is a lint error): with
+        // FROM_ADDRESS the second argument is an address in the module, not a name
+        fn GetModuleHandleExW(flags: u32, address: *const c_void, module: *mut *mut c_void) -> i32;
         fn GetModuleFileNameW(module: *mut c_void, name: *mut u16, size: u32) -> u32;
     }
 
@@ -573,7 +575,7 @@ mod win {
             GetModuleHandleExW(
                 GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
                     | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                r.address as *const u16,
+                r.address as *const c_void,
                 &mut module,
             )
         } != 0;

@@ -1,41 +1,101 @@
-//! Portable mode (task-223; the user's decision, task-222). When a file [`MARKER`]
-//! (`portable.txt`) lies next to the running program, OpenRB-338 keeps its settings (`ui.toml`,
-//! [`crate::settings::default_file`]) and its crash and run logs ([`crate::crash::log_dir`]) in
-//! the folder [`DATA`] (`data`) beside it, instead of the platform's folders (`%APPDATA%` and
-//! `%LOCALAPPDATA%` on Windows), and the settings store the folders that lie inside the program's
-//! folder relative to it ([`relative`], [`resolve`]), so a copy on a USB stick keeps its songs and
-//! mods folders on any PC, whatever the stick's drive letter. Folders elsewhere stay full paths.
-//! Without the file nothing changes: upstream's packages have none. The fork's release zip
-//! carries it (`scripts/package.sh`).
+//! Portable mode on Windows (task-289, GitHub issue 19; the marker, task-295): while a marker
+//! file `OpenRB-338.portable` (any content, even empty) is in the folder of the program, the
+//! file `OpenRB-338.toml` there keeps the settings, the crash logs and the plugin's log next to it
+//! instead of in the user's profile.
+//!
+//! - The standalone app's folder is the one of its `OpenRB-338.exe`.
+//! - The plugin's folder is the one that holds the single file `OpenRB-338.vst3` (the zip), or the
+//!   `OpenRB-338.vst3` bundle (the installer; never inside it). Both are found the same way: the
+//!   folder of the module (exe or dll) that holds this code, from `GetModuleHandleExW` with the
+//!   address of a function here and `GetModuleFileNameW`; the plugin links this crate in, so its
+//!   module is the plugin's binary `OpenRB-338.vst3\Contents\x86_64-win\OpenRB-338.vst3`
+//!   ([`folder_of`] goes up to the bundle's parent) or the single file's own folder.
+//! - [`folder`] is that folder when the marker is in it. macOS and Linux never have one.
+//!
+//! The fork (accessible-openrb-338) adds two things, the user's choice of 2026-11-26 when
+//! upstream's portable mode met the fork's (task-223): the folders inside the portable folder
+//! are stored relative to it ([`relative`], [`resolve`]), so a copy on a USB stick finds its
+//! songs and mods folders under any drive letter; and the fork's older marker `portable.txt`
+//! ([`LEGACY_MARKER`]) still makes a folder portable, its settings `data\ui.toml` copied into
+//! `OpenRB-338.toml` once ([`legacy_settings`]).
+//!
+//! The rules for what the file holds are in `settings.rs`.
 
 use std::path::{Component, Path, PathBuf};
-use std::sync::OnceLock;
 
-/// The file that makes the program's folder portable.
-pub const MARKER: &str = "portable.txt";
+/// The settings file's name, in the per-user folder and in the portable one.
+pub const FILE_NAME: &str = "OpenRB-338.toml";
 
-/// The folder beside the program that holds the settings and the logs in portable mode.
-pub const DATA: &str = "data";
+/// The marker file that turns portable mode on when it is in the program's folder (task-295).
+pub const MARKER_NAME: &str = "OpenRB-338.portable";
 
-/// `dir` when it holds the [`MARKER`] file: the portable folder of a program in `dir`.
-pub fn root_in(dir: &Path) -> Option<PathBuf> {
-    dir.join(MARKER).is_file().then(|| dir.to_path_buf())
+/// The folder of the program for the path of its module `module` (the exe, or the plugin's
+/// binary): the exe's folder, or for `X.vst3\Contents\<arch>\X.vst3` the folder that holds the
+/// bundle `X.vst3`.
+pub fn folder_of(module: &Path) -> Option<PathBuf> {
+    let dir = module.parent()?;
+    let is_vst3 = |p: &Path| {
+        p.extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("vst3"))
+    };
+    if is_vst3(module)
+        && let Some(contents) = dir.parent()
+        && contents
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("Contents"))
+        && let Some(bundle) = contents.parent()
+        && is_vst3(bundle)
+    {
+        return bundle.parent().map(Path::to_path_buf);
+    }
+    Some(dir.to_path_buf())
 }
 
-/// The running program's portable folder (its own folder), when it is portable. Checked once.
-pub fn root() -> Option<&'static Path> {
-    static ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
-    ROOT.get_or_init(|| {
-        let exe = std::env::current_exe().ok()?;
-        root_in(exe.parent()?)
-    })
-    .as_deref()
+/// The folder that would hold the portable file (the program's), or `None` off Windows.
+pub fn candidate() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        static CANDIDATE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+        CANDIDATE
+            .get_or_init(|| module_path().and_then(|m| folder_of(&m)))
+            .clone()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
 }
 
-/// The data folder of the running program in portable mode.
-pub fn data_dir() -> Option<PathBuf> {
-    root().map(|r| r.join(DATA))
+/// The portable folder: the program's folder when the marker is in it (Windows only).
+pub fn folder() -> Option<PathBuf> {
+    candidate().filter(|d| is_portable(d))
 }
+
+/// The fork's marker before upstream's (task-223, replaced in the merge of upstream f83c54f):
+/// a folder with `portable.txt` and no [`MARKER_NAME`] is portable too, so a copy unpacked from
+/// an older fork zip stays portable. Its settings were `data\ui.toml` ([`LEGACY_DATA`]); on the
+/// first start without `OpenRB-338.toml` they are copied into it (`settings.rs`). Neither old
+/// file is changed or deleted.
+pub const LEGACY_MARKER: &str = "portable.txt";
+
+/// The fork's old portable data folder (task-223), beside the program: `data\ui.toml` and
+/// `data\logs`. Read once for the settings, never written.
+pub const LEGACY_DATA: &str = "data";
+
+/// Whether `dir` is a portable folder: it holds [`MARKER_NAME`] or the fork's older
+/// [`LEGACY_MARKER`], as a file (a folder of that name is not a marker).
+pub fn is_portable(dir: &Path) -> bool {
+    dir.join(MARKER_NAME).is_file() || dir.join(LEGACY_MARKER).is_file()
+}
+
+/// The fork's old portable settings file `data\ui.toml` in `dir`, when it is there.
+pub fn legacy_settings(dir: &Path) -> Option<PathBuf> {
+    Some(dir.join(LEGACY_DATA).join("ui.toml")).filter(|f| f.is_file())
+}
+
+// The fork's relative folders (task-223): in portable mode the settings store the folders that
+// lie inside the program's folder relative to it, so a copy on a USB stick keeps its songs and
+// mods folders under any drive letter. Folders elsewhere stay full paths.
 
 /// `path` relative to `base` when it is `base` (`.`) or lies inside it, else `None`. Windows
 /// file names ignore case, so there the components are compared without case (`c:\OpenRB` is
@@ -83,9 +143,10 @@ pub fn same(a: &Path, b: &Path) -> bool {
 }
 
 /// A stored path read back: a relative one is taken inside `base` (`.` is `base` itself); a
-/// full one stays as it is.
+/// full one stays as it is, and so does a rooted one without a drive letter (`\songs` on
+/// Windows), which [`relative`] never writes: joined to `base` it would take `base`'s drive.
 pub fn resolve(base: &Path, stored: &Path) -> PathBuf {
-    if stored.is_absolute() {
+    if stored.is_absolute() || stored.has_root() {
         stored.to_path_buf()
     } else if stored == Path::new(".") {
         base.to_path_buf()
@@ -94,9 +155,81 @@ pub fn resolve(base: &Path, stored: &Path) -> PathBuf {
     }
 }
 
+/// The path of the module (exe or dll) that holds this function.
+#[cfg(windows)]
+fn module_path() -> Option<PathBuf> {
+    use std::ffi::{OsString, c_void};
+    use std::os::windows::ffi::OsStringExt;
+
+    const FROM_ADDRESS: u32 = 0x4;
+    const UNCHANGED_REFCOUNT: u32 = 0x2;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetModuleHandleExW(flags: u32, address: *const c_void, module: *mut *mut c_void) -> i32;
+        fn GetModuleFileNameW(module: *mut c_void, name: *mut u16, size: u32) -> u32;
+    }
+    let mut module = std::ptr::null_mut();
+    // SAFETY: the address is of a function of this module; the handle is not retained
+    // (UNCHANGED_REFCOUNT), the out pointer is a local.
+    let ok = unsafe {
+        GetModuleHandleExW(
+            FROM_ADDRESS | UNCHANGED_REFCOUNT,
+            module_path as *const c_void,
+            &mut module,
+        )
+    };
+    if ok == 0 {
+        return None;
+    }
+    let mut size = 512usize;
+    while size <= 32768 {
+        let mut buf = vec![0u16; size];
+        // SAFETY: `buf` holds `size` units.
+        let n = unsafe { GetModuleFileNameW(module, buf.as_mut_ptr(), size as u32) } as usize;
+        if n == 0 {
+            return None;
+        }
+        if n < size {
+            return Some(PathBuf::from(OsString::from_wide(&buf[..n])));
+        }
+        size *= 2;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_exe_folder_is_the_exes() {
+        assert_eq!(
+            folder_of(Path::new("/z/app/OpenRB-338.exe")),
+            Some(PathBuf::from("/z/app"))
+        );
+    }
+
+    #[test]
+    fn the_plugins_folder_is_the_one_that_holds_the_bundle() {
+        let m = Path::new("/z/vst/OpenRB-338.vst3/Contents/x86_64-win/OpenRB-338.vst3");
+        assert_eq!(folder_of(m), Some(PathBuf::from("/z/vst")));
+        let m = Path::new("/z/vst/openrb-338.VST3/contents/x86_64-win/openrb-338.VST3");
+        assert_eq!(folder_of(m), Some(PathBuf::from("/z/vst")));
+    }
+
+    #[test]
+    fn a_single_file_vst3_is_in_its_folder() {
+        let m = Path::new("/z/vst/OpenRB-338.vst3");
+        assert_eq!(folder_of(m), Some(PathBuf::from("/z/vst")));
+    }
+
+    #[test]
+    fn there_is_no_portable_folder_off_windows() {
+        if !cfg!(windows) {
+            assert_eq!(candidate(), None);
+            assert_eq!(folder(), None);
+        }
+    }
 
     fn abs(s: &str) -> PathBuf {
         if cfg!(windows) {
@@ -107,15 +240,29 @@ mod tests {
     }
 
     #[test]
-    fn the_marker_makes_a_folder_portable() {
+    fn either_marker_makes_a_folder_portable() {
+        for marker in [MARKER_NAME, LEGACY_MARKER] {
+            let d = tempfile::tempdir().unwrap();
+            assert!(!is_portable(d.path()));
+            std::fs::write(d.path().join(marker), "").unwrap();
+            assert!(is_portable(d.path()), "{marker}");
+            // a folder of that name is not the marker
+            let e = tempfile::tempdir().unwrap();
+            std::fs::create_dir(e.path().join(marker)).unwrap();
+            assert!(!is_portable(e.path()), "{marker} as a folder");
+        }
+    }
+
+    #[test]
+    fn the_legacy_settings_are_data_ui_toml() {
         let d = tempfile::tempdir().unwrap();
-        assert_eq!(root_in(d.path()), None);
-        std::fs::write(d.path().join(MARKER), "x").unwrap();
-        assert_eq!(root_in(d.path()), Some(d.path().to_path_buf()));
-        // a folder of that name is not the marker
-        let e = tempfile::tempdir().unwrap();
-        std::fs::create_dir(e.path().join(MARKER)).unwrap();
-        assert_eq!(root_in(e.path()), None);
+        assert_eq!(legacy_settings(d.path()), None);
+        std::fs::create_dir(d.path().join(LEGACY_DATA)).unwrap();
+        std::fs::write(d.path().join(LEGACY_DATA).join("ui.toml"), "").unwrap();
+        assert_eq!(
+            legacy_settings(d.path()),
+            Some(d.path().join(LEGACY_DATA).join("ui.toml"))
+        );
     }
 
     #[test]
@@ -136,6 +283,8 @@ mod tests {
             assert_eq!(relative_with(&base, &abs(other), false), None, "{other}");
         }
         assert_eq!(resolve(&base, &abs("music/songs")), abs("music/songs"));
+        // a rooted path without a drive letter is not taken inside the folder either
+        assert_eq!(resolve(&base, Path::new("/local")), PathBuf::from("/local"));
         // a way out of the folder through ".." is not inside it
         let out = base.join("..").join("x");
         assert_eq!(relative_with(&base, &out, false), None);

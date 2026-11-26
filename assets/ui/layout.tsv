@@ -1,5 +1,35 @@
-id	section	kind	part	x	y	w	h
-transport.shuffle	transport	knob	knob_gray	27	13	18	19
+id	section	kind	part	x	y	w	h	params
+panel	-	panel	-	0	0	624	510
+wood_left.bg	wood_left	bg	wood_left	0	0	16	510
+wood_right.bg	wood_right	bg	wood_right	608	0	16	510
+transport.bg	transport	bg	bg_transport	16	0	592	50	plugin=bg_transport_plugin
+logo	transport	logo	logo	474	1	134	48
+pattern1.bg	pattern1	bg	bg_pattern_1	16	50	70	115
+tb303_1.bg	tb303_1	bg	bg_tb303	90	50	366	115
+mixer1.bg	mixer1	bg	bg_mixer_1	456	50	70	115
+pattern2.bg	pattern2	bg	bg_pattern_2	16	165	70	115
+tb303_2.bg	tb303_2	bg	bg_tb303	90	165	366	115
+mixer2.bg	mixer2	bg	bg_mixer_2	456	165	70	115
+pattern3.bg	pattern3	bg	bg_pattern_3	16	280	70	115
+tr808.bg	tr808	bg	bg_tr808	90	280	366	115
+mixer3.bg	mixer3	bg	bg_mixer_3	456	280	70	115
+pattern4.bg	pattern4	bg	bg_pattern_4	16	395	70	115
+tr909.bg	tr909	bg	bg_tr909	90	395	366	115
+mixer4.bg	mixer4	bg	bg_mixer_4	456	395	70	115
+master.bg	master	bg	bg_master	526	50	82	98
+pcf.bg	pcf	bg	bg_pcf	526	148	82	111
+delay.bg	delay	bg	bg_delay	526	259	82	93
+dist.bg	dist	bg	bg_dist	526	352	82	65
+comp.bg	comp	bg	bg_comp	526	417	82	93
+pattern1.focus	pattern1	focus	focus_off	86	50	4	115	row=0 on=focus_on
+pattern1.row	pattern1	row	-	16	50	510	115	row=0
+pattern2.focus	pattern2	focus	focus_off	86	165	4	115	row=1 on=focus_on
+pattern2.row	pattern2	row	-	16	165	510	115	row=1
+pattern3.focus	pattern3	focus	focus_off	86	280	4	115	row=2 on=focus_on
+pattern3.row	pattern3	row	-	16	280	510	115	row=2
+pattern4.focus	pattern4	focus	focus_off	86	395	4	115	row=3 on=focus_on
+pattern4.row	pattern4	row	-	16	395	510	115	row=3
+transport.shuffle	transport	knob	knob_gray	27	13	18	19	span=64
 transport.tempo	transport	display	seg_0..9,seg_blank	60	27	27	16
 transport.tempo_up	transport	repeat	arrow_inc_rest	89	26	11	9
 transport.tempo_down	transport	repeat	arrow_dec_rest	89	35	11	9
@@ -88,12 +118,12 @@ pattern4.steps	pattern4	display	seg_0..9,seg_blank	52	490	19	16
 pattern4.steps_up	pattern4	repeat	arrow_inc_rest	72	489	11	9
 pattern4.steps_down	pattern4	repeat	arrow_dec_rest	72	498	11	9
 tb303_1.wave	tb303_1	hswitch	switch_wave_1	114.65	68.5	16	12
-tb303_1.tune	tb303_1	knob	knob_303	162	62	30	30
-tb303_1.cutoff	tb303_1	knob	knob_303	195	62	30	30
-tb303_1.reso	tb303_1	knob	knob_303	228	62	30	30
-tb303_1.envmod	tb303_1	knob	knob_303	261	62	30	30
-tb303_1.decay	tb303_1	knob	knob_303	294	62	30	30
-tb303_1.accent	tb303_1	knob	knob_303	327	62	30	30
+tb303_1.tune	tb303_1	knob	knob_303	162	62	30	30	span=62
+tb303_1.cutoff	tb303_1	knob	knob_303	195	62	30	30	span=62
+tb303_1.reso	tb303_1	knob	knob_303	228	62	30	30	span=62
+tb303_1.envmod	tb303_1	knob	knob_303	261	62	30	30	span=62
+tb303_1.decay	tb303_1	knob	knob_303	294	62	30	30	span=62
+tb303_1.accent	tb303_1	knob	knob_303	327	62	30	30	span=62
 tb303_1.edit_step	tb303_1	display	seg_0..9,seg_blank	420	75	19	16
 tb303_1.back	tb303_1	trigger	btn_pill_17x10_rest	418	112	17	10
 tb303_1.step	tb303_1	trigger	btn_step_rest	414.6	140	25.4	17
@@ -138,12 +168,12 @@ tb303_1.accent_led	tb303_1	led	led_303_off	365.5	132	6	6
 tb303_1.slide	tb303_1	trigger	btn_flag_rest	389	139	9	16
 tb303_1.slide_led	tb303_1	led	led_303_off	390.5	132	6	6
 tb303_2.wave	tb303_2	hswitch	switch_wave_0	114.65	183.5	16	12
-tb303_2.tune	tb303_2	knob	knob_303	162	177	30	30
-tb303_2.cutoff	tb303_2	knob	knob_303	195	177	30	30
-tb303_2.reso	tb303_2	knob	knob_303	228	177	30	30
-tb303_2.envmod	tb303_2	knob	knob_303	261	177	30	30
-tb303_2.decay	tb303_2	knob	knob_303	294	177	30	30
-tb303_2.accent	tb303_2	knob	knob_303	327	177	30	30
+tb303_2.tune	tb303_2	knob	knob_303	162	177	30	30	span=62
+tb303_2.cutoff	tb303_2	knob	knob_303	195	177	30	30	span=62
+tb303_2.reso	tb303_2	knob	knob_303	228	177	30	30	span=62
+tb303_2.envmod	tb303_2	knob	knob_303	261	177	30	30	span=62
+tb303_2.decay	tb303_2	knob	knob_303	294	177	30	30	span=62
+tb303_2.accent	tb303_2	knob	knob_303	327	177	30	30	span=62
 tb303_2.edit_step	tb303_2	display	seg_0..9,seg_blank	420	190	19	16
 tb303_2.back	tb303_2	trigger	btn_pill_17x10_pressed	418	227	17	10
 tb303_2.step	tb303_2	trigger	btn_step_pressed	414.6	255	25.4	17
@@ -187,34 +217,34 @@ tb303_2.accent	tb303_2	trigger	btn_flag_rest	364	254	9	16
 tb303_2.accent_led	tb303_2	led	led_303_on	365.5	247	6	6
 tb303_2.slide	tb303_2	trigger	btn_flag_rest	389	254	9	16
 tb303_2.slide_led	tb303_2	led	led_303_off	390.5	247	6	6
-tr808.ac_level	tr808	knob	knob_808_red	104	289	13	13
-tr808.bd_level	tr808	knob	knob_808_red	126	289	13	13
-tr808.bd_tone	tr808	knob	knob_808_white	126	311	13	13
-tr808.bd_decay	tr808	knob	knob_808_white	126	334	13	13
-tr808.sd_level	tr808	knob	knob_808_red	148	289	13	13
-tr808.sd_tone	tr808	knob	knob_808_white	148	311	13	13
-tr808.sd_snappy	tr808	knob	knob_808_white	148	334	13	13
-tr808.lt_level	tr808	knob	knob_808_red	170	289	13	13
-tr808.lt_tuning	tr808	knob	knob_808_white	170	311	13	13
-tr808.mt_level	tr808	knob	knob_808_red	192	289	13	13
-tr808.mt_tuning	tr808	knob	knob_808_white	192	311	13	13
-tr808.ht_level	tr808	knob	knob_808_red	214	289	13	13
-tr808.ht_tuning	tr808	knob	knob_808_white	214	311	13	13
-tr808.rs_level	tr808	knob	knob_808_red	236	289	13	13
-tr808.cp_level	tr808	knob	knob_808_red	258	289	13	13
-tr808.cb_level	tr808	knob	knob_808_red	280	289	13	13
-tr808.cy_level	tr808	knob	knob_808_red	302	289	13	13
-tr808.cy_tone	tr808	knob	knob_808_white	302	311	13	13
-tr808.cy_decay	tr808	knob	knob_808_white	302	334	13	13
-tr808.oh_level	tr808	knob	knob_808_red	324	289	13	13
-tr808.oh_decay	tr808	knob	knob_808_white	324	334	13	13
-tr808.ch_level	tr808	knob	knob_808_red	346	289	13	13
+tr808.ac_level	tr808	knob	knob_808_red	104	289	13	13	span=36
+tr808.bd_level	tr808	knob	knob_808_red	126	289	13	13	span=36
+tr808.bd_tone	tr808	knob	knob_808_white	126	311	13	13	span=36
+tr808.bd_decay	tr808	knob	knob_808_white	126	334	13	13	span=36
+tr808.sd_level	tr808	knob	knob_808_red	148	289	13	13	span=36
+tr808.sd_tone	tr808	knob	knob_808_white	148	311	13	13	span=36
+tr808.sd_snappy	tr808	knob	knob_808_white	148	334	13	13	span=36
+tr808.lt_level	tr808	knob	knob_808_red	170	289	13	13	span=36
+tr808.lt_tuning	tr808	knob	knob_808_white	170	311	13	13	span=36
+tr808.mt_level	tr808	knob	knob_808_red	192	289	13	13	span=36
+tr808.mt_tuning	tr808	knob	knob_808_white	192	311	13	13	span=36
+tr808.ht_level	tr808	knob	knob_808_red	214	289	13	13	span=36
+tr808.ht_tuning	tr808	knob	knob_808_white	214	311	13	13	span=36
+tr808.rs_level	tr808	knob	knob_808_red	236	289	13	13	span=36
+tr808.cp_level	tr808	knob	knob_808_red	258	289	13	13	span=36
+tr808.cb_level	tr808	knob	knob_808_red	280	289	13	13	span=36
+tr808.cy_level	tr808	knob	knob_808_red	302	289	13	13	span=36
+tr808.cy_tone	tr808	knob	knob_808_white	302	311	13	13	span=36
+tr808.cy_decay	tr808	knob	knob_808_white	302	334	13	13	span=36
+tr808.oh_level	tr808	knob	knob_808_red	324	289	13	13	span=36
+tr808.oh_decay	tr808	knob	knob_808_white	324	334	13	13	span=36
+tr808.ch_level	tr808	knob	knob_808_red	346	289	13	13	span=36
 tr808.slot3_switch	tr808	vswitch	switch_808_1	171	335	11	17
 tr808.slot4_switch	tr808	vswitch	switch_808_1	193	335	11	17
 tr808.slot5_switch	tr808	vswitch	switch_808_1	215	335	11	17
 tr808.slot6_switch	tr808	vswitch	switch_808_0	236	335	11	17
 tr808.slot7_switch	tr808	vswitch	switch_808_0	259	335	11	17
-tr808.mod_view	tr808	modview	mod_view	367.2	284.2	84.4	106
+tr808.mod_view	tr808	modview	mod_view	367.2	284.2	84.4	106	glass=mod_view_glass picture=4.2,3.7,76,76 name=2,86,80.4,19 font=6.6 ink=e8e2c2
 tr808.select_bd	tr808	area	sel808_BD	123.6	352.6	17.8	9.2
 tr808.step1	tr808	steps	step808_red_on	106	370.2	12.6	19
 tr808.step2	tr808	steps	step808_red_off	122	370.2	12.6	19
@@ -232,34 +262,34 @@ tr808.step13	tr808	steps	step808_white_on	298	370.2	12.6	19
 tr808.step14	tr808	steps	step808_white_off	314	370.2	12.6	19
 tr808.step15	tr808	steps	step808_white_off	330	370.2	12.6	19
 tr808.step16	tr808	steps	step808_white_off	346	370.2	12.6	19
-tr909.ac_level	tr909	knob	knob_909	99	423	12	12
-tr909.bd_tune	tr909	knob	knob_909	120	423	12	12
-tr909.bd_level	tr909	knob	knob_909	140	423	12	12
-tr909.sd_tune	tr909	knob	knob_909	162	423	12	12
-tr909.sd_level	tr909	knob	knob_909	182	423	12	12
-tr909.lt_tune	tr909	knob	knob_909	204	423	12	12
-tr909.lt_level	tr909	knob	knob_909	224	423	12	12
-tr909.mt_tune	tr909	knob	knob_909	246	423	12	12
-tr909.mt_level	tr909	knob	knob_909	266	423	12	12
-tr909.ht_tune	tr909	knob	knob_909	288	423	12	12
-tr909.ht_level	tr909	knob	knob_909	308	423	12	12
-tr909.rs_level	tr909	knob	knob_909	330	423	12	12
-tr909.cp_level	tr909	knob	knob_909	350	423	12	12
-tr909.hh_level	tr909	knob	knob_909	392	423	12	12
-tr909.cc_level	tr909	knob	knob_909	414	423	12	12
-tr909.rc_level	tr909	knob	knob_909	434	423	12	12
-tr909.bd_attack	tr909	knob	knob_909	120	449	12	12
-tr909.bd_decay	tr909	knob	knob_909	140	449	12	12
-tr909.sd_tone	tr909	knob	knob_909	162	449	12	12
-tr909.sd_snappy	tr909	knob	knob_909	182	449	12	12
-tr909.lt_decay	tr909	knob	knob_909	204	449	12	12
-tr909.mt_decay	tr909	knob	knob_909	246	449	12	12
-tr909.ht_decay	tr909	knob	knob_909	288	449	12	12
-tr909.ch_decay	tr909	knob	knob_909	372	449	12	12
-tr909.oh_decay	tr909	knob	knob_909	392	449	12	12
-tr909.cc_tune	tr909	knob	knob_909	414	449	12	12
-tr909.rc_tune	tr909	knob	knob_909	434	449	12	12
-tr909.flam	tr909	knob	knob_909	99	471	12	12
+tr909.ac_level	tr909	knob	knob_909	99	423	12	12	span=41
+tr909.bd_tune	tr909	knob	knob_909	120	423	12	12	span=41
+tr909.bd_level	tr909	knob	knob_909	140	423	12	12	span=41
+tr909.sd_tune	tr909	knob	knob_909	162	423	12	12	span=41
+tr909.sd_level	tr909	knob	knob_909	182	423	12	12	span=41
+tr909.lt_tune	tr909	knob	knob_909	204	423	12	12	span=41
+tr909.lt_level	tr909	knob	knob_909	224	423	12	12	span=41
+tr909.mt_tune	tr909	knob	knob_909	246	423	12	12	span=41
+tr909.mt_level	tr909	knob	knob_909	266	423	12	12	span=41
+tr909.ht_tune	tr909	knob	knob_909	288	423	12	12	span=41
+tr909.ht_level	tr909	knob	knob_909	308	423	12	12	span=41
+tr909.rs_level	tr909	knob	knob_909	330	423	12	12	span=41
+tr909.cp_level	tr909	knob	knob_909	350	423	12	12	span=41
+tr909.hh_level	tr909	knob	knob_909	392	423	12	12	span=41
+tr909.cc_level	tr909	knob	knob_909	414	423	12	12	span=41
+tr909.rc_level	tr909	knob	knob_909	434	423	12	12	span=41
+tr909.bd_attack	tr909	knob	knob_909	120	449	12	12	span=41
+tr909.bd_decay	tr909	knob	knob_909	140	449	12	12	span=41
+tr909.sd_tone	tr909	knob	knob_909	162	449	12	12	span=41
+tr909.sd_snappy	tr909	knob	knob_909	182	449	12	12	span=41
+tr909.lt_decay	tr909	knob	knob_909	204	449	12	12	span=41
+tr909.mt_decay	tr909	knob	knob_909	246	449	12	12	span=41
+tr909.ht_decay	tr909	knob	knob_909	288	449	12	12	span=41
+tr909.ch_decay	tr909	knob	knob_909	372	449	12	12	span=41
+tr909.oh_decay	tr909	knob	knob_909	392	449	12	12	span=41
+tr909.cc_tune	tr909	knob	knob_909	414	449	12	12	span=41
+tr909.rc_tune	tr909	knob	knob_909	434	449	12	12	span=41
+tr909.flam	tr909	knob	knob_909	99	471	12	12	span=41
 tr909.flam_button	tr909	toggle	toggle_flam_on	97.6	487.6	14.8	14.8
 tr909.select_bd	tr909	area	sel909_BD	116.8	399.6	39.6	9.2
 tr909.step1	tr909	steps	step909_2	119	480.4	16.4	16.8
@@ -279,73 +309,122 @@ tr909.step14	tr909	steps	step909_0	392	480.4	16.4	16.8
 tr909.step15	tr909	steps	step909_1	413	480.4	16.4	16.8
 tr909.step16	tr909	steps	step909_0	434	480.4	16.4	16.8
 mixer1.mute	mixer1	toggle	power_mix_on	459	54	17	14
-mixer1.meter	mixer1	meter	meter_14x14_2	507	54	14	14
-mixer1.pan	mixer1	knob	knob_gray	466	75	18	19
-mixer1.delay	mixer1	knob	knob_gray	498	129	18	19
-mixer1.level	mixer1	fader	fader_track	466	109	15	54
+mixer1.meter	mixer1	meter	meter_14x14_2	507	54	14	14	map=0,1,1,1,2,2,2,3,3,4,4
+mixer1.pan	mixer1	knob	knob_gray	466	75	18	19	span=64
+mixer1.delay	mixer1	knob	knob_gray	498	129	18	19	span=64
+mixer1.level	mixer1	fader	fader_track	466	109	15	54	handle=11
 mixer1.dist	mixer1	toggle	mixsw_off	498	69	24	11
 mixer1.pcf	mixer1	radio	mixsw_off	498	87	24	11
 mixer1.comp	mixer1	radio	mixsw_off	498	105	24	11
 mixer2.mute	mixer2	toggle	power_mix_on	459	169	17	14
-mixer2.meter	mixer2	meter	meter_14x14_2	507	169	14	14
-mixer2.pan	mixer2	knob	knob_gray	466	190	18	19
-mixer2.delay	mixer2	knob	knob_gray	498	244	18	19
-mixer2.level	mixer2	fader	fader_track	466	224	15	54
+mixer2.meter	mixer2	meter	meter_14x14_2	507	169	14	14	map=0,1,1,1,2,2,2,3,3,4,4
+mixer2.pan	mixer2	knob	knob_gray	466	190	18	19	span=64
+mixer2.delay	mixer2	knob	knob_gray	498	244	18	19	span=64
+mixer2.level	mixer2	fader	fader_track	466	224	15	54	handle=11
 mixer2.dist	mixer2	toggle	mixsw_on	498	184	24	11
 mixer2.pcf	mixer2	radio	mixsw_off	498	202	24	11
 mixer2.comp	mixer2	radio	mixsw_off	498	220	24	11
 mixer3.mute	mixer3	toggle	power_mix_on	459	284	17	14
-mixer3.meter	mixer3	meter	meter_14x14_3	507	284	14	14
-mixer3.pan	mixer3	knob	knob_gray	466	305	18	19
-mixer3.delay	mixer3	knob	knob_gray	498	359	18	19
-mixer3.level	mixer3	fader	fader_track	466	339	15	54
+mixer3.meter	mixer3	meter	meter_14x14_3	507	284	14	14	map=0,1,1,1,2,2,2,3,3,4,4
+mixer3.pan	mixer3	knob	knob_gray	466	305	18	19	span=64
+mixer3.delay	mixer3	knob	knob_gray	498	359	18	19	span=64
+mixer3.level	mixer3	fader	fader_track	466	339	15	54	handle=11
 mixer3.dist	mixer3	toggle	mixsw_off	498	299	24	11
 mixer3.pcf	mixer3	radio	mixsw_off	498	317	24	11
 mixer3.comp	mixer3	radio	mixsw_off	498	335	24	11
 mixer4.mute	mixer4	toggle	power_mix_on	459	399	17	14
-mixer4.meter	mixer4	meter	meter_14x14_1	507	399	14	14
-mixer4.pan	mixer4	knob	knob_gray	466	420	18	19
-mixer4.delay	mixer4	knob	knob_gray	498	474	18	19
-mixer4.level	mixer4	fader	fader_track	466	454	15	54
+mixer4.meter	mixer4	meter	meter_14x14_1	507	399	14	14	map=0,1,1,1,2,2,2,3,3,4,4
+mixer4.pan	mixer4	knob	knob_gray	466	420	18	19	span=64
+mixer4.delay	mixer4	knob	knob_gray	498	474	18	19	span=64
+mixer4.level	mixer4	fader	fader_track	466	454	15	54	handle=11
 mixer4.dist	mixer4	toggle	mixsw_off	498	414	24	11
 mixer4.pcf	mixer4	radio	mixsw_off	498	432	24	11
 mixer4.comp	mixer4	radio	mixsw_off	498	450	24	11
 master.meter_l	master	meter	meter_15x56_6	542	74	15	56
 master.meter_r	master	meter	meter_15x56_6	577	74	15	56
-master.fader	master	fader	fader_track	559	75	15	54
+master.fader	master	fader	fader_track	559	75	15	54	handle=11
 master.comp	master	radio	mixsw_on	568	131	24	11
 pcf.on	pcf	toggle	power_fx_on	529	150	16	16
-pcf.meter	pcf	meter	meter_14x14_0	589	151	14	14
+pcf.meter	pcf	meter	meter_14x14_0	589	151	14	14	map=0,1,1,1,2,2,2,3,3,4,4
 pcf.pattern	pcf	display	seg_0..9,seg_blank	536	171	18	16
 pcf.pattern_up	pcf	repeat	arrow_inc_rest	555	170	11	9
 pcf.pattern_down	pcf	repeat	arrow_dec_rest	555	179	11	9
 pcf.mode	pcf	vswitch	switch_fx_1	575	169	9	18
-pcf.freq	pcf	fader	fader_track	530	198	15	54
-pcf.q	pcf	fader	fader_track	549	198	15	54
-pcf.amt	pcf	fader	fader_track	568	198	15	54
-pcf.dec	pcf	fader	fader_track	587	198	15	54
+pcf.freq	pcf	fader	fader_track	530	198	15	54	handle=11
+pcf.q	pcf	fader	fader_track	549	198	15	54	handle=11
+pcf.amt	pcf	fader	fader_track	568	198	15	54	handle=11
+pcf.dec	pcf	fader	fader_track	587	198	15	54	handle=11
 delay.on	delay	toggle	power_fx_on	529	261.5	16	16
-delay.meter	delay	meter	meter_14x14_4	589	262.5	14	14
+delay.meter	delay	meter	meter_14x14_4	589	262.5	14	14	map=0,1,1,1,2,2,2,3,3,4,4
 delay.steps	delay	display	seg_0..9,seg_blank	535	282	19	16
 delay.steps_up	delay	repeat	arrow_inc_rest	555	281	11	9
 delay.steps_down	delay	repeat	arrow_dec_rest	555	290	11	9
 delay.triplet	delay	vswitch	switch_fx_1	575	281	9	18
-delay.pan	delay	knob	knob_gray	538	317	18	19
-delay.feedback	delay	knob	knob_gray	579	317	18	19
+delay.pan	delay	knob	knob_gray	538	317	18	19	span=64
+delay.feedback	delay	knob	knob_gray	579	317	18	19	span=64
 dist.on	dist	toggle	power_fx_on	529	354.5	16	16
-dist.meter	dist	meter	meter_14x14_1	589	355.5	14	14
-dist.amount	dist	knob	knob_gray	538	380	18	19
-dist.shape	dist	knob	knob_gray	579	380	18	19
+dist.meter	dist	meter	meter_14x14_1	589	355.5	14	14	map=0,1,1,1,2,2,2,3,3,4,4
+dist.amount	dist	knob	knob_gray	538	380	18	19	span=64
+dist.shape	dist	knob	knob_gray	579	380	18	19	span=64
 comp.on	comp	toggle	power_fx_on	529	419.5	16	16
-comp.meter	comp	meter	meter_14x14_3	589	420.5	14	14
-comp.gr1	comp	meter	gr_led_red	534	443.5	7	7
-comp.gr2	comp	meter	gr_led_red	541	443.5	7	7
-comp.gr3	comp	meter	gr_led_amber	548	443.5	7	7
-comp.gr4	comp	meter	gr_led_amber	555	443.5	7	7
-comp.gr5	comp	meter	gr_led_green	562	443.5	7	7
-comp.gr6	comp	meter	gr_led_off_y	569	443.5	7	7
-comp.gr7	comp	meter	gr_led_off_y	576	443.5	7	7
-comp.gr8	comp	meter	gr_led_off_r	583	443.5	7	7
-comp.gr9	comp	meter	gr_led_off_r	590	443.5	7	7
-comp.ratio	comp	knob	knob_gray	538	474	18	19
-comp.threshold	comp	knob	knob_gray	579	474	18	19
+comp.meter	comp	meter	meter_14x14_3	589	420.5	14	14	map=0,1,1,1,2,2,2,3,3,4,4
+comp.gr1	comp	meter	gr_led_green	534	443.5	7	7	on=gr_led_green off=gr_led_off_g
+comp.gr2	comp	meter	gr_led_green	541	443.5	7	7	on=gr_led_green off=gr_led_off_g
+comp.gr3	comp	meter	gr_led_green	548	443.5	7	7	on=gr_led_green off=gr_led_off_g
+comp.gr4	comp	meter	gr_led_amber	555	443.5	7	7	on=gr_led_amber off=gr_led_off_y
+comp.gr5	comp	meter	gr_led_amber	562	443.5	7	7	on=gr_led_amber off=gr_led_off_y
+comp.gr6	comp	meter	gr_led_off_y	569	443.5	7	7	on=gr_led_amber off=gr_led_off_y
+comp.gr7	comp	meter	gr_led_off_r	576	443.5	7	7	on=gr_led_red off=gr_led_off_r
+comp.gr8	comp	meter	gr_led_off_r	583	443.5	7	7	on=gr_led_red off=gr_led_off_r
+comp.gr9	comp	meter	gr_led_off_r	590	443.5	7	7	on=gr_led_red off=gr_led_off_r
+comp.ratio	comp	knob	knob_gray	538	474	18	19	span=64
+comp.threshold	comp	knob	knob_gray	579	474	18	19	span=64
+tr808.fg	tr808	fg	fg_tr808	168	324	107	10
+pcf.fg	pcf	fg	fg_pcf	530	251	76	7
+tr808.strip	tr808	strip	-	104	370	256	20	cells=16
+tr909.strip	tr909	strip	-	116	480	336	18	cells=16
+tr808.legend	tr808	select	-	100	351	264	14	cells=100:22:0 count=12
+tr808.upper	tr808	select	-	168	323	106	12	cells=168:22:3 count=12
+tr909.legend	tr909	select	-	94	399	358	14	cells=94:22:0,116:42:1,326:21:6 count=12 open=1
+tr909.names	tr909	select	-	116	469	336	10	cells=94:22:0,116:42:1,326:21:6 count=12 open=1
+tr808.mark_AC	tr808	mark	sel808_AC	101.6	352.6	17.8	9.2	slot=0 lit=lit808_AC litsel=litsel808_AC
+tr808.mark_BD	tr808	mark	sel808_BD	123.6	352.6	17.8	9.2	slot=1 lit=lit808_BD litsel=litsel808_BD
+tr808.mark_SD	tr808	mark	sel808_SD	145.6	352.6	17.8	9.2	slot=2 lit=lit808_SD litsel=litsel808_SD
+tr808.mark_LT	tr808	mark	sel808_LT	167.6	352.6	17.8	9.2	slot=3 lit=lit808_LT litsel=litsel808_LT
+tr808.mark_MT	tr808	mark	sel808_MT	189.6	352.6	17.8	9.2	slot=4 lit=lit808_MT litsel=litsel808_MT
+tr808.mark_HT	tr808	mark	sel808_HT	211.6	352.6	17.8	9.2	slot=5 lit=lit808_HT litsel=litsel808_HT
+tr808.mark_RS	tr808	mark	sel808_RS	233.6	352.6	17.8	9.2	slot=6 lit=lit808_RS litsel=litsel808_RS
+tr808.mark_CP	tr808	mark	sel808_CP	255.6	352.6	17.8	9.2	slot=7 lit=lit808_CP litsel=litsel808_CP
+tr808.mark_CB	tr808	mark	sel808_CB	277.6	352.6	17.8	9.2	slot=8 lit=lit808_CB litsel=litsel808_CB
+tr808.mark_CY	tr808	mark	sel808_CY	299.6	352.6	17.8	9.2	slot=9 lit=lit808_CY litsel=litsel808_CY
+tr808.mark_OH	tr808	mark	sel808_OH	321.6	352.6	17.8	9.2	slot=10 lit=lit808_OH litsel=litsel808_OH
+tr808.mark_CH	tr808	mark	sel808_CH	343.6	352.6	17.8	9.2	slot=11 lit=lit808_CH litsel=litsel808_CH
+tr808.mark_LC	tr808	mark	sel808_LC	168.6	324.4	17.8	8.8	slot=0 upper=1 lit=lit808_LC litsel=litsel808_LC
+tr808.mark_MC	tr808	mark	sel808_MC	190.6	324.4	17.8	8.8	slot=1 upper=1 lit=lit808_MC litsel=litsel808_MC
+tr808.mark_HC	tr808	mark	sel808_HC	212.6	324.4	17.8	8.8	slot=2 upper=1 lit=lit808_HC litsel=litsel808_HC
+tr808.mark_CL	tr808	mark	sel808_CL	234.6	324.4	17.8	8.8	slot=3 upper=1 lit=lit808_CL litsel=litsel808_CL
+tr808.mark_MA	tr808	mark	sel808_MA	256.6	324.4	17.8	8.8	slot=4 upper=1 lit=lit808_MA litsel=litsel808_MA
+tr909.mark_AC	tr909	mark	sel909_AC	96.4	399.6	18.4	9.2	slot=0 lit=- litsel=sel909_AC
+tr909.mark_BD	tr909	mark	sel909_BD	116.8	399.6	39.6	9.2	slot=1 lit=- litsel=sel909_BD
+tr909.mark_SD	tr909	mark	sel909_SD	158.8	399.6	39.6	9.2	slot=2 lit=- litsel=sel909_SD
+tr909.mark_LT	tr909	mark	sel909_LT	200.8	399.6	39.6	9.2	slot=3 lit=- litsel=sel909_LT
+tr909.mark_MT	tr909	mark	sel909_MT	242.8	399.6	39.6	9.2	slot=4 lit=- litsel=sel909_MT
+tr909.mark_HT	tr909	mark	sel909_HT	284.8	399.6	39.6	9.2	slot=5 lit=- litsel=sel909_HT
+tr909.mark_RS	tr909	mark	sel909_RS	326.8	399.6	19.8	9.2	slot=6 lit=- litsel=sel909_RS
+tr909.mark_CP	tr909	mark	sel909_CP	346.6	399.6	19.8	9.2	slot=7 lit=- litsel=sel909_CP
+tr909.mark_CH	tr909	mark	sel909_CH	368.8	399.6	19.8	9.2	slot=8 lit=- litsel=sel909_CH
+tr909.mark_OH	tr909	mark	sel909_OH	388.6	399.6	19.8	9.2	slot=9 lit=- litsel=sel909_OH
+tr909.mark_CC	tr909	mark	sel909_CC	410.8	399.6	19.8	9.2	slot=10 lit=- litsel=sel909_CC
+tr909.mark_RC	tr909	mark	sel909_RC	430.6	399.6	19.8	9.2	slot=11 lit=- litsel=sel909_RC
+tr909.led_AC	tr909	mark	led909ac_on	97.5	446.3	5	5	slot=0 lit=led909ac_lit litsel=led909ac_lit
+tr909.led_BD	tr909	mark	led909_on	119.5	470.8	5	5	slot=1 lit=led909_lit litsel=led909_lit
+tr909.led_SD	tr909	mark	led909_on	161.5	470.8	5	5	slot=2 lit=led909_lit litsel=led909_lit
+tr909.led_LT	tr909	mark	led909_on	203.5	470.8	5	5	slot=3 lit=led909_lit litsel=led909_lit
+tr909.led_MT	tr909	mark	led909_on	245.5	470.8	5	5	slot=4 lit=led909_lit litsel=led909_lit
+tr909.led_HT	tr909	mark	led909_on	287.5	470.8	5	5	slot=5 lit=led909_lit litsel=led909_lit
+tr909.led_RS	tr909	mark	led909_on	329.5	470.8	5	5	slot=6 lit=led909_lit litsel=led909_lit
+tr909.led_CP	tr909	mark	led909_on	358.7	470.8	5	5	slot=7 lit=led909_lit litsel=led909_lit
+tr909.led_CH	tr909	mark	led909_on	371.5	470.8	5	5	slot=8 lit=led909_lit litsel=led909_lit
+tr909.led_OH	tr909	mark	led909_on	400.7	470.8	5	5	slot=9 lit=led909_lit litsel=led909_lit
+tr909.led_CC	tr909	mark	led909_on	413.5	470.8	5	5	slot=10 lit=led909_lit litsel=led909_lit
+tr909.led_RC	tr909	mark	led909_on	442.7	470.8	5	5	slot=11 lit=led909_lit litsel=led909_lit

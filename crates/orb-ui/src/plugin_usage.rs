@@ -3,9 +3,7 @@
 //! item).
 //!
 //! The text is `docs/plugin_usage.md`, embedded and drawn from a small subset of Markdown
-//! ([`parse`]): the page and the file cannot differ, because the page is the file, except that
-//! the CLAP plugin's page leaves out the section the file marks with `<!-- vst3-only -->` and
-//! `<!-- /vst3-only -->` (the logo and the trademark sentence, at the bottom; [`page_text`]).
+//! ([`parse`]): the page and the file cannot differ, because the page is the file.
 //! The subset is headings (`#`, `##`, `###`), paragraphs, bullets (`- `), numbered items
 //! (`1. `), tables, the inline `**bold**` and `` `code` ``, and a `<picture>` block, which
 //! stands for Steinberg's VST Compatible Logo ([`LOGO_DARK`], the variant for the window's dark
@@ -23,30 +21,6 @@ pub const TEXT: &str = include_str!("../../../docs/plugin_usage.md");
 /// The official logo for a dark background (white box), Steinberg's file, unaltered.
 pub const LOGO_DARK: &[u8] =
     include_bytes!("../../../assets/steinberg/VST_Compatible_Logo_Steinberg_negative.svg");
-/// The marker lines around the file's VST section (the logo and the trademark sentence): the
-/// page of a CLAP plugin leaves the section out, the file keeps it (GitHub's doc).
-pub const VST_BEGIN: &str = "<!-- vst3-only -->";
-pub const VST_END: &str = "<!-- /vst3-only -->";
-
-/// The file's text for a plugin format: all of it for VST3, without the marked VST section
-/// (the marker lines included) for CLAP.
-pub fn page_text(vst3: bool) -> String {
-    let mut out = String::with_capacity(TEXT.len());
-    let mut skipping = false;
-    for line in TEXT.lines() {
-        match line.trim() {
-            VST_BEGIN if !vst3 => skipping = true,
-            VST_END if !vst3 => skipping = false,
-            _ if skipping => {}
-            _ => {
-                out.push_str(line);
-                out.push('\n');
-            }
-        }
-    }
-    out
-}
-
 /// The loader URI of the logo.
 const LOGO_URI: &str = "bytes://orb-ui/plugin_usage_vst_logo.svg";
 /// The logo's size in points: the SVG's viewBox is 116.2 x 74.7, and the width is well above
@@ -300,6 +274,8 @@ impl App {
         if !self.plugin_usage_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.plugin_usage_serial += 1;
+        } else {
+            self.raise_window(self.plugin_usage_id());
         }
         self.plugin_usage_open = true;
     }
@@ -330,17 +306,11 @@ impl App {
             (screen.width() - 24.0).clamp(200.0, 580.0),
             (screen.height() - 40.0).clamp(150.0, 520.0),
         );
-        // the VST section (Steinberg's logo and trademark line) is for the VST3 plugin only
-        let vst3 = self
-            .embed()
-            .and_then(|e| e.format())
-            .is_none_or(|f| f == crate::embed::PluginFormat::Vst3);
         let blocks = ctx.memory_mut(|m| {
             m.data
-                .get_temp_mut_or_insert_with(
-                    egui::Id::unique(("orb_plugin_usage_blocks", vst3)),
-                    || std::sync::Arc::new(parse(&page_text(vst3))),
-                )
+                .get_temp_mut_or_insert_with(egui::Id::unique("orb_plugin_usage_blocks"), || {
+                    std::sync::Arc::new(parse(TEXT))
+                })
                 .clone()
         });
         // centered the way File > Info is (info.rs): pivot, default place, an id per open
@@ -367,14 +337,10 @@ impl App {
 mod tests {
     use super::*;
 
+    /// The text of the page.
     fn all_text() -> String {
-        text_of(true)
-    }
-
-    /// The text of the page of a plugin format.
-    fn text_of(vst3: bool) -> String {
         let mut s = String::new();
-        for b in parse(&page_text(vst3)) {
+        for b in parse(TEXT) {
             match b {
                 Block::Heading(_, t) | Block::Para(t) => s += &plain(&t),
                 Block::List(_, v) => v.iter().for_each(|t| s += &plain(t)),
@@ -392,7 +358,7 @@ mod tests {
     /// The page is the file: every word of the file's text lines is on the page.
     #[test]
     fn the_page_shows_the_whole_file() {
-        let blocks = parse(&page_text(true));
+        let blocks = parse(TEXT);
         assert!(blocks.len() > 30, "{} blocks", blocks.len());
         let shown = all_text();
         for line in TEXT.lines() {
@@ -410,7 +376,8 @@ mod tests {
         }
         assert_eq!(blocks.iter().filter(|b| **b == Block::Logo).count(), 1);
         let tables = blocks.iter().filter(|b| matches!(b, Block::Table(..)));
-        assert_eq!(tables.count(), 3);
+        // the channels, the banks, the drum notes, the outputs (task-256)
+        assert_eq!(tables.count(), 4);
     }
 
     /// Every list item of the file starts its own line (a glued `...mode.- **Keys.**` showed a
@@ -421,7 +388,7 @@ mod tests {
             .lines()
             .filter(|l| l.starts_with("- ") || numbered(l).is_some())
             .count();
-        let drawn: usize = parse(&page_text(true))
+        let drawn: usize = parse(TEXT)
             .iter()
             .map(|b| {
                 if let Block::List(_, v) = b {
@@ -442,45 +409,13 @@ mod tests {
         }
     }
 
-    /// The VST3 page is the file; the CLAP page is the file minus exactly the marked VST
-    /// section (the logo and the trademark sentence), and nothing else differs.
+    /// The page ends with the logo and the sentence.
     #[test]
-    fn the_clap_page_is_the_file_minus_the_vst_section() {
-        assert_eq!(page_text(true), TEXT.replace("\r\n", "\n"));
-        let lines: Vec<&str> = TEXT.lines().collect();
-        let begin = lines.iter().position(|l| l.trim() == VST_BEGIN).unwrap();
-        let end = lines.iter().position(|l| l.trim() == VST_END).unwrap();
-        assert!(begin < end);
-        assert_eq!(lines.iter().filter(|l| l.contains("vst3-only")).count(), 2);
-        let section = lines[begin..=end].join("\n");
-        assert!(section.contains("<picture>") && section.contains(TRADEMARK));
-        // the section is at the bottom of the file: only blank lines follow it
-        assert!(lines[end + 1..].iter().all(|l| l.trim().is_empty()));
-        let mut rest: Vec<&str> = lines[..begin].to_vec();
-        rest.extend(&lines[end + 1..]);
-        let clap = page_text(false);
-        assert_eq!(clap.lines().collect::<Vec<_>>(), rest);
-        for gone in [TRADEMARK, "Compatible_Logo", "<picture>"] {
-            assert!(!clap.contains(gone), "{gone} on the CLAP page");
-        }
-    }
-
-    /// The VST3 page ends with the logo and the sentence; the CLAP page has neither, and its
-    /// first VST still carries the registered sign.
-    #[test]
-    fn the_vst3_page_ends_with_the_logo_and_the_sentence() {
-        let vst3 = parse(&page_text(true));
-        let n = vst3.len();
-        assert_eq!(vst3[n - 2], Block::Logo);
-        assert_eq!(vst3[n - 1], Block::Para(TRADEMARK.into()));
-        let clap = parse(&page_text(false));
-        assert!(!clap.contains(&Block::Logo));
-        assert!(!clap.contains(&Block::Para(TRADEMARK.into())));
-        assert_eq!(clap.len(), n - 2);
-        let shown = text_of(false);
-        assert!(!shown.contains(TRADEMARK));
-        let first = shown.find("VST").expect("VST in the intro");
-        assert!(shown[first..].starts_with("VST\u{ae}"));
+    fn the_page_ends_with_the_logo_and_the_sentence() {
+        let blocks = parse(TEXT);
+        let n = blocks.len();
+        assert_eq!(blocks[n - 2], Block::Logo);
+        assert_eq!(blocks[n - 1], Block::Para(TRADEMARK.into()));
     }
 
     /// Steinberg's terms (assets/README.md, task-233): the sentence is on the page, the first

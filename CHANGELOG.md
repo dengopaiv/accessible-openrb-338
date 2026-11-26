@@ -5,6 +5,41 @@ Windows x64 on the [releases page](https://github.com/dengopaiv/accessible-openr
 the zip carries this file as CHANGELOG.txt. The sound engine is OpenRB-338's: a song renders
 the same as in OpenRB-338 and the original ReBirth in every release below.
 
+## Next release (not released yet)
+
+This section is renamed to the release's version when the release is made (docs/building.md).
+It holds the work of OpenRB-338 taken into the fork on 2026-11-26.
+
+### New from OpenRB-338
+
+- **Options > Audio Output.** Choose the driver, the device, the sample rate and the buffer
+  size, and see what is in use. On Windows, ASIO drivers are offered too. This window is not
+  yet made for screen readers.
+- **Pattern editors.** Edit > 303-1 Pattern Editor, 303-2 Pattern Editor, 808 Pattern Editor
+  and 909 Pattern Editor open a window for one pattern, edited with the mouse; Ctrl+E opens the
+  focused row's. These windows are not yet made for screen readers; in screen reader mode the
+  panel's step editor and drum grids work as before.
+- **The classic panel.** View > Classic draws the original ReBirth panel from the mod's
+  pictures; View > Modern is the panel as before.
+- **More in the Edit menu.** Clear Pattern, and Initialize Song or Loop from Pattern Mode as in
+  the original. Copy Pattern now puts the pattern on the Windows clipboard as text.
+- **Ctrl+I** opens File > Info. In screen reader mode's Choose Mod dialog, Ctrl+I still shows
+  Mod Info of the selected mod, as before.
+- A new song starts with four sample patterns in A1.
+- The meters and the compressor's gain-reduction lights follow the original's scale. In screen
+  reader mode, F4 now says the gain reduction as one of nine lights.
+- Help > About has a button that copies the version.
+
+### Changed
+
+- **Settings and portable mode.** The settings file is now called OpenRB-338.toml (your
+  ui.toml is copied into it once and left as it was). The portable zip now has the file
+  OpenRB-338.portable instead of portable.txt, keeps the settings in OpenRB-338.toml beside the
+  program and the logs in the folder logs. A folder unpacked from an older release, with
+  portable.txt and the folder data, stays portable and keeps its settings: the first start
+  copies data\ui.toml into OpenRB-338.toml. The songs and mods folders inside the program's
+  folder are still remembered relative to it, so a USB stick works under any drive letter.
+
 ## 2026.1111.1330 (2026-11-11)
 
 ### New

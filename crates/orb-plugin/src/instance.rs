@@ -1,7 +1,7 @@
 //! The plugin's main-thread side (task-197): the parameters, the document the state saves, and
 //! the calls the editor uses (`docs/plugin.md` sections 3, 5 and 6).
 //!
-//! [`OrbParams`] is the plugin's `Params` object: the [`IntParam`]s of [`crate::params::SPECS`]
+//! [`OrbParams`] is the plugin's `Params` object: the [`HostParam`]s of [`crate::params::SPECS`]
 //! and, behind a mutex that only main-thread calls take (never `process`), the UI half of the
 //! player ([`orb_player::Player`]) and the [`Doc`]: the song as loaded, the patterns as edited,
 //! the Vintage sound model, the mod and the editor size. The controls are the parameters
@@ -13,14 +13,15 @@
 //! `Command::Load`.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
+use nice_plug::plugin::ParamValue;
 use nice_plug::prelude::*;
-use orb_engine::frame::Engine;
 use orb_engine::frame::edit::{PATTERNS, PatternShape};
+use orb_engine::frame::{Engine, OutputRouting};
 use orb_engine::samples::SampleSet;
 use orb_engine::song::{Device, Song};
 use orb_engine::tables::Tables;
@@ -30,6 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::core::BLOCK;
 use crate::params::{self, COUNT, SPECS, Spec};
+use crate::routing;
 
 /// The devices of the four pattern sections.
 pub const ROWS: [Device; 4] = [
@@ -113,7 +115,7 @@ impl Mode {
 pub struct Doc {
     /// The song file as loaded (`None`: a new song).
     pub song: Option<Vec<u8>>,
-    /// The four pattern arrays as edited (303 #1, 303 #2, 808, 909; 32 patterns each), as the
+    /// The four pattern arrays as edited (303-1, 303-2, 808, 909; 32 patterns each), as the
     /// engine holds them; empty before the first build (the song's own).
     pub patterns: [Vec<u8>; 4],
     /// The Vintage sound model (song msg 35 id 21; `None` before the first build: the song's).
@@ -132,6 +134,9 @@ pub struct Doc {
     /// parameter id; `None` until the first preview, which starts from the parameters' values.
     /// An id it lacks takes the parameter's value.
     pub preview: Option<BTreeMap<String, i32>>,
+    /// Options > Output Routing (task-300): what goes to Mix-L/R and to the drum machines'
+    /// buses; everything by default.
+    pub routing: OutputRouting,
 }
 
 impl Default for Doc {
@@ -146,6 +151,7 @@ impl Default for Doc {
             remote_channel: DEFAULT_REMOTE_CHANNEL,
             mode: Mode::default(),
             preview: None,
+            routing: OutputRouting::default(),
         }
     }
 }
@@ -178,7 +184,7 @@ fn default_remote_channel() -> u8 {
     DEFAULT_REMOTE_CHANNEL
 }
 
-/// The MIDI channels (0-based) of the four pattern sections, 303 #1, 303 #2, 808 and 909: MIDI
+/// The MIDI channels (0-based) of the four pattern sections, 303-1, 303-2, 808 and 909: MIDI
 /// channels 1..4.
 pub const SECTION_CHANNELS: std::ops::RangeInclusive<u8> = 0..=3;
 
@@ -208,6 +214,8 @@ pub struct Shared {
     preview: AtomicBool,
     /// The preview set's values in [`SPECS`] order, written before `preview` is set.
     preview_values: [AtomicI32; COUNT],
+    /// The output routing ([`OutputRouting::to_bits`]).
+    routing: AtomicU32,
 }
 
 impl Default for Shared {
@@ -218,6 +226,7 @@ impl Default for Shared {
             mode: AtomicU8::new(Mode::default().to_u8()),
             preview: AtomicBool::new(false),
             preview_values: std::array::from_fn(|i| AtomicI32::new(SPECS[i].default as i32)),
+            routing: AtomicU32::new(OutputRouting::default().to_bits()),
         }
     }
 }
@@ -250,6 +259,15 @@ impl Shared {
         for (a, &x) in self.preview_values.iter().zip(v) {
             a.store(x, Ordering::Relaxed);
         }
+    }
+
+    /// The output routing as bits ([`OutputRouting::to_bits`]).
+    pub fn routing_bits(&self) -> u32 {
+        self.routing.load(Ordering::Relaxed)
+    }
+
+    fn set_routing(&self, r: &OutputRouting) {
+        self.routing.store(r.to_bits(), Ordering::Relaxed);
     }
 
     /// Whether the Standard Mapping is on.
@@ -296,9 +314,24 @@ struct Saved {
     mode: Mode,
     /// Null: no preview yet.
     preview: Option<BTreeMap<String, i32>>,
+    /// Options > Output Routing (task-300), each box by its key
+    /// ([`crate::routing::ROUTING_IDS`]); absent (a state of the released build), or a key
+    /// absent: checked.
+    #[serde(default)]
+    routing: BTreeMap<String, bool>,
 }
 
 impl Doc {
+    /// The document of a new song (task-288): no song file, and the four pattern arrays of the
+    /// engine's empty song with the template in A1 ([`orb_ui::template`]). A saved state never
+    /// comes here: it brings its own patterns.
+    pub fn new_song() -> Doc {
+        Doc {
+            patterns: template_patterns(),
+            ..Doc::default()
+        }
+    }
+
     /// The document as the state's JSON.
     pub fn to_json(&self) -> String {
         let s = Saved {
@@ -323,6 +356,7 @@ impl Doc {
             remote_channel: self.remote_channel,
             mode: self.mode,
             preview: self.preview.clone(),
+            routing: routing::to_saved(&self.routing),
         };
         serde_json::to_string(&s).expect("the document serializes")
     }
@@ -374,6 +408,7 @@ impl Doc {
             remote_channel: s.remote_channel,
             mode: s.mode,
             preview: s.preview,
+            routing: routing::from_saved(&s.routing),
         })
     }
 }
@@ -447,6 +482,15 @@ fn read_patterns(e: &mut Engine) -> [Vec<u8>; 4] {
         }
     }
     out
+}
+
+/// The four pattern arrays of a new song: the empty song's with the template in A1.
+fn template_patterns() -> [Vec<u8>; 4] {
+    let (player, _) = Player::new(tables(), None);
+    // the drum machines hold patterns only with samples (a placeholder has none)
+    let mut e = player.build_new(Some(rbm::standard::builtin_samples()));
+    orb_ui::template::apply(&mut e);
+    read_patterns(&mut e)
 }
 
 /// Applies a panel message to an engine that no callback runs yet.
@@ -609,8 +653,12 @@ impl Main {
     /// activation; returns the engine and its parameter values.
     fn build_song(&mut self, song: Option<Vec<u8>>) -> Result<(Box<Engine>, Doc), String> {
         let mut doc = Doc {
+            patterns: if song.is_none() {
+                template_patterns()
+            } else {
+                Default::default()
+            },
             song,
-            patterns: Default::default(),
             vintage: None,
             kit: self.doc.kit.clone(),
             editor_size: self.doc.editor_size,
@@ -618,6 +666,7 @@ impl Main {
             remote_channel: self.doc.remote_channel,
             mode: self.doc.mode,
             preview: None,
+            routing: self.doc.routing,
         };
         let samples = self.samples();
         let e = match &self.player {
@@ -631,9 +680,97 @@ impl Main {
     }
 }
 
+/// One host parameter (task-275, `docs/plugin.md` section 3): a nice-plug `FloatParam` for a
+/// continuous one ([`Spec::continuous`]: linear over min..max, no step size, so no VST3 step
+/// count), an `IntParam` for a discrete one. Both normalize a value `v` as
+/// `(v - min) / (max - min)`, as the released build's `IntParam`s did, so a host's saved
+/// automation and values keep their meaning. [`HostParam::value`] is the integer the engine
+/// gets.
+pub enum HostParam {
+    Stepped(IntParam),
+    Continuous(FloatParam, Spec),
+}
+
+impl HostParam {
+    fn new(s: &Spec) -> HostParam {
+        let spec = *s;
+        let parse_spec = *s;
+        let name = params::name(s.target);
+        if s.continuous() {
+            HostParam::Continuous(
+                FloatParam::new(
+                    name,
+                    s.default as f32,
+                    FloatRange::Linear {
+                        min: s.min as f32,
+                        max: s.max as f32,
+                    },
+                )
+                .with_value_to_string(Arc::new(move |x| {
+                    params::display(&spec, params::round(&spec, x))
+                }))
+                .with_string_to_value(Arc::new(move |t| {
+                    params::parse(&parse_spec, t).map(|v| v as f32)
+                })),
+                *s,
+            )
+        } else {
+            HostParam::Stepped(
+                IntParam::new(
+                    name,
+                    s.default as i32,
+                    IntRange::Linear {
+                        min: s.min as i32,
+                        max: s.max as i32,
+                    },
+                )
+                .with_value_to_string(Arc::new(move |v| params::display(&spec, v)))
+                .with_string_to_value(Arc::new(move |t| params::parse(&parse_spec, t))),
+            )
+        }
+    }
+
+    /// The integer the parameter's value stands for: a continuous one's host value rounded
+    /// ([`params::round`]), a stepped one's value. Atomics only.
+    pub fn value(&self) -> i32 {
+        match self {
+            HostParam::Stepped(p) => p.value(),
+            HostParam::Continuous(p, s) => params::round(s, p.value()),
+        }
+    }
+
+    /// Whether the host sees the parameter as continuous.
+    pub fn is_continuous(&self) -> bool {
+        matches!(self, HostParam::Continuous(..))
+    }
+
+    /// The host's (normalized) value of the integer `v`.
+    pub fn preview_normalized(&self, v: i32) -> f32 {
+        match self {
+            HostParam::Stepped(p) => p.preview_normalized(v),
+            HostParam::Continuous(p, _) => p.preview_normalized(v as f32),
+        }
+    }
+
+    /// The parameter's current normalized value, as the host sees it.
+    pub fn normalized_value(&self) -> f32 {
+        match self {
+            HostParam::Stepped(p) => p.unmodulated_normalized_value(),
+            HostParam::Continuous(p, _) => p.unmodulated_normalized_value(),
+        }
+    }
+
+    pub fn as_ptr(&self) -> ParamPtr {
+        match self {
+            HostParam::Stepped(p) => p.as_ptr(),
+            HostParam::Continuous(p, _) => p.as_ptr(),
+        }
+    }
+}
+
 /// The plugin's parameters and its main-thread state.
 pub struct OrbParams {
-    params: Vec<IntParam>,
+    params: Vec<HostParam>,
     ids: Vec<String>,
     main: Mutex<Main>,
     shared: Arc<Shared>,
@@ -654,28 +791,12 @@ impl Default for OrbParams {
 
 impl OrbParams {
     pub fn new() -> Self {
-        let params = SPECS
-            .iter()
-            .map(|s| {
-                let spec = *s;
-                let parse_spec = *s;
-                IntParam::new(
-                    params::name(s.target),
-                    s.default as i32,
-                    IntRange::Linear {
-                        min: s.min as i32,
-                        max: s.max as i32,
-                    },
-                )
-                .with_value_to_string(Arc::new(move |v| params::display(&spec, v)))
-                .with_string_to_value(Arc::new(move |t| params::parse(&parse_spec, t)))
-            })
-            .collect();
+        let params = SPECS.iter().map(HostParam::new).collect();
         OrbParams {
             params,
             ids: SPECS.iter().map(|s| params::id(s.target)).collect(),
             main: Mutex::new(Main {
-                doc: Doc::default(),
+                doc: Doc::new_song(),
                 player: None,
                 samples: None,
                 last_error: None,
@@ -800,6 +921,19 @@ impl OrbParams {
         self.main().doc.mode
     }
 
+    /// Options > Output Routing (task-300), kept in the state.
+    pub fn routing(&self) -> OutputRouting {
+        self.main().doc.routing
+    }
+
+    /// Sets the output routing (File > Open and File > New keep it); the process side takes it
+    /// at its next engine block.
+    pub fn set_routing(&self, r: OutputRouting) {
+        let mut m = self.main();
+        m.doc.routing = r;
+        self.shared.set_routing(&r);
+    }
+
     /// Sets the mode (the panel's mode selector; File > Open and File > New keep it, task-228);
     /// the process side takes it at its next engine block.
     pub fn set_mode(&self, mode: Mode) {
@@ -887,7 +1021,8 @@ impl OrbParams {
         })
     }
 
-    /// Every parameter's current value, in [`SPECS`] order (atomics only).
+    /// Every parameter's current value, in [`SPECS`] order (atomics only): the integers, a
+    /// continuous parameter's rounded ([`HostParam::value`]).
     pub fn values(&self) -> [i32; COUNT] {
         let mut v = [0; COUNT];
         for (x, p) in v.iter_mut().zip(&self.params) {
@@ -897,12 +1032,12 @@ impl OrbParams {
     }
 
     /// The parameter at index `i` of [`SPECS`].
-    pub fn param_at(&self, i: usize) -> &IntParam {
+    pub fn param_at(&self, i: usize) -> &HostParam {
         &self.params[i]
     }
 
     /// The parameter of `id`.
-    pub fn param(&self, id: &str) -> Option<&IntParam> {
+    pub fn param(&self, id: &str) -> Option<&HostParam> {
         self.ids
             .iter()
             .position(|i| i == id)
@@ -1108,11 +1243,12 @@ unsafe impl Params for OrbParams {
                 m.last_error = Some(format!("the saved state: {e}"));
                 m.doc = Doc::default();
             }
-            None => m.doc = Doc::default(),
+            None => m.doc = Doc::new_song(),
         }
         self.shared.set_remote_enabled(m.doc.remote_enabled);
         self.shared.set_remote_channel(m.doc.remote_channel);
         self.shared.set_mode(m.doc.mode);
+        self.shared.set_routing(&m.doc.routing);
         // the preview is not saved: a restore ends it, the restored state plays as saved
         self.shared.set_previewing(false);
         if let Some(set) = &m.doc.preview {
@@ -1135,9 +1271,32 @@ pub fn core(params: &OrbParams, rate: u32) -> crate::core::Core {
 ///
 /// # Safety
 /// Not concurrently with the host setting it.
-pub unsafe fn set_param(p: &IntParam, v: i32) {
+pub unsafe fn set_param(p: &HostParam, v: i32) {
+    unsafe { set_normalized(p, p.preview_normalized(v)) }
+}
+
+/// Sets a parameter's normalized value as the host would (for tests: any value of a host's
+/// automation, a continuous parameter's between the integers too).
+///
+/// # Safety
+/// Not concurrently with the host setting it.
+pub unsafe fn set_normalized(p: &HostParam, normalized: f32) {
     unsafe {
-        p.as_ptr()
-            ._internal_set_normalized_value(p.preview_normalized(v));
+        p.as_ptr()._internal_set_normalized_value(normalized);
+    }
+}
+
+/// A plugin state's parameter values as the released build (v2026.1118.0919) saved them: every
+/// parameter an `IntParam`, `{"i32": v}`. nice-plug restores only an `F32` into a `FloatParam`
+/// (`wrapper/state.rs` `deserialize_object`), so a continuous parameter's `I32` becomes the
+/// `F32` of the same value before the restore ([`crate::OrbPlugin`]'s `filter_state`; task-275).
+/// A value that is neither is left to nice-plug.
+pub fn migrate_state(state: &mut PluginState) {
+    for s in SPECS.iter().filter(|s| s.continuous()) {
+        if let Some(v) = state.params.get_mut(&params::id(s.target))
+            && let ParamValue::I32(i) = *v
+        {
+            *v = ParamValue::F32(i as f32);
+        }
     }
 }

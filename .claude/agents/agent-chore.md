@@ -29,7 +29,7 @@ Rules that always apply:
 - **Protected files.** Never save or modify the user's IDA databases (local, not in the repository), or edit a committed reference render by hand.
 - **Stop instead of guessing.** If the task turns out to need an engine change, a disassembly reading, or a judgment the task does not settle, stop. Write what you found in the task's notes and report it.
 - **Commit messages.** Code needs `cargo test`; a tool needs one run of it; docs need nothing. Say which in the commit message, which has the sections Change, Result, Testing and Task (root AGENTS.md).
-- **Editing and the shell.** Edit source with the Edit/Write tools, not sed or python. The shell is fish: quote arguments, and put multi-step sequences in a bash script file. Use /usr/bin/python3 for the tools.
+- **The shell.** The shell is fish: quote arguments, and put multi-step sequences in a bash script file. Use /usr/bin/python3 for the tools.
 - **Rebase.** Rebase onto main before your final commit. Keep both sides of a docs conflict. Never resolve a backlog-file conflict by hand: take main's and redo your change with the CLI.
 - **The test machine.** It is shared through locky permits (doc-001). A ReBirth session holds all the permits of `redc-win-run`. The runner tools take the permits themselves; a run you start outside them takes the permits by hand, as the brief describes.
 - **Scope and spelling.** Keep to the task exactly as written. Spell "color" the American way.

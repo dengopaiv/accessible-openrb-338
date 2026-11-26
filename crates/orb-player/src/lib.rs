@@ -89,6 +89,8 @@
 //! [`midi`] turns timed MIDI bytes into these commands with the original's Standard Mapping
 //! (task-182, `docs/standard_midi_mapping.md`), whatever the source of the bytes.
 
+pub mod control;
+pub mod devices;
 pub mod midi;
 pub mod output;
 
@@ -96,7 +98,9 @@ use std::sync::Arc;
 
 use orb_engine::frame::edit::PatternShape;
 use orb_engine::frame::export::REALTIME_FRAMES;
-use orb_engine::frame::{Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, Sounding};
+use orb_engine::frame::{
+    Devices, Engine, Gate, LoadRefused, MixerParams, NoteClock, OutputRouting, Sounding, TAP_WIDTH,
+};
 use orb_engine::process::ProcessState;
 use orb_engine::samples::{Retired, STARTUP_ID, Sample, SampleSet};
 use orb_engine::seq::Pool;
@@ -173,6 +177,10 @@ pub enum Command {
         note: u8,
         velocity: u8,
     },
+    /// Every note a 303, the 808 or the 909 holds in note mode is let go: the plugin's
+    /// all-notes-off, all-sound-off and the host's stop (task-258; [`Engine::live_notes_off`],
+    /// ignored while the song plays). Not a message of the original's.
+    NotesOff(Device),
     /// The pattern gate of a 303, the 808 or the 909 at the current tick: the plugin's Gate
     /// Pattern Mode (task-218; [`Engine::set_gate`]). Not a message of the original's.
     Gate { device: Device, gate: Gate },
@@ -192,6 +200,19 @@ pub enum Command {
     Shuffle(u8),
     /// Song msg 35 `{21,v}`: the Vintage sound model.
     Vintage(bool),
+    /// Song msg 28, the Edit menu's Initialize Song from Pattern Mode ([`Engine::init_song`]):
+    /// every track keeps only its tick-0 events, which take the devices' pattern-mode values.
+    /// The box, made off the audio thread, takes the lists before the command for orb's Undo
+    /// ([`Engine::keep_undo`]); the snapshot it replaces goes back through the garbage queue.
+    InitSong(Box<Pool>),
+    /// Song msg 29, the Edit menu's Initialize Loop from Pattern Mode ([`Engine::init_loop`]):
+    /// the loop's events are replaced by the devices' pattern-mode values at the loop start.
+    /// The box as for [`Command::InitSong`].
+    InitLoop(Box<Pool>),
+    /// orb's Undo of the last Initialize command ([`Engine::undo_init`], not a message of the
+    /// original's): the kept lists come back in one swap; the lists it lets go of go back
+    /// through the garbage queue.
+    UndoInit,
     /// A device controller as a track event sets it (slot 11; [`Engine::set_param`]); for the
     /// controllers it takes, the same store as the panel's messages ([`Command::DeviceParam`],
     /// [`Command::MixerGlobal`] ids 1 and 2, [`Command::MixerChannel`] fields 1..4). The pattern
@@ -324,6 +345,8 @@ pub enum Garbage {
     Bytes(Box<[u8]>),
     Mod(Box<ModSwap>),
     Preview(Box<Preview>),
+    /// A song's track lists: an Undo snapshot replaced, or the lists an Undo let go of.
+    Pool(Box<Pool>),
 }
 
 /// One device's live parameter block ([`orb_engine::frame::SongDevice::live`]), inline.
@@ -386,13 +409,13 @@ pub struct Snapshot {
     pub channel_meters: [u8; 4],
     /// The master meter bytes, left and right.
     pub master_meters: [u8; 2],
-    /// The pattern each channel device plays (303 #1, 303 #2, 808, 909).
+    /// The pattern each channel device plays (303-1, 303-2, 808, 909).
     pub patterns: [Option<u8>; 4],
     /// Each channel device's sounding sounds and their last hit's accent after the last block
-    /// (303 #1, 303 #2, 808, 909; the 303s' are empty): the plugin's note-mode lights
+    /// (303-1, 303-2, 808, 909; the 303s' are empty): the plugin's note-mode lights
     /// (task-202; [`orb_engine::frame::ChannelDevice::sounding`]).
     pub sounding: [Sounding; 4],
-    /// Each channel device's pattern gate is closed (303 #1, 303 #2, 808, 909; the plugin's
+    /// Each channel device's pattern gate is closed (303-1, 303-2, 808, 909; the plugin's
     /// Gate Pattern Mode, task-218): the section is silent and does not step, and the panel
     /// shows no step light for it.
     pub gate_closed: [bool; 4],
@@ -463,6 +486,11 @@ pub struct Audio {
     call_frames: usize,
     /// The int16 output of the last engine call, `2 * call_frames` samples.
     buf: Box<[i16]>,
+    /// The per-channel taps of the last engine call, `TAP_WIDTH * call_frames` values
+    /// ([`Audio::enable_taps`], [`Audio::taps`]); `None` until enabled.
+    taps: Option<Box<[f32]>>,
+    /// The output routing every engine call renders with ([`Audio::set_routing`]).
+    routing: OutputRouting,
     /// The frames of `buf` already handed out.
     pos: usize,
     frames: u64,
@@ -520,6 +548,8 @@ impl Player {
             tracks_published: None,
             call_frames,
             buf: vec![0; 2 * call_frames].into_boxed_slice(),
+            taps: None,
+            routing: OutputRouting::default(),
             pos: call_frames,
             frames: 0,
             generation: 0,
@@ -732,6 +762,9 @@ impl Audio {
             | Command::Pattern { .. }
             | Command::Mod(_)
             | Command::Preview(_)
+            | Command::InitSong(_)
+            | Command::InitLoop(_)
+            | Command::UndoInit
             | Command::Load(_) => GARBAGE_PER_COMMAND + pending,
             _ => 0,
         };
@@ -752,9 +785,19 @@ impl Audio {
         // a faulting call writes nothing (`Engine::fault`): silence rather than the last call
         self.buf.fill(0);
         let faults = self.faults();
-        self.current.render(&mut self.buf[..], self.call_frames);
+        // the routing is the player's, so a song loaded or switched to keeps it
+        self.current.frame.routing = self.routing;
+        match &mut self.taps {
+            None => self.current.render(&mut self.buf[..], self.call_frames),
+            Some(t) => self
+                .current
+                .render_taps(&mut self.buf[..], self.call_frames, t),
+        }
         if self.faults() != faults {
             self.buf.fill(0);
+            if let Some(t) = &mut self.taps {
+                t.fill(0.0);
+            }
         }
         // the preview player, after the song (`SafeSoundCallback` step 4)
         if self.preview_on
@@ -812,6 +855,7 @@ impl Audio {
                 note,
                 velocity,
             } => self.target().live_note(device, note, velocity),
+            Command::NotesOff(device) => self.target().live_notes_off(device),
             Command::Gate { device, gate } => self.target().set_gate(device, gate),
             Command::SongMode(on) => self.target().set_song_mode(on as u8),
             Command::Record(on) => self.target().set_record(on as u8),
@@ -821,6 +865,23 @@ impl Audio {
             Command::Tempo(t) => self.target().set_tempo(t),
             Command::Shuffle(v) => self.target().set_shuffle(v),
             Command::Vintage(on) => self.target().set_vintage(on as u8),
+            Command::InitSong(snapshot) => {
+                if let Some(old) = self.target().keep_undo(snapshot) {
+                    self.throw(Garbage::Pool(old));
+                }
+                self.target().init_song();
+            }
+            Command::InitLoop(snapshot) => {
+                if let Some(old) = self.target().keep_undo(snapshot) {
+                    self.throw(Garbage::Pool(old));
+                }
+                self.target().init_loop();
+            }
+            Command::UndoInit => {
+                if let Some(old) = self.target().undo_init() {
+                    self.throw(Garbage::Pool(old));
+                }
+            }
             Command::Param {
                 device,
                 ctrl,
@@ -1054,6 +1115,31 @@ impl Audio {
     /// The output of the last engine call, as [`Audio::render_call`] returned it.
     pub fn output(&self) -> &[i16] {
         &self.buf
+    }
+
+    /// Makes every later engine call also render the per-channel taps (task-256, the
+    /// plugin's per-device outputs; [`Engine::render_taps`]). Allocates: call it before the
+    /// callback side goes to the audio thread. The int16 output does not change.
+    pub fn enable_taps(&mut self) {
+        if self.taps.is_none() {
+            self.taps = Some(vec![0.0; TAP_WIDTH * self.call_frames].into_boxed_slice());
+        }
+    }
+
+    /// The output routing of the later engine calls (task-300, the plugin's Options > Output
+    /// Routing; [`orb_engine::frame::Frame::routing`]), whatever song plays. Allocates nothing.
+    pub fn set_routing(&mut self, r: OutputRouting) {
+        self.routing = r;
+    }
+
+    /// The per-channel taps of the last engine call ([`Audio::enable_taps`]): frame i of
+    /// channel c (0 303-1, 1 303-2, 2 808, 3 909) is `[TAP_WIDTH * i + c]`, the channel's mono
+    /// bus after its inserts and before its level, pan and on switch, f32 (full scale 1.0, not
+    /// clamped); from `TAP_808` the drum machines' own outputs (task-300,
+    /// [`orb_engine::frame::Taps`]). Zero for a faulting call. `None` while not enabled. The
+    /// preview player is not in them.
+    pub fn taps(&self) -> Option<&[f32]> {
+        self.taps.as_deref()
     }
 
     /// The snapshot the last engine call published (the callback's own copy).

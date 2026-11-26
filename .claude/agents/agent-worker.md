@@ -30,7 +30,7 @@ Rules that always apply:
 - **IDA.** If you need it, use it through the idalib MCP tools only, on a headless copy in your scratchpad, read-only (doc-001).
 - **Engine DSP.** Prefer not to change the engine's DSP: what it would need goes into a follow-up task for @agent-complex.
 - **Testing.** Code needs `cargo test`; a tool needs one run on a real song, with the output in the notes; docs need nothing. Say which in the commit message, which has the sections Change, Result, Testing and Task (root AGENTS.md).
-- **Editing and the shell.** Edit source with the Edit/Write tools, not sed or python. The shell is fish: quote arguments, and put multi-step sequences in a bash script file. Use /usr/bin/python3 for the tools.
+- **The shell.** The shell is fish: quote arguments, and put multi-step sequences in a bash script file. Use /usr/bin/python3 for the tools.
 - **Rebase.** Rebase onto main before your final commit. Keep both sides of a docs conflict. Never resolve a backlog-file conflict by hand.
 - **The test machine.** It is shared through locky permits (doc-001). A ReBirth session holds all the permits of `redc-win-run`. The runner tools take the permits themselves; a run you start outside them takes the permits by hand, as the brief describes.
 - **Keep to the task.** Verify a claim from the written evidence before acting on it; skip and list what you cannot confirm in the task's notes. A decision the task does not settle becomes a proposed decision and a `Decide:` task (root AGENTS.md), not a choice you make.
