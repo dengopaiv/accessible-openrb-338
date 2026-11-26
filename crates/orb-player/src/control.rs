@@ -131,7 +131,7 @@ impl Controller {
                 if let Some(s) = &self.stream {
                     ev.insert(
                         0,
-                        Event::Note(format!("Audio output follows the system: {}", s.device)),
+                        Event::Note(format!("Audio output changed: {}", s.device)),
                     );
                 }
                 return ev;
