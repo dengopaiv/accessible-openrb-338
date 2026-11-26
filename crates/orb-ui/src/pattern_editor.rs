@@ -183,7 +183,7 @@ pub fn crossed(s0: usize, p0: u8, s1: usize, p1: u8) -> Vec<(usize, u8)> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Act {
     /// A bank button or the pattern number: show this pattern (0..=31) of the editor's 303,
-    /// selected on the panel too in pattern mode.
+    /// selected on the panel too, in both modes.
     Select(u8),
     Copy,
     Paste,
@@ -388,13 +388,11 @@ impl App {
             .map(|&(_, r)| r)
     }
 
-    /// The selection rule (docs/ui_spec.md section 23), the drum editors' (task-290): in
-    /// pattern mode the editor shows its 303's selected pattern (a selection on the panel moves
-    /// it; so does the switch into pattern mode). In song mode it keeps its own.
+    /// The selection rule (docs/ui_spec.md section 23), the drum editors' (task-290), in both
+    /// modes: the editor shows its 303's selected pattern (a selection on the panel moves it,
+    /// song playback's too; so does the switch of mode).
     pub(crate) fn editor_follow(&mut self, k: usize) {
-        if !self.panel.transport.song_mode {
-            self.editors[k].pattern = self.panel.rows[k].pattern;
-        }
+        self.editors[k].pattern = self.panel.rows[k].pattern;
     }
 
     /// The pattern of the editor of 303 `k` as the link holds it, after the panel's pending
@@ -556,14 +554,14 @@ impl App {
         }
     }
 
-    /// The editor's selector: in song mode it chooses what the editor shows only; in pattern
-    /// mode the pattern is selected on the panel too, as a click on its button selects it.
+    /// The editor's selector: the pattern is selected on the panel, as a click on its button
+    /// selects it (in song mode too, where a click records with record on).
     fn editor_select(&mut self, k: usize, pattern: u8) {
         let pattern = pattern.min(31);
         let e = &mut self.editors[k];
         e.pattern = pattern;
         e.gesture = None;
-        if !self.panel.transport.song_mode && self.panel.rows[k].pattern != pattern {
+        if self.panel.rows[k].pattern != pattern {
             self.select_pattern(k, pattern);
         }
     }

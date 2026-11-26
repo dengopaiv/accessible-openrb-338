@@ -1083,17 +1083,14 @@ impl App {
     // ---- patterns -----------------------------------------------------------------------
 
     /// The pattern the Edit menu's pattern commands act on (task-290), after the panel's
-    /// pending events were noted and sent: the focused pattern editor's row and the pattern it
-    /// shows ([`App::focused_editor`]), else the focused row and its selected pattern; `None`
-    /// without a link (the demo panel).
+    /// pending events were noted and sent: the selected pattern of the focused pattern
+    /// editor's row ([`App::focused_editor`]; the editor shows it), else of the panel's focused
+    /// row; `None` without a link (the demo panel).
     pub fn pattern_target(&mut self) -> Option<(usize, u8)> {
         self.link.as_ref()?;
         self.note_edits();
         self.link.as_mut()?.forward(&mut self.panel);
-        if let Some(r) = self.focused_editor() {
-            return Some((r, self.editor_pattern(r)));
-        }
-        let r = self.panel.focus;
+        let r = self.focused_editor().unwrap_or(self.panel.focus);
         Some((r, self.panel.rows[r].pattern))
     }
 
@@ -1109,22 +1106,6 @@ impl App {
             None => self.editors[r.min(1)].open,
         };
         open.then_some(r)
-    }
-
-    /// The pattern the editor of row `r` shows, after its selection rule ran (in pattern mode it
-    /// is the row's selected pattern, which may have changed since its last frame).
-    fn editor_pattern(&mut self, r: usize) -> u8 {
-        use crate::drum_editor::Machine;
-        match Machine::of_row(r) {
-            Some(m) => {
-                self.drum_follow(m);
-                self.drum_editors[m.index()].pattern
-            }
-            None => {
-                self.editor_follow(r);
-                self.editors[r].pattern
-            }
-        }
     }
 
     /// The editor of row `r` closed: it no longer has the focus.
@@ -1322,14 +1303,6 @@ impl App {
             select: Some(p),
             tracks: false,
         });
-        // the editor it came from shows the copy (in song mode too, where it does not follow
-        // the panel's selection)
-        if self.focused_editor() == Some(r) {
-            match crate::drum_editor::Machine::of_row(r) {
-                Some(m) => self.drum_editors[m.index()].pattern = to,
-                None => self.editors[r].pattern = to,
-            }
-        }
         let (from, to) = (pattern_name(p), pattern_name(to));
         self.status = Some(format!("{row}: {from} duplicated to {to}"));
     }

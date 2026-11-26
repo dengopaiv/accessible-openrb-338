@@ -558,30 +558,32 @@ fn pattern_mode_selections_follow_each_other_both_ways() {
 }
 
 #[test]
-fn song_mode_selections_are_independent_and_never_recorded() {
+fn song_mode_selections_follow_each_other_both_ways() {
     let mut h = Harness::new();
     h.select(ROW, 3);
     h.open_editor();
     h.song_mode();
-    h.app.panel.press("transport.record", 0.0);
-    h.calls(2);
-    let panel_pattern = h.app.panel.rows[ROW].pattern;
-    let tracks = h.app.link.as_ref().unwrap().loaded_tracks().clone();
+    // the editor shows the panel's selection, whatever the switch left it
+    assert_eq!(h.app.drum_editor(M).pattern, h.app.panel.rows[ROW].pattern);
+    // the editor's bank and number select on the panel, as in pattern mode
     h.press("B");
     h.app.drum_editor_act(M, DrumAct::Select(12));
     h.calls(2);
     assert_eq!(h.app.drum_editor(M).pattern, 12);
-    assert_eq!(h.app.panel.rows[ROW].pattern, panel_pattern);
-    // an edit is heard and changes no selection
+    assert_eq!(h.app.panel.rows[ROW].pattern, 12, "the panel selects it");
+    assert_eq!(h.app.panel.rows[ROW].bank, 1);
+    // an edit is heard
     h.click(h.cell(1, 0));
     h.calls(2);
     assert_eq!(cell(&engine_808(&mut h.audio, 12), 0, 1), 1);
-    assert_eq!(h.app.panel.rows[ROW].pattern, panel_pattern);
-    assert_eq!(h.app.link.as_ref().unwrap().loaded_tracks(), &tracks);
-    // a panel selection does not move the editor
+    assert_eq!(h.app.panel.rows[ROW].pattern, 12);
+    // a panel selection moves the editor; the other rows do not
     h.select(ROW, 6);
     h.calls(2);
-    assert_eq!(h.app.drum_editor(M).pattern, 12);
+    assert_eq!(h.app.drum_editor(M).pattern, 6);
+    h.select(0, 9);
+    h.calls(2);
+    assert_eq!(h.app.drum_editor(M).pattern, 6);
 }
 
 #[test]
@@ -599,9 +601,9 @@ fn the_playing_step_is_shown_in_the_pattern_it_plays() {
     }
     let s = seen.expect("the 808 plays");
     assert_eq!(h.app.drum_editor_shown(M).0, Some(s));
-    // another pattern shown: no playing step
-    h.song_mode();
-    h.app.drum_editor_act(M, DrumAct::Select(20));
+    // stopped: none
+    h.app.panel.press("transport.stop", 0.0);
+    h.calls(4);
     h.calls(4);
     assert_eq!(h.app.drum_editor_shown(M).0, None);
 }
@@ -660,19 +662,12 @@ fn check_input(m: Machine, i: Input) {
     let on = 1;
     match i {
         Input::OpenKey => {
-            // song mode, the editor on another pattern than the machine's active one
+            // song mode, the machine's pattern selected on the panel
             h.song_mode();
             h.app.panel.focus = row;
-            let active = h.app.panel.rows[row].pattern;
-            h.app.drum_editor_act(m, DrumAct::Select((active + 5) % 32));
-            h.frame(vec![]);
-            assert_ne!(h.app.drum_editor(m).pattern, active);
+            h.select(row, 13);
             h.key(egui::Key::E, CMD);
-            assert_eq!(
-                h.app.drum_editor(m).pattern,
-                active,
-                "switched to the active one"
-            );
+            assert_eq!(h.app.drum_editor(m).pattern, 13, "shows the selected one");
             // closed, the key opens it
             let w = h.app.drum_editor_window(m).unwrap();
             h.click(Pos2::new(w.right() - 14.0, w.top() + 12.0));

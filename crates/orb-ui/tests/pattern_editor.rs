@@ -632,36 +632,34 @@ fn pattern_mode_selections_follow_each_other_both_ways() {
 }
 
 #[test]
-fn song_mode_selections_are_independent_and_never_recorded() {
+fn song_mode_selections_follow_each_other_both_ways() {
     let mut h = Harness::new();
     h.select(0, 3);
     h.open_editor();
     h.song_mode();
-    // record on: still nothing of the editor is recorded
-    h.app.panel.press("transport.record", 0.0);
-    h.calls(2);
-    let panel_pattern = h.app.panel.rows[0].pattern;
-    let tracks = h.app.link.as_ref().unwrap().loaded_tracks().clone();
+    // the editor shows the panel's selection, whatever the switch left it
+    assert_eq!(h.app.pattern_editor(0).pattern, h.app.panel.rows[0].pattern);
+    // the editor's bank and number select on the panel, as in pattern mode
     h.press("B");
     h.app.editor_act(0, Act::Select(12));
     h.calls(2);
     assert_eq!(h.app.pattern_editor(0).pattern, 12);
-    assert_eq!(
-        h.app.panel.rows[0].pattern, panel_pattern,
-        "the panel stays"
-    );
-    // an edit of the shown pattern is heard and changes no selection
+    assert_eq!(h.app.panel.rows[0].pattern, 12, "the panel selects it");
+    assert_eq!(h.app.panel.rows[0].bank, 1);
+    // an edit of the shown pattern is heard
     let p = h.note_cell(0, 5);
     h.click(p);
     h.calls(2);
     assert_eq!(note(&engine_303(&mut h.audio, 0, 12), 0), Some(5));
-    assert_eq!(h.app.panel.rows[0].pattern, panel_pattern);
-    assert_eq!(h.app.link.as_ref().unwrap().loaded_tracks(), &tracks);
-    // a panel selection does not move the editor
+    assert_eq!(h.app.panel.rows[0].pattern, 12);
+    // a panel selection moves the editor; the other rows do not
     h.select(0, 6);
     h.calls(2);
     let e = h.app.pattern_editor(0);
-    assert_eq!((e.synth, e.pattern), (0, 12));
+    assert_eq!((e.synth, e.pattern), (0, 6));
+    h.select(2, 9);
+    h.calls(2);
+    assert_eq!(h.app.pattern_editor(0).pattern, 6);
 }
 
 #[test]

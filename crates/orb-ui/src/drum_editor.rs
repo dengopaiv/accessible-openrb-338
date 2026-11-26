@@ -495,7 +495,7 @@ impl Input {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DrumAct {
     /// A bank button, the pattern number or its arrows: show pattern `0..=31`, selected on the
-    /// panel too in pattern mode.
+    /// panel too, in both modes.
     Select(u8),
     Copy,
     Paste,
@@ -665,13 +665,10 @@ impl App {
         self.drum_editor(m).hits.entry
     }
 
-    /// The selection rule of pattern mode: the editor shows the machine's selected pattern (a
-    /// selection on the panel moves it; so does the switch into pattern mode). In song mode it
-    /// keeps its own.
+    /// The selection rule, in both modes: the editor shows the machine's selected pattern (a
+    /// selection on the panel moves it, song playback's too; so does the switch of mode).
     pub(crate) fn drum_follow(&mut self, m: Machine) {
-        if !self.panel.transport.song_mode {
-            self.drum_editors[m.index()].pattern = self.panel.rows[m.row()].pattern;
-        }
+        self.drum_editors[m.index()].pattern = self.panel.rows[m.row()].pattern;
     }
 
     /// The editor's pattern as the link holds it, after the panel's pending events were noted
@@ -724,7 +721,7 @@ impl App {
                 let e = &mut self.drum_editors[m.index()];
                 e.pattern = pattern;
                 e.gesture = None;
-                if !self.panel.transport.song_mode && self.panel.rows[r].pattern != pattern {
+                if self.panel.rows[r].pattern != pattern {
                     self.select_pattern(r, pattern);
                 }
             }
