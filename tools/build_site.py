@@ -28,15 +28,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "https://github.com/pingw33n/OpenRB-338"
 # where the site is served: the canonical address, the link preview's and the sitemap's
 SITE_URL = "https://pingw33n.github.io/OpenRB-338/"
-DESCRIPTION = ("A free, open-source reimplementation of ReBirth RB-338 (two TB-303s, a TR-808 "
-               "and a TR-909): standalone app and VST 3 plugin for macOS, Windows and "
+DESCRIPTION = ("A free, open-source reimplementation of ReBirth RB-338 (two 303s, an 808 "
+               "and a 909): standalone app and VST 3 plugin for macOS, Windows and "
                "Linux.")
 SONGS_ZIP = "https://github.com/pingw33n/rb-songs/archive/refs/heads/main.zip"
 MODS_ZIP = "https://github.com/pingw33n/rb-mods/archive/refs/heads/main.zip"
 # GitHub makes these two zips on request and sends no length, so the sizes are written here:
 # rb-songs measured 8,275,852 bytes on 2026-11-18, rb-mods is the task's figure.
-SONGS_DETAIL = ".zip, about 8 MB"
-MODS_DETAIL = ".zip, about 950 MB"
+SONGS_DETAIL = ".zip, about 30 MB"
+MODS_DETAIL = ".zip, about 1 GB"
 
 MAC = {"arm64": "aarch64-apple-darwin", "x64": "x86_64-apple-darwin"}
 WIN = {"x64": "x86_64-pc-windows-msvc", "arm64": "aarch64-pc-windows-msvc"}
@@ -80,7 +80,7 @@ def assets(version):
                          f"OpenRB-338-{v}-{MAC[arch]}.tar.gz"))
     for arch in ("x64", "arm64"):
         out.append(asset(f"windows-{arch}-zip", "windows", arch, ["archive"],
-                         f"Windows, {ARCH_LABEL[arch]}", "archive, .zip",
+                         f"Windows, {ARCH_LABEL[arch]}", "portable archive, .zip",
                          f"OpenRB-338-{v}-{WIN[arch]}.zip"))
     out.append(asset("sums", None, None, ["archive"], "Checksums", "SHA256SUMS.txt",
                      "SHA256SUMS.txt"))

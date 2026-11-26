@@ -60,7 +60,7 @@ class Build(unittest.TestCase):
             self.assertEqual(page.count(f'<li><svg class="osi" aria-hidden="true" width="16" '
                                         f'height="16"><use href="#i-{os_}"/>'), n)
         for text in (".dmg, 13.9 MB", ".pkg, 13.9 MB", ".exe, 13.9 MB", "AppImage, 13.9 MB",
-                     ".tar.gz, 13.9 MB", "archive, .zip, 13.9 MB", ".zip, about 950 MB"):
+                     ".tar.gz, 13.9 MB", "portable archive, .zip, 13.9 MB", ".zip, about 1 GB"):
             self.assertIn(text, page)
         self.assertEqual(build_site.size_text(1640), "2 kB")
         self.assertEqual(build_site.size_text(950_000_000), "950 MB")
