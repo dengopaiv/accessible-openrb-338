@@ -1386,8 +1386,10 @@ impl App {
     /// command (the original sends msg 28 only for the answer 33, 0x42C5CC).
     pub fn init_song_ui(&mut self, ctx: &Context) {
         if !self.confirm_init {
+            self.init_focused = false;
             return;
         }
+        let sr = self.screen_reader_mode();
         let key = |k: Key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, k));
         let mut answer = None;
         if key(Key::Enter) {
@@ -1405,6 +1407,15 @@ impl App {
             .backdrop_color(Color32::from_black_alpha(170))
             .show(ctx, |ui| {
                 ui.set_width(320.0);
+                // a named Dialog: the title is its name, the original's text its description
+                // (screen reader mode; task-237)
+                a11y::window::dialog(
+                    ui,
+                    sr,
+                    Role::Dialog,
+                    "Initialize Song from Pattern Mode",
+                    Some(INIT_SONG_TEXT),
+                );
                 ui.label(
                     RichText::new("Initialize Song from Pattern Mode")
                         .color(INK)
@@ -1417,7 +1428,13 @@ impl App {
                     if ui.button("Cancel").clicked() {
                         answer = Some(false);
                     }
-                    if ui.button("Initialize").clicked() {
+                    let init = ui.button("Initialize");
+                    // once, on the first frame: Initialize, the default, takes the focus
+                    if sr && !self.init_focused {
+                        init.request_focus();
+                        self.init_focused = true;
+                    }
+                    if init.clicked() {
                         answer = Some(true);
                     }
                 });
@@ -1428,6 +1445,13 @@ impl App {
                 self.init_from_pattern(true);
             }
         }
+    }
+
+    /// Opens the question of Initialize Song from Pattern Mode without a song in song mode
+    /// behind it (for tests of how it is read; the Edit command needs the engine).
+    #[doc(hidden)]
+    pub fn ask_init_for_test(&mut self) {
+        self.confirm_init = true;
     }
 
     /// Whether the question of Initialize Song from Pattern Mode is open.

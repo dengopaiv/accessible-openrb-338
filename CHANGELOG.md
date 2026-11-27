@@ -5,6 +5,14 @@ Windows x64 on the [releases page](https://github.com/dengopaiv/accessible-openr
 the zip carries this file as CHANGELOG.txt. The sound engine is OpenRB-338's: a song renders
 the same as in OpenRB-338 and the original ReBirth in every release below.
 
+## Next release (not released yet)
+
+This section holds the changes made since the last release.
+
+- **Edit > Initialize Song from Pattern Mode**, in screen reader mode: the question takes the
+  focus on Initialize and is read with its text; Tab reaches Cancel, and the focus goes back
+  to where it was after the answer.
+
 ## 2026.1127.2013 (2026-11-27)
 
 This release holds the work of OpenRB-338 taken into the fork on 2026-11-18 and 2026-11-26.

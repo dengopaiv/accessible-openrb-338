@@ -314,3 +314,66 @@ fn the_focus_return_asks_for_the_frames_it_needs() {
     a.frame(vec![]);
     assert_eq!(focused(&a), play.accesskit_id(), "back with no input");
 }
+
+/// Initialize Song's question (task-237) is a named Dialog whose description is the original's
+/// text, the focus is on Initialize, Tab reaches Cancel, and the focus comes back after either
+/// answer. With the mode off the focus is not moved.
+#[test]
+fn the_init_song_question_takes_the_focus_on_initialize_and_gives_it_back() {
+    let mut a = app(true);
+    let play = focus_play(&mut a);
+    a.app.ask_init_for_test();
+    settle(&mut a);
+    assert!(a.app.confirming_init());
+    let dlg: Vec<_> = a.tree().by_role(Role::Dialog).collect();
+    assert_eq!(dlg.len(), 1, "one dialog");
+    assert_eq!(dlg[0].1.label(), Some("Initialize Song from Pattern Mode"));
+    assert_eq!(dlg[0].1.description(), Some(orb_ui::menu::INIT_SONG_TEXT));
+    let f = focused(&a);
+    assert_eq!(spoken(&a, f), "Initialize");
+    assert_eq!(role_of(&a, f), Role::Button);
+    // the button lies inside the Dialog that carries the text, so it is read with it
+    let mut up = f;
+    let mut found = false;
+    while let Some((p, n)) = a.tree().parent(up) {
+        if n.description() == Some(orb_ui::menu::INIT_SONG_TEXT) {
+            found = true;
+            break;
+        }
+        up = p;
+    }
+    assert!(found, "Initialize is not under the Dialog with the text");
+    // Tab reaches Cancel (and stays in the question)
+    let mut seen = vec![];
+    for _ in 0..2 {
+        a.key(Key::Tab);
+        seen.push(spoken(&a, focused(&a)));
+    }
+    assert!(seen.iter().any(|s| s == "Cancel"), "{seen:?}");
+    assert!(seen.iter().any(|s| s == "Initialize"), "{seen:?}");
+    // Escape cancels; the focus is back on the panel control
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert!(!a.app.confirming_init());
+    assert_eq!(focused(&a), play.accesskit_id(), "the focus is back");
+    // the second time it takes the focus again; Enter (Initialize) gives it back too
+    a.app.ask_init_for_test();
+    settle(&mut a);
+    assert_eq!(spoken(&a, focused(&a)), "Initialize");
+    a.key(Key::Enter);
+    settle(&mut a);
+    assert!(!a.app.confirming_init());
+    assert_eq!(focused(&a), play.accesskit_id(), "the focus is back");
+    // with the mode off the focus is not moved
+    let mut b = app(false);
+    b.app.ask_init_for_test();
+    settle(&mut b);
+    assert!(b.app.confirming_init());
+    assert_ne!(spoken(&b, focused(&b)), "Initialize");
+    // (egui's own modal node stays; the fork's name and description are not set)
+    assert!(
+        b.tree()
+            .by_role(Role::Dialog)
+            .all(|(_, n)| n.description().is_none())
+    );
+}

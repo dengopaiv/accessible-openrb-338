@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-27T21:55:00Z'
+updated_date: '2026-11-27T21:56:00Z'
 labels:
   - ui
   - tests
@@ -22,3 +23,8 @@ Why: TASK-197, the user's first NVDA pass, is Done. The tasks of the night of 20
 
 How: the user runs OpenRB-338 with NVDA in screen reader mode and goes through the criteria below; anything that sounds wrong becomes a bug task in m-7.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 Task-237: Edit > Initialize Song from Pattern Mode in screen reader mode: NVDA reads the title and the original's text with Initialize when the question opens; Tab reaches Cancel; after either answer the focus is back where it was.
+<!-- AC:END -->

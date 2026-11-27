@@ -342,6 +342,8 @@ pub struct App {
     /// The focus has been put on the default button of the open prompt / error box (once, on
     /// its first frame, in screen reader mode; task-193).
     pub(crate) prompt_focused: bool,
+    /// Initialize Song's question has taken the focus on Initialize (screen reader mode).
+    pub(crate) init_focused: bool,
     pub(crate) error_focused: bool,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
@@ -451,6 +453,7 @@ impl App {
             menu_return: None,
             modal_was: 0,
             prompt_focused: false,
+            init_focused: false,
             error_focused: false,
             shot,
             frame_stats: FrameStats::from_env(),
@@ -1599,6 +1602,7 @@ impl App {
         }
         let modal = self.browser.is_some()
             || self.prompt.is_some()
+            || self.confirm_init
             || self.replace.is_some()
             || self.error_open();
         match self.window_new {
