@@ -16,7 +16,7 @@ references:
   - docs/accessibility_plan.md
 priority: medium
 type: feature
-ordinal: 251000
+ordinal: 253000
 ---
 
 ## Description

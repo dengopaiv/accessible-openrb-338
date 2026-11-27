@@ -5,11 +5,12 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-26T12:08:00Z'
+updated_date: '2026-11-27T21:43:00Z'
 labels:
   - ui
 milestone: m-7
 dependencies:
-  - TASK-233
+  - TASK-242
 references:
   - crates/orb-ui/src/pattern_editor.rs
   - crates/orb-ui/src/editor_frame.rs
@@ -17,7 +18,7 @@ references:
   - docs/accessibility_plan.md
 priority: medium
 type: feature
-ordinal: 252000
+ordinal: 255000
 ---
 
 ## Description
@@ -36,3 +37,9 @@ What to do: first decide with the user how the editor should work for a screen r
 - [ ] #2 The chosen design is built: in screen reader mode a 303 pattern can be read and edited from the keyboard through it, covered by a11y tests
 - [ ] #3 With screen reader mode off the editor windows draw and behave as upstream's
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Supervisor, 2026-11-27: the user decided in task-242 (A, the whole window), so criterion 1's Decide task exists with the choice recorded; build option A.
+<!-- SECTION:NOTES:END -->

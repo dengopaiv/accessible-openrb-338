@@ -16,7 +16,7 @@ references:
   - crates/orb-ui/src/key_help.rs
 priority: low
 type: enhancement
-ordinal: 256000
+ordinal: 252000
 ---
 
 ## Description

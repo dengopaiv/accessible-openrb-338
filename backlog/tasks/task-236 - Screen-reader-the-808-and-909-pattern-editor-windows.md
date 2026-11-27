@@ -5,11 +5,13 @@ status: To Do
 assignee:
   - '@agent-complex'
 created_date: '2026-11-26T12:08:00Z'
+updated_date: '2026-11-27T21:43:00Z'
 labels:
   - ui
 milestone: m-7
 dependencies:
-  - TASK-233
+  - TASK-243
+  - TASK-235
 references:
   - crates/orb-ui/src/drum_editor.rs
   - crates/orb-ui/src/editor_frame.rs
@@ -17,7 +19,7 @@ references:
   - docs/accessibility_plan.md
 priority: medium
 type: feature
-ordinal: 253000
+ordinal: 256000
 ---
 
 ## Description
@@ -36,3 +38,9 @@ What to do: as for the 303 editors (the task before this one in the queue), firs
 - [ ] #2 The chosen design is built: in screen reader mode an 808 and a 909 pattern can be read and edited from the keyboard through it, covered by a11y tests
 - [ ] #3 With screen reader mode off the editor windows draw and behave as upstream's
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Supervisor, 2026-11-27: the user decided in task-243 (A, the whole window), so criterion 1's Decide task exists with the choice recorded; build option A, reusing task-235's header work.
+<!-- SECTION:NOTES:END -->
