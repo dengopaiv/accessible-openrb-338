@@ -5,10 +5,9 @@ Windows x64 on the [releases page](https://github.com/dengopaiv/accessible-openr
 the zip carries this file as CHANGELOG.txt. The sound engine is OpenRB-338's: a song renders
 the same as in OpenRB-338 and the original ReBirth in every release below.
 
-## Next release (not released yet)
+## 2026.1127.2013 (2026-11-27)
 
-This section is renamed to the release's version when the release is made (docs/building.md).
-It holds the work of OpenRB-338 taken into the fork on 2026-11-26.
+This release holds the work of OpenRB-338 taken into the fork on 2026-11-18 and 2026-11-26.
 
 ### New from OpenRB-338
 
@@ -21,14 +20,22 @@ It holds the work of OpenRB-338 taken into the fork on 2026-11-26.
   panel's step editor and drum grids work as before.
 - **The classic panel.** View > Classic draws the original ReBirth panel from the mod's
   pictures; View > Modern is the panel as before.
-- **More in the Edit menu.** Clear Pattern, and Initialize Song or Loop from Pattern Mode as in
-  the original. Copy Pattern now puts the pattern on the Windows clipboard as text.
+- **The Edit menu**, between File and Mods. It acts on the selected pattern of the focused row:
+  - Cut, Copy and Paste Pattern (Ctrl+X, Ctrl+C, Ctrl+V) move a pattern to another slot; a
+    303 pattern pastes into either 303. Copy puts the pattern on the Windows clipboard as text.
+  - Duplicate Pattern (Ctrl+D) copies it to the row's next empty slot and selects it.
+  - Undo (Ctrl+Z) takes back the last of these, one step.
+  - Clear Pattern, and Initialize Song or Loop from Pattern Mode as in the original.
+
+  In screen reader mode the menu is read like the others and each command says what it did.
 - **Ctrl+I** opens File > Info. In screen reader mode's Choose Mod dialog, Ctrl+I still shows
   Mod Info of the selected mod, as before.
 - A new song starts with four sample patterns in A1.
 - The meters and the compressor's gain-reduction lights follow the original's scale. In screen
   reader mode, F4 now says the gain reduction as one of nine lights.
 - Help > About has a button that copies the version.
+- A double click on a knob sets it to its default value.
+- The modern panel has a new look, OpenRB-338's redesign.
 
 ### Changed
 
@@ -39,6 +46,8 @@ It holds the work of OpenRB-338 taken into the fork on 2026-11-26.
   portable.txt and the folder data, stays portable and keeps its settings: the first start
   copies data\ui.toml into OpenRB-338.toml. The songs and mods folders inside the program's
   folder are still remembered relative to it, so a USB stick works under any drive letter.
+- **Settings are no longer lost with two windows open.** Saving the settings now changes only
+  what this window changed and keeps what another one saved.
 - **No plugin.** The plugin that OpenRB-338 offers for music programs is not part of this
   fork, and the zip has no plugin file.
 
