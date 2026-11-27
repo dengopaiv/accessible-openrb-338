@@ -1884,13 +1884,23 @@ impl App {
 
     /// A row's pattern selector over its 8 pattern and 4 bank buttons (task-187): focusable,
     /// with no click of its own, so the buttons under it keep the mouse. `c` is the row's
-    /// button `pattern1`, the selector's top left.
-    pub(crate) fn pattern_selector(&mut self, ui: &mut Ui, view: &View, c: &Ctl, now: f64) {
+    /// button `pattern1`; the selector's rectangle is that of the section's buttons in `ctls`
+    /// (the shown skin's layout).
+    pub(crate) fn pattern_selector(
+        &mut self,
+        ui: &mut Ui,
+        view: &View,
+        ctls: &[Ctl],
+        c: &Ctl,
+        now: f64,
+    ) {
         let Some(row) = drive::row_of(&c.section) else {
             return;
         };
-        let (w, h) = drive::SELECTOR_SIZE;
-        let rect = view.rect(c.x, c.y, w, h);
+        let Some((x, y, w, h)) = drive::selector_rect(ctls, &c.section) else {
+            return;
+        };
+        let rect = view.rect(x, y, w, h);
         let r = ui.interact(rect, drive::selector_id(row), Sense::FOCUSABLE);
         self.drive_value(ui, &r, &drive::Target::Pattern(row), now);
         crate::a11y::describe_selector(ui.ctx(), &self.panel, row, c);

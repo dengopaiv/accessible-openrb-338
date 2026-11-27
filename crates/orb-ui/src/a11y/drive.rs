@@ -74,11 +74,25 @@ pub const SPIN_DISPLAYS: [&str; 10] = [
     "pcf.pattern",
 ];
 
-/// The size of a row's pattern selector (panel pixels): the area of its 8 pattern buttons and
-/// 4 bank buttons, from the top left of the button `pattern1` (a unit test checks it against
-/// `layout.tsv`). The keycaps of upstream's redesign (task-179, merged by task-230): 8 keys on
-/// a 15.6 pitch, 14.6 wide, from y 30.9 to the banks' 72.9 + 14.6.
-pub const SELECTOR_SIZE: (f32, f32) = (61.4, 56.6);
+/// A row's pattern selector's rectangle `(x, y, w, h)` in the skin's units: the union of the
+/// section's 8 pattern and 4 bank buttons (the controls of kind `grid`), so that it follows
+/// the layout of the skin shown (the modern panel's is 61.4 x 56.6 from its first button, the
+/// classic skin's is its own).
+pub fn selector_rect(ctls: &[Ctl], section: &str) -> Option<(f32, f32, f32, f32)> {
+    let mut it = ctls
+        .iter()
+        .filter(|c| c.section == section && c.kind == "grid");
+    let first = it.next()?;
+    let (mut x0, mut y0) = (first.x, first.y);
+    let (mut x1, mut y1) = (first.x + first.w, first.y + first.h);
+    for c in it {
+        x0 = x0.min(c.x);
+        y0 = y0.min(c.y);
+        x1 = x1.max(c.x + c.w);
+        y1 = y1.max(c.y + c.h);
+    }
+    Some((x0, y0, x1 - x0, y1 - y0))
+}
 
 /// Whether a display is a spin button.
 pub fn is_spin(display_id: &str) -> bool {
@@ -338,15 +352,13 @@ mod tests {
                 .filter(|c| c.section == section && c.kind == "grid")
                 .collect();
             assert_eq!(grid.len(), 12);
+            let (x, y, w, h) = selector_rect(&ctls, &section).unwrap();
             let first = grid.iter().find(|c| c.name() == "pattern1").unwrap();
-            let x1 = grid.iter().map(|c| c.x + c.w).fold(0.0, f32::max);
-            let y1 = grid.iter().map(|c| c.y + c.h).fold(0.0, f32::max);
-            assert!(grid.iter().all(|c| c.x >= first.x && c.y >= first.y));
-            let (w, h) = SELECTOR_SIZE;
+            assert!((x - first.x).abs() < 0.01 && (y - first.y).abs() < 0.01);
             assert!(
-                (x1 - first.x - w).abs() < 0.01 && (y1 - first.y - h).abs() < 0.01,
+                (w - 61.4).abs() < 0.01 && (h - 56.6).abs() < 0.01,
                 "{section}: {:?}",
-                (x1 - first.x, y1 - first.y)
+                (w, h)
             );
             assert_eq!(row_of(&section), Some(r));
         }

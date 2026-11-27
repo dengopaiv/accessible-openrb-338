@@ -441,7 +441,7 @@ impl App {
                 Some(g) => g,
                 None => &mut *ui,
             };
-            pressed[n] = self.control(target, view, Placed { c, n, first }, now);
+            pressed[n] = self.control(target, view, &layout.controls, Placed { c, n, first }, now);
         }
         for (is808, s) in [(true, 3), (false, 4)] {
             if let Some(g) = groups.get_mut(s) {
@@ -456,7 +456,7 @@ impl App {
 
     /// One control's input; whether it shows pressed. In the fork, also the control's node
     /// for a screen reader and its requests (m-7, `a11y`).
-    fn control(&mut self, ui: &mut Ui, view: &View, p: Placed, now: f64) -> bool {
+    fn control(&mut self, ui: &mut Ui, view: &View, ctls: &[Ctl], p: Placed, now: f64) -> bool {
         let c = p.c;
         match c.kind.as_str() {
             // a display takes no click; for a screen reader it is a spin button, a 303's step
@@ -495,7 +495,7 @@ impl App {
             kind => {
                 if kind == "grid" && c.name() == "pattern1" {
                     // the row's selector, before its buttons: the Tab order is the panel's
-                    self.pattern_selector(ui, view, c, now);
+                    self.pattern_selector(ui, view, ctls, c, now);
                 }
                 let joined = drive::joined(c);
                 let r = if joined {
@@ -604,7 +604,14 @@ impl App {
         if !down && let Some(t) = drive::target(c) {
             self.drive_value(ui, &r, &t, ui.input(|i| i.time));
         }
-        crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
+        if c.id == crate::model::SELECTOR_808 && self.screen_reader_mode() {
+            // the classic skin's instrument knob: not a stop (`nav::focusable`) and unnamed, so
+            // a screen reader skips it; the mode off keeps the node as it was (task-238)
+            ui.ctx()
+                .accesskit_node_builder(r.id, |node| node.set_hidden());
+        } else {
+            crate::a11y::describe(ui.ctx(), r.id, &self.panel, c);
+        }
     }
 
     /// A fader: a press off the handle jumps the handle's center to the pointer, then the

@@ -9,6 +9,7 @@ the same as in OpenRB-338 and the original ReBirth in every release below.
 
 This section holds the changes made since the last release.
 
+- **Classic look**, in screen reader mode: the panel reads and works as the modern one does (names, Tab order, sections, pattern selectors, drum grids, 303 step editor). The 808's round instrument knob of the classic panel is skipped by the screen reader: the drum grid's Up and Down choose the instrument. Switching View > Classic or Modern keeps the focus where it is and says nothing.
 - **Screen reader names**: NVDA now says 808, 909, 303-1 and 303-2 for the sections and controls, and the Keyboard Shortcuts help says the same, as the rest of the app does. They were TR-808, TR-909 and Bass Line 1 and 2.
 - **Edit > Initialize Song from Pattern Mode**, in screen reader mode: the question takes the
   focus on Initialize and is read with its text; Tab reaches Cancel, and the focus goes back
