@@ -8,6 +8,7 @@
 
 pub mod announce;
 pub mod drive;
+pub mod editor303;
 pub mod grid;
 pub mod names;
 pub mod nav;

@@ -86,16 +86,20 @@ pub(crate) enum Win {
     Chooser,
     /// Options > Audio Output (task-234).
     Audio,
+    /// The 303-1 (0) or 303-2 (1) Pattern Editor (task-235).
+    Editor303(usize),
 }
 
 impl Win {
-    pub(crate) const ALL: [Win; 6] = [
+    pub(crate) const ALL: [Win; 8] = [
         Win::KeyHelp,
         Win::Info,
         Win::About,
         Win::ModInfo,
         Win::Chooser,
         Win::Audio,
+        Win::Editor303(0),
+        Win::Editor303(1),
     ];
 }
 
@@ -327,7 +331,7 @@ pub struct App {
     /// focus, the window the focus is to move into in this frame, the window it last moved
     /// into, and the panel control that had the focus last, which gets it back when the
     /// windows close.
-    windows_open: u8,
+    windows_open: u16,
     window_new: Option<(Win, u32)>,
     window_focus_due: Option<Win>,
     focus_window: Option<Win>,
@@ -1594,7 +1598,7 @@ impl App {
             .iter()
             .enumerate()
             .filter(|(_, w)| self.win_open(**w))
-            .fold(0u8, |m, (i, _)| m | 1 << i);
+            .fold(0u16, |m, (i, _)| m | 1 << i);
         let open = mask != 0;
         let in_window = open && focused.is_some_and(|f| nav::section_of(&self.nav, f).is_none());
         // a window that opened since the last frame is the one the focus goes to (the newest,
@@ -1726,6 +1730,16 @@ impl App {
             Win::ModInfo => self.mod_info_open,
             Win::Chooser => self.chooser.is_some(),
             Win::Audio => self.audio_open,
+            Win::Editor303(k) => self.editors[k.min(1)].open,
+        }
+    }
+
+    /// Screen reader mode: the focus goes into the open window `w` again, as when it opened
+    /// (Ctrl/Cmd+E or the Edit menu's item on a pattern editor that is open already,
+    /// task-235).
+    pub(crate) fn refocus_window(&mut self, w: Win) {
+        if self.screen_reader_mode() && self.win_open(w) {
+            self.window_new = Some((w, 1));
         }
     }
 

@@ -15,10 +15,15 @@
 //! the like) are the edits; [`Act`] is what the window asks for, run by [`App::editor_act`].
 //! The window's frame (its placing, the header's controls, the grid's geometry and painting) is
 //! shared with the drum editors (`crate::editor_frame`, task-280).
+//!
+//! In the fork's screen reader mode the window's content is `crate::a11y::editor303`'s
+//! (task-235, decision task-242): named controls and the steps as a list, through the same
+//! [`Act`]s.
 
 use egui::{Color32, Context, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::app::App;
+use crate::a11y::editor303;
+use crate::app::{App, Win};
 use crate::editor_frame::{
     self as frame, ARROW, CELL_H, CELL_W, GAP, HEAD_H, KEY_W, LABEL_SIZE, Number, Placing, Press,
     SPLIT_H, cell_rect, dimmed, paint_columns,
@@ -109,6 +114,50 @@ pub fn with_flag(bytes: &[u8], s: usize, f: Flag, on: bool) -> Vec<u8> {
     let mut b = bytes.to_vec();
     b[step_at(s) + f.field()] = u8::from(on);
     b
+}
+
+/// Step `s` of `bytes` as the panel's model holds a 303 step (the screen reader's words of
+/// `crate::a11y::step303` read it).
+pub fn step303_of(bytes: &[u8], s: usize) -> crate::model::Step303 {
+    let b = &bytes[step_at(s)..step_at(s) + 6];
+    crate::model::Step303 {
+        note: b[NOTE],
+        slide: b[1] != 0,
+        accent: b[2] != 0,
+        up: b[3] != 0,
+        down: b[4] != 0,
+        rest: b[REST] != 0,
+    }
+}
+
+/// What a programming key of the screen reader's Step editor does to its step (task-235).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepEdit {
+    /// A pitch key: the step's note. It stays a rest unless `makes_notes` (Options > Pitch Keys
+    /// Make Notes, task-211), as the panel's keys.
+    Note(u8),
+    /// `-` / `=`: Note/Pause, the rest flips.
+    Rest,
+    /// `P`, `[`, `'`, `;`: the flag flips.
+    Flag(Flag),
+}
+
+/// `bytes` with `edit` done to step `s`; `makes_notes` as [`StepEdit::Note`] says.
+pub fn with_step_edit(bytes: &[u8], s: usize, edit: StepEdit, makes_notes: bool) -> Vec<u8> {
+    match edit {
+        StepEdit::Note(n) if makes_notes => with_note(bytes, s, n),
+        StepEdit::Note(n) => {
+            let mut b = bytes.to_vec();
+            b[step_at(s) + NOTE] = n;
+            b
+        }
+        StepEdit::Rest => {
+            let mut b = bytes.to_vec();
+            b[step_at(s) + REST] = u8::from(b[step_at(s) + REST] == 0);
+            b
+        }
+        StepEdit::Flag(f) => with_flag(bytes, s, f, !flag(bytes, s, f)),
+    }
 }
 
 /// `bytes` with its length `n` (1..=16).
@@ -222,6 +271,11 @@ pub enum Act {
     },
     /// The mouse went up: the end of a drag.
     Release,
+    /// Screen reader mode: a programming key on the Step editor's step `step` (task-235).
+    StepEdit {
+        step: usize,
+        edit: StepEdit,
+    },
 }
 
 /// A drag on a grid.
@@ -261,6 +315,10 @@ pub struct Editor {
     flags_down: bool,
     /// Where the window drew its parts last (for tests and the pointer).
     hits: Hits,
+    /// Screen reader mode: the step of the Step editor (0..=15, task-235).
+    pub(crate) sr_step: usize,
+    /// Screen reader mode: a control of the window had the focus at the last frame.
+    pub(crate) sr_had_focus: bool,
 }
 
 /// Where the window drew its grids and buttons last.
@@ -344,11 +402,23 @@ impl App {
         let k = k.min(1);
         let pattern = self.panel.rows[k].pattern;
         let e = &mut self.editors[k];
+        let was_open = e.open;
         e.pattern = pattern;
         e.win.open(e.open);
         e.open = true;
         e.gesture = None;
+        if !was_open {
+            e.sr_step = 0;
+        }
         self.editor_focus = Some(k);
+        // screen reader mode: the pattern its 303's step editor edits (`editor_follow`), and an
+        // open window takes the focus again (task-235)
+        if self.screen_reader_mode() {
+            self.editor_follow(k);
+            if was_open {
+                self.refocus_window(Win::Editor303(k));
+            }
+        }
     }
 
     /// Where the window of 303 `k` drew step `step`'s cell at `pitch` of the piano roll last.
@@ -391,8 +461,17 @@ impl App {
     /// The selection rule (docs/ui_spec.md section 23), the drum editors' (task-290), in both
     /// modes: the editor shows its 303's selected pattern (a selection on the panel moves it,
     /// song playback's too; so does the switch of mode).
+    ///
+    /// In screen reader mode the editor shows the pattern its 303's step editor edits
+    /// (`Panel::edit_pattern`, the pin of task-190): a selection on the panel or in the editor
+    /// moves it, playback does not (decision task-209, "move-along doesn't speak"; with Options
+    /// > Step Editor Follows Playback on it moves at the next input, as the step editor's).
     pub(crate) fn editor_follow(&mut self, k: usize) {
-        self.editors[k].pattern = self.panel.rows[k].pattern;
+        self.editors[k].pattern = if self.screen_reader_mode() {
+            self.panel.edit_pattern(k)
+        } else {
+            self.panel.rows[k].pattern
+        };
     }
 
     /// The pattern of the editor of 303 `k` as the link holds it, after the panel's pending
@@ -431,6 +510,14 @@ impl App {
             self.undo = Some(u);
         }
         changed
+    }
+
+    /// The pattern the editor of 303 `k` shows, as the link holds it (empty without a song).
+    fn editor_pattern_bytes(&self, k: usize) -> Vec<u8> {
+        self.link
+            .as_ref()
+            .map(|l| l.pattern(k, self.editors[k].pattern).to_vec())
+            .unwrap_or_default()
     }
 
     /// Runs what the window of 303 `k` asked for.
@@ -541,6 +628,11 @@ impl App {
                     wrote: wrote || changed,
                 });
             }
+            Act::StepEdit { step, edit } => {
+                let makes = self.screen_reader_mode() && self.settings.pitch_keys_make_notes;
+                let step = step.min(STEPS - 1);
+                self.editor_edit(k, EDIT, false, |b| with_step_edit(b, step, edit, makes));
+            }
             Act::Release => {
                 if let Some(Gesture::Notes {
                     last: (step, _),
@@ -603,16 +695,27 @@ impl App {
         };
         let mut acts = Vec::new();
         let mut length_drag = false;
+        let sr = self.screen_reader_mode();
+        let due = sr && self.window_focus_due(Win::Editor303(k));
+        let mut sr_out = editor303::Out::default();
         let mut win = std::mem::take(&mut self.editors[k].win);
         let editor = &mut self.editors[k];
+        let wid = egui::Id::unique(salt(k));
         let spec = frame::Spec {
-            id: egui::Id::unique(salt(k)),
+            id: wid,
             title: title(k),
             saved,
             guess: vec2(480.0, 340.0),
         };
         let out = frame::show_window(ctx, spec, &mut win, |ui| {
-            length_drag = window_ui(ui, editor, &shown, &mut acts);
+            if sr {
+                // the fork's screen reader mode (task-235): named controls, the steps a list
+                let view = (shown.pattern, &shown.bytes[..]);
+                let state = (&mut editor.sr_step, &mut editor.sr_had_focus);
+                sr_out = editor303::window_ui(ui, k, wid, title(k), due, view, state);
+            } else {
+                length_drag = window_ui(ui, editor, &shown, &mut acts);
+            }
         });
         self.editors[k].win = win;
         if out.pressed {
@@ -621,9 +724,27 @@ impl App {
         if !length_drag {
             self.editors[k].length_wrote = false;
         }
+        let acted = !acts.is_empty() || !sr_out.acts.is_empty();
         for a in acts {
             self.editor_act(k, a);
         }
+        // screen reader mode: each act is judged on the pattern just before and after it
+        // (`editor303::act_said`): a Transpose or Shift that changed nothing says so, and each
+        // programming key of a frame is said on its own
+        for a in sr_out.acts {
+            let before = self.editor_pattern_bytes(k);
+            self.editor_act(k, a);
+            let after = self.editor_pattern_bytes(k);
+            let p = self.editors[k].pattern;
+            if let Some(text) = editor303::act_said(&a, p, &before, &after) {
+                self.announce(text);
+            }
+        }
+        if sr && acted {
+            // the values the acts changed show in the next frame, whatever else repaints
+            ctx.request_repaint();
+        }
+        let open = out.open && !sr_out.close;
         // the place is saved once the window is let go (the standalone app's only)
         if let Some(pos) = out.save {
             if k == 0 {
@@ -635,9 +756,10 @@ impl App {
                 self.fail(e);
             }
         }
-        if !out.open {
+        if !open {
             self.editors[k].open = false;
             self.editors[k].gesture = None;
+            self.editors[k].sr_had_focus = false;
             self.editor_unfocus(k);
         }
     }

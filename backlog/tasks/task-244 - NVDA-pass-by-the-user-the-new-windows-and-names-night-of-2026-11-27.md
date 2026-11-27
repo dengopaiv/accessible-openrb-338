@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-27T21:55:00Z'
-updated_date: '2026-11-27T23:05:00Z'
+updated_date: '2026-11-27T23:47:00Z'
 labels:
   - ui
   - tests
@@ -30,4 +30,5 @@ How: the user runs OpenRB-338 with NVDA in screen reader mode and goes through t
 - [ ] #2 By ear with NVDA (TASK-239): F6 through the sections says 303-1, 303-2, 808, 909 (not Bass Line 1/2, TR-808, TR-909); F2 on a drum grid starts with 808 or 909; Help > Keyboard Shortcuts in screen reader mode shows the same names
 - [ ] #3 Options > Audio Output (task-234), by ear in NVDA: the window is announced as Audio Output and the focus lands on Driver; Driver, Device, Sample rate and Buffer size are each read with their name and the chosen value; Down/Up/Enter in an open list changes it and NVDA says what changed once (e.g. Sample rate: 48000 Hz); Tab reaches the In use lines and reads them as label: value; the numbers refreshing every 500 ms are never spoken; Escape closes an open list first, then the window, and the focus returns
 - [ ] #4 By ear with NVDA (TASK-238): with View > Classic in screen reader mode, F6 and Tab go through the sections and controls with the same names as the modern look; the pattern selectors, the drum grids (F2 reads them) and the 303 step editor work; the 808's round instrument knob is not read (Up/Down on the drum grid choose the instrument); View > Classic and View > Modern each say only the menu item and the focus stays on the control it was on
+- [ ] #5 By ear with NVDA (TASK-235): Edit > 303-1 Pattern Editor... (and Ctrl+E on a 303) in screen reader mode: NVDA says the window's title and lands on Pattern (A1); Tab reads Step editor with its step ('Step 1 of 16: rest, C'), Length, Shuffle, Transpose up and down, Shift left and right, Copy, Paste and Clear by name; on the Step editor Up/Down/Home/End are read once each and Left/Right say nothing; C on a rest says 'Step 1: rest, C' once, - and P are read once as the new value; Pattern and Length changes are read once; Transpose up says 'Pattern A1 transposed up'; F2 reads the pattern; while the song plays nothing is spoken; Escape closes the window and NVDA is back on the panel control.
 <!-- AC:END -->

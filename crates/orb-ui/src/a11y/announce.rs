@@ -317,6 +317,16 @@ impl App {
         let text = match key {
             Key::F2 => {
                 let focused = ui.memory(|m| m.focused());
+                // the focus in a 303 pattern editor's window: its pattern (task-235)
+                if let Some(k) = focused.and_then(super::editor303::owner)
+                    && self.editors[k].open
+                    && let Some(link) = &self.link
+                {
+                    let p = self.editors[k].pattern;
+                    let text = super::editor303::readout(k, p, link.pattern(k, p));
+                    self.announce(text);
+                    return true;
+                }
                 let r = focused
                     .and_then(focused_row)
                     .unwrap_or(self.panel.focus.min(3));

@@ -106,13 +106,19 @@ pub fn editor_value(panel: &Panel, k: usize) -> String {
 /// [`editor_value`] without the mode.
 fn edit_step_text(panel: &Panel, k: usize) -> String {
     let i = usize::from(panel.synth[k].edit);
-    let len = length(panel, k);
+    step_value(i, length(panel, k), step_of(panel, k, i))
+}
+
+/// Step `i` (0-based) of a pattern of `len` steps holding `s`, as a step editor reads it:
+/// "Step 5 of 16: C sharp, accent", "Step 12, past the 8 steps: rest, C". The panel's step
+/// editor and the 303 pattern editor's (task-235) say it alike.
+pub fn step_value(i: usize, len: usize, s: &Step303) -> String {
     let at = if i < len {
         format!("Step {} of {len}", i + 1)
     } else {
         format!("Step {}, past the {len} steps", i + 1)
     };
-    format!("{at}: {}", step_text(step_of(panel, k, i)))
+    format!("{at}: {}", step_text(s))
 }
 
 /// The step editor's node: a Slider (Up and Down move it, as a vertical slider) named
@@ -264,7 +270,7 @@ fn lower_first(s: &str) -> String {
 }
 
 /// One step for F2, compactly: "1 C accent", "3 D sharp octave up slide", "2 rest".
-fn compact(i: usize, s: &Step303) -> String {
+pub fn compact(i: usize, s: &Step303) -> String {
     if s.rest {
         return format!("{} rest", i + 1);
     }

@@ -20,6 +20,12 @@ This section holds the changes made since the last release.
   and read. A change of driver, device, rate or buffer is announced once; the numbers that
   refresh twice a second are never announced. Escape closes an open list first, then the
   window. The 2026.1127.2013 release listed this window as not yet made for screen readers.
+- **The 303-1 and 303-2 Pattern Editors**, in screen reader mode: the window takes the focus
+  when it opens (Edit menu or Ctrl+E) and gives it back when it closes (Escape). Pattern,
+  Length, Shuffle, Transpose, Shift, Copy, Paste and Clear are named controls you reach with
+  Tab. The notes are a list of the 16 steps with the same keys as the panel's step editor:
+  Up and Down move, the 303's keys program the step and it is read back, F2 reads the pattern.
+  Nothing is spoken while the song plays.
 
 ## 2026.1127.2013 (2026-11-27)
 

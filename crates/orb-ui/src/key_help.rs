@@ -273,8 +273,9 @@ fn screen_reader_group(is_mac: bool) -> Group {
         note: "On while Options > Screen Reader Mode says so. These keys replace the ones \
                below where they differ; every other key keeps its meaning, whatever control \
                of the panel has the focus. While a menu or a window (this one, Info, About, \
-               Mods > Info) has the focus, or a window is open and nothing has it, the \
-               panel's keys wait, but for F1 to F6, F9, F11 and F12. F2, F3 and F4 are \
+               Mods > Info, a pattern editor) has the focus, or a window is open and \
+               nothing has it, the panel's keys wait, but for F1 to F6, F9, F11 and F12. \
+               F2, F3 and F4 are \
                spoken, without moving the focus.",
         rows: vec![
             sr_row("F1", "This window", vec![sr(Key::F1, Any, SrWant::Help)]),
@@ -353,6 +354,18 @@ fn screen_reader_group(is_mac: bool) -> Group {
                     shortcuts::text_for(&shortcuts::CHOOSER_INFO, is_mac)
                 ),
                 "Mod Info of the selected mod, without loading it",
+                vec![],
+            ),
+            sr_row(
+                "In a 303 Pattern Editor",
+                "Edit > 303-1 or 303-2 Pattern Editor..., or Ctrl+E on a 303: the focus goes \
+                 to Pattern (Up / Down, PgUp / PgDn a bank, Home / End A1 / D8); Tab to the \
+                 Step editor, Length (Up / Down, PgUp / PgDn 10, Home / End), Shuffle, \
+                 Transpose up and down, Shift left and right, Copy, Paste, Clear. On the Step \
+                 editor: Up / Down the previous / next step (wrapping at 16), Home / End step 1 \
+                 / the pattern's last, Enter / Backspace next / previous, Left / Right nothing; \
+                 the 303's programming keys, and the step they changed is spoken; F2 reads the \
+                 pattern. Escape closes",
                 vec![],
             ),
             sr_row(

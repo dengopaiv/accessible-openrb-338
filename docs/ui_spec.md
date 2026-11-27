@@ -2756,6 +2756,74 @@ is no menu item and Ctrl+M does nothing; the dialog closes if the mode goes off 
   `ORB_THIRDPARTY_MODS_DIR`); reading the folder (at start and Refresh List) is the existing
   scan, about 2.8 s for the collection.
 
+### 20.8 The 303 pattern editor windows (task-235)
+
+The user's decision task-242 (2026-11-27), option A: the whole window. The code is
+`crates/orb-ui/src/a11y/editor303.rs`, drawn by `pattern_editor.rs` in place of the header and
+the painted grids; the tests `crates/orb-ui/tests/a11y_pattern_editor.rs` and the module's unit
+tests. Screen reader mode only: with the mode off the window draws and acts as section 23
+says (upstream's `window_ui`, untouched; no node of this section exists).
+
+- **The window.** "303-1 Pattern Editor" and "303-2 Pattern Editor" open as in section 23
+  (Edit menu, Ctrl+E with that 303's row focused). Each is a Dialog named by its title
+  (`window::window`) and one of `App::window_focus`'s windows (`Win::Editor303(k)`): the focus
+  goes to its first control, Pattern, as it opens, and back to the panel control that had it
+  when it closes. The Edit menu's item or Ctrl+E on a window that is open already brings the
+  focus into it again (`App::refocus_window`). Escape with the focus in the window closes it;
+  the title bar's close button is reached with Shift+Tab from Pattern. While the focus is in
+  the window the panel's keys wait, as for the other windows (F1 to F6, F9, F11, F12 still
+  work; Ctrl+Z and the Edit menu's other keys too).
+- **The controls, in their tab order** (`editor303::Part`; each drawn as a button with its
+  text, the focused one outlined):
+  - **Pattern**, a SpinButton whose value is the pattern ("A1"). Up and Down the next and the
+    previous of the 303's 32 patterns (stopping at A1 and D8, `editor_frame::step_pattern`),
+    Page Up and Page Down a bank (clamped), Home A1, End D8, as the panel's pattern selector;
+    a screen reader's Increment and Decrement as Up and Down. It stands for the header's bank
+    buttons, number and arrows. The pattern is selected on the panel too (section 23).
+  - **Step editor**, the roll as a list of the 16 steps: a vertical Slider named "Step editor"
+    as the panel's (section 20.5), whose value is the step and what it holds, in the same words
+    (`step303::step_value`): "Step 5 of 16: C sharp, octave up, accent, slide", "Step 12, past
+    the 8 steps: rest, C".
+  - **Length**, a SpinButton, "16 steps": Up and Down one step, Page Up and Page Down ten,
+    Home 1, End 16 (as the panel's pattern length, TASK-205). Each change is one Undo
+    ("Pattern Length").
+  - **Shuffle**, a CheckBox: the pattern's own shuffle flag. Space (or a click) toggles it.
+  - **Transpose up**, **Transpose down**, **Shift left**, **Shift right**, **Copy**, **Paste**,
+    **Clear**: Buttons (Space, Enter, a click or a screen reader's Click).
+- **The Step editor's keys** (`editor303::step_key`; the window's own step, `Editor::sr_step`,
+  step 1 when the window opens): Up and Down the previous and the next step, one move modulo
+  16 as the panel's Back and Step; Home step 1, End the pattern's last step; Left and Right
+  nothing (decision task-209); Enter and Backspace the next and the previous step; Page Up and
+  Page Down nothing. The moves repeat with the key. The programming keys are those of the
+  panel's key map in Program Synth mode for that 303 (`keys::map_screen_reader`), whatever the
+  keyboard mode: the pitch keys `C F V G B N J M K , L . /` set the step's note, and a rest
+  stays a rest unless Options > Pitch Keys Make Notes is on (then the step becomes a note);
+  `-` and `=` Note/Pause; `P` accent; `[` slide; `'` octave up; `;` octave down. A programming
+  key does not repeat and does not move the step (the window has no pitch mode).
+- **One edit path.** Every edit is an `Act` of `App::editor_act` (a programming key is
+  `Act::StepEdit`, `pattern_editor::with_step_edit`) through `App::write_pattern`: heard the
+  next time the step plays, the song modified, the one-level Undo named as in section 23
+  ("Edit Pattern" for a programming key).
+- **What is spoken.** The screen reader speaks the focused control's value or state as it
+  changes: the Step editor after a move or a key, Pattern, Length, Shuffle. When a programming
+  key leaves the step's value as it was (the same note again, a pitch key on a rest), the
+  announcer says the step: "Step 1: rest, C" (`editor303::step_said`), as the panel's step
+  editor does. Transpose and Shift announce "Pattern A1 transposed up", "Pattern A1 shifted
+  right", or "Pattern A1 unchanged" when the pattern's bytes are as they were (a Shift of a
+  pattern whose steps are all alike; nothing is written then). Each act is judged on the
+  pattern just before and after it (`editor303::act_said`), so several keys of one frame are
+  each said on their own. Copy, Paste and Clear speak their status line ("303-1: A1
+  copied", "303-1: A1 cleared").
+- **F2** with the focus in the window reads its pattern, from the window's pattern (not the
+  row's): "303-1, pattern A3, 8 steps, shuffle off. 1 C accent, 2 rest, 3 D sharp slide"
+  (`editor303::readout`, the steps in the pattern's length, the words of 20.5).
+- **Move-along doesn't speak.** In screen reader mode the window shows the pattern its 303's
+  step editor edits (`Panel::edit_pattern`, the pin of 20.5; `App::editor_follow`), not the
+  pattern playback moves the row to: a pattern chosen in the window or on the panel moves it,
+  playback never does, and nothing in the window speaks or changes by itself while the song
+  plays. With Options > Step Editor Follows Playback on it moves to the playing pattern at the
+  next input, silently, as the panel's step editor.
+
 ## 21. The panel bitmaps and the classic skin (task-187, task-267)
 
 The bitmaps' places below were found for task-187's Theme Viewer, a view-only window that
@@ -3097,7 +3165,8 @@ note, slide, accent, up, down and rest). The 808 editor is section 24 (task-280)
 is section 25 (task-281). The window's frame is shared with them (`crates/orb-ui/src/editor_frame.rs`:
 the placing, the header's controls, the grid's geometry and painting). Code:
 `crates/orb-ui/src/pattern_editor.rs`; tests: `crates/orb-ui/tests/pattern_editor.rs`, the unit
-tests of the module.
+tests of the module. In the fork's screen reader mode the window's content is section
+20.8's (task-235).
 
 **The windows.** Two `egui::Window`s inside the main window, "303-1 Pattern Editor" and
 "303-2 Pattern Editor" (task-290; until then one "303 Pattern Editor" switched between the two
