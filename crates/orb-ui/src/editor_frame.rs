@@ -107,12 +107,10 @@ pub(crate) struct Shown {
 pub(crate) struct Spec<'a> {
     pub(crate) id: egui::Id,
     pub(crate) title: &'a str,
-    /// The standalone app's saved place (`None` in the plugin).
+    /// The saved place.
     pub(crate) saved: Option<[i32; 2]>,
     /// The window's size before its first frame.
     pub(crate) guess: Vec2,
-    /// Whether a move by the mouse is reported for saving (the standalone app).
-    pub(crate) keep: bool,
 }
 
 /// Shows an editor's window: draggable, closable, neither resizable nor collapsible. An
@@ -128,7 +126,6 @@ pub(crate) fn show_window(
         title,
         saved,
         guess,
-        keep,
     } = spec;
     let size = p.window.map_or(guess, |r| r.size());
     let place = match saved {
@@ -178,7 +175,7 @@ pub(crate) fn show_window(
     }
     // the place is saved once the window is let go
     let mut save = None;
-    if keep && p.moved && !down {
+    if p.moved && !down {
         p.moved = false;
         save = p.last_min.map(|m| [m.x.round() as i32, m.y.round() as i32]);
     }

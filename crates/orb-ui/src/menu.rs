@@ -13,8 +13,7 @@
 //!   [`App::clear_pattern`], [`App::pattern_target`], task-290), orb's own commands, and the 303-1,
 //!   303-2, 808 and 909 Pattern Editor... (Ctrl/Cmd+E on the focused row's,
 //!   [`crate::pattern_editor`], [`crate::drum_editor`]); the original's Initialize Loop and
-//!   Initialize Song from Pattern Mode, in song mode only ([`App::init_from_pattern`], task-306); a
-//!   plugin's Edit menu has the same items with no shortcut texts.
+//!   Initialize Song from Pattern Mode, in song mode only ([`App::init_from_pattern`], task-306).
 //! - **Mods**: "Standard ReBirth", the mods of the Mods folder (one entry per INFO menu name, as
 //!   the original's Mods menu: `sub_40C163`, docs/rbm.md section 14), and a file picked in the
 //!   browser. A choice is the original's `sub_42D80D` -> `sub_426FB3`: the song is marked modified,
@@ -94,10 +93,8 @@ pub enum Cmd {
     Info,
     /// Help > Keyboard Shortcuts.
     KeyHelp,
-    /// Options > Audio Output... (the standalone app only, task-191).
+    /// Options > Audio Output... (task-191).
     AudioOutput,
-    /// Options > Output Routing... (a plugin's editor only, task-300).
-    OutputRouting,
     /// Help > About.
     About,
     /// "Choose file..." of the Mods menu: the browser for a mod.
@@ -117,7 +114,7 @@ pub enum Cmd {
     /// "Info" of the Mods menu: the current mod's splash and details (task-106).
     ModInfo,
     /// View > Classic or View > Modern: the main window's skin (task-267,
-    /// [`App::set_theme`]; nothing in a plugin's editor).
+    /// [`App::set_theme`]).
     SetTheme(Theme),
     ToggleVintage,
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
@@ -134,9 +131,6 @@ pub enum Cmd {
     ToggleStepEditorFollows,
     TogglePitchKeysMakeNotes,
     SetKeyMode(KeyMode),
-    /// The plugin's pattern or note mode (the panel's mode selector, a plugin's editor only;
-    /// task-217, task-231: the Options menu has no mode items).
-    SetPluginMode(crate::embed::PluginMode),
     /// Edit > Undo ([`App::undo`]).
     Undo,
     /// Edit > 303-1 or 303-2 Pattern Editor..., by the 303 (0 or 1;
@@ -505,11 +499,9 @@ impl App {
 
     // ---- opening ------------------------------------------------------------------------
 
-    /// Whether replacing the song asks first: unsaved changes, with a player. Never in a
-    /// plugin's editor, whose song is kept in the host's project and which has no Save
-    /// (task-201).
+    /// Whether replacing the song asks first: unsaved changes, with a player.
     fn asks_to_save(&self) -> bool {
-        self.doc.modified && self.link.is_some() && !self.is_plugin()
+        self.doc.modified && self.link.is_some()
     }
 
     /// Opens the song at `path`: with unsaved changes first asks what to do with them.
@@ -568,26 +560,6 @@ impl App {
                 (Kit::Standard, self.samples.clone())
             }
         };
-        if self.is_plugin() {
-            // the plugin's song (task-201): the mod first (the song is built with it), then
-            // the song; the panel shows it at the next refresh, now
-            let before = self.doc.kit.clone();
-            if let Err(e) = self.embed_mod(&kit) {
-                self.fail(e);
-            }
-            let file = opened.file.clone();
-            match self.embed().map(|e| e.load_song(Some(file))) {
-                Some(Ok(())) => {
-                    self.embed_refresh();
-                    if self.doc.kit != before {
-                        self.mod_opened();
-                    }
-                }
-                Some(Err(e)) => self.fail(e),
-                None => {}
-            }
-            return;
-        }
         let Some(link) = &mut self.link else {
             return;
         };
@@ -719,15 +691,6 @@ impl App {
     /// ([`App::new_now`]) both come here. Without a player there is nothing to load: the
     /// panel and the document are made new.
     fn fresh(&mut self) {
-        if self.is_plugin() {
-            // the plugin's new song, on the plugin's mod (task-201)
-            match self.embed().map(|e| e.load_song(None)) {
-                Some(Ok(())) => self.embed_refresh(),
-                Some(Err(e)) => self.fail(e),
-                None => {}
-            }
-            return;
-        }
         if self.link.is_none() {
             self.panel = crate::model::Panel::new();
             self.settle(
@@ -978,11 +941,6 @@ impl App {
                 return;
             }
         };
-        // a plugin's editor: the plugin takes the mod into its state (task-201)
-        if let Err(e) = self.embed_mod(&kit) {
-            self.fail(e);
-            return;
-        }
         let Some(link) = &mut self.link else {
             self.fail("There is no player to change the mod of.");
             return;
@@ -1030,20 +988,6 @@ impl App {
 
     /// Runs a menu command.
     pub fn command(&mut self, cmd: Cmd) {
-        // a plugin's editor has no Save, Save As, Export or keyboard (task-201)
-        if self.is_plugin()
-            && matches!(
-                cmd,
-                Cmd::Save
-                    | Cmd::SaveAs
-                    | Cmd::Export
-                    | Cmd::KeyHelp
-                    | Cmd::AudioOutput
-                    | Cmd::SetKeyMode(_)
-            )
-        {
-            return;
-        }
         match cmd {
             Cmd::New => self.new_song(),
             Cmd::Open => self.open_browser(Mode::OpenSong),
@@ -1062,7 +1006,6 @@ impl App {
             Cmd::Info => self.show_info(),
             Cmd::KeyHelp => self.show_key_help(),
             Cmd::AudioOutput => self.show_audio(),
-            Cmd::OutputRouting => self.show_routing(),
             Cmd::About => self.show_about(),
             Cmd::ChooseModFile => self.open_browser(Mode::ChooseMod),
             Cmd::ChooseMod => self.show_chooser(),
@@ -1111,11 +1054,6 @@ impl App {
                 }
             }
             Cmd::SetKeyMode(m) => self.set_key_mode(m),
-            Cmd::SetPluginMode(m) => {
-                if let Some(e) = self.embed() {
-                    e.set_mode(m);
-                }
-            }
             Cmd::Undo => self.undo(),
             Cmd::PatternEditor(k) => self.open_pattern_editor(k),
             Cmd::DrumEditor(m) => self.open_drum_editor(m),
@@ -1767,11 +1705,9 @@ impl App {
         };
         ui.data_mut(|d| d.insert_temp(bar_id(), bar));
         match cmd {
-            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V. A
-            // plugin's window (upstream's, removed in this fork, task-231) did not answer
-            // `RequestPaste` (it read the clipboard only on a paste key), so there the
-            // item reads the system clipboard directly (task-274, task-287)
-            Some(Cmd::PastePattern) if !self.is_plugin() => {
+            // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V
+            // (task-274, task-287)
+            Some(Cmd::PastePattern) => {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
@@ -1797,10 +1733,8 @@ impl App {
 
     /// The menus of the bar: File, Edit, View, Mods, Options and Help; what is chosen goes to `cmd`
     /// (Edit > Paste Pattern as [`Cmd::PastePattern`], which `menu_bar` turns into a paste of
-    /// the system clipboard in the standalone app). A plugin's File menu has New, Open and Info
-    /// only (task-201); its Edit menu is the standalone's without shortcut texts (task-274).
-    /// Each menu's button goes into `bar` (the keyboard walk of the bar, task-184);
-    /// `focus_file` focuses the File button.
+    /// the system clipboard). Each menu's button goes into `bar` (the keyboard walk of the bar,
+    /// task-184); `focus_file` focuses the File button.
     fn menu_items(
         &mut self,
         ui: &mut Ui,
@@ -1808,36 +1742,22 @@ impl App {
         bar: &mut Vec<(Id, Id)>,
         focus_file: bool,
     ) {
-        let plugin = self.is_plugin();
-        let has_routing = self.has_routing();
-        // a plugin's editor has no keyboard shortcuts (task-201): no shortcut texts
-        let key = |s| (!plugin).then_some(s);
         let file = ui.menu_button("File", |ui| {
-            if item(ui, "New", key(&shortcuts::NEW)) {
+            if item(ui, "New", Some(&shortcuts::NEW)) {
                 *cmd = Some(Cmd::New);
             }
-            if item(ui, "Open...", key(&shortcuts::OPEN)) {
+            if item(ui, "Open...", Some(&shortcuts::OPEN)) {
                 *cmd = Some(Cmd::Open);
             }
-            if !plugin && item(ui, "Save", key(&shortcuts::SAVE)) {
+            if item(ui, "Save", Some(&shortcuts::SAVE)) {
                 *cmd = Some(Cmd::Save);
             }
-            if !plugin && item(ui, "Save As...", None) {
+            if item(ui, "Save As...", None) {
                 *cmd = Some(Cmd::SaveAs);
             }
-            // Ctrl/Cmd+I (task-310); disabled without a song, which a plugin always has
-            if item_if(
-                ui,
-                plugin || self.link.is_some(),
-                "Info...",
-                key(&shortcuts::INFO),
-            )
-            .clicked()
-            {
+            // Ctrl/Cmd+I (task-310); disabled without a song
+            if item_if(ui, self.link.is_some(), "Info...", Some(&shortcuts::INFO)).clicked() {
                 *cmd = Some(Cmd::Info);
-            }
-            if plugin {
-                return;
             }
             ui.separator();
             let ok = self.panel.transport.song_mode && !self.exporting();
@@ -1858,30 +1778,27 @@ impl App {
         note_button(bar, &file.response);
         let edit = ui.menu_button("Edit", |ui| {
             let song = self.link.is_some();
-            // "Undo Paste Pattern": the item names what it undoes (in a plugin's editor too,
-            // with no shortcut text: it takes no keys; task-274)
+            // "Undo Paste Pattern": the item names what it undoes (task-274)
             let what = self.undo_name().filter(|_| song);
             let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
-            let r = item_if(ui, what.is_some(), &text, key(&shortcuts::UNDO));
+            let r = item_if(ui, what.is_some(), &text, Some(&shortcuts::UNDO));
             self.edit_items.push(("Undo", r.rect, what.is_some()));
             if r.clicked() {
                 *cmd = Some(Cmd::Undo);
             }
             ui.separator();
-            // the pattern commands, in a plugin's editor too (the user's review of task-274,
-            // round 3), there with no shortcut texts
+            // the pattern commands
             for (text, sc, c) in EDIT_ITEMS {
-                let r = item_if(ui, song, text, sc.and_then(key));
+                let r = item_if(ui, song, text, sc);
                 self.edit_items.push((text, r.rect, song));
                 if r.clicked() {
                     *cmd = Some(c);
                 }
             }
             ui.separator();
-            // the original's commands 306 and 307, enabled in song mode only (task-306); not in a
-            // plugin's editor, which has no song mode (the user's decision, 2026-11-25)
+            // the original's commands 306 and 307, enabled in song mode only (task-306)
             let on = self.can_init();
-            for (text, c) in INIT_ITEMS.into_iter().filter(|_| !plugin) {
+            for (text, c) in INIT_ITEMS {
                 let r = item_if(ui, on, text, None);
                 self.edit_items.push((text, r.rect, on));
                 let r = if on || !song {
@@ -1893,14 +1810,12 @@ impl App {
                     *cmd = Some(c);
                 }
             }
-            if !plugin {
-                ui.separator();
-            }
+            ui.separator();
             // the pattern editors; Ctrl/Cmd+E opens the focused row's, so its text is on that
             // item (the 303-1's or the 303-2's with that 303 focused, the 808's or the 909's
             // with theirs; tasks 280, 281 and 290)
             let focus = self.panel.focus;
-            let sc = key(&shortcuts::PATTERN_EDITOR);
+            let sc = Some(&shortcuts::PATTERN_EDITOR);
             for k in 0..2 {
                 let text = crate::pattern_editor::menu_item(k);
                 let r = item_if(ui, song, text, sc.filter(|_| focus == k));
@@ -1919,19 +1834,17 @@ impl App {
             }
         });
         note_button(bar, &edit.response);
-        if !plugin {
-            // the main window's look (task-267): the standalone app's only
-            let view = ui.menu_button("View", |ui| {
-                // two radio items directly in View, no submenu (the user's review, 2026-11-21)
-                for (text, t) in [("Classic", Theme::Classic), ("Modern", Theme::Modern)] {
-                    if ui.radio(self.settings.theme == t, text).clicked() {
-                        *cmd = Some(Cmd::SetTheme(t));
-                        ui.close();
-                    }
+        // the main window's look (task-267)
+        let view = ui.menu_button("View", |ui| {
+            // two radio items directly in View, no submenu (the user's review, 2026-11-21)
+            for (text, t) in [("Classic", Theme::Classic), ("Modern", Theme::Modern)] {
+                if ui.radio(self.settings.theme == t, text).clicked() {
+                    *cmd = Some(Cmd::SetTheme(t));
+                    ui.close();
                 }
-            });
-            note_button(bar, &view.response);
-        }
+            }
+        });
+        note_button(bar, &view.response);
         let mods = ui.menu_button("Mods", |ui| {
             // task-195: only in screen reader mode
             if self.screen_reader_mode() {
@@ -2021,20 +1934,6 @@ impl App {
                 *cmd = Some(Cmd::ToggleStartupSound);
                 ui.close();
             }
-            // the keyboard modes: none in a plugin's editor (task-201); the plugin's mode is the
-            // panel's selector only (task-231), not a menu item. Nor is Audio Output: a
-            // plugin's audio is the host's (task-191). The plugin has its Output Routing
-            // instead (task-300)
-            if plugin {
-                if has_routing {
-                    ui.separator();
-                    let text = format!("{}...", crate::routing_window::TITLE);
-                    if item(ui, &text, None) {
-                        *cmd = Some(Cmd::OutputRouting);
-                    }
-                }
-                return;
-            }
             if item(ui, "Audio Output...", None) {
                 *cmd = Some(Cmd::AudioOutput);
             }
@@ -2110,10 +2009,6 @@ impl App {
         // Last in the bar. An item is one line of `HELP_ITEMS`.
         let help = ui.menu_button("Help", |ui| {
             for (text, c) in HELP_ITEMS {
-                // no Keyboard Shortcuts in a plugin's editor (task-201)
-                if plugin && *c == Cmd::KeyHelp {
-                    continue;
-                }
                 if item(ui, text, None) {
                     *cmd = Some(c.clone());
                 }

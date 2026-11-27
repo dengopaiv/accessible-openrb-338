@@ -144,14 +144,11 @@ impl ClassicSkin {
                 "mark" => {
                     let slot = c.params.num("slot").unwrap_or(0.0) as usize;
                     let upper = c.param("upper") == Some("1");
-                    if super::mark(f.panel, f.lit, &c.section, upper, slot).selected {
+                    if super::mark(f.panel, &c.section, upper, slot) {
                         o.push(draw(fixed));
                     }
                 }
                 _ => {
-                    if (f.hidden)(&c.id) {
-                        continue;
-                    }
                     let pressed = row
                         .control
                         .and_then(|i| f.pressed.get(i).copied())
@@ -215,19 +212,13 @@ impl ClassicSkin {
         bitmaps::compose(&self.bitmaps, &self.ops(f))
     }
 
-    /// The panel image of `panel` at the time `now`, with nothing held and no note-mode
-    /// lights (the standalone app's), at the set's scale.
+    /// The panel image of `panel` at the time `now`, with nothing held, at the set's scale.
     pub fn compose_panel(&self, panel: &crate::model::Panel, now: f64) -> ColorImage {
         let pressed = vec![false; self.layout.controls.len()];
-        let lit = crate::embed::Lit::default();
-        let hidden = |_: &str| false;
         self.compose(&Frame {
             panel,
             pressed: &pressed,
             now,
-            lit: &lit,
-            plugin: false,
-            hidden: &hidden,
             logo_t: None,
             mod_name: "",
             splash: None,

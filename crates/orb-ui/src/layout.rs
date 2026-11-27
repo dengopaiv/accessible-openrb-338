@@ -12,8 +12,8 @@ pub const PANEL_H: f32 = 510.0;
 /// The space the app's windows and dialogs keep between their frame and the window's edge.
 pub const DIALOG_MARGIN: f32 = 12.0;
 
-/// The smallest main window (inner size in points, the menu bar included; the standalone's
-/// viewport minimum and the plugin editor's, task-297 and task-299; independent of the UI scale,
+/// The smallest main window (inner size in points, the menu bar included; the viewport
+/// minimum, task-297 and task-299; independent of the UI scale,
 /// which sets pixels per point, and of the panel's own fit). Every window the user cannot
 /// resize fits in it with [`DIALOG_MARGIN`] around: the widest are the 808 and 909 pattern
 /// editors (512 wide), the highest the 303 pattern editor (461 high). The test

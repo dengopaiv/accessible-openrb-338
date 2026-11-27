@@ -18,7 +18,7 @@ mod tests;
 
 use std::sync::Arc;
 
-use crate::frame::{AUDIBLE, Block, Split};
+use crate::frame::Block;
 use crate::samples::{Retired, Sample};
 
 /// `dbl_10153640`: 2^-15, the int16 scale folded into the gain (0x1001E2CD).
@@ -108,135 +108,11 @@ impl Voice {
         self.advance();
     }
 
-    /// Not in the original (task-200): the voice's output peak for a full-scale sample,
-    /// `g * 2^15` (the gain with the int16 scale taken out again).
-    pub fn peak(&self) -> f64 {
-        self.g as f64 / SCALE
-    }
-
     fn advance(&mut self) {
         self.pos += 64;
         self.left -= 64;
         if self.left <= 0 {
             self.active = false;
-        }
-    }
-}
-
-/// Where a voice adds its samples: every output sample is the `f32` store of `out + x`, `x` the
-/// voice's term in f64 (the x87 `fadd` of the stored `f32` and the term, then `fstp dword`). An
-/// IEEE sum does not depend on the operand order, so `x + out` stores the same.
-pub trait Out {
-    /// `out[i] = f32(out[i] + x)`.
-    fn add(&mut self, i: usize, x: f64);
-}
-
-impl Out for Block {
-    #[inline(always)]
-    fn add(&mut self, i: usize, x: f64) {
-        self[i] = st(self[i] as f64 + x);
-    }
-}
-
-/// Not in the original (task-300, the plugin's per-drum outputs): a voice's samples into one
-/// block, or the same terms into two (the machine's bus and a copy for the voice's output, so
-/// the bus holds exactly the sum it holds without the copy).
-pub enum Sink<'a> {
-    One(&'a mut Block),
-    Both(&'a mut Block, &'a mut Block),
-}
-
-impl Out for Sink<'_> {
-    #[inline(always)]
-    fn add(&mut self, i: usize, x: f64) {
-        match self {
-            Sink::One(b) => b.add(i, x),
-            Sink::Both(a, b) => {
-                a.add(i, x);
-                b.add(i, x);
-            }
-        }
-    }
-}
-
-/// One voice of a drum machine, of any class, in the machine's render order
-/// ([`render_split`]).
-pub enum VoiceMut<'a> {
-    Simple(&'a mut Simple),
-    Filter(&'a mut Filter),
-    Dual(&'a mut Dual),
-    Pitched(&'a mut Pitched),
-}
-
-impl VoiceMut<'_> {
-    pub fn process<O: Out + ?Sized>(self, out: &mut O) {
-        match self {
-            VoiceMut::Simple(v) => v.process(out),
-            VoiceMut::Filter(v) => v.process(out),
-            VoiceMut::Dual(v) => v.process(out),
-            VoiceMut::Pitched(v) => v.process(out),
-        }
-    }
-
-    /// Slot 1 on the voice.
-    pub fn silence(self) {
-        match self {
-            VoiceMut::Simple(v) => v.silence(),
-            VoiceMut::Filter(v) => v.silence(),
-            VoiceMut::Dual(v) => v.silence(),
-            VoiceMut::Pitched(v) => v.silence(),
-        }
-    }
-
-    /// For tests: a trigger of any class with sample `s`, a decaying gain and a hold block.
-    #[cfg(test)]
-    pub fn trigger_test(self, s: Arc<Sample>, gain: f32) {
-        let m = 0.993;
-        match self {
-            VoiceMut::Simple(v) => v.trigger(Some(s), gain, m, 1),
-            VoiceMut::Filter(v) => v.trigger(Some(s), gain, m, 1, 0.6),
-            VoiceMut::Dual(v) => v.trigger(Some(s.clone()), gain, m, 1, Some(s), 0.7),
-            VoiceMut::Pitched(v) => v.trigger(Some(s), gain, m, 1, 0x1A0),
-        }
-    }
-}
-
-/// One output of a drum machine's table (task-300): `id` is the plugin state's key, which never
-/// changes once released; `name` (the routing window's box) and `bus` (the plugin's bus) are
-/// labels, which may.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DrumOutput {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub bus: &'static str,
-}
-
-/// Not in the original's export path (task-300; ReWire's per-instrument channels,
-/// `docs/rewire.md` section 4): the machine's voices, in its render order, add into `bus`
-/// (zeroed first) or into their own output. `map[k]` is voice k's output; `split.outs[o]`
-/// (zeroed first) gets the voices of output o: only there when `split.to_bus[o]` is false (out
-/// of the bus, which keeps the other voices in their order, so its f32 sum is the same sum
-/// without the removed terms), and the same terms as the bus as well when it is true and
-/// `split.copy` is set. With every output to the bus, the bus is bit-identical to the plain
-/// render's.
-pub fn render_split<const N: usize>(
-    voices: [VoiceMut<'_>; N],
-    map: &[usize; N],
-    bus: &mut Block,
-    split: Split<'_>,
-) {
-    bus.fill(0.0);
-    for o in split.outs.iter_mut() {
-        o.fill(0.0);
-    }
-    for (v, &o) in voices.into_iter().zip(map) {
-        let own = &mut split.outs[o];
-        if !split.to_bus[o] {
-            v.process(own);
-        } else if split.copy {
-            v.process(&mut Sink::Both(bus, own));
-        } else {
-            v.process(bus);
         }
     }
 }
@@ -278,17 +154,12 @@ impl Simple {
         self.v.silence();
     }
 
-    /// Not in the original (task-200): active, with a peak at or above [`AUDIBLE`].
-    pub fn audible(&self) -> bool {
-        self.v.active && self.v.peak() >= AUDIBLE
-    }
-
     /// [`Voice::retire`] on the voice's sample.
     pub fn retire(&mut self, r: &mut Retired) {
         Voice::retire(&mut self.v.sample, r);
     }
 
-    pub fn process<O: Out + ?Sized>(&mut self, out: &mut O) {
+    pub fn process(&mut self, out: &mut Block) {
         if !self.v.active {
             return;
         }
@@ -301,8 +172,8 @@ impl Simple {
             let g2 = g * mult;
             let s1 = at(d, p + j);
             let s0 = at(d, p + i);
-            out.add(j, s1 * g);
-            out.add(i, g * s0);
+            out[j] = st(s1 * g + out[j] as f64);
+            out[i] = st(out[i] as f64 + g * s0);
             g = g2;
         }
         self.v.end_block(g);
@@ -336,24 +207,12 @@ impl Filter {
         self.v.silence();
     }
 
-    /// Not in the original (task-200): active, with a peak at or above [`AUDIBLE`]; the peak is
-    /// the gain's over the one-pole's DC gain `1 / (1 - c)` (the gain itself when `c >= 1`).
-    pub fn audible(&self) -> bool {
-        let c = self.c as f64;
-        let peak = if c < 1.0 {
-            self.v.peak() / (1.0 - c)
-        } else {
-            self.v.peak()
-        };
-        self.v.active && peak >= AUDIBLE
-    }
-
     /// [`Voice::retire`] on the voice's sample.
     pub fn retire(&mut self, r: &mut Retired) {
         Voice::retire(&mut self.v.sample, r);
     }
 
-    pub fn process<O: Out + ?Sized>(&mut self, out: &mut O) {
+    pub fn process(&mut self, out: &mut Block) {
         if !self.v.active {
             return;
         }
@@ -370,9 +229,9 @@ impl Filter {
             let s1g = at(d, p + j) * g;
             let y0 = yc + g * at(d, p + i);
             let cy0 = c * y0;
-            out.add(i, y0);
+            out[i] = st(out[i] as f64 + y0);
             let y1 = cy0 + s1g;
-            out.add(j, y1);
+            out[j] = st(out[j] as f64 + y1);
             y = y1;
             g = g2;
         }
@@ -424,19 +283,13 @@ impl Dual {
         self.v.silence();
     }
 
-    /// Not in the original (task-200): active, with a peak `g1 * (1 + g2)` at or above
-    /// [`AUDIBLE`].
-    pub fn audible(&self) -> bool {
-        self.v.active && self.v.peak() * (1.0 + self.g2 as f64) >= AUDIBLE
-    }
-
     /// [`Voice::retire`] on both samples.
     pub fn retire(&mut self, r: &mut Retired) {
         Voice::retire(&mut self.v.sample, r);
         Voice::retire(&mut self.b, r);
     }
 
-    pub fn process<O: Out + ?Sized>(&mut self, out: &mut O) {
+    pub fn process(&mut self, out: &mut Block) {
         if !self.v.active {
             return;
         }
@@ -450,9 +303,9 @@ impl Dual {
             let (i, j) = (2 * k, 2 * k + 1);
             let g2n = g2 * mult;
             let x0 = (at(da, pa + i) + at(db, pb + i) * g2) * g1;
-            out.add(i, x0);
+            out[i] = st(out[i] as f64 + x0);
             let x1 = (g2 * at(db, pb + j) + at(da, pa + j)) * g1;
-            out.add(j, x1);
+            out[j] = st(out[j] as f64 + x1);
             g2 = g2n;
         }
         self.g2 = st(g2);
@@ -499,11 +352,6 @@ impl Pitched {
         self.v.silence();
     }
 
-    /// Not in the original (task-200): active, with a peak at or above [`AUDIBLE`].
-    pub fn audible(&self) -> bool {
-        self.v.active && self.v.peak() >= AUDIBLE
-    }
-
     /// [`Voice::retire`] on the voice's sample.
     pub fn retire(&mut self, r: &mut Retired) {
         Voice::retire(&mut self.v.sample, r);
@@ -517,7 +365,7 @@ impl Pitched {
         (a + ((f * (b - a)) >> 8)) as i16 as f64
     }
 
-    pub fn process<O: Out + ?Sized>(&mut self, out: &mut O) {
+    pub fn process(&mut self, out: &mut Block) {
         if !self.v.active {
             return;
         }
@@ -529,10 +377,10 @@ impl Pitched {
             let (i, j) = (2 * k, 2 * k + 1);
             let s0 = Self::sample_at(d, ph);
             ph = ph.wrapping_add(self.step);
-            out.add(i, s0 * g);
+            out[i] = st(out[i] as f64 + s0 * g);
             let g2 = g * mult;
             let s1 = Self::sample_at(d, ph);
-            out.add(j, g * s1);
+            out[j] = st(out[j] as f64 + g * s1);
             ph = ph.wrapping_add(self.step);
             g = g2;
         }

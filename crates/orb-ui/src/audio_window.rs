@@ -3,8 +3,7 @@
 //!
 //! The four settings are [`AudioChoice`] ([`crate::settings`]); a change applies at once
 //! ([`App::audio_choose`]): the stream reopens through [`orb_player::control::Controller`], the
-//! song keeps playing after a short gap, and the choice is saved. The window is the standalone
-//! app's only (the plugin's audio is the host's).
+//! song keeps playing after a short gap, and the choice is saved.
 
 use std::time::{Duration, Instant};
 

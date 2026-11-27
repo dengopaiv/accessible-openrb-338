@@ -4,7 +4,8 @@ MIDI came into scope on 2026-11-13 (milestone m-7). This is the general MIDI doc
 original's MIDI input, its settings, and what orb does with them. Tasks extend it: task-182 (this
 document and the Standard Mapping), task-183 (notes played live: the original has none, section
 4), task-184 (MIDI clock), task-188 (the standalone app's ports, Quick Mapping, the MIDI LED,
-recording by MIDI), task-199 (the plugin's own note mapping, section 5).
+recording by MIDI), task-199 (upstream's plugin's own note mapping, section 5; the plugin is
+not part of this fork).
 
 **The mapping itself** (which CC and which note moves which control, with the addresses and the
 differences from the manual) is `docs/standard_midi_mapping.md`; this document does not repeat it.
@@ -63,10 +64,12 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
   Standard Mapping (`StandardMapping`), which turns timed MIDI bytes into timed `Action`s, each
   with the player's `Command` (`Action::command`) or a view change (the shown bank, the focus,
   the selected drum instrument, the keyboard mode). It does not know where the bytes come from:
-  the plugin will feed it the host's events with their sample offsets, task-188 a MIDI
-  port. Which 64-frame block applies an action is the caller's choice (the plugin: the first
-  block that starts at or after its time, never an earlier one, task-227); the layer only
-  keeps the time.
+  in this fork nothing feeds it yet (upstream's plugin fed it its host's events; the plugin,
+  with its host-event code, is removed from the fork, the fork's task-231 and task-241); a MIDI
+  input port of the app would, which the fork does not have yet. The user kept the layer for
+  that (2026-11-27, the fork's task-241).
+  Which 64-frame block applies an action is the caller's choice; the layer only keeps the
+  time.
 - **The state.** The toggles read a `State` (the mixer's switches, the effects' on switches, the
   sections' on switches and patterns, the transport) that the caller refreshes from the player's
   snapshot (`StandardMapping::follow`); the layer updates it with each action it gives, so two
@@ -77,11 +80,8 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
 - **Settings.** One channel (`StandardMapping::channel`, default channel 1), the keyboard mode
   (`StandardMapping::mode`, default Select Patterns); no menu item, setting, port, LED or Quick
   Mapping (task-188). No Remote MIDI Control on/off: the original's is off by default [G]
-  (section 2), orb's layer acts whenever a source feeds it (a deliberate difference; the plugin
-  and task-188 decide when to feed it). The layer's default channel is 1; the plugin
-  (upstream's plugin document (removed, task-231) section 8) feeds it only when its own Standard Mapping setting is on (off by
-  default) and sets the channel to 16 by default, since channels 1..4 are the plugin's device
-  channels (303-1, 303-2, 808, 909).
+  (section 2), orb's layer acts whenever a source feeds it (a deliberate difference; the source
+  decides when to feed it). The layer's default channel is 1.
 - **Not mapped yet.** The Program Synth notes (step programming;
   `docs/standard_midi_mapping.md` section 7): task-189.
 - **Differences from the original**: `docs/standard_midi_mapping.md` section 10.
@@ -149,8 +149,7 @@ rests on the voice's callers (4.1), which are [C]. In 2.01 the exe does all of t
 ### 4.3 What orb does
 
 orb follows the original: its MIDI layer (`crates/orb-player/src/midi.rs`) gives no action that
-sounds a device, on any channel, in either keyboard mode (tested there). Live play as the plugin
-would use it (pitch = note, accent = velocity, slide = overlapping notes, the conventions of the
+sounds a device, on any channel, in either keyboard mode (tested there). Live play (pitch = note, accent = velocity, slide = overlapping notes, the conventions of the
 303 clones) is not in the original, so adding it is a decision: task-194 (Decide), implemented
 by task-195 if chosen. `sub_100261F0` is not modelled: no caller of it was found ([G], 4.2), and the Standard
 Mapping already does what it does (task-182; its step editing is task-189's, following the
@@ -158,7 +157,14 @@ exe).
 
 **Differences from the manual**: none on this point (p. 183 and the binary agree).
 
-## 5. The plugin's note mapping (task-185, task-199)
+## 5. Upstream's plugin note mapping (task-185, task-199; not in this fork)
+
+**Not part of this fork.** This section describes upstream's plugin (github.com/pingw33n/openrb-338),
+which the fork removed: the plugin itself by the fork's task-231, and the code the app shared
+with it (note mode, Gate Pattern Mode, the note clock, the per-device outputs, the host events)
+by the fork's task-241 (the user's decision of 2026-11-27). Nothing below runs in the fork's app or in `orb`; the
+section stays for its facts about the original (the DLL's addresses), and it reads as upstream
+wrote it.
 
 orb's own mapping of MIDI notes for the plugin (upstream's plugin document (removed, task-231)), decided in task-185
 (2026-11-15/16; channels changed on 2026-11-16, task-207). It is not the original's: the

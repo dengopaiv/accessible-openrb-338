@@ -73,8 +73,12 @@ rebasing on upstream stays simple.
   to the tasks both share (below 176) come in as usual.
 - **Not taken from upstream (task-229).** The GitHub Pages landing page (`site/`, its workflow
   and tools; nothing that goes online) was removed in the merge, task-230. Upstream's plugin
-  (the VST3 and CLAP plugin crate and its packaging) was removed by task-231; what orb-ui, orb-player
-  and orb-engine share with it stays.
+  (the VST3 and CLAP plugin crate and its packaging) was removed by task-231, and the code
+  orb-ui, orb-player and orb-engine shared with it by task-241 (the user's decision of
+  2026-11-27: the embedding seam, Output Routing, note mode, Gate Pattern Mode, the note clock,
+  the per-device outputs and the host events). orb-player's MIDI layer (`midi.rs`) stays, the
+  user's choice, for a MIDI input port of the app later. An upstream merge that touches that
+  code conflicts; drop upstream's side of it.
 
 ## Where things are
 

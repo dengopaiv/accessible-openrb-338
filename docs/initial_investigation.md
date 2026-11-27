@@ -173,8 +173,9 @@ every block:   if (blk & 15) == 0: mixer_update()    // 0x10012C14; blk starts a
   `(n - old) * (1/32)` (`dbl_10151F58`) is kept as a double. The mix loop runs in x87 registers
   from the stored old gains: samples 2p and 2p+1 use `old + p` steps, added one at a time, and
   each output sample is `f32(bus*g + master)`. The L gain mixes into entry 0, the R gain into 1.
-  The plugin's per-device outputs (task-256, upstream's plugin document (removed, task-231) section 13) copy the channel's bus
-  where ReWire takes it, after the inserts and before this loop.
+  ReWire takes the channel's bus after the inserts and before this loop (`docs/rewire.md`
+  section 4; upstream's plugin copied it there for its per-device outputs, task-256, which the
+  fork removed, task-241).
 - Master (0x100138AE): `m = mOld*0.93 + mTgt*0.07`, `f32(m)` stored, every master sample becomes
   `f32(x * m)` with the unrounded m, after the send effect (slot 14 with `(song+0x1FC[i], L, R)`)
   and the master compressor (slot 14 with `(L, R)`).
@@ -394,7 +395,8 @@ recording (§5.3); its quantisation stays 1 (`sub_10021560` sets only `+0x108`'s
   the host's tempo, plays or halts on the host's play state, locates on a host reposition and
   otherwise sets `pos = (double)hostTick` each audio call (`sub_1001C2F4`, 0x1001C38F, the store
   of `sub_1001F8B0`; no relocate), holding off near the loop points; MIDI Song Position locates
-  to `16ths * 48` (`sub_1001C5C4`). upstream's plugin document (removed, task-231) section 8.1. Id 2 is record
+  to `16ths * 48` (`sub_1001C5C4`). Upstream's plugin modelled this host sync (its document's
+  section 8.1); the fork has neither (task-231, task-241). Id 2 is record
   (`sub_10021194`, msg 35 case at 0x100125A7 → `sub_10021190`; [C] task-057, §5.3).
 - **Msg 36** (0x100126B2) applies the 23 bytes in this order: song mode, play or stop, record, loop
   on, tempo, locate, loop start, loop end, shuffle, then stores bytes 21 and 22. The global struct's
@@ -506,7 +508,7 @@ applied pointer `+0x228` is not adjusted; when its own node is freed it dangles
   merge, 0x1001C5EA, then stores the tick in `transport+0x18` through `sub_10007DF0`,
   0x1001C5F5: `mov eax, [esp+4]; mov [ecx+18h], eax`) but
   the TopHat host sync's reposition (`TopHatDriveAudioProc` → `sub_1001C0F4`, 0x1001C1DA), which
-  merges when the host's bar changed and then locates (upstream's plugin document (removed, task-231) section 8.1).
+  merges when the host's bar changed and then locates (not modelled in the fork).
 - With record on, a locate while stopped to a later tick applies the events forward (respecting
   the hold mask) instead of chasing (§5.2, `sub_1001F984`).
 

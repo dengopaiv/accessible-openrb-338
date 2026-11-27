@@ -237,13 +237,6 @@ Every `pressed` state is variant F (above). The push buttons' bleed is 3 (their 
 - `sel909_<AC..RC>`: the selected 909 instrument's label lit on its chip (y 4.6, 9.2 high; a
   patch of the chip with the label glowing orange), and `led909_on` / `led909ac_on` (5 x 5) its
   lit selection LED in the name row or the AC box.
-- `lit808_<AC..CH|LC..MA>` and `litsel808_<...>` (task-202): the plugin's note-mode light of a
-  sounding 808 voice, the chip (cream, or lighter for `litsel808_`, the selected chip) with a
-  green ring of the selection ring's shape, which replaces the orange; the ring has a white core
-  and a wide glow, so it differs from the orange by more than hue (bleed 3.5).
-- `led909_lit` / `led909ac_lit` (5 x 5, bleed 4): the plugin's note-mode light of a sounding 909
-  instrument or of AC, a green LED with a wide halo and a white core, drawn over the name row's
-  or the AC box's LED (instead of the red selection LED).
 
 ### Displays and meters
 
@@ -281,7 +274,7 @@ separated, a header line; `params` (optional) is `key=value` pairs separated by 
 | Kind | What | Parameters |
 |---|---|---|
 | `panel` | the skin's size (its units; the aspect is 624:510) | |
-| `bg` | a background, drawn first, in the table's order | `plugin=` the plugin's variant |
+| `bg` | a background, drawn first, in the table's order | |
 | `logo` | the wordmark (drawn with the backgrounds; animated when the set has `<part>_open` and its other pieces) and the logo's click area | |
 | `focus` | a row's focus bar: `part` when the row has no focus | `row=` 0..3, `on=` |
 | `row` | a row's focus click area | `row=` |
@@ -289,7 +282,7 @@ separated, a header line; `params` (optional) is `key=value` pairs separated by 
 | `fg` | static art over the controls | |
 | `strip` | a drum machine's step strip (the section names it) | `cells=` (16) |
 | `select` | a drum machine's instrument hit area, tested in the table's order | `cells=x0:w:first,...`, `count=`, `open=1` |
-| `mark` | a selection mark: `part` while its instrument is selected | `slot=`, `upper=1` (the 808's upper labels), `lit=`, `litsel=` |
+| `mark` | a selection mark: `part` while its instrument is selected | `slot=`, `upper=1` (the 808's upper labels) |
 
 The controls' parameters: a knob's `span` (its vertical drag for the full range, the original's
 62, 36, 41 or 64); a fader's `handle` (its track is the rectangle's height); a header meter's

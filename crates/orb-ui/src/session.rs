@@ -17,8 +17,6 @@ pub struct Opened {
     /// The facts of a ReBirth 1.x song, which has no `rbs` song of its own (`source` is a
     /// stand-in): File > Info shows them (task-123).
     pub facts_1x: Option<SongFacts>,
-    /// The file's bytes (the plugin keeps them in its state, task-201).
-    pub file: Vec<u8>,
 }
 
 /// Reads and converts an `.rbs` song, keeping the file's `rbs` song.
@@ -40,7 +38,6 @@ pub fn open_bytes(data: &[u8], label: &str) -> Result<Opened, String> {
             engine,
             source,
             facts_1x,
-            file: data.to_vec(),
         });
     }
     let source =
@@ -51,7 +48,6 @@ pub fn open_bytes(data: &[u8], label: &str) -> Result<Opened, String> {
         engine,
         source,
         facts_1x: None,
-        file: data.to_vec(),
     })
 }
 

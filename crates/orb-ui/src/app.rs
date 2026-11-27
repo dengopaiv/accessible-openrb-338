@@ -43,9 +43,8 @@ pub struct View {
 
 impl View {
     /// The largest panel-shaped area centered in `avail`, snapped to whole pixels. An empty or
-    /// inverted `avail` (a plugin window the host made shorter than the menu bar, task-234)
-    /// gets a panel one point wide, so the scale stays positive and finite (`to_panel`
-    /// divides by it).
+    /// inverted `avail` gets a panel one point wide, so the scale stays positive and finite
+    /// (`to_panel` divides by it).
     pub fn fit(avail: Rect, ppp: f32) -> Self {
         Self::fit_size(avail, ppp, Vec2::new(PANEL_W, PANEL_H))
     }
@@ -156,9 +155,7 @@ pub struct App {
     /// Asks the system whether a screen reader runs; `App::new` has none (false), the program
     /// installs the real one (`App::use_system_services`).
     screen_reader_probe: fn() -> bool,
-    /// The window's focus in the last frame, to see it regained (the standalone window's
-    /// frame only: without the `app` feature, as in the plugin's build, nothing reads it).
-    #[cfg_attr(not(feature = "app"), allow(dead_code))]
+    /// The window's focus in the last frame, to see it regained (the window's frame only).
     was_focused: bool,
     /// The open file browser, if any (`open_browser`).
     browser: Option<Browser>,
@@ -183,8 +180,8 @@ pub struct App {
     /// The audio stream's health (None: no stream), checked every frame: a lost device or a
     /// stall is reported once (`App::check_audio`), as in `orb play` (task-139).
     pub audio_health: Option<orb_player::output::Health>,
-    /// The owner of the output stream (the standalone app; `None` in a plugin, in the tests
-    /// and in the demo): the Audio Output window drives it and `App::check_audio` polls it.
+    /// The owner of the output stream (the app; `None` in the tests and in the demo): the Audio
+    /// Output window drives it and `App::check_audio` polls it.
     pub audio: Option<orb_player::control::Controller>,
     audio_reported: bool,
     /// Where the box's OK button was drawn last (`App::error_ok_rect`).
@@ -206,7 +203,7 @@ pub struct App {
     /// egui's focus when this frame's keys were read (what `App::act` does not announce).
     pub(crate) key_focus: Option<egui::Id>,
     /// Where a direct paste reads the clipboard text from (task-287): a memory clipboard until
-    /// the standalone binary and the plugin's editor switch it to the system's.
+    /// the binary switches it to the system's.
     pub clipboard: crate::clipboard::Clipboard,
     /// The JSON Edit > Copy Pattern or Cut Pattern took, for the system clipboard at the end of
     /// the frame.
@@ -288,9 +285,6 @@ pub struct App {
     /// The same for the Help > Keyboard Shortcuts window (`App::key_help_ui`).
     pub(crate) key_help_open: bool,
     pub(crate) key_help_serial: u32,
-    /// The same for the plugin's Options > Output Routing window (`App::routing_ui`, task-300).
-    pub(crate) routing_open: bool,
-    pub(crate) routing_serial: u32,
     /// The ids of the open windows whose command was chosen again: they come to the front at the
     /// end of the frame (`App::raise_window`, task-283).
     pub(crate) to_front: Vec<egui::Id>,
@@ -358,8 +352,6 @@ pub struct App {
     resize_until: f64,
     /// The frames `show` has drawn.
     shown: u64,
-    /// The plugin, when this is a plugin's editor (`App::embedded`, task-201).
-    pub(crate) plugin: Option<crate::embed::Plugin>,
 }
 
 impl App {
@@ -434,8 +426,6 @@ impl App {
             audio_ui: Default::default(),
             key_help_open: false,
             key_help_serial: 0,
-            routing_open: false,
-            routing_serial: 0,
             to_front: Vec::new(),
             classic: None,
             info_shown: None,
@@ -467,7 +457,6 @@ impl App {
             last_px_scale: None,
             resize_until: f64::NEG_INFINITY,
             shown: 0,
-            plugin: None,
         }
     }
 
@@ -501,9 +490,7 @@ impl App {
     }
 
     /// Asks the system again whether a screen reader runs, when the window has just regained
-    /// the focus (`focused` is this frame's state). Called by the standalone window's frame (the
-    /// `app` feature).
-    #[cfg(feature = "app")]
+    /// the focus (`focused` is this frame's state). Called by the window's frame.
     fn check_screen_reader(&mut self, focused: bool) {
         if focused && !self.was_focused {
             self.system_screen_reader = (self.screen_reader_probe)();
@@ -534,12 +521,8 @@ impl App {
     }
 
     /// View > Classic / Modern (task-267): draws the main window's panel with the modern or the
-    /// classic skin from the next frame on and saves the choice in the UI settings. Nothing in
-    /// a plugin's editor, which has the modern skin only.
+    /// classic skin from the next frame on and saves the choice in the UI settings.
     pub fn set_theme(&mut self, theme: crate::settings::Theme) {
-        if self.is_plugin() {
-            return;
-        }
         let changed = self.settings.theme != theme;
         self.settings.set_theme(theme);
         if let Err(e) = self.settings.save() {
@@ -574,14 +557,9 @@ impl App {
         self.fade.map(|_| self.overlay_alpha)
     }
 
-    /// The theme the main window shows: the settings' in the standalone app, Modern in a
-    /// plugin's editor.
+    /// The theme the main window shows: the settings'.
     pub fn theme(&self) -> crate::settings::Theme {
-        if self.is_plugin() {
-            crate::settings::Theme::Modern
-        } else {
-            self.settings.theme
-        }
+        self.settings.theme
     }
 
     /// With the classic theme, the classic skin of the current kit: made when the kit changed
@@ -806,7 +784,6 @@ impl App {
     }
 }
 
-#[cfg(feature = "app")]
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         // the run log's "first frame drawn" (task-214); an atomic load after the first
@@ -887,13 +864,8 @@ mod frame_stats_tests {
     }
 }
 
-/// An image of the embedded part `name` painted into `rect` (the windows and the plugin's
-/// own parts; a skin paints from its part set, [`paint_part_in`]).
-pub(crate) fn paint_part(ui: &Ui, name: &str, rect: Rect) {
-    paint_part_rotated(ui, name, rect, None);
-}
-
-/// `paint_part` multiplied by `tint` (the logo's fades, task-114).
+/// An image of the embedded part `name` painted into `rect` multiplied by `tint` (the logo's
+/// fades, task-114; a skin paints from its part set, [`paint_part_in`]).
 pub(crate) fn paint_part_tinted(ui: &Ui, name: &str, rect: Rect, tint: Color32) {
     paint_part_in(ui, art::PartSet::embedded(), name, rect, None, tint);
 }
@@ -1128,17 +1100,6 @@ pub fn flush_part_textures(ctx: &egui::Context) {
     });
 }
 
-pub(crate) fn paint_part_rotated(ui: &Ui, name: &str, rect: Rect, rot: Option<(f32, Vec2)>) {
-    paint_part_in(
-        ui,
-        art::PartSet::embedded(),
-        name,
-        rect,
-        rot,
-        Color32::WHITE,
-    );
-}
-
 /// The texture of `svg` (whose URI is `uri`) at `pixels`, from the context's map, or a new
 /// placeholder whose image `flush_part_textures` rasterizes at the end of the frame. While the
 /// window is being resized a missing size is drawn from the part's last texture instead.
@@ -1322,8 +1283,6 @@ impl App {
         crate::a11y::set_speech(ui.ctx(), self.speech());
         // a frame drawn outside `show` may have left part textures to rasterize
         flush_part_textures(ui.ctx());
-        // a plugin's editor: the plugin's song when it changed (task-201)
-        self.embed_refresh();
         let mut avail = ui.ctx().content_rect();
         if self.menu {
             // the panel takes the window below the menu bar
@@ -1335,12 +1294,7 @@ impl App {
         let skin = self.skin.clone();
         let layout = skin.layout();
         self.sync_nav(&skin);
-        // a plugin's panel keeps a margin of desk on each side (task-234)
-        let area = if self.is_plugin() {
-            crate::embed::panel_area(ui.ctx().content_rect())
-        } else {
-            avail
-        };
+        let area = avail;
         let view = View::fit_size(area, ppp, layout.size);
         let now = ui.input(|i| i.time);
         self.track_resize(ui.ctx(), view.scale * ppp, now);
@@ -1367,22 +1321,13 @@ impl App {
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
         // and no clicks of its own.
-        if self.is_plugin() {
-            // a plugin's editor has no keyboard at all (task-201): the host keeps its keys
-            self.holds.clear();
-            if self.browser.is_none() && !self.asking() && !self.error_open() {
-                self.focus_click(ui, &view, layout);
-            }
-        } else if self.browser.is_none()
-            && !self.asking()
-            && self.replace.is_none()
-            && !self.error_open()
+        if self.browser.is_none() && !self.asking() && self.replace.is_none() && !self.error_open()
         {
             if shortcuts::consume(ui, &shortcuts::NEW) {
                 self.new_song();
             } else if shortcuts::consume(ui, &shortcuts::OPEN) {
                 self.open_browser(Mode::OpenSong);
-            } else if !self.is_plugin() && shortcuts::consume(ui, &shortcuts::SAVE) {
+            } else if shortcuts::consume(ui, &shortcuts::SAVE) {
                 self.save();
             } else if screen_reader && shortcuts::consume(ui, &shortcuts::CHOOSE_MOD) {
                 // Ctrl/Cmd+M: Mods > Choose Mod..., screen reader mode only (task-195)
@@ -1428,7 +1373,6 @@ impl App {
         // All the panel's input first, through the one controller on the skin's layout, then
         // the skin draws the state (task-266).
         let pressed = self.panel_input(ui, &view, layout);
-        let lit = self.note_lights(ui, now);
         if layout.logo.is_some() && self.logo_anim && self.logo_start.is_none() {
             // once per app start, from the first frame the logo is drawn
             self.logo_start = Some(now);
@@ -1448,14 +1392,10 @@ impl App {
             _ => None,
         };
         {
-            let hidden = |id: &str| self.hidden(id);
             let frame = Frame {
                 panel: &self.panel,
                 pressed: &pressed,
                 now,
-                lit: &lit,
-                plugin: self.is_plugin(),
-                hidden: &hidden,
                 logo_t,
                 mod_name: &self.doc.mod_name,
                 splash: splash.as_ref(),
@@ -1484,28 +1424,19 @@ impl App {
             }
             self.overlay_alpha = to;
         }
-        // a plugin's LEDs, menus and resize corner (task-201)
-        self.plugin_ui(ui, &view, now);
 
         // Send what was done, take what the engine did (the panel follows playback).
         self.note_edits();
         if let Some(link) = &mut self.link {
             let before = link.recorded_revision();
             link.sync(&mut self.panel);
-            // a plugin's Play light is its preview, not the engine's play state: the host's
-            // transport does not light it (task-217)
-            if let Some(on) = self.plugin.as_ref().and_then(|p| p.embed.previewing()) {
-                self.panel.transport.playing = on;
-            }
             // a merge of the recording changed the song's tracks: an edit
             self.doc.modified |= link.recorded_revision() != before;
             // The repaint rule (task-153, docs/ui_spec.md section 16): at the meter rate while
             // the engine's side of the panel moves, else not at all (input repaints). Without
             // a working audio stream the snapshot never moves.
-            // (a plugin's engine runs in the host)
             let sound = (self.audio_health.is_some() && !self.audio_reported)
-                || self.audio.as_ref().is_some_and(|c| c.is_open())
-                || self.plugin.is_some();
+                || self.audio.as_ref().is_some_and(|c| c.is_open());
             if sound && link.moving(&self.panel) {
                 ui.ctx().request_repaint_after(METER_FRAME);
             }
@@ -1532,7 +1463,6 @@ impl App {
         self.about_ui(&ctx);
         self.key_help_ui(&ctx);
         self.audio_ui(&ctx);
-        self.routing_ui(&ctx);
         self.mod_info_ui(&ctx);
         self.chooser_ui(&ctx);
         self.raise_windows(&ctx);

@@ -747,13 +747,7 @@ pub fn tsv(parts: &[Part], l: &Layout) -> String {
         if sec == "logo" {
             row("logo", "transport", "logo", part, (*x, *y, w, h), "");
         } else {
-            // the plugin's transport has its own background (task-201)
-            let p = if sec == "transport" {
-                "plugin=bg_transport_plugin"
-            } else {
-                ""
-            };
-            row(&format!("{sec}.bg"), sec, "bg", part, (*x, *y, w, h), p);
+            row(&format!("{sec}.bg"), sec, "bg", part, (*x, *y, w, h), "");
         }
     }
     let (fw, fh) = size("focus_off");
@@ -870,7 +864,7 @@ pub fn tsv(parts: &[Part], l: &Layout) -> String {
     let (lx, ly, lw, lh) = LEGEND_808;
     for (k, name) in NAMES_808.into_iter().enumerate() {
         let r = at(o8, (lx + 22.0 * k as f32, ly, lw, lh));
-        let p = format!("slot={k} lit=lit808_{name} litsel=litsel808_{name}");
+        let p = format!("slot={k}");
         row(
             &format!("tr808.mark_{name}"),
             "tr808",
@@ -883,7 +877,7 @@ pub fn tsv(parts: &[Part], l: &Layout) -> String {
     let (ux, uy, uw, uh) = UPPER_CHIP_808;
     for (k, name) in UPPER_808.into_iter().enumerate() {
         let r = at(o8, (ux + 22.0 * k as f32, uy, uw, uh));
-        let p = format!("slot={k} upper=1 lit=lit808_{name} litsel=litsel808_{name}");
+        let p = format!("slot={k} upper=1");
         row(
             &format!("tr808.mark_{name}"),
             "tr808",
@@ -893,11 +887,11 @@ pub fn tsv(parts: &[Part], l: &Layout) -> String {
             &p,
         );
     }
-    // the 909's chip labels show the selection only; its LEDs the selection and the lit voices
+    // the 909's chip labels and its LEDs show the selection
     for (i, name) in NAMES_909.into_iter().enumerate() {
         let (x, w, _) = chip_909(i);
         let sel = format!("sel909_{name}");
-        let p = format!("slot={i} lit=- litsel={sel}");
+        let p = format!("slot={i}");
         row(
             &format!("tr909.mark_{name}"),
             "tr909",
@@ -910,7 +904,7 @@ pub fn tsv(parts: &[Part], l: &Layout) -> String {
     for (i, name) in NAMES_909.into_iter().enumerate() {
         let (cx, cy) = led_909(i);
         let led = if i == 0 { "led909ac" } else { "led909" };
-        let p = format!("slot={i} lit={led}_lit litsel={led}_lit");
+        let p = format!("slot={i}");
         let r = at(o9, (cx - 2.5, cy - 2.5, 5.0, 5.0));
         row(
             &format!("tr909.led_{name}"),

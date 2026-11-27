@@ -147,7 +147,7 @@ fn every_corpus_pattern_round_trips() {
 fn a_copy_in_one_app_pastes_in_another_with_every_byte() {
     let mut a = Harness::new();
     let mut b = Harness::new();
-    // the two apps share one clipboard, as two windows or plugin instances share the system's
+    // the two apps share one clipboard, as two windows share the system's
     b.app.clipboard = a.app.clipboard.clone();
     for (r, kind) in [(0, "303"), (1, "303"), (2, "808"), (3, "909")] {
         let odd = odd_pattern(r);

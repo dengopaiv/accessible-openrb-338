@@ -6,9 +6,10 @@
 //!
 //! # Use
 //!
-//! A source (a MIDI port of the standalone app, task-188; the host's events of the
-//! plugin) hands [`StandardMapping::feed`] its bytes with a time each, in the source's own unit
-//! (the plugin: the frame of the event; a port: its timestamp). The layer gives back
+//! A source (a MIDI input port of the app, task-188, not made yet; upstream's plugin, removed
+//! from the fork by task-231 and task-241, fed it its host's events) hands
+//! [`StandardMapping::feed`] its bytes with a time each, in the source's own unit (a port: its
+//! timestamp). The layer gives back
 //! [`Timed`] [`Action`]s carrying the same time, in input order; [`Action::command`] is the
 //! player's [`Command`] of an action, and the actions without one change only the panel's view
 //! (the shown bank, the focus, the selected drum instrument, the keyboard mode). When to apply

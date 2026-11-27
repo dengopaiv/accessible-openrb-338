@@ -11,7 +11,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use crate::svg::{Part, Svg, n, pal, polar};
+use crate::svg::{Part, Svg, n, pal};
 use crate::text::{self, Anchor, Label};
 
 /// The sweep of a knob: the pointer turns from -KNOB_SWEEP to +KNOB_SWEEP degrees (0 =
@@ -964,161 +964,6 @@ fn transport_bg(out: &mut Vec<Part>) {
     }));
 }
 
-/// The plugin transport's display of the host position (task-201), the bar: x, y, w, h in the
-/// transport. orb-ui's `embed::PLUGIN_BAR` draws the digits in it. (A Beat display beside it
-/// was removed by the user's decision of 2026-11-16.)
-pub const PLUGIN_BAR: (f32, f32, f32, f32) = (184.0, 27.0, 27.0, 16.0);
-
-/// The plugin format's logo part (`plugin_logo_vst3`): x, y, w, h in the transport, where
-/// orb-ui paints it.
-pub const PLUGIN_LOGO: (f32, f32, f32, f32) = (344.0, 0.0, 112.0, 50.0);
-/// The size of the "VST3" text (`plugin_logo_vst3`) and the x of its right edge in the logo
-/// part.
-const PLUGIN_VST_TEXT_SIZE: f32 = 28.0;
-const PLUGIN_LOGO_RIGHT: f32 = 107.5;
-
-/// The plugin's mode selector (task-231): the center of its knob in the transport, the
-/// knob's size as a multiple of the gray knob's, and each position's pointer angle (degrees,
-/// 0 = up, clockwise) and label, top to bottom.
-pub const PLUGIN_MODE_KNOB: (f32, f32) = (250.0, 26.0);
-pub const PLUGIN_MODE_SCALE: f32 = 1.6;
-/// The x of the positions' LEDs (their labels follow) and the y of each row.
-pub const PLUGIN_MODE_LED_X: f32 = 285.0;
-pub const PLUGIN_MODE_ROWS: [f32; 3] = [13.0, 26.0, 39.0];
-pub const PLUGIN_MODE_LABELS: [(f32, &str); 3] = [
-    (45.0, "Latch Pattern"),
-    (90.0, "Gate Pattern"),
-    (135.0, "Note"),
-];
-
-/// The plugin's transport (task-201): the standalone's without what plays only in song mode or
-/// the plugin leaves to the host (the Pattern/Song switch, Rewind, Fast forward, Record, the
-/// bar arrows, the loop) and without the tempo's arrows (the tempo is the host's); a well for
-/// Play and Stop, and the host position as a Bar display. The lit Sync and MIDI
-/// LED is `led_transport_on`.
-fn transport_plugin_bg(out: &mut Vec<Part>) {
-    out.push(Part::new("bg_transport_plugin", 592.0, 50.0, |s| {
-        gray_plate(s, 592.0, 50.0, 16.0, 0.0);
-        let l = St::label();
-        stext(s, 8.0, 37.6, "0", 5.4, l);
-        stext(s, 32.4, 37.6, "10", 5.4, l);
-        stext(s, 20.0, 45.8, "SHUFFLE", 5.6, l.w(700).ls(0.1));
-        led_round(s, 44.5, 7.5, 1.9, "G", false);
-        stext(s, 50.0, 10.2, "Sync", 7.2, l.start().fill(LIGHT));
-        led_round(s, 79.5, 7.5, 1.9, "G", false);
-        stext(s, 85.0, 10.2, "MIDI", 7.2, l.start().fill(LIGHT));
-        let title = l.start().w(700).ls(0.0);
-        stext(s, 44.0, 24.2, "Tempo", 8.6, title);
-        display_frame(s, 44.0, 27.0, 27.0, 16.0);
-        // the well of Play and Stop, as the five keys' well
-        rect(
-            s,
-            95.4,
-            20.2,
-            66.2,
-            27.2,
-            2.2,
-            "#000",
-            r#"opacity="0.5" filter="url(#b1)""#,
-        );
-        rect(s, 94.8, 19.8, 66.4, 27.4, 2.0, "#0c0d0e", "");
-        // the host position: the bar
-        let (x, y, w, h) = PLUGIN_BAR;
-        stext(s, x, 24.2, "Bar", 8.6, title);
-        display_frame(s, x, y, w, h);
-        // the mode selector (task-231): the knob's body, a tick per position and its label
-        // beside the tick, around the knob; orb-ui draws the pointer
-        let (cx, cy) = PLUGIN_MODE_KNOB;
-        let mut lines = String::new();
-        for (i, (deg, _)) in PLUGIN_MODE_LABELS.into_iter().enumerate() {
-            // a tick out of the knob that turns level at the row and runs to its LED
-            let y = PLUGIN_MODE_ROWS[i];
-            let (x0, y0) = polar(cx, cy, 15.8, deg);
-            let r = (y - cy).abs() / deg.to_radians().sin().max(0.01);
-            let (x1, _) = polar(cx, cy, r.max(15.8), deg);
-            let x2 = PLUGIN_MODE_LED_X - 4.5;
-            if y == cy {
-                lines += &format!("M{} {} L{} {}", n(x0), n(y), n(x2), n(y));
-            } else {
-                let (a, b) = (n(x1), n(y));
-                lines += &format!("M{} {} L{a} {b} L{} {b}", n(x0), n(y0), n(x2));
-            }
-            led_round(s, PLUGIN_MODE_LED_X, y, 1.9, "Y", false);
-        }
-        // engraved: a dark groove with a light lower edge
-        let join = r#"stroke-linecap="round" stroke-linejoin="round""#;
-        s.g("translate(0 0.55)", "");
-        stroke_path(
-            s,
-            &lines,
-            "#edf1f3",
-            0.6,
-            &format!(r#"{join} opacity="0.35""#),
-        );
-        s.end_g();
-        stroke_path(
-            s,
-            &lines,
-            "#1b262c",
-            0.8,
-            &format!(r#"{join} opacity="0.6""#),
-        );
-        s.g(
-            &format!(
-                "translate({} {}) scale({})",
-                n(cx),
-                n(cy),
-                n(PLUGIN_MODE_SCALE)
-            ),
-            "",
-        );
-        gray_knob_cap(s, 0.0, 0.0);
-        s.end_g();
-    }));
-    // the plugin format's mark in a part of PLUGIN_LOGO (112 x 50 at x = 344 of the transport),
-    // right-aligned 6 px before the wordmark. VST3 (task-232, the user's decision of
-    // 2026-11-17): the plain text "VST3" in the panel's label font (Inter, bold), engraved, not
-    // Steinberg's logo (which does not fit the panel)
-    out.push(Part::new("plugin_logo_vst3", 112.0, 50.0, |s| {
-        let (size, right) = (PLUGIN_VST_TEXT_SIZE, PLUGIN_LOGO_RIGHT);
-        // the baseline puts the capitals' middle (0.727 of the size high) at y = 25
-        let y = 25.0 + size * 0.727 / 2.0;
-        let st = St::plain("").end();
-        for (dy, fill, op) in [(0.6, "#edf1f3", 0.22), (0.0, "#1b262c", 0.38)] {
-            let d = text::outline(&label(right, y + dy, "VST3", size, st));
-            s.raw(&format!(r#"<path d="{d}" fill="{fill}" opacity="{op}"/>"#));
-        }
-    }));
-    // the mode selector's labels, 62 x 10 each: bold when selected
-    for (i, (_, label)) in PLUGIN_MODE_LABELS.into_iter().enumerate() {
-        // unselected as Sync and MIDI; selected bold and in the labels' bright color
-        for (state, weight, fill) in [("off", 500, LIGHT), ("on", 700, "#edf1f3")] {
-            out.push(Part::with_bleed(
-                format!("mode_label_{i}_{state}"),
-                62.0,
-                10.0,
-                1.0,
-                |s| {
-                    stext(
-                        s,
-                        0.0,
-                        7.7,
-                        label,
-                        7.2,
-                        St::label().start().w(weight).fill(fill),
-                    )
-                },
-            ));
-        }
-    }
-    out.push(Part::with_bleed("led_mode_on", 11.0, 11.0, 1.0, |s| {
-        led_round(s, 5.5, 5.5, 1.9, "Y", true)
-    }));
-    out.push(Part::with_bleed("led_transport_on", 11.0, 11.0, 1.0, |s| {
-        led_round(s, 5.5, 5.5, 1.9, "G", true)
-    }));
-}
-
 /// The color of the wind keys' arrows.
 const WIND: &str = "#4b545a";
 
@@ -1827,22 +1672,9 @@ pub const UPPER_CHIP_808: (f32, f32, f32, f32) = (78.6, 44.4, 17.8, 8.8);
 pub const MOD_VIEW_808: (f32, f32, f32, f32) = (277.2, 4.2, 84.4, 106.0);
 pub const MOD_PICTURE: (f32, f32, f32) = (4.2, 3.7, 76.0);
 
-/// An 808 chip of w x h at (x, y) with its label; selected, lighter with an orange ring.
+/// An 808 chip of w x h at (x, y) with its label; selected (`sel`), lighter with an orange
+/// ring.
 fn chip808(s: &mut Svg, x: f32, y: f32, w: f32, h: f32, label_: &str, sel: bool, shadow: bool) {
-    chip808_ring(s, (x, y, w, h), label_, (sel, sel, false), shadow);
-}
-
-/// An 808 chip: `(light, orange, lit)` are the selected chip's lighter fill, the selection's
-/// orange ring and the green ring of a voice that sounds in the plugin's note mode (task-202).
-/// The green ring has the orange ring's shape and replaces it; it differs from it by more than
-/// its hue (for the color-blind): a bright white core and a wider glow, which orange has not.
-fn chip808_ring(
-    s: &mut Svg,
-    (x, y, w, h): (f32, f32, f32, f32),
-    label_: &str,
-    (light, orange, lit): (bool, bool, bool),
-    shadow: bool,
-) {
     if shadow {
         rect(
             s,
@@ -1855,7 +1687,7 @@ fn chip808_ring(
             r#"opacity="0.5" filter="url(#b05)""#,
         );
     }
-    let fill = if light { "#fbf6d6" } else { CREAM };
+    let fill = if sel { "#fbf6d6" } else { CREAM };
     rect(
         s,
         x,
@@ -1877,24 +1709,7 @@ fn chip808_ring(
         r#"opacity="0.45""#,
     );
     let (rx, ry, rw, rh) = (x - 0.9, y - 0.9, w + 1.8, h + 1.8);
-    if lit {
-        // a wide glow, the ring and a bright core on it
-        let none = "none";
-        let glow = r##"stroke="#7dff5a" stroke-width="3.6" opacity="1" filter="url(#b05)""##;
-        rect(s, rx, ry, rw, rh, 2.3, none, glow);
-        let ring = r##"stroke="#5cff4a" stroke-width="1.6""##;
-        rect(s, rx, ry, rw, rh, 2.3, none, ring);
-        rect(
-            s,
-            rx,
-            ry,
-            rw,
-            rh,
-            2.3,
-            none,
-            r##"stroke="#fff" stroke-width="0.7""##,
-        );
-    } else if orange {
+    if sel {
         rect(
             s,
             rx,
@@ -2079,28 +1894,6 @@ fn tr808_controls(out: &mut Vec<Part>) {
             2.5,
             |s| chip808(s, 0.0, 0.0, uw, uh, name, true, false),
         ));
-    }
-    // a sounding voice in the plugin's note mode (task-202): the chip with a green ring, plain
-    // or lighter when it is also the selected chip (the green replaces the orange)
-    for (prefix, light) in [("lit808_", false), ("litsel808_", true)] {
-        for name in NAMES_808 {
-            out.push(Part::with_bleed(
-                format!("{prefix}{name}"),
-                lw,
-                lh,
-                3.5,
-                |s| chip808_ring(s, (0.0, 0.0, lw, lh), name, (light, false, true), false),
-            ));
-        }
-        for name in UPPER_808 {
-            out.push(Part::with_bleed(
-                format!("{prefix}{name}"),
-                uw,
-                uh,
-                3.5,
-                |s| chip808_ring(s, (0.0, 0.0, uw, uh), name, (light, false, true), false),
-            ));
-        }
     }
     // the mod's window: a dark well for the kit's splash and its name (the app paints both),
     // and the glass laid over the picture
@@ -2465,15 +2258,6 @@ fn tr909_controls(out: &mut Vec<Part>) {
             led_round(s, 2.5, 2.5, r, "R", true)
         }));
     }
-    // a sounding instrument in the plugin's note mode (task-202): the LED green, with a wider
-    // halo and a white core (brightness and glow, not hue alone, set it apart from the red)
-    for (name, r) in [("led909_lit", 1.05), ("led909ac_lit", 1.1)] {
-        out.push(Part::with_bleed(name, 5.0, 5.0, 4.0, |s| {
-            circle(s, 2.5, 2.5, r * 3.8, "url(#haloG)", "");
-            led_round(s, 2.5, 2.5, r, "G", true);
-            circle(s, 2.5, 2.5, r * 0.6, "#fff", r#"opacity="0.9""#);
-        }));
-    }
 }
 
 // ---------------------------------------------------------------- the mixer and the master
@@ -2780,7 +2564,6 @@ pub fn all_parts() -> Vec<Part> {
     let mut v = Vec::new();
     wood(&mut v);
     transport_bg(&mut v);
-    transport_plugin_bg(&mut v);
     logo(&mut v);
     pattern_bg(&mut v);
     tb303_bg(&mut v);

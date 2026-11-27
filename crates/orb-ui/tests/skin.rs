@@ -115,7 +115,7 @@ fn moved_skin() -> SvgSkin {
         "tr808.step1\ttr808\tsteps\tstep808_red_off\t50\t300\t10\t20",
         "tr808.strip\ttr808\tstrip\t-\t50\t300\t160\t20\tcells=16",
         "tr808.legend\ttr808\tselect\t-\t50\t340\t120\t10\tcells=50:10:0 count=12",
-        "tr808.mark_AC\ttr808\tmark\tsel808_AC\t50\t340\t10\t10\tslot=0 lit=- litsel=-",
+        "tr808.mark_AC\ttr808\tmark\tsel808_AC\t50\t340\t10\t10\tslot=0",
     ];
     let table = format!("{HEADER}{}\n", rows.join("\n"));
     SvgSkin::new(&table, PartSet::embedded().clone()).expect("the test skin")

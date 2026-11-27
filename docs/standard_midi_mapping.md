@@ -14,11 +14,10 @@ section 10. Marks: [C] read in the disassembly, [G] guessed or inferred.
 orb: `crates/orb-player/src/midi.rs` (`StandardMapping`, `control_change`), tested in the module
 and in `crates/orb-ui/tests/midi.rs`.
 
-**The plugin's note mapping is a different one.** The plugin has orb's own note
-mapping (devices on MIDI channels 1..4, pattern notes 0..31, the 303 played by pitch, General
-MIDI drum notes, accent by velocity): `docs/midi.md` section 5. The two use different channels:
-the device channels are 1..4, and the Standard Mapping, off by default in the plugin, listens on
-one channel outside 1..4 (16 by default; task-207).
+**Upstream's plugin had a different note mapping** (devices on MIDI channels 1..4, pattern
+notes 0..31, the 303 played by pitch, General MIDI drum notes, accent by velocity;
+`docs/midi.md` section 5). The plugin is not part of this fork (the fork's task-231 and
+task-241), so the fork has only the Standard Mapping.
 
 ## 1. Channel, messages, dispatch [C]
 
@@ -211,9 +210,8 @@ of the stored layout that was not traced), on Remote MIDI Control being on (defa
 0x41C293), on Standard (40) rather than Quick (41) mapping (default Standard, 0x41C29D; the
 dialog's radio, `sub_41E959` 0x41EABE / 0x41EACA), and on the keyboard mode (section 6).
 `docs/midi.md` has the settings. orb's layer listens to one channel (`StandardMapping::channel`,
-default 0 = channel 1), is on when its source feeds it, and has the mode. The plugin
-(upstream's plugin document (removed, task-231) section 8) feeds it only when its Remote MIDI setting is on (off by default)
-and sets the channel to 16 by default (channels 1..4 are its device channels).
+default 0 = channel 1), is on when its source feeds it, and has the mode. Nothing in the fork
+feeds it yet (upstream's plugin, removed by the fork's task-231 and task-241, did).
 
 ## 9. Differences from the manual
 
@@ -277,8 +275,8 @@ pattern-selection table.
   and 36, section 7, are not mapped yet: task-189.)
 - **Always on.** The original's Remote MIDI Control is a preference, off by default [G] (section 8:
   `sub_41C210` stores 0 at 0x41C293, under the unreconciled layout shift); orb's layer has no
-  on/off: it acts whenever a source feeds it. Whether a source feeds it is the plugin's and
-  task-188's choice.
+  on/off: it acts whenever a source feeds it. Whether a source feeds it is the source's choice
+  (the fork has none yet).
 - **Timing.** The original applies MIDI at the song window's idle time, up to 100 messages a call
   (section 1); orb's layer keeps each message's time and leaves when to apply it to the caller
   (`docs/midi.md`).

@@ -655,10 +655,9 @@ See OB-8 for the unclean buffer.
   (entries 2..17 are always null there).
 - **Verdict.** Not claimed as a defect: a short glide, and only in a ReWire host.
 - **Corpus.** None (no corpus song reaches ReWire).
-- **orb.** The plugin models it (task-300): a device unchecked under Options > Output Routing >
-  To Mix-L/R skips the smoothing and the mix loop as here, so its gains freeze and glide back
-  when it is checked again (`Frame::block_taps`, upstream's plugin document (removed, task-231) section 13.1). Not in the CLI
-  or the standalone app (no routing there).
+- **orb.** Not modelled: the fork has no ReWire and no output routing. (Upstream's plugin
+  modelled it under its Options > Output Routing, task-300; the fork removed that code with the
+  plugin, task-241.)
 - **Home.** `docs/rewire.md` section 4.
 
 ### Q-7: a disabled ReWire Mix-L or Mix-R bus accumulates in a scratch [C]

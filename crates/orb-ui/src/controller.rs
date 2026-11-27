@@ -418,7 +418,7 @@ impl App {
     /// The pointer's input on the panel's controls, step strips and instrument hit areas of
     /// `layout` at `view`, in the layout's order (which is the order egui hit-tests them in).
     /// Returns, per control of the layout, whether it shows pressed (the mouse or a computer
-    /// key holds it). The plugin's hidden controls take nothing.
+    /// key holds it).
     ///
     /// The fork's screen reader mode (m-7): each section's controls are in a child `Ui` whose
     /// node is a Group named as the section (task-188), in the layout's order as before; the
@@ -437,9 +437,6 @@ impl App {
         let mut placed = std::collections::HashSet::new();
         for (n, c) in layout.controls.iter().enumerate() {
             let first = placed.insert((c.kind.as_str(), c.id.as_str()));
-            if self.hidden(&c.id) {
-                continue;
-            }
             let target = match nav::section_index(&c.section).and_then(|s| groups.get_mut(s)) {
                 Some(g) => g,
                 None => &mut *ui,
@@ -518,10 +515,6 @@ impl App {
                     "switch" | "toggle" | "radio" | "trigger" | "grid" => {
                         if first_press(ui, p, &r) {
                             self.panel.press(&c.id, now);
-                        }
-                        // a plugin's pattern drag-out (task-203); nothing in the standalone app
-                        if kind == "grid" {
-                            self.drag_out(ui, c, &r);
                         }
                     }
                     // A click anywhere on a two-position switch flips the position it shows.

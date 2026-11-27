@@ -440,13 +440,11 @@ impl Input {
         match (self, m) {
             (Input::OpenKey, Machine::Tr808) => {
                 "Open the editor with the 808 row focused (Edit > 808 Pattern Editor...), \
-                 or bring it to the front on the active pattern. Not in the plugin, which \
-                 leaves keys to the host: there it is the menu"
+                 or bring it to the front on the active pattern"
             }
             (Input::OpenKey, Machine::Tr909) => {
                 "Open the editor with the 909 row focused (Edit > 909 Pattern Editor...), \
-                 or bring it to the front on the active pattern. Not in the plugin, which \
-                 leaves keys to the host: there it is the menu"
+                 or bring it to the front on the active pattern"
             }
             (Input::Click, Machine::Tr808) => "Toggle a cell: a drum or AC on a step",
             (Input::Click, Machine::Tr909) => {
@@ -484,8 +482,7 @@ impl Input {
             (Input::ValueType, _) => "On the pattern number or Length: type a value and set it",
             (Input::ValueCancel, _) => "While typing a value: cancel it",
             (Input::Undo, _) => {
-                "Edit > Undo: take the editor's last change back (a drag is one change). In \
-                 the plugin, the menu item"
+                "Edit > Undo: take the editor's last change back (a drag is one change)"
             }
         }
     }
@@ -825,7 +822,6 @@ impl App {
             paste: true,
             labels: m.labels(&self.panel),
         };
-        let plugin = self.is_plugin();
         let mut acts = Vec::new();
         let mut length_drag = false;
         let mut win = std::mem::take(&mut self.drum_editors[i].win);
@@ -833,9 +829,8 @@ impl App {
         let spec = frame::Spec {
             id: egui::Id::unique(m.salt()),
             title: m.title(),
-            saved: (!plugin).then(|| m.saved(&self.settings)).flatten(),
+            saved: m.saved(&self.settings),
             guess: vec2(520.0, if m.has_entry() { 385.0 } else { 360.0 }),
-            keep: !plugin,
         };
         let out = frame::show_window(ctx, spec, &mut win, |ui| {
             length_drag = window_ui(ui, editor, &shown, &mut acts);

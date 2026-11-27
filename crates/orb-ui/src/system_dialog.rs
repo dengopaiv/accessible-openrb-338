@@ -64,7 +64,6 @@ pub struct Parent {
 
 impl Parent {
     /// The handles of `frame`'s window (None when it has none, or not yet).
-    #[cfg(feature = "app")]
     pub fn of(frame: &eframe::Frame) -> Option<Self> {
         Some(Self {
             window: frame.window_handle().ok()?.as_raw(),

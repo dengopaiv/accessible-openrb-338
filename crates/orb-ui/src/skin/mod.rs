@@ -27,7 +27,6 @@ use egui::{Pos2, Ui, Vec2};
 pub use table::{Ctl, Params};
 
 use crate::app::View;
-use crate::embed::{LIT_808, LIT_909, Lit};
 use crate::model::Panel;
 
 /// What a skin gives the controller: everything in the skin's units.
@@ -106,12 +105,6 @@ pub struct Frame<'a> {
     pub pressed: &'a [bool],
     /// The egui time, seconds (the 303's lit notes).
     pub now: f64,
-    /// The voices lit in the plugin's note mode (none in the standalone app).
-    pub lit: &'a Lit,
-    /// Whether this is the plugin's editor.
-    pub plugin: bool,
-    /// The controls the panel does not show (the plugin's hidden transport controls).
-    pub hidden: &'a dyn Fn(&str) -> bool,
     /// The wordmark's startup animation time (None: its final state).
     pub logo_t: Option<f32>,
     /// The kit's name and splash picture (the 808's mod window).
@@ -137,42 +130,18 @@ pub trait Skin: Send + Sync {
     }
 }
 
-/// A drum machine's selection mark: whether its instrument is the selected one and whether its
-/// voice is lit in the plugin's note mode.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Mark {
-    pub selected: bool,
-    pub lit: bool,
-}
-
-/// The state of the selection mark `slot` of the drum machine `section` (`tr808`, `tr909`):
-/// on the 808 the legend's chips (`upper` false, 0..=11) and the upper labels' (`upper`, the
-/// slots 3..=7 as 0..=4); on the 909 its instruments 0..=11. The 808's selected instrument
-/// shows on the upper label when its shared slot's switch is up; a lit voice shows on the chip
-/// of the sound played (task-202): the legend's 1..=11, then the upper labels.
-pub fn mark(panel: &Panel, lit: &Lit, section: &str, upper: bool, slot: usize) -> Mark {
+/// Whether the selection mark `slot` of the drum machine `section` (`tr808`, `tr909`) shows: its
+/// instrument is the selected one. On the 808 the legend's chips (`upper` false, 0..=11) and the
+/// upper labels' (`upper`, the slots 3..=7 as 0..=4); on the 909 its instruments 0..=11. The
+/// 808's selected instrument shows on the upper label when its shared slot's switch is up.
+pub fn mark(panel: &Panel, section: &str, upper: bool, slot: usize) -> bool {
     if section == "tr808" {
         let i = panel.inst808.min(11);
         let up =
             (3..=7).contains(&i) && panel.switch_position(&format!("tr808.slot{i}_switch")) == 0;
-        let selected = (up, if up { i - 3 } else { i }) == (upper, slot);
-        let lit = if upper {
-            lit.mask[LIT_808] & 1 << (slot + 11) != 0
-        } else if slot == 0 {
-            lit.ac[LIT_808]
-        } else {
-            slot <= 11 && lit.mask[LIT_808] & 1 << (slot - 1) != 0
-        };
-        Mark { selected, lit }
+        (up, if up { i - 3 } else { i }) == (upper, slot)
     } else {
-        let selected = !upper && panel.inst909.min(11) == slot;
-        let lit = !upper
-            && if slot == 0 {
-                lit.ac[LIT_909]
-            } else {
-                slot <= 11 && lit.mask[LIT_909] & 1 << (slot - 1) != 0
-            };
-        Mark { selected, lit }
+        !upper && panel.inst909.min(11) == slot
     }
 }
 
@@ -181,30 +150,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_marks_follow_the_selection_and_the_lit_voices() {
+    fn the_marks_follow_the_selection() {
         let mut p = Panel::new();
-        let none = Lit::default();
         p.inst808 = 1;
-        assert!(mark(&p, &none, "tr808", false, 1).selected);
-        assert!(!mark(&p, &none, "tr808", false, 2).selected);
+        assert!(mark(&p, "tr808", false, 1));
+        assert!(!mark(&p, "tr808", false, 2));
         // LT (3) on the upper label when its slot's switch is up (0)
         p.inst808 = 3;
         p.set_switch("tr808.slot3_switch", 0);
-        assert!(mark(&p, &none, "tr808", true, 0).selected);
-        assert!(!mark(&p, &none, "tr808", false, 3).selected);
+        assert!(mark(&p, "tr808", true, 0));
+        assert!(!mark(&p, "tr808", false, 3));
         p.set_switch("tr808.slot3_switch", 1);
-        assert!(mark(&p, &none, "tr808", false, 3).selected);
-        // the lit sounds: bit b is the legend's chip b + 1 up to 10, then the upper labels
-        let mut lit = Lit::default();
-        lit.mask[LIT_808] = 1 << 0 | 1 << 11;
-        lit.ac[LIT_909] = true;
-        lit.mask[LIT_909] = 1 << 10;
-        assert!(mark(&p, &lit, "tr808", false, 1).lit);
-        assert!(mark(&p, &lit, "tr808", true, 0).lit);
-        assert!(!mark(&p, &lit, "tr808", false, 0).lit);
-        assert!(mark(&p, &lit, "tr909", false, 0).lit);
-        assert!(mark(&p, &lit, "tr909", false, 11).lit);
+        assert!(mark(&p, "tr808", false, 3));
         p.inst909 = 4;
-        assert!(mark(&p, &lit, "tr909", false, 4).selected);
+        assert!(mark(&p, "tr909", false, 4));
+        assert!(!mark(&p, "tr909", true, 4));
     }
 }

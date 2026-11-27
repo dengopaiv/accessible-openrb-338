@@ -207,20 +207,12 @@ impl SvgSkin {
         }
     }
 
-    /// A selection mark in its state: its part when its instrument is selected, `lit=` when
-    /// its voice is lit, `litsel=` when both (`-` or none: nothing).
+    /// A selection mark: its part when its instrument is selected, else nothing.
     fn paint_mark(&self, ui: &Ui, view: &View, f: &Frame, c: &Ctl) {
         let slot = c.params.num("slot").unwrap_or(0.0) as usize;
         let upper = c.param("upper") == Some("1");
-        let m = super::mark(f.panel, f.lit, &c.section, upper, slot);
-        let name = match (m.selected, m.lit) {
-            (true, false) => Some(c.part.as_str()),
-            (false, true) => c.param("lit"),
-            (true, true) => c.param("litsel"),
-            (false, false) => None,
-        };
-        if let Some(name) = name {
-            self.paint_row(ui, name, view, c);
+        if super::mark(f.panel, &c.section, upper, slot) {
+            self.paint_row(ui, &c.part, view, c);
         }
     }
 }
@@ -251,9 +243,7 @@ impl Skin for SvgSkin {
                 crate::logo_anim::paint_logo_in(ui, &self.parts, &r.part, rect, f.logo_t);
                 continue;
             }
-            // the plugin's variant (its own transport background, task-201)
-            let name = r.param("plugin").filter(|_| f.plugin).unwrap_or(&r.part);
-            self.paint_row(ui, name, view, r);
+            self.paint_row(ui, &r.part, view, r);
         }
         for r in &self.focus {
             let on = r.row() == Some(f.panel.focus);
@@ -262,19 +252,15 @@ impl Skin for SvgSkin {
         }
         let controls = &self.layout.controls;
         for (i, c) in controls.iter().enumerate() {
-            if !(f.hidden)(&c.id) {
-                let pressed = f.pressed.get(i).copied().unwrap_or(false);
-                self.paint_control(ui, view, f, c, pressed);
-            }
+            let pressed = f.pressed.get(i).copied().unwrap_or(false);
+            self.paint_control(ui, view, f, c, pressed);
         }
         for r in &self.over {
             self.paint_row(ui, &r.part, view, r);
         }
         for c in controls.iter().filter(|c| c.kind == "steps") {
-            if !(f.hidden)(&c.id) {
-                let name = self.part_name(f.panel, c, false, 0.0);
-                self.paint_row(ui, &name, view, c);
-            }
+            let name = self.part_name(f.panel, c, false, 0.0);
+            self.paint_row(ui, &name, view, c);
         }
         for m in &self.marks {
             self.paint_mark(ui, view, f, m);
@@ -311,7 +297,7 @@ mod tests {
                 }
                 _ => assert!(has(&r.part), "{}: {}", r.id, r.part),
             }
-            for key in ["on", "off", "lit", "litsel", "plugin", "glass"] {
+            for key in ["on", "off", "glass"] {
                 if let Some(p) = r.param(key) {
                     assert!(has(p), "{} {key}={p}", r.id);
                 }

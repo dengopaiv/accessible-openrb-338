@@ -226,8 +226,7 @@ pub struct Settings {
     /// `"modern"` (the default) or `"classic"`; another value is skipped.
     pub theme: Theme,
     /// The 303-1 pattern editor window's left top in points (tasks 274 and 290), `None` until
-    /// it is moved. Stored as the array `pattern_editor_303_1_pos`; the plugin neither reads
-    /// nor writes it.
+    /// it is moved. Stored as the array `pattern_editor_303_1_pos`.
     pub pattern_editor_303_1_pos: Option<[i32; 2]>,
     /// The same of the 303-2 pattern editor's window (task-290), `pattern_editor_303_2_pos`.
     pub pattern_editor_303_2_pos: Option<[i32; 2]>,

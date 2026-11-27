@@ -3,14 +3,9 @@
 //! file `OpenRB-338.toml` there keeps the settings and the crash logs next to it
 //! instead of in the user's profile.
 //!
-//! - The standalone app's folder is the one of its `OpenRB-338.exe`.
-//! - Kept from upstream as shared code (the fork's zip has no plugin, task-231): the folder of
-//!   upstream's plugin is the one that holds the single file `OpenRB-338.vst3`, or the
-//!   `OpenRB-338.vst3` bundle (never inside it). Both are found the same way: the folder of the
-//!   module (exe or dll) that holds this code, from `GetModuleHandleExW` with the address of a
-//!   function here and `GetModuleFileNameW`; the plugin links this crate in, so its module is the
-//!   plugin's binary `OpenRB-338.vst3\Contents\x86_64-win\OpenRB-338.vst3` ([`folder_of`] goes up
-//!   to the bundle's parent) or the single file's own folder.
+//! - The program's folder is the one of its `OpenRB-338.exe`: the folder of the module that holds
+//!   this code, from `GetModuleHandleExW` with the address of a function here and
+//!   `GetModuleFileNameW` ([`folder_of`]).
 //! - [`folder`] is that folder when the marker is in it. macOS and Linux never have one.
 //!
 //! The fork (accessible-openrb-338) adds two things, the user's choice of 2026-11-26 when
@@ -30,26 +25,9 @@ pub const FILE_NAME: &str = "OpenRB-338.toml";
 /// The marker file that turns portable mode on when it is in the program's folder (task-295).
 pub const MARKER_NAME: &str = "OpenRB-338.portable";
 
-/// The folder of the program for the path of its module `module` (the exe, or the plugin's
-/// binary): the exe's folder, or for `X.vst3\Contents\<arch>\X.vst3` the folder that holds the
-/// bundle `X.vst3`.
+/// The folder of the program for the path of its module `module` (the exe): the exe's folder.
 pub fn folder_of(module: &Path) -> Option<PathBuf> {
-    let dir = module.parent()?;
-    let is_vst3 = |p: &Path| {
-        p.extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("vst3"))
-    };
-    if is_vst3(module)
-        && let Some(contents) = dir.parent()
-        && contents
-            .file_name()
-            .is_some_and(|n| n.eq_ignore_ascii_case("Contents"))
-        && let Some(bundle) = contents.parent()
-        && is_vst3(bundle)
-    {
-        return bundle.parent().map(Path::to_path_buf);
-    }
-    Some(dir.to_path_buf())
+    module.parent().map(Path::to_path_buf)
 }
 
 /// The folder that would hold the portable file (the program's), or `None` off Windows.
@@ -208,20 +186,6 @@ mod tests {
             folder_of(Path::new("/z/app/OpenRB-338.exe")),
             Some(PathBuf::from("/z/app"))
         );
-    }
-
-    #[test]
-    fn the_plugins_folder_is_the_one_that_holds_the_bundle() {
-        let m = Path::new("/z/vst/OpenRB-338.vst3/Contents/x86_64-win/OpenRB-338.vst3");
-        assert_eq!(folder_of(m), Some(PathBuf::from("/z/vst")));
-        let m = Path::new("/z/vst/openrb-338.VST3/contents/x86_64-win/openrb-338.VST3");
-        assert_eq!(folder_of(m), Some(PathBuf::from("/z/vst")));
-    }
-
-    #[test]
-    fn a_single_file_vst3_is_in_its_folder() {
-        let m = Path::new("/z/vst/OpenRB-338.vst3");
-        assert_eq!(folder_of(m), Some(PathBuf::from("/z/vst")));
     }
 
     #[test]

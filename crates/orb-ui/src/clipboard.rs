@@ -3,11 +3,9 @@
 //!
 //! A copy always goes out as `egui::Context::copy_text`, which eframe writes
 //! to the system clipboard. A direct read is only needed where egui gives the text no other
-//! way: upstream's plugin (removed in this fork, task-231; its window read the clipboard on a
-//! paste key only) and the pattern editors' Paste buttons. No test may touch the real
-//! clipboard, so an [`App`](crate::app::App) starts with [`Clipboard::Memory`], a clipboard of
-//! its own that tests share between two apps; the standalone binary and the plugin's editor
-//! switch to [`Clipboard::System`].
+//! way: the pattern editors' Paste buttons. No test may touch the real clipboard, so an
+//! [`App`](crate::app::App) starts with [`Clipboard::Memory`], a clipboard of its own that tests
+//! share between two apps; the binary switches to [`Clipboard::System`].
 
 use std::sync::{Arc, Mutex};
 

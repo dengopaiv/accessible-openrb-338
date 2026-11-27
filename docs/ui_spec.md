@@ -48,7 +48,7 @@ height is below 460, with a line step of 14 px and a page step of 115 px (`sub_4
 
 **The app's windows (task-283).** Song Information, Mod Information, About, Keyboard Shortcuts,
 and the 303, 808 and 909 pattern editors are `egui::Window`s of the one app
-viewport (the plugin's too). Choosing the command of a window that is already open (a menu item
+viewport. Choosing the command of a window that is already open (a menu item
 or a shortcut) brings it to the front, above any window that covers it, and leaves its place,
 size and contents as they are (`App::raise_window`, `Context::move_to_top` at the end of the
 frame; the editors do it through `Placing::front`). A window that is closed opens as before.
@@ -558,7 +558,7 @@ UI state (BD at start: observed, the steps showed the BD column and a drag paint
   selector knob (the user's change of 2026-10-28): the legend selects, and the knob's place
   right of the legend shows the mod's window, the `splash.jpg` of the kit that plays (the
   embedded standard mod's for the built-in kit) above the song's mod name (`App::mod_view`). A mod with no splash.jpg, or one that does not decode, shows the embedded standard mod's splash there
-  instead (`App::panel_splash_texture`, task-309; the plugin's editor is the same panel); Mods > Info still says "This mod has no splash picture." for it
+  instead (`App::panel_splash_texture`, task-309); Mods > Info still says "This mod has no splash picture." for it
   (`App::splash_texture`).
   The mod's window takes no click of its own (a press there gives the 808's row the focus, as
   anywhere in a row; the Theme Viewer it linked to is gone, task-267). The classic skin
@@ -1183,8 +1183,7 @@ read, and what it leaves out.
     song position still change on time. A loaded song that waits for Play is not followed,
     so it does not count. Without a working audio stream (none at the start, or one reported
     lost) the snapshot never moves and nothing is asked.
-  - **The audio device watch (task-191).** While the app has an open stream (`App::audio`, the
-    standalone app) it asks for a frame every second; with none open (the open was refused) it
+  - **The audio device watch (task-191).** While the app has an open stream (`App::audio`) it asks for a frame every second; with none open (the open was refused) it
     asks every two seconds, for the controller's silent retry (`Controller::poll`). The one-second frame is so that a changed system default device or
     a lost device is noticed while the window is idle (`Controller::poll`); an idle frame is
     cheap. The Audio Output window asks for one every 500 ms while it is open, for the
@@ -1215,17 +1214,15 @@ read, and what it leaves out.
   sends the selection first and holds the pattern back until the engine leaves it
   (`Link::set_pattern_unplayed`, sent from `Link::follow`). Copy and Cut put the whole pattern on the system clipboard as
   readable JSON and a paste reads it from there (task-287, below): the app keeps no pattern of
-  its own (`App::clip` and the marker text are gone), so a pattern moves between app windows,
-  between plugin instances and from the app into the plugin, and it can be saved or shared as
-  text. egui-winit turns
+  its own (`App::clip` and the marker text are gone), so a pattern moves between app windows
+  and it can be saved or shared as text. egui-winit turns
   Ctrl/Cmd+X, C and V into egui's Cut, Copy and Paste events without a key event;
   `App::pattern_keys` takes them, and Ctrl/Cmd+D and Z, only where the panel takes keys (no text
   field focused, no browser, prompt or error box open), and leaves Cut and Copy to a window's
   selected text. Ctrl/Cmd+E (the focused row's pattern editor: Edit > 303-1 or 303-2 Pattern
   Editor... with that 303 focused, section 23, Edit > 808 Pattern Editor... with the 808
   focused, section 24, Edit > 909 Pattern Editor... with the 909 focused, section 25) is taken
-  in the
-  standalone app by `App::show` with Ctrl/Cmd+F and G: also while a text field has the focus,
+  by `App::show` with Ctrl/Cmd+F and G: also while a text field has the focus,
   but not while the browser, the prompt or the error box is open. Edit > Paste Pattern asks for
   the system clipboard
   (`ViewportCommand::RequestPaste`), so it takes the path of Ctrl/Cmd+V. A press on an open menu
@@ -1235,12 +1232,10 @@ read, and what it leaves out.
   - **Copy** writes the text with `ctx.copy_text` at the end of the frame (eframe writes
     it to the system clipboard), from the pattern's bytes as the
     link holds them (`Link::pattern`: 98 bytes for a 303, 194 for an 808 or a 909).
-  - **Paste** gets the text from egui's Paste event (Ctrl/Cmd+V, the standalone's Edit menu), or
-    reads the system clipboard directly (`Clipboard::System`, arboard) where egui gives no
-    event: the removed plugin's Edit menu (its window read the clipboard on a paste key only,
-    which a plugin leaves to the host) and the pattern editors' Paste buttons, which are always
-    enabled (the clipboard is not read every frame). `App::clipboard` is a memory clipboard
-    until the standalone binary (`main.rs`) and the plugin's editor (`EditorApp`) switch it to
+  - **Paste** gets the text from egui's Paste event (Ctrl/Cmd+V, the Edit menu), or reads the
+    system clipboard directly (`Clipboard::System`, arboard) where egui gives no event: the
+    pattern editors' Paste buttons, which are always enabled (the clipboard is not read every
+    frame). `App::clipboard` is a memory clipboard until the binary (`main.rs`) switches it to
     the system's, so no test touches the real clipboard; two apps of a test share one memory
     clipboard (`tests/pattern_clipboard.rs`).
   - **Refusals**: nothing is written, and the status line says "The clipboard holds no
@@ -1371,8 +1366,7 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   button row is one row high (egui's `with_layout` would take all the height left in the window).
 - **The smallest main window** is 536 x 485 points, menu bar included (`layout::MIN_WINDOW_W/H`,
   task-297 and task-299; before 488 x 373 and, before that, half the panel and the bar, 312 x 277;
-  the standalone's viewport minimum and the plugin editor's, both in points, so the UI scale does
-  not change it). Every window the user cannot resize fits in it with `layout::DIALOG_MARGIN`
+  the viewport minimum, in points, so the UI scale does not change it). Every window the user cannot resize fits in it with `layout::DIALOG_MARGIN`
   (12 points) around, measured by `tests/min_window.rs` at the default scale: the 808 and 909
   pattern editors 512 wide (366 and 393 high with the 909's entry switch), the 303 pattern editor
   465 x 461, the file dialogs 512 wide (the width is the window's less 2 x 12 less the frame's 22,
@@ -1436,7 +1430,7 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   read inside the portable folder before the merge below, so a relative and a full path to the
   same folder are one value). It is written through a temporary file and a rename, when a path
   is chosen or a folder set. The
-  file is shared by the standalone and every plugin instance, so a save (task-229) reads it
+  file may be shared by several running apps, so a save (task-229) reads it
   again first and applies only what this instance changed since it last read or wrote it: a
   key set overwrites that key, a folder noted is pushed onto the file's `recent` list (dedupe,
   8), a preferred mod sets or clears its entry; the in-memory settings then take the merged
@@ -1471,7 +1465,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | File | Open... (Ctrl+O, Cmd+O on macOS) | the browser for a song; with unsaved changes the prompt first |
 | File | Save (Ctrl+S, Cmd+S on macOS) | writes the song's file; a song with none goes to Save As |
 | File | Save As... | the browser for a `.rbs`; the file becomes the song's file |
-| File | Info... (Ctrl+I, Cmd+I on macOS) | opens the Song Information window below, or brings it to the front when it is open (`App::show_info`); disabled without a song, and the key does nothing then (task-310). The key is taken before the panel keys, so the plain I of the pattern-select keys is not triggered by it, and it works while a text field of the window has the focus, as Ctrl/Cmd+O does. A plugin's Info... item stays enabled and has no shortcut text (section 20) |
+| File | Info... (Ctrl+I, Cmd+I on macOS) | opens the Song Information window below, or brings it to the front when it is open (`App::show_info`); disabled without a song, and the key does nothing then (task-310). The key is taken before the panel keys, so the plain I of the pattern-select keys is not triggered by it, and it works while a text field of the window has the focus, as Ctrl/Cmd+O does. |
 | File | Export Loop as Audio File... | the browser for `.wav`, `.flac` or `.ogg`; enabled in song mode only (the original disables it in pattern mode, section 12). In screen reader mode the system's dialog, with one filter per format, the format of the last export through it first (the string `export_format` of `OpenRB-338.toml`: `wav` by default, `flac` or `ogg`; task-204): that filter is the default extension of a name typed without one, and the extension of the saved path becomes the new `export_format`. The in-app browser does not use it |
 | Edit | Undo (Ctrl+Z, Cmd+Z on macOS) | puts back the pattern the last Cut, Paste or Duplicate Pattern wrote, or the tracks of the last Initialize Loop or Song (orb's addition, task-306), and after a Duplicate selects its source again unless a pattern was selected since; one level, no redo; the item names the command ("Undo Paste Pattern") and is disabled when there is nothing to undo (below) |
 | Edit | Cut Pattern (Ctrl+X, Cmd+X) | Copy Pattern, then the pattern's steps are emptied; the length and the shuffle flag stay, as with Clear Pattern |
@@ -1479,11 +1473,11 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Edit | Paste Pattern (Ctrl+V, Cmd+V) | the system clipboard's pattern JSON (section 16) into the target pattern, into a row of its device only (a 303 pattern into either 303; with a pattern editor focused the device is the editor's), nothing written and a status message for any other text; the knobs stay; a paste that changes nothing sends nothing and leaves the song unmodified |
 | Edit | Duplicate Pattern (Ctrl+D, Cmd+D) | the target pattern into its row's next empty pattern (after it, on through D8, then from A1), which is then selected as a click on its button selects it (a focused pattern editor shows it too, in both modes); the clipboard is not touched |
 | Edit | Clear Pattern (no shortcut) | the target pattern's steps are emptied as the pattern editors' Clear empties them (`link::emptied_pattern`: every 303 step note 0, no flags, rest on; every 808 and 909 step byte 0), the length and the shuffle flag stay; one write with Undo ("Undo Clear Pattern"); the status line says "303-1: A1 cleared", also when the pattern was empty already (then nothing is written and the Undo stays; the user's review of task-290, round 1); the clipboard is not touched (task-290) |
-| Edit | Initialize Loop from Pattern Mode, Initialize Song from Pattern Mode (no shortcut) | after a separator under Clear Pattern, the original's two commands 306 and 307 with its names (task-306): enabled only with a song in song mode (`App::can_init`; disabled with the hover text "Needs song mode." in pattern mode), as the original enables them. Loop sends song msg 29 at once; Song first opens the question below and sends song msg 28 on Initialize (`orb_player::Command::InitLoop`, `InitSong`; `Engine::init_loop`, `Engine::init_song`; `docs/song_load.md` section 14). Then the song is marked modified and the status line says "Loop initialized from pattern mode" or "Song initialized from pattern mode". **orb's addition, not the original's** (the user's change of 2026-11-25): each is undone by the one-level Edit > Undo, "Undo Initialize Loop" or "Undo Initialize Song" (below). A plugin's Edit menu does not have them, nor the separator after them: the plugin has no song mode (the user's decision of 2026-11-25; section 20) |
-| Edit | 303-1 Pattern Editor..., 303-2 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating pattern editor of that 303 on its selected pattern, or brings it to the front and switches it to that pattern (section 23, tasks 274 and 290); disabled without a song; a plugin's Edit menu has every Edit item, with no shortcut texts (section 20) |
+| Edit | Initialize Loop from Pattern Mode, Initialize Song from Pattern Mode (no shortcut) | after a separator under Clear Pattern, the original's two commands 306 and 307 with its names (task-306): enabled only with a song in song mode (`App::can_init`; disabled with the hover text "Needs song mode." in pattern mode), as the original enables them. Loop sends song msg 29 at once; Song first opens the question below and sends song msg 28 on Initialize (`orb_player::Command::InitLoop`, `InitSong`; `Engine::init_loop`, `Engine::init_song`; `docs/song_load.md` section 14). Then the song is marked modified and the status line says "Loop initialized from pattern mode" or "Song initialized from pattern mode". **orb's addition, not the original's** (the user's change of 2026-11-25): each is undone by the one-level Edit > Undo, "Undo Initialize Loop" or "Undo Initialize Song" (below). |
+| Edit | 303-1 Pattern Editor..., 303-2 Pattern Editor... (Ctrl+E, Cmd+E) | after a separator: opens the floating pattern editor of that 303 on its selected pattern, or brings it to the front and switches it to that pattern (section 23, tasks 274 and 290); disabled without a song |
 | Edit | 808 Pattern Editor... (Ctrl+E, Cmd+E) | under the 303s': opens the floating 808 pattern editor on the TR-808's active pattern, or brings it to the front and switches it to that pattern (section 24, task-280); disabled without a song. Ctrl/Cmd+E opens the focused row's editor, so the menu writes its text on the item the key opens now: the 303-1's or the 303-2's with that 303 focused, the 808's with the 808 focused, the 909's with the 909 focused (tasks 280, 281 and 290) |
 | Edit | 909 Pattern Editor... (Ctrl+E, Cmd+E) | under the 808's: opens the floating 909 pattern editor on the TR-909's active pattern, or brings it to the front and switches it to that pattern (section 25, task-281); disabled without a song; the shortcut text is on it with the TR-909 focused |
-| View | Classic, Modern | two radio items directly in View, no submenu (the user's review of task-267, 2026-11-21): a radio choice of the main window's skin: Modern (the SVG panel, the default) or Classic (the original's panel from the kit's bitmaps, section 21); saved in the settings file at once (`theme`, section 17) and taken by the next run; the standalone app's only, a plugin's editor has no View menu (task-267) |
+| View | Classic, Modern | two radio items directly in View, no submenu (the user's review of task-267, 2026-11-21): a radio choice of the main window's skin: Modern (the SVG panel, the default) or Classic (the original's panel from the kit's bitmaps, section 21); saved in the settings file at once (`theme`, section 17) and taken by the next run (task-267) |
 | Mods | Choose Mod... (Ctrl+M, Cmd+M on macOS; shown in screen reader mode only, first item, a separator after it) | the mod chooser dialog: a filter and the list as a tree (section 20.7, task-195) |
 | Mods | Standard ReBirth, a mod per file, Choose file... | the song's kit, checked (below) |
 | Mods | Refresh List | reads the Mods folder again (the list cache, below; task-101); directly after "Choose file..." with a separator after it, so the two form one group (task-118); the status line then says "Mod list refreshed: N mods in <folder> (+a, -b)" (what changed against the previous list, by file), a read error of the folder goes to the error message box (section 18.0) |
@@ -1495,8 +1489,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Speak Raw Values (shown in screen reader mode only) | `Settings::speak_raw_values` (false by default; the bool `speak_raw_values` of `OpenRB-338.toml`), saved at once (task-192): a knob or fader speaks its 0..127 value after its unit ("1.24 kilohertz, 64"); section 20 |
 | Options | Pitch Keys Make Notes (shown in screen reader mode only) | `Settings::pitch_keys_make_notes` (false by default; the bool `pitch_keys_make_notes` of `OpenRB-338.toml`), saved at once (task-211): on, a 303's pitch key on a rest also makes it a note; section 20.5 |
 | Options | Step Editor Follows Playback (shown in screen reader mode only) | `Settings::step_editor_follows` (false by default; the bool `step_editor_follows` of `OpenRB-338.toml`), saved at once (task-190, decision task-209): on, a 303's step editor and a drum grid (task-191) move to the pattern playback selects, silently, at the next input; off, they stay on the pattern the user chose; sections 20.5 and 20.6 |
-| Options | Audio Output... | the window of Audio Output (below, task-191); the standalone app only: a plugin's audio is the host's, so its Options menu has no such item |
-| Options | Output Routing... | a plugin's editor only, after a separator (task-300; `crates/orb-ui/src/routing_window.rs`, `Embed::routing`): a centered, closable window (Escape closes it) with three columns of checkboxes, "To Mix-L/R" (303-1, 303-2, 808, 909), "To 808" (BD .. CY) and "To 909" (BD .. RC), each labeled with its output's name and with the tooltip "#N", the output's bus index (Mix 0, 303-1 #1, 808 BD #5, 909 RC #26); built from the drum machines' output tables (orb-engine `tr808::OUTPUTS`, `tr909::OUTPUTS`). A click sets the plugin's routing at once (upstream's plugin document (removed, task-231) section 13.1). It scrolls when the window is shorter than it; it fits the plugin's smallest window (536 x 485) |
+| Options | Audio Output... | the window of Audio Output (below, task-191) |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, the global keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` with an icon-only copy button (task-279) and the links https://pingw33n.github.io/OpenRB-338/, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
@@ -1548,7 +1541,7 @@ is one more entry.
     that is missing at the start opens System default, with a status-line note and the saved
     choice kept for the next start; the app without any working output runs silent and tries
     the system default again every two seconds.
-  - Not in a plugin's editor. `orb play` is unchanged: System default, 2048 frames, no options.
+  - `orb play` is unchanged: System default, 2048 frames, no options.
 
 - **The Edit menu** (orb's own commands). Cut, Copy, Paste, Duplicate and Clear Pattern act
   on the **target pattern** (task-290, `App::pattern_target`): the pattern shown by the pattern
@@ -1561,11 +1554,10 @@ is one more entry.
     `editor_frame::show_window` compares the press's layer, egui's `layer_id_at` of the press
     origin, with the window's). It keeps the focus until a primary press goes down on the panel
     itself (inside the skin's rect, on the panel's layer: `App::focus_click`; the menu bar, the
-    status line, the plugin's desk margin and any window over the panel do not take it) or its
-    window closes. A selection by a key or a pattern button does not take it; nor does opening
-    the Edit menu. It is the same in the standalone app and the plugin's editor (egui's pointer
-    input only; egui's keyboard focus and the window order are not used: the order does not
-    change on a click on the panel, and the plugin takes no keys). The focused window is not
+    status line and any window over the panel do not take it) or its window closes. A
+    selection by a key or a pattern button does not take it; nor does opening the Edit menu.
+    egui's pointer input only: egui's keyboard focus and the window order are not used (the
+    order does not change on a click on the panel). The focused window is not
     marked. The pattern of a focused editor is its row's selected pattern even
     when the selection changed since the editor's last frame (its selection rule runs first). The
   names and shortcuts of Cut, Copy and Paste Pattern are those the original's Edit menu shows
@@ -1650,8 +1642,7 @@ is one more entry.
   `every_input_of_the_help_does_what_it_says`, and the panel's step modifiers by `behavior.rs`
   and `tests/interaction.rs` (section 7). The group "Always active" is "Global". The help names
   the machines 303, 808 and 909, never TB-303, TR-808 or TR-909 (the user's rule: no direct
-  reference to the Roland hardware; the rest of the app's text follows in task-286). The help
-  window is the standalone app's only (section 20).
+  reference to the Roland hardware; the rest of the app's text follows in task-286).
 
 - **Help > About and the version string** (task-102; `crates/orb-ui/src/about.rs`, `version.rs`,
   `build.rs`). The window is centered as File > Info is (pivot CENTER_CENTER, `default_pos` at
@@ -1664,8 +1655,7 @@ is one more entry.
   wordmark say it). The version line ends with a small icon-only copy button (task-279), 14 pt
   square, 4 pt after the text: two overlapping sheets drawn with the painter (no font glyph,
   no image), dim like the text and white on hover, with the tooltip "Copy version". A click
-  copies `VERSION` exactly (the text after `Version `) with `ctx.copy_text`, so the standalone
-  app (and upstream's plugin (removed in this fork, task-231)) works; for 1.5 s the sheets turn into a white check mark and the tooltip says
+  copies `VERSION` exactly (the text after `Version `) with `ctx.copy_text`, so the app works; for 1.5 s the sheets turn into a white check mark and the tooltip says
   "Copied" (the window repaints once at the end by itself). `OpenRB-338 --about` opens it at the start (for `--screenshot`). The version is
   `YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)`, computed by `build.rs` into `ORB_UI_VERSION` (the
   pure formatting is `version.rs`, unit-tested): the number is the build time in UTC to the
@@ -2766,45 +2756,6 @@ is no menu item and Ctrl+M does nothing; the dialog closes if the mode goes off 
   `ORB_THIRDPARTY_MODS_DIR`); reading the folder (at start and Refresh List) is the existing
   scan, about 2.8 s for the collection.
 
-## 21. The panel as the plugin's editor (task-201)
-
-The plugin (upstream's plugin document (removed, task-231) section 10) shows this panel, drawn by the same code
-(`crates/orb-ui/src/embed.rs`), with these differences; the standalone app is unchanged.
-
-- **The window** is the menu bar of section 18 (22 points, not scaled) and the panel under it,
-  scaled to the window's width; no desk around it (section 19's backdrop is the standalone's).
-  Its height is `round(width * 510 / 624) + 22`; an invisible 14-point corner at the bottom
-  right resizes it (the resize cursor and a faint grip of three diagonal strokes while it is
-  hovered or dragged).
-- **The transport** has no Pattern/Song switch, Rewind, Fast forward, Record, bar display, loop
-  or tempo arrows (section 3; Fast forward and the bar display are task-213's decision). The
-  tempo display is read-only (the tempo the plugin plays at). Play and Stop are the plugin's
-  mode (pattern mode / note mode). Where the bar and loop displays were, a Bar display shows
-  the host position's bar while the plugin follows it, dark otherwise (no Beat display, the
-  user's decision of 2026-11-16). The Sync LED
-  lights while the plugin follows the host position, the MIDI LED on the host's MIDI.
-- **The menus**: File has New, Open and Info only; nothing asks to save. The Edit menu is the
-  standalone's (section 18): Undo, Cut, Copy, Paste, Duplicate and Clear Pattern, and the
-  303-1 Pattern Editor... and 303-2 Pattern Editor... (section 23), 808 Pattern Editor...
-  (section 24) and 909 Pattern Editor... (section 25), in the same order, with the same names
-  and the same behavior (the target pattern of section 18 too), but no
-  shortcut texts (the user's review of task-274, rounds 2 and 3). **The one exception**: the standalone's Initialize Loop and Initialize Song from Pattern Mode, and the separator after them, are not in it, since the plugin has no song mode (the user's decision of 2026-11-25, task-306; the removed plugin crate's `tests/editor.rs` `the_edit_menu_has_the_standalones_items_without_shortcuts`). Undo is the one-level Undo,
-  named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the system
-  clipboard as JSON (eframe writes egui's `CopyText` to it; section 16, task-287),
-  so another instance or the standalone app pastes it. **One difference**: the removed plugin's window
-  did not answer egui's `RequestPaste` (it read the clipboard only on a paste key
-  event, and the plugin leaves keys to the host), so the plugin's Paste Pattern reads the
-  system clipboard directly (arboard, `Clipboard::System`), as the pattern editors' Paste
-  buttons do, and refuses any text that is no pattern of the row's device. On Linux arboard
-  speaks X11 only (no `wayland-data-control`), so a Wayland session without XWayland reads
-  nothing. There is no View
-  menu: the editor has the modern skin only (section 21, task-267). Options has no keyboard modes
-  and no Audio Output, but Output Routing... (task-300, section 18's table); Help no Keyboard
-  Shortcuts.
-- **No keyboard** (section 10 does not apply): the plugin's editor acts on no key and shows no
-  shortcut; every key goes on to the host (decided by the user, 2026-11-16). The mouse
-  gestures of section 2 are the same.
-
 ## 21. The panel bitmaps and the classic skin (task-187, task-267)
 
 The bitmaps' places below were found for task-187's Theme Viewer, a view-only window that
@@ -2957,8 +2908,7 @@ now fixed:
   viewer and the main panel (decision task-251, section 16) both light `model::gr_lit(byte)`
   LEDs from the left.
 
-**The classic skin (task-267).** View > Classic (section 18; the standalone app's
-only, Modern the default, saved as `theme` in the settings file, section 17) draws the main
+**The classic skin (task-267).** View > Classic (section 18; Modern the default, saved as `theme` in the settings file, section 17) draws the main
 window's panel with `skin::classic::ClassicSkin`: the original's panel at this geometry from
 the current kit's bitmaps, scaled to the window by nearest pixel only (the user, 2026-11-21:
 no bilinear choice, no key). The desk and the panel's shadows around it are the modern
@@ -3031,7 +2981,7 @@ selector at `(127 * i + 5) / 11`, the meters by the original's log scale
 127) and the gain-reduction
 LEDs (a bar from the left, `model::gr_lit`; nine 7 x 10 parts of the strip's two rows). The
 pressed looks are the strips' second frames while held (the original's trigger buttons). The
-Sync and MIDI LEDs are a plugin's and stay dark here.
+Sync and MIDI LEDs stay dark here.
 - **The kit**: the app keeps the classic skin of the kit that plays and makes it again when the
   kit changes (`App::apply_theme`); Modern drops it.
 - **Removed with it** (task-267): the Theme Viewer window, Mods > Theme Viewer..., the mod
@@ -3069,8 +3019,7 @@ and a shipped song at 900x700) are pixel-identical to the build before task-266.
     `open=1` for an area that also takes every point left of it as its first cell, as the
     909's rows do: everything left of the section's x 26 is AC).
 - a **renderer** (`Skin::paint`) that draws the panel's state (`skin::Frame`: the model, which
-  controls show pressed, the time, the note-mode lights, the plugin flag and hidden controls,
-  the logo's animation time, the kit's name and splash) at the skin's screen rectangle.
+  controls show pressed, the time, the logo's animation time, the kit's name and splash) at the skin's screen rectangle.
 
 A skin may move controls, show one twice, and lack controls another has; a control's keyboard
 shortcuts work whatever the skin shows (the user, 2026-11-21). A control id the model does not
@@ -3082,7 +3031,7 @@ current skin's layout: the computer keyboard and its held buttons (section 10), 
 focus and the logo click, the hit tests and gestures of every kind (mouse-down actions, repeat
 and wind schedules, knob drags with Shift fine and the double-click reset, the fader's jump and
 drag, the two-position switches), the step strips' paint drag and the instrument selection,
-the knobs' resize cursor and the plugin's pattern drag-out. All input runs before the skin
+and the knobs' resize cursor. All input runs before the skin
 draws, in the layout's order (the order egui hit-tests in). A control's egui ids hold its kind,
 its id and its place in the layout. `behavior.rs` is the interaction math on the skin's
 geometry (`Fader { track, handle }`: travel `track - handle`, `k = 10000 / travel`;
@@ -3100,9 +3049,8 @@ layout table and one part set; the modern skin (`skin::svg::modern`) is
 `assets/ui/layout.tsv` (generated by orb-ui-art) and the embedded `assets/ui` parts. Another
 SVG theme is another table and another part set (`art::PartSet::from_svgs`, which reads each
 part's rectangle and bleed from its viewBox), no code. The renderer names no part itself:
-- the table's rows name the parts (backgrounds `bg`, with a `plugin=` variant; the wordmark
-  `logo`; the focus bars `focus` with `on=`; the foregrounds `fg`; the selection marks `mark`
-  with `lit=` and `litsel=`; a gain-reduction LED's `on=` and `off=`; the mod window's `glass=`,
+- the table's rows name the parts (backgrounds `bg`; the wordmark `logo`; the focus bars
+  `focus` with `on=`; the foregrounds `fg`; the selection marks `mark`; a gain-reduction LED's `on=` and `off=`; the mod window's `glass=`,
   `picture=`, `name=`, `font=` and `ink=` color);
 - a state part is the row's part's family and the state (`on`/`off`, `rest`/`pressed`, `lit`,
   a value); a held key shows `<family><state>_pressed` where the set has it (the routing keys);
@@ -3116,11 +3064,7 @@ with moved, doubled, missing and unknown controls and its own knob, fader, strip
 geometry, and a second SVG skin of a dummy part set and table in half the panel's units,
 through the same controller and renderer.
 
-**The plugin.** The plugin's editor runs the modern skin. Its own parts over the panel (the
-Sync and MIDI LEDs, the Bar display, the mode selector, the format's logo, the resize grip;
-section 20) are the plugin's overlay in `embed.rs`, drawn from the embedded part set after the
-skin: they are plugin chrome, not part of a skin, as the plugin has no other skin (task-267).
-The About window's wordmark is drawn from the embedded set too.
+The About window's wordmark is drawn from the embedded part set too.
 
 **The crossfade between the skins (task-268).** View > Classic / Modern fades the panel
 instead of cutting. The user chose the plain crossfade (2026-11-21) from preview videos of
@@ -3139,8 +3083,7 @@ three variants (pixelate and fade, pixelate then fade, fade only).
   controller needs no change. The desk and the shadows are the target skin's, they and the
   menu bar do not animate (the two panels have the same size and aspect).
 - The window repaints every frame while a fade runs; at its end the classic skin is dropped
-  after a fade to the modern one, and the frames are those of one skin alone. The plugin's
-  editor has no classic skin and no fade. Tests: `skin/fade.rs` (the alpha schedule: start,
+  after a fade to the modern one, and the frames are those of one skin alone. Tests: `skin/fade.rs` (the alpha schedule: start,
   end, monotonic, the ease, the reversal) and `tests/classic.rs`
   `the_switch_crossfades_both_ways_and_reverses_from_the_current_alpha`.
 
@@ -3154,26 +3097,23 @@ note, slide, accent, up, down and rest). The 808 editor is section 24 (task-280)
 is section 25 (task-281). The window's frame is shared with them (`crates/orb-ui/src/editor_frame.rs`:
 the placing, the header's controls, the grid's geometry and painting). Code:
 `crates/orb-ui/src/pattern_editor.rs`; tests: `crates/orb-ui/tests/pattern_editor.rs`, the unit
-tests of the module, and the removed plugin crate's `tests/editor.rs`
-`the_edit_menu_opens_the_303_pattern_editors_and_undoes_their_changes`.
+tests of the module.
 
 **The windows.** Two `egui::Window`s inside the main window, "303-1 Pattern Editor" and
 "303-2 Pattern Editor" (task-290; until then one "303 Pattern Editor" switched between the two
 303s), each fixed to its 303; either or both can be open, beside the 808's and the 909's.
-Each is draggable, closable (its title bar's close button), neither resizable nor collapsible;
-the same in the standalone app and the plugin's editor (no separate OS window).
+Each is draggable, closable (its title bar's close button), neither resizable nor collapsible
+(no separate OS window).
 - **Opening**: Edit > 303-1 Pattern Editor... and Edit > 303-2 Pattern Editor... (the
   ellipsis: it opens a window; round 3 of the user's review), and Ctrl+E (Cmd+E on macOS) with
-  that 303's row focused in the standalone app; the plugin's editor takes no keys (section 20),
-  so there it is the menu only. It opens on its 303's selected pattern. When it is open, the
+  that 303's row focused. It opens on its 303's selected pattern. When it is open, the
   item and the key bring it to the front and switch it to that pattern. The editor opened takes
   the focus of the Edit menu's pattern commands (section 18). Disabled without a song.
-- **Its place**: the standalone app saves each window's left top in `OpenRB-338.toml`
+- **Its place**: the app saves each window's left top in `OpenRB-338.toml`
   (`pattern_editor_303_1_pos = [x, y]` and `pattern_editor_303_2_pos`, points) when the user
   lets go of the window after moving it, and opens it there; with no saved place it opens
   centered (the one window's `pattern_editor_pos` of task-274, never in a release, is not
-  read). Whether a window is open is not saved.
-  The plugin neither reads nor writes the place. egui 0.37 places a window that moves by its
+  read). Whether a window is open is not saved. egui 0.37 places a window that moves by its
   title bar from its stored place after the first frame (`Window::current_pos` holds only for
   that frame), and its first frame measures it at a guessed 600 x 400 that pushes it left on a
   small window; so an opening sets the area's place directly for its first three frames.
@@ -3256,8 +3196,7 @@ sets its own. The write sets the one-level Undo (section 18) with the pattern's 
 named after the change: "Edit Pattern" (notes, pauses and flags), "Shift Pattern", "Transpose
 Pattern", "Clear Pattern", "Paste Pattern", "Pattern Length", "Pattern Shuffle". A drag is one
 change: its later writes keep the Undo of its first (a drag of the Length value too). A change
-that leaves the bytes as they were writes nothing and keeps the Undo. The plugin's Edit menu
-has the same Undo item, with no shortcut (its editor takes no keys; section 20).
+that leaves the bytes as they were writes nothing and keeps the Undo.
 
 **Pattern selection.**
 - **Both modes, one rule** (the user's change of 2026-11-26, task-314; before, song mode was
@@ -3289,18 +3228,17 @@ shuffle flag, the length, and 16 steps of 12 bytes, one per instrument in RBS or
 LT/LC, MT/MC, HT/HC, RS/CL, CP/MA, CB, CY, OH, CH, each 0 or 1). Code:
 `crates/orb-ui/src/drum_editor.rs` (the drum-grid editor, `Machine::Tr808`; the 909's,
 task-281, is `Machine::Tr909` on it, section 25) on `crates/orb-ui/src/editor_frame.rs`; tests:
-`crates/orb-ui/tests/drum_editor.rs`, the unit tests of the module, and the removed plugin crate's `tests/editor.rs`
-`the_edit_menu_opens_the_808_pattern_editor_and_undoes_its_changes`.
+`crates/orb-ui/tests/drum_editor.rs` and the unit tests of the module.
 
 **The window.** "808 Pattern Editor", an `egui::Window` like the 303's (draggable, closable,
-not resizable or collapsible; the same in the standalone app and the plugin), separate from it:
+not resizable or collapsible), separate from it:
 both can be open.
 - **Opening**: Edit > 808 Pattern Editor..., and Ctrl/Cmd+E with the TR-808 row focused (the
-  standalone app; the key opens the focused row's editor, section 18). It opens on the TR-808's
+  key opens the focused row's editor, section 18). It opens on the TR-808's
   active pattern; when it is open, the item and the key bring it to the front and switch it to
   that pattern. Disabled without a song.
-- **Its place**: saved as the 303's, under its own key `pattern_editor_808_pos` in `OpenRB-338.toml` (the
-  standalone app's only; section 17).
+- **Its place**: saved as the 303's, under its own key `pattern_editor_808_pos` in `OpenRB-338.toml`
+  (section 17).
 
 **Layout, top to bottom** (the app's palette, the same in both skins):
 - **The top row**: the bank buttons A B C D; the pattern number 1-8 between its left and right
@@ -3360,16 +3298,13 @@ CH, OH, CC, RC). A drum byte is 0 off, 1 low, 2 high, 3 flam (a low hit plus the
 retrigger); the AC byte is on/off with the stored "on" 2, as the panel writes it (section 7).
 Code: `crates/orb-ui/src/drum_editor.rs`, `Machine::Tr909` (with `Entry`, the entry switch);
 tests: `crates/orb-ui/tests/drum_editor.rs` (the `909` tests and
-`every_input_of_the_help_does_what_it_says`), the unit tests of the module, and the removed plugin crate's `tests/editor.rs`
-`the_edit_menu_opens_the_909_pattern_editor_and_undoes_its_changes`.
+`every_input_of_the_help_does_what_it_says`) and the unit tests of the module.
 
 **The window.** "909 Pattern Editor", its own window, separate from the 808's (the user's
-decision: both can be open), otherwise as the 808's: the same in the standalone app and the
-plugin, opened by Edit > 909 Pattern Editor... (under the 808's) and Ctrl/Cmd+E with the TR-909
-row focused (the standalone app; task-280 had the key open the 303 editor there until this
-editor), on the TR-909's active pattern, brought to the front and switched to it when open.
-In the plugin, which takes no keys (section 20), the menu item opens it. Its place is saved
-under `pattern_editor_909_pos` in `OpenRB-338.toml` (the standalone app's only, section 17).
+decision: both can be open), otherwise as the 808's: opened by Edit > 909 Pattern Editor... (under the 808's) and Ctrl/Cmd+E with the TR-909
+row focused (task-280 had the key open the 303 editor there until this editor), on the TR-909's active pattern, brought to the front and switched to it when open.
+Its place is saved
+under `pattern_editor_909_pos` in `OpenRB-338.toml` (section 17).
 
 **Layout**: the 808 editor's (section 24): the top row (bank, the pattern number between its
 arrows A1..D8, Copy, Paste, Clear, Length, Shuffle), then a second header row with the **entry

@@ -2,7 +2,7 @@ id	section	kind	part	x	y	w	h	params
 panel	-	panel	-	0	0	624	510
 wood_left.bg	wood_left	bg	wood_left	0	0	16	510
 wood_right.bg	wood_right	bg	wood_right	608	0	16	510
-transport.bg	transport	bg	bg_transport	16	0	592	50	plugin=bg_transport_plugin
+transport.bg	transport	bg	bg_transport	16	0	592	50
 logo	transport	logo	logo	474	1	134	48
 pattern1.bg	pattern1	bg	bg_pattern_1	16	50	70	115
 tb303_1.bg	tb303_1	bg	bg_tb303	90	50	366	115
@@ -387,44 +387,44 @@ tr808.legend	tr808	select	-	100	351	264	14	cells=100:22:0 count=12
 tr808.upper	tr808	select	-	168	323	106	12	cells=168:22:3 count=12
 tr909.legend	tr909	select	-	94	399	358	14	cells=94:22:0,116:42:1,326:21:6 count=12 open=1
 tr909.names	tr909	select	-	116	469	336	10	cells=94:22:0,116:42:1,326:21:6 count=12 open=1
-tr808.mark_AC	tr808	mark	sel808_AC	101.6	352.6	17.8	9.2	slot=0 lit=lit808_AC litsel=litsel808_AC
-tr808.mark_BD	tr808	mark	sel808_BD	123.6	352.6	17.8	9.2	slot=1 lit=lit808_BD litsel=litsel808_BD
-tr808.mark_SD	tr808	mark	sel808_SD	145.6	352.6	17.8	9.2	slot=2 lit=lit808_SD litsel=litsel808_SD
-tr808.mark_LT	tr808	mark	sel808_LT	167.6	352.6	17.8	9.2	slot=3 lit=lit808_LT litsel=litsel808_LT
-tr808.mark_MT	tr808	mark	sel808_MT	189.6	352.6	17.8	9.2	slot=4 lit=lit808_MT litsel=litsel808_MT
-tr808.mark_HT	tr808	mark	sel808_HT	211.6	352.6	17.8	9.2	slot=5 lit=lit808_HT litsel=litsel808_HT
-tr808.mark_RS	tr808	mark	sel808_RS	233.6	352.6	17.8	9.2	slot=6 lit=lit808_RS litsel=litsel808_RS
-tr808.mark_CP	tr808	mark	sel808_CP	255.6	352.6	17.8	9.2	slot=7 lit=lit808_CP litsel=litsel808_CP
-tr808.mark_CB	tr808	mark	sel808_CB	277.6	352.6	17.8	9.2	slot=8 lit=lit808_CB litsel=litsel808_CB
-tr808.mark_CY	tr808	mark	sel808_CY	299.6	352.6	17.8	9.2	slot=9 lit=lit808_CY litsel=litsel808_CY
-tr808.mark_OH	tr808	mark	sel808_OH	321.6	352.6	17.8	9.2	slot=10 lit=lit808_OH litsel=litsel808_OH
-tr808.mark_CH	tr808	mark	sel808_CH	343.6	352.6	17.8	9.2	slot=11 lit=lit808_CH litsel=litsel808_CH
-tr808.mark_LC	tr808	mark	sel808_LC	168.6	324.4	17.8	8.8	slot=0 upper=1 lit=lit808_LC litsel=litsel808_LC
-tr808.mark_MC	tr808	mark	sel808_MC	190.6	324.4	17.8	8.8	slot=1 upper=1 lit=lit808_MC litsel=litsel808_MC
-tr808.mark_HC	tr808	mark	sel808_HC	212.6	324.4	17.8	8.8	slot=2 upper=1 lit=lit808_HC litsel=litsel808_HC
-tr808.mark_CL	tr808	mark	sel808_CL	234.6	324.4	17.8	8.8	slot=3 upper=1 lit=lit808_CL litsel=litsel808_CL
-tr808.mark_MA	tr808	mark	sel808_MA	256.6	324.4	17.8	8.8	slot=4 upper=1 lit=lit808_MA litsel=litsel808_MA
-tr909.mark_AC	tr909	mark	sel909_AC	96.4	399.6	18.4	9.2	slot=0 lit=- litsel=sel909_AC
-tr909.mark_BD	tr909	mark	sel909_BD	116.8	399.6	39.6	9.2	slot=1 lit=- litsel=sel909_BD
-tr909.mark_SD	tr909	mark	sel909_SD	158.8	399.6	39.6	9.2	slot=2 lit=- litsel=sel909_SD
-tr909.mark_LT	tr909	mark	sel909_LT	200.8	399.6	39.6	9.2	slot=3 lit=- litsel=sel909_LT
-tr909.mark_MT	tr909	mark	sel909_MT	242.8	399.6	39.6	9.2	slot=4 lit=- litsel=sel909_MT
-tr909.mark_HT	tr909	mark	sel909_HT	284.8	399.6	39.6	9.2	slot=5 lit=- litsel=sel909_HT
-tr909.mark_RS	tr909	mark	sel909_RS	326.8	399.6	19.8	9.2	slot=6 lit=- litsel=sel909_RS
-tr909.mark_CP	tr909	mark	sel909_CP	346.6	399.6	19.8	9.2	slot=7 lit=- litsel=sel909_CP
-tr909.mark_CH	tr909	mark	sel909_CH	368.8	399.6	19.8	9.2	slot=8 lit=- litsel=sel909_CH
-tr909.mark_OH	tr909	mark	sel909_OH	388.6	399.6	19.8	9.2	slot=9 lit=- litsel=sel909_OH
-tr909.mark_CC	tr909	mark	sel909_CC	410.8	399.6	19.8	9.2	slot=10 lit=- litsel=sel909_CC
-tr909.mark_RC	tr909	mark	sel909_RC	430.6	399.6	19.8	9.2	slot=11 lit=- litsel=sel909_RC
-tr909.led_AC	tr909	mark	led909ac_on	97.5	446.3	5	5	slot=0 lit=led909ac_lit litsel=led909ac_lit
-tr909.led_BD	tr909	mark	led909_on	119.5	470.8	5	5	slot=1 lit=led909_lit litsel=led909_lit
-tr909.led_SD	tr909	mark	led909_on	161.5	470.8	5	5	slot=2 lit=led909_lit litsel=led909_lit
-tr909.led_LT	tr909	mark	led909_on	203.5	470.8	5	5	slot=3 lit=led909_lit litsel=led909_lit
-tr909.led_MT	tr909	mark	led909_on	245.5	470.8	5	5	slot=4 lit=led909_lit litsel=led909_lit
-tr909.led_HT	tr909	mark	led909_on	287.5	470.8	5	5	slot=5 lit=led909_lit litsel=led909_lit
-tr909.led_RS	tr909	mark	led909_on	329.5	470.8	5	5	slot=6 lit=led909_lit litsel=led909_lit
-tr909.led_CP	tr909	mark	led909_on	358.7	470.8	5	5	slot=7 lit=led909_lit litsel=led909_lit
-tr909.led_CH	tr909	mark	led909_on	371.5	470.8	5	5	slot=8 lit=led909_lit litsel=led909_lit
-tr909.led_OH	tr909	mark	led909_on	400.7	470.8	5	5	slot=9 lit=led909_lit litsel=led909_lit
-tr909.led_CC	tr909	mark	led909_on	413.5	470.8	5	5	slot=10 lit=led909_lit litsel=led909_lit
-tr909.led_RC	tr909	mark	led909_on	442.7	470.8	5	5	slot=11 lit=led909_lit litsel=led909_lit
+tr808.mark_AC	tr808	mark	sel808_AC	101.6	352.6	17.8	9.2	slot=0
+tr808.mark_BD	tr808	mark	sel808_BD	123.6	352.6	17.8	9.2	slot=1
+tr808.mark_SD	tr808	mark	sel808_SD	145.6	352.6	17.8	9.2	slot=2
+tr808.mark_LT	tr808	mark	sel808_LT	167.6	352.6	17.8	9.2	slot=3
+tr808.mark_MT	tr808	mark	sel808_MT	189.6	352.6	17.8	9.2	slot=4
+tr808.mark_HT	tr808	mark	sel808_HT	211.6	352.6	17.8	9.2	slot=5
+tr808.mark_RS	tr808	mark	sel808_RS	233.6	352.6	17.8	9.2	slot=6
+tr808.mark_CP	tr808	mark	sel808_CP	255.6	352.6	17.8	9.2	slot=7
+tr808.mark_CB	tr808	mark	sel808_CB	277.6	352.6	17.8	9.2	slot=8
+tr808.mark_CY	tr808	mark	sel808_CY	299.6	352.6	17.8	9.2	slot=9
+tr808.mark_OH	tr808	mark	sel808_OH	321.6	352.6	17.8	9.2	slot=10
+tr808.mark_CH	tr808	mark	sel808_CH	343.6	352.6	17.8	9.2	slot=11
+tr808.mark_LC	tr808	mark	sel808_LC	168.6	324.4	17.8	8.8	slot=0 upper=1
+tr808.mark_MC	tr808	mark	sel808_MC	190.6	324.4	17.8	8.8	slot=1 upper=1
+tr808.mark_HC	tr808	mark	sel808_HC	212.6	324.4	17.8	8.8	slot=2 upper=1
+tr808.mark_CL	tr808	mark	sel808_CL	234.6	324.4	17.8	8.8	slot=3 upper=1
+tr808.mark_MA	tr808	mark	sel808_MA	256.6	324.4	17.8	8.8	slot=4 upper=1
+tr909.mark_AC	tr909	mark	sel909_AC	96.4	399.6	18.4	9.2	slot=0
+tr909.mark_BD	tr909	mark	sel909_BD	116.8	399.6	39.6	9.2	slot=1
+tr909.mark_SD	tr909	mark	sel909_SD	158.8	399.6	39.6	9.2	slot=2
+tr909.mark_LT	tr909	mark	sel909_LT	200.8	399.6	39.6	9.2	slot=3
+tr909.mark_MT	tr909	mark	sel909_MT	242.8	399.6	39.6	9.2	slot=4
+tr909.mark_HT	tr909	mark	sel909_HT	284.8	399.6	39.6	9.2	slot=5
+tr909.mark_RS	tr909	mark	sel909_RS	326.8	399.6	19.8	9.2	slot=6
+tr909.mark_CP	tr909	mark	sel909_CP	346.6	399.6	19.8	9.2	slot=7
+tr909.mark_CH	tr909	mark	sel909_CH	368.8	399.6	19.8	9.2	slot=8
+tr909.mark_OH	tr909	mark	sel909_OH	388.6	399.6	19.8	9.2	slot=9
+tr909.mark_CC	tr909	mark	sel909_CC	410.8	399.6	19.8	9.2	slot=10
+tr909.mark_RC	tr909	mark	sel909_RC	430.6	399.6	19.8	9.2	slot=11
+tr909.led_AC	tr909	mark	led909ac_on	97.5	446.3	5	5	slot=0
+tr909.led_BD	tr909	mark	led909_on	119.5	470.8	5	5	slot=1
+tr909.led_SD	tr909	mark	led909_on	161.5	470.8	5	5	slot=2
+tr909.led_LT	tr909	mark	led909_on	203.5	470.8	5	5	slot=3
+tr909.led_MT	tr909	mark	led909_on	245.5	470.8	5	5	slot=4
+tr909.led_HT	tr909	mark	led909_on	287.5	470.8	5	5	slot=5
+tr909.led_RS	tr909	mark	led909_on	329.5	470.8	5	5	slot=6
+tr909.led_CP	tr909	mark	led909_on	358.7	470.8	5	5	slot=7
+tr909.led_CH	tr909	mark	led909_on	371.5	470.8	5	5	slot=8
+tr909.led_OH	tr909	mark	led909_on	400.7	470.8	5	5	slot=9
+tr909.led_CC	tr909	mark	led909_on	413.5	470.8	5	5	slot=10
+tr909.led_RC	tr909	mark	led909_on	442.7	470.8	5	5	slot=11

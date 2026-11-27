@@ -41,76 +41,9 @@ use orb_engine::seq::Event as TrackEvent;
 use orb_engine::song::{Device, Song};
 use orb_engine::tables::Tables;
 use orb_engine::tr909;
-use orb_player::{Audio, CALL_FRAMES, Command, LiveBlock, Player, Preview, Snapshot, Tracks};
+use orb_player::{Audio, CALL_FRAMES, Command, LiveBlock, Player, Preview};
 
 use crate::model::{Event, Panel, Step303};
-
-/// What the link drives: the UI half of a player. The standalone app's is its own
-/// [`orb_player::Player`]; the plugin's editor (the removed plugin crate, task-201) has one that
-/// turns the panel's commands into the plugin's host parameters and calls.
-pub trait Port: Send {
-    /// Queues a command; a full queue gives it back.
-    fn send(&mut self, c: Command) -> Result<(), Command>;
-    /// The engine's state after the last call.
-    fn snapshot(&mut self) -> &Snapshot;
-    /// The open song's tracks as the callback last published them.
-    fn tracks(&mut self) -> &Tracks;
-    /// Whether [`Port::tracks`] are the song's (recording): false where nothing records them.
-    fn records(&self) -> bool {
-        true
-    }
-    /// Drops what the callback let go of.
-    fn collect_garbage(&mut self);
-    /// Builds a song's engine on the player's process globals.
-    fn build(
-        &self,
-        song: &Song,
-        samples: Option<Arc<SampleSet>>,
-    ) -> Result<Box<Engine>, LoadRefused>;
-    /// Builds a new empty song's engine.
-    fn build_new(&self, samples: Option<Arc<SampleSet>>) -> Box<Engine>;
-    /// The drum machines of the newest song take `samples` (song msg 19).
-    fn set_mod(&mut self, samples: Arc<SampleSet>) -> Result<(), Command>;
-    /// The engine frames after which a snapshot can show the commands just sent: one call of
-    /// the player ([`CALL_FRAMES`]); more where they reach the engine by a longer way.
-    fn follow_frames(&self) -> u64 {
-        CALL_FRAMES as u64
-    }
-}
-
-impl Port for Player {
-    fn send(&mut self, c: Command) -> Result<(), Command> {
-        Player::send(self, c)
-    }
-
-    fn snapshot(&mut self) -> &Snapshot {
-        Player::snapshot(self)
-    }
-
-    fn tracks(&mut self) -> &Tracks {
-        Player::tracks(self)
-    }
-
-    fn collect_garbage(&mut self) {
-        Player::collect_garbage(self);
-    }
-
-    fn build(
-        &self,
-        song: &Song,
-        samples: Option<Arc<SampleSet>>,
-    ) -> Result<Box<Engine>, LoadRefused> {
-        Player::build(self, song, samples)
-    }
-
-    fn build_new(&self, samples: Option<Arc<SampleSet>>) -> Box<Engine> {
-        Player::build_new(self, samples)
-    }
-
-    fn set_mod(&mut self, samples: Arc<SampleSet>) -> Result<(), Command> {
-        Player::set_mod(self, samples)
-    }
-}
 
 /// The devices of the four pattern sections (rows).
 pub const ROW_DEVICES: [Device; 4] = [
@@ -420,7 +353,7 @@ fn new_song_knobs(
 
 /// The panel's player link.
 pub struct Link {
-    player: Box<dyn Port>,
+    player: Player,
     controls: HashMap<String, (Device, u8)>,
     /// The value each knob has in a new empty song ([`Link::knob_default`]).
     knob_defaults: HashMap<String, u8>,
@@ -501,24 +434,12 @@ impl Link {
     /// callback.
     pub fn new(tables: Arc<Tables>, samples: Option<Arc<SampleSet>>) -> (Link, Audio) {
         let (player, mut audio) = Player::new(tables, samples.clone());
-        let link = Self::of(Box::new(player), &mut audio, samples);
+        let link = Self::of(player, &mut audio, samples);
         (link, audio)
     }
 
-    /// A link to `port` (the plugin's editor, task-201), with the panel's views of a new empty
-    /// song until [`Link::reset_view`] gives it the open one. `tables` and `samples` build that
-    /// song, on a player of its own, for the knobs' new-song values.
-    pub fn with_port(
-        port: Box<dyn Port>,
-        tables: Arc<Tables>,
-        samples: Option<Arc<SampleSet>>,
-    ) -> Link {
-        let (_, mut audio) = Player::new(tables, samples.clone());
-        Self::of(port, &mut audio, samples)
-    }
-
     /// A link to `player`, whose new empty song `audio` holds.
-    fn of(player: Box<dyn Port>, audio: &mut Audio, samples: Option<Arc<SampleSet>>) -> Link {
+    fn of(player: Player, audio: &mut Audio, samples: Option<Arc<SampleSet>>) -> Link {
         let kit = samples;
         // the new empty song's patterns, as its constructor made them
         let patterns = std::array::from_fn(|c| {
@@ -551,33 +472,6 @@ impl Link {
             shown_gr: None,
             deferred: None,
         }
-    }
-
-    /// Shows a song that the port has loaded by itself (the plugin's editor, task-201: opened,
-    /// after File > Open or New, after the host restored a state): the panel is made new and
-    /// takes `patterns` (the four pattern arrays) and the engine's values of `snapshot`, a
-    /// snapshot of that song; the drum samples are `samples`. The panel's pending events are
-    /// sent first. The engine's values are then taken again from the port's snapshots only
-    /// after [`Port::follow_frames`], when they show the song.
-    pub fn reset_view(
-        &mut self,
-        patterns: [Vec<u8>; 4],
-        snapshot: &Snapshot,
-        samples: Option<Arc<SampleSet>>,
-        panel: &mut Panel,
-    ) {
-        self.forward(panel);
-        self.kit = samples;
-        self.patterns = patterns;
-        self.shown = [None; 4];
-        self.deferred = None;
-        self.saved = None;
-        self.recorded_at = None;
-        *panel = Panel::new();
-        let live = |d: Device, i: usize| snapshot.live[d as usize].as_slice().get(i).copied();
-        self.follow_values(panel, snapshot, &live);
-        self.fill_views(panel);
-        self.flush_marked();
     }
 
     /// The value (0..=127) the knob `id` has in a new empty song, which a double click sets.
@@ -647,8 +541,8 @@ impl Link {
         self.mark
     }
 
-    pub fn player(&mut self) -> &mut dyn Port {
-        self.player.as_mut()
+    pub fn player(&mut self) -> &mut Player {
+        &mut self.player
     }
 
     /// The pattern arrays as the link knows them (the song's, with the panel's edits).
@@ -1230,7 +1124,7 @@ impl Link {
     fn flush_marked(&mut self) {
         let before = self.player.snapshot().frames;
         self.flush();
-        self.mark = before + self.player.follow_frames();
+        self.mark = before + CALL_FRAMES as u64;
     }
 
     // ---- in -----------------------------------------------------------------------------
@@ -1239,9 +1133,6 @@ impl Link {
     /// A stop's prune changes `loaded` (what Save writes) but not `recorded_revision`, so it
     /// does not mark an unrecorded song modified: it never changes playback.
     pub fn refresh_tracks(&mut self) {
-        if !self.player.records() {
-            return;
-        }
         let t = self.player.tracks();
         let at = Some((t.generation, t.revision));
         if t.generation >= self.tracks_from && at != self.loaded_at {
@@ -1291,10 +1182,9 @@ impl Link {
         }
         // the compressor's gain byte, which the gain-reduction LEDs show (`model::gr_lit`)
         panel.gr_byte = live(Device::Compressor, 3).unwrap_or(0);
-        // a section whose pattern gate is closed (the plugin's Gate Pattern Mode) lights no step
         let step = |d: Device, i: usize| {
             live(d, i)
-                .filter(|&b| s.playing && b < 16 && !s.gate_closed[d as usize - 1])
+                .filter(|&b| s.playing && b < 16)
                 .map(|b| b as usize)
         };
         panel.playing_step303 = [step(Device::Tb303_1, 9), step(Device::Tb303_2, 9)];

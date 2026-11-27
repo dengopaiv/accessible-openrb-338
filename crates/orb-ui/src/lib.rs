@@ -22,11 +22,8 @@ pub mod crash;
 pub mod document;
 pub mod drum_editor;
 pub mod editor_frame;
-pub mod embed;
 pub mod error_box;
-/// The standalone window's graphics adapter rule (task-217): eframe's wgpu setup, so only with
-/// the `app` feature.
-#[cfg(feature = "app")]
+/// The window's graphics adapter rule (task-217): eframe's wgpu setup.
 pub mod graphics;
 pub mod info;
 pub mod key_help;
@@ -43,7 +40,6 @@ pub mod palette;
 pub mod pattern_editor;
 pub mod pattern_json;
 pub mod portable;
-pub mod routing_window;
 pub mod runlog;
 pub mod screen_reader;
 pub mod session;

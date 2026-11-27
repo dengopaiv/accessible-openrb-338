@@ -596,10 +596,7 @@ impl App {
             // that is no pattern of this device is answered on the status line
             paste: true,
         };
-        let plugin = self.is_plugin();
-        let saved = if plugin {
-            None
-        } else if k == 0 {
+        let saved = if k == 0 {
             self.settings.pattern_editor_303_1_pos
         } else {
             self.settings.pattern_editor_303_2_pos
@@ -613,7 +610,6 @@ impl App {
             title: title(k),
             saved,
             guess: vec2(480.0, 340.0),
-            keep: !plugin,
         };
         let out = frame::show_window(ctx, spec, &mut win, |ui| {
             length_drag = window_ui(ui, editor, &shown, &mut acts);

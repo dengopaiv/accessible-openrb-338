@@ -177,9 +177,8 @@ fn the_minimum_is_the_widest_and_highest_window_plus_the_margins() {
     }
 }
 
-/// Windows that grow with their content stay inside a window as small as the minimum and as
-/// short as the one of a plugin host that gives less than the minimum height: the audio window
-/// scrolls what does not fit.
+/// Windows that grow with their content stay inside a window as small as the minimum and in
+/// one shorter than the minimum height: the audio window scrolls what does not fit.
 #[test]
 fn the_audio_window_is_bounded_by_the_window() {
     for size in [
