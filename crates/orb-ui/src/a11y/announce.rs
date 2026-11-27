@@ -134,7 +134,7 @@ impl KeyState {
     }
 }
 
-/// The spoken name of row `r` (0..=3): "Bass Line 1", ..., "TR-909".
+/// The spoken name of row `r` (0..=3): "303-1", ..., "909".
 fn row_name(r: usize) -> &'static str {
     names::section_name(&format!("pattern{}", r + 1)).unwrap_or("Row")
 }
@@ -206,7 +206,7 @@ pub fn row_of_section(section: &str) -> Option<usize> {
     (0..4).find(|&r| row_name(r) == name)
 }
 
-/// F2: the pattern row of `r`: "Bass Line 1, pattern B3, 16 steps, shuffle off" (", pattern
+/// F2: the pattern row of `r`: "303-1, pattern B3, 16 steps, shuffle off" (", pattern
 /// section off" when the row's power switch is off). Tasks 190 and 191 add the synths' and the
 /// drums' steps.
 pub fn pattern_readout(panel: &Panel, r: usize) -> String {
@@ -342,7 +342,7 @@ impl App {
 }
 
 /// F2 on a drum machine's row (2 the 808, 3 the 909; task-191): the pattern row, then each
-/// instrument that has steps with its steps ([`grid::drum_readout`]): "TR-808, pattern A1, 16
+/// instrument that has steps with its steps ([`grid::drum_readout`]): "808, pattern A1, 16
 /// steps, shuffle off. Bass drum: 1, 5, 9, 13. Closed hi-hat: 3, 7, 11, 15". The steps are
 /// those of the pattern the grid edits; when playback has moved the row to another pattern
 /// (decision task-209), that is said before them: "Grid on pattern A1: Bass drum: 1". None for
@@ -423,7 +423,7 @@ mod tests {
         let a = state(&p);
         assert_eq!(
             key_effect(&b, &a, None).as_deref(),
-            Some("Stopped, recording off, TR-808 pattern A4")
+            Some("Stopped, recording off, 808 pattern A4")
         );
         assert_eq!(key_effect(&a, &a, None), None);
     }
@@ -438,7 +438,7 @@ mod tests {
         let tempo = Some(hit_id_of("display", "transport.tempo"));
         assert_eq!(
             key_effect(&b, &a, tempo).as_deref(),
-            Some("Bass Line 1 pattern A2")
+            Some("303-1 pattern A2")
         );
         let sel = Some(drive::selector_id(0));
         assert_eq!(key_effect(&b, &a, sel).as_deref(), Some("Tempo 139 BPM"));
@@ -472,7 +472,7 @@ mod tests {
         let mut p = Panel::new();
         assert_eq!(
             pattern_readout(&p, 0),
-            "Bass Line 1, pattern A1, 16 steps, shuffle off"
+            "303-1, pattern A1, 16 steps, shuffle off"
         );
         p.rows[3].pattern = 10;
         p.rows[3].len[10] = 1;
@@ -480,7 +480,7 @@ mod tests {
         p.rows[3].enabled = false;
         assert_eq!(
             pattern_readout(&p, 3),
-            "TR-909, pattern B3, 1 step, shuffle on, pattern section off"
+            "909, pattern B3, 1 step, shuffle on, pattern section off"
         );
         assert_eq!(transport_readout(&p), "Stopped, 140 BPM, pattern mode");
         p.press("transport.mode", 0.0);

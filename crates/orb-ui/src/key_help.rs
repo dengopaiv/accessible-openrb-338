@@ -301,7 +301,7 @@ fn screen_reader_group(is_mac: bool) -> Group {
             sr_row(
                 "F6 / Shift+F6",
                 "The first control of the next / previous section (wraps). The sections: \
-                 Transport, Bass Line 1, Bass Line 2, TR-808, TR-909 (each with its pattern \
+                 Transport, 303-1, 303-2, 808, 909 (each with its pattern \
                  row and mixer channel), Master and compressor, PCF, Delay, Distortion",
                 vec![
                     sr(Key::F6, No, SrWant::Section(false)),
@@ -367,7 +367,7 @@ fn screen_reader_group(is_mac: bool) -> Group {
             sr_row(
                 "Space",
                 "Press or toggle the focused button, toggle or switch (not Play / Stop). On a \
-                 drum grid: set the step as a click does; on the TR-909 with Ctrl, Alt or \
+                 drum grid: set the step as a click does; on the 909 with Ctrl, Alt or \
                  Ctrl+Alt as the mouse's (a note, an accent, a flam); Shift+Space is an \
                  accent too, without Windows' system menu that Alt+Space also opens",
                 vec![sr(Key::Space, Any, SrWant::Activate)],

@@ -109,7 +109,7 @@ fn the_step_editor_is_a_focusable_slider_in_its_section() {
         assert_eq!(a11y::value(n), Some("Step 1 of 16: rest, C"));
         assert!(a11y::supports(n, Action::Focus));
         let (_, g) = t.parent(id).expect("a parent");
-        let section = format!("Bass Line {}", k + 1);
+        let section = format!("303-{}", k + 1);
         assert_eq!(a11y::name(g), Some(section.as_str()));
     }
     // Tab reaches it from the knobs before it
@@ -220,8 +220,8 @@ fn a_pattern_programmed_by_keys_equals_the_mouse_s() {
     assert_eq!(a.app.panel.synth[0].patterns, m.app.panel.synth[0].patterns);
 
     // equal text: F2 on both (the mouse's app in screen reader mode now, nothing focused, the
-    // row focus on Bass Line 1 from the clicks)
-    let text = "Bass Line 1, pattern A1, 16 steps, shuffle off. 1 E accent, 2 rest, \
+    // row focus on 303-1 from the clicks)
+    let text = "303-1, pattern A1, 16 steps, shuffle off. 1 E accent, 2 rest, \
                 3 D sharp octave up slide, 4 high C octave down, 5 rest, 6 rest, 7 rest, \
                 8 rest, 9 rest, 10 rest, 11 rest, 12 rest, 13 rest, 14 rest, 15 rest, \
                 16 G sharp";
@@ -259,16 +259,16 @@ fn programming_keys_with_the_focus_elsewhere_are_announced() {
         press(&mut a, Key::Space).as_deref(),
         Some("Pattern A1 cleared")
     );
-    // F2 on the second Bass Line, its pattern in its length
+    // F2 on the second 303, its pattern in its length
     a.app.panel.rows[1].len[0] = 2;
     assert_eq!(
         press(&mut a, Key::F2).as_deref(),
-        Some("Bass Line 2, pattern A1, 2 steps, shuffle off. 1 rest, 2 rest")
+        Some("303-2, pattern A1, 2 steps, shuffle off. 1 rest, 2 rest")
     );
     // a drum machine's F2 has no 303 steps
     focus(&mut a, a11y::hit_id("knob", "tr808.bd_level"));
     let t = press(&mut a, Key::F2).unwrap();
-    assert!(t.starts_with("TR-808, pattern A1"), "{t}");
+    assert!(t.starts_with("808, pattern A1"), "{t}");
 }
 
 /// The review's case: playback moving the row to another pattern (`Panel::adopt_pattern`, as
@@ -299,7 +299,7 @@ fn playback_moving_the_pattern_is_silent() {
 
         // F2 is input: on, the editor has moved to A4; off, F2 says where the editor is
         let f2 = press(&mut a, Key::F2).unwrap();
-        let row = "Bass Line 1, pattern A4, 16 steps, shuffle off. ";
+        let row = "303-1, pattern A4, 16 steps, shuffle off. ";
         if follows {
             assert!(f2.starts_with(&format!("{row}1 G, 2 rest")), "{f2}");
             assert_eq!(editor(&a, 0), "Step 1 of 16: G");

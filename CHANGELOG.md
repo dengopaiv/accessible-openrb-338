@@ -9,6 +9,7 @@ the same as in OpenRB-338 and the original ReBirth in every release below.
 
 This section holds the changes made since the last release.
 
+- **Screen reader names**: NVDA now says 808, 909, 303-1 and 303-2 for the sections and controls, and the Keyboard Shortcuts help says the same, as the rest of the app does. They were TR-808, TR-909 and Bass Line 1 and 2.
 - **Edit > Initialize Song from Pattern Mode**, in screen reader mode: the question takes the
   focus on Initialize and is read with its text; Tab reaches Cancel, and the focus goes back
   to where it was after the answer.

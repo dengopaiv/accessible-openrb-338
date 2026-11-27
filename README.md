@@ -85,8 +85,8 @@ number after a knob's physical value ("1.24 kilohertz, 64"). Options > Step Edit
 Playback and Options > Pitch Keys Make Notes are explained under programming a pattern. F1 opens Help > Keyboard Shortcuts, which
 lists the keys of the mode that are in force and reads line by line (Tab walks the lines).
 
-**The sections.** The panel is nine sections: Transport, Bass Line 1, Bass Line 2, TR-808,
-TR-909 (each machine with its pattern selector and its mixer channel), Master and
+**The sections.** The panel is nine sections: Transport, 303-1, 303-2, 808,
+909 (each machine with its pattern selector and its mixer channel), Master and
 compressor, PCF, Delay and Distortion. F6 and Shift+F6 go to the first control of the next
 and the previous section; Tab and Shift+Tab move control by control and wrap around. The menu
 bar is reached with F10 (or Alt alone). Entering a machine's section gives that machine the
@@ -123,7 +123,7 @@ Knobs and faders are spoken in physical units, such as "350 milliseconds" or "mi
 decibels". Messages ("Saved ...", "Exported ...", "Mod ...") are spoken when they happen.
 Nothing is spoken by itself while the music plays.
 
-**Programming a 303 pattern.** Press F6 until "Bass Line 1" (or 2) and choose the pattern
+**Programming a 303 pattern.** Press F6 until "303-1" (or 303-2) and choose the pattern
 on its first control, the pattern selector (Up and Down). Tab to "Step editor"; it says the
 step and what it holds, for example "Step 1 of 16: rest, C". On each step, a pitch key sets
 the note (`C` is C, `F` C sharp, `V` D, and so on up to `/` for high C) and leaves a rest a
@@ -135,10 +135,10 @@ and F2 reads the whole pattern back. F5 plays it. The step editor stays on its o
 while a song plays and says nothing when the song moves on; Options > Step Editor Follows
 Playback makes it go along with the song at your next key instead, still silently.
 
-**Programming a drum pattern.** F6 to "TR-808" or "TR-909" and choose the pattern; Tab to
+**Programming a drum pattern.** F6 to "808" or "909" and choose the pattern; Tab to
 "Steps". It says the cell under the cursor, "Bass drum, step 1, off". Up and Down choose the
 instrument (Accent first), Left and Right the step, Home and End the first and the last step.
-Space sets the step. On the TR-909 it goes round off, note, accent as a mouse click does;
+Space sets the step. On the 909 it goes round off, note, accent as a mouse click does;
 Ctrl+Space sets a plain note, Shift+Space an accent and Ctrl+Alt+Space a flam (Alt+Space is
 an accent too, but Windows then also opens the window's system menu: Escape closes it). The
 cell says its new state. F2 reads the pattern back, each instrument with its steps.

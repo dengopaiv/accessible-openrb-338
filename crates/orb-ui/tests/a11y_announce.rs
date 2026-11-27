@@ -177,9 +177,9 @@ fn what_an_original_key_did_is_announced() {
     ctrl(&mut h, Key::G);
     assert_eq!(
         press(&mut h, Key::Num2).as_deref(),
-        Some("Bass Line 1 pattern A2")
+        Some("303-1 pattern A2")
     );
-    assert_eq!(press(&mut h, Key::X).as_deref(), Some("TR-909 pattern A2"));
+    assert_eq!(press(&mut h, Key::X).as_deref(), Some("909 pattern A2"));
     assert_eq!(press(&mut h, Key::Plus).as_deref(), Some("Tempo 141 BPM"));
     assert_eq!(press(&mut h, Key::Minus).as_deref(), Some("Tempo 140 BPM"));
     // Record and the bar work in song mode
@@ -214,7 +214,7 @@ fn the_focused_control_is_left_to_the_screen_reader() {
     // but a pattern key still says what it did
     assert_eq!(
         press(&mut h, Key::Num3).as_deref(),
-        Some("Bass Line 1 pattern A3")
+        Some("303-1 pattern A3")
     );
     // the focus on row 1's pattern selector: its pattern key is silent
     h.send(drive::selector_id(0), Action::Focus, None);
@@ -269,7 +269,7 @@ fn the_read_out_keys_work_with_a_window_open() {
     // F2 reads the row focus's pattern (a 303's: its steps follow, task-190)
     let f2 = press(&mut h, Key::F2).unwrap();
     assert!(
-        f2.starts_with("Bass Line 1, pattern A1, 16 steps, shuffle off. 1 rest, 2 rest"),
+        f2.starts_with("303-1, pattern A1, 16 steps, shuffle off. 1 rest, 2 rest"),
         "{f2}"
     );
 }
@@ -377,12 +377,12 @@ fn the_read_out_keys_on_a_known_song() {
     let f2 = press(&mut h, Key::F2).unwrap();
     let f3 = press(&mut h, Key::F3).unwrap();
     let f4 = press(&mut h, Key::F4).unwrap();
-    // the song's Bass Line 1 section is switched off; its loop is off; the compressor's LEDs
+    // the song's 303-1 section is switched off; its loop is off; the compressor's LEDs
     // hold the value of the load's engine calls
     // (a 303's steps follow since task-190)
     assert_eq!(
         f2,
-        "Bass Line 1, pattern A6, 16 steps, shuffle off, pattern section off. \
+        "303-1, pattern A6, 16 steps, shuffle off, pattern section off. \
          1 A sharp octave down, 2 A sharp octave down, 3 C octave down octave up, 4 C, \
          5 C octave down, 6 C, 7 D sharp, 8 D sharp, 9 C accent, 10 C accent, \
          11 C octave down slide, 12 C octave down, 13 C octave up slide, 14 C octave up slide, \
@@ -406,7 +406,7 @@ fn the_read_out_keys_on_a_known_song() {
     let f2 = press(&mut h, Key::F2).unwrap();
     // with the drums' steps (task-191): the song's 909 pattern B5
     assert!(
-        f2.starts_with("TR-909, pattern B5, 16 steps, shuffle off. Accent: 1, 3, 5, "),
+        f2.starts_with("909, pattern B5, 16 steps, shuffle off. Accent: 1, 3, 5, "),
         "{f2}"
     );
     assert!(f2.contains(". Bass drum: 1 accent, 9 accent. "), "{f2}");

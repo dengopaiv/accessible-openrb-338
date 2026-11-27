@@ -285,7 +285,7 @@ fn the_grid_node_its_cells_and_the_keys() {
     // 12 rows by 16 steps, the grid's children
     assert_eq!(g.children().len(), 12 * 16);
     let (parent, _) = t.parent(gid.accesskit_id()).unwrap();
-    assert_eq!(t.node(parent).and_then(a11y::name), Some("TR-808"));
+    assert_eq!(t.node(parent).and_then(a11y::name), Some("808"));
     // the active cell: the selected instrument (Bass drum at start), step 1
     let active = |h: &AppTree| {
         let g = h.tree().by_id(gid).unwrap();
@@ -375,7 +375,7 @@ fn steps_past_the_pattern_length_are_not_offered() {
     key(&mut h, Key::F2, Modifiers::NONE);
     assert_eq!(
         h.app.announcer.text(),
-        Some("TR-909, pattern A1, 6 steps, shuffle off. Bass drum: 3")
+        Some("909, pattern A1, 6 steps, shuffle off. Bass drum: 3")
     );
 }
 
@@ -396,7 +396,7 @@ fn f2_reads_a_known_drum_pattern() {
     assert_eq!(
         h.app.announcer.text(),
         Some(
-            "TR-808, pattern A1, 16 steps, shuffle off. Accent: 9. Bass drum: 1, 5, 9, 13. \
+            "808, pattern A1, 16 steps, shuffle off. Accent: 9. Bass drum: 1, 5, 9, 13. \
              Closed hi-hat: 3, 7, 11, 15"
         )
     );
@@ -421,7 +421,7 @@ fn f2_reads_a_known_drum_pattern() {
     assert_eq!(
         h.app.announcer.text(),
         Some(
-            "TR-909, pattern A1, 16 steps, shuffle off. Accent: 5. Bass drum: 1, 5 accent. \
+            "909, pattern A1, 16 steps, shuffle off. Accent: 5. Bass drum: 1, 5 accent. \
              Snare drum: 5 flam"
         )
     );
@@ -495,7 +495,7 @@ fn calls(audio: &mut Audio, n: usize) {
     }
 }
 
-/// The TR-808 steps the link sent to the engine since the last call, as `[pattern, step,
+/// The 808 steps the link sent to the engine since the last call, as `[pattern, step,
 /// instrument, value]` (the device's sub 62, `Link::drum_step`).
 fn sent808(h: &mut AppTree) -> Vec<[u8; 4]> {
     let log = h.app.link.as_mut().unwrap().log.as_mut().unwrap();
@@ -576,7 +576,7 @@ fn playback_moving_the_pattern_is_silent_on_a_grid() {
         // F2 is input: on, the grid has moved to A2; off, F2 says where the grid is
         key(&mut h, Key::F2, Modifiers::NONE);
         let f2 = h.app.announcer.text().unwrap().to_string();
-        let row = "TR-808, pattern A2, 16 steps, shuffle off. ";
+        let row = "808, pattern A2, 16 steps, shuffle off. ";
         if follows {
             assert_eq!(f2, format!("{row}Bass drum: 3"));
             assert_eq!(active(&h, gid), "Bass drum, step 1, off");

@@ -758,7 +758,7 @@ fn enter_follows_the_section() {
     a.key(Key::Enter);
     assert!(a.app.panel.transport.playing);
     a.key(Key::F5);
-    // in Bass Line 1's section: its Step, though Ctrl+Down moved the row focus away
+    // in 303-1's section: its Step, though Ctrl+Down moved the row focus away
     focus(&mut a, a11y::hit_id("knob", "tb303_1.cutoff"));
     key_with(&mut a, Key::ArrowDown, Modifiers::CTRL);
     assert_eq!(a.app.panel.focus, 1);
@@ -770,7 +770,7 @@ fn enter_follows_the_section() {
 }
 
 /// The order of the first and last stops of two sections, as docs/accessibility.md 3.2 lists
-/// them (the transport) and as the panel shows them (Bass Line 1: the pattern row first, the
+/// them (the transport) and as the panel shows them (303-1: the pattern row first, the
 /// mixer channel last).
 #[test]
 fn the_order_of_two_sections_by_name() {

@@ -1,8 +1,8 @@
 //! The sections of the panel and the focus order of screen reader mode (task-188, A11Y-4,
 //! docs/accessibility.md 3.2, docs/ui_spec.md 20.2).
 //!
-//! The panel is nine sections, in this order: Transport, the two Bass Lines, the TR-808, the
-//! TR-909 (each machine with its pattern row and its mixer channel, decision A11Y-D3), Master
+//! The panel is nine sections, in this order: Transport, the two 303s, the 808, the
+//! 909 (each machine with its pattern row and its mixer channel, decision A11Y-D3), Master
 //! and compressor, PCF, Delay and Distortion. In screen reader mode each section is a Group node
 //! with its name, F6 and Shift+F6 go to the first control of the next or previous section, and
 //! Tab and Shift+Tab go through the controls of the whole panel in this order, wrapping at its
@@ -16,10 +16,10 @@ use crate::layout::Ctl;
 /// The spoken sections, in the navigation order (`names::section_name` gives each part's).
 pub const SECTIONS: [&str; 9] = [
     "Transport",
-    "Bass Line 1",
-    "Bass Line 2",
-    "TR-808",
-    "TR-909",
+    "303-1",
+    "303-2",
+    "808",
+    "909",
     "Master and compressor",
     "PCF",
     "Delay",
@@ -53,7 +53,7 @@ pub struct Stop {
     pub id: egui::Id,
 }
 
-/// The index in [`SECTIONS`] of a layout section (`mixer2` -> 2, Bass Line 2).
+/// The index in [`SECTIONS`] of a layout section (`mixer2` -> 2, 303-2).
 pub fn section_index(layout_section: &str) -> Option<usize> {
     let name = names::section_name(layout_section)?;
     SECTIONS.iter().position(|s| *s == name)

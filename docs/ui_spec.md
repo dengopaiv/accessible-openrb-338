@@ -2274,7 +2274,7 @@ The tree exists only while a screen reader or another UI Automation client asks 
 - **Names** follow this spec's tables, spelled out for speech: "Cutoff", "Bass drum level",
   "Key C sharp", "Channel 3 on" (the mixer's on/off button, lit while the channel plays),
   "Step accent" (the 303's accent button, beside the "Accent" knob). Each part also has a
-  spoken section: "Transport", "Bass Line 1", "Bass Line 2", "TR-808", "TR-909" (each with its
+  spoken section: "Transport", "303-1", "303-2", "808", "909" (each with its
   pattern section and its mixer channel, decision A11Y-D3), "Master and compressor", "PCF",
   "Delay", "Distortion". No two parts of one spoken section share a name (a unit test).
 - **Roles.** Knob and fader: Slider. Toggle: CheckBox. Radio (the PCF and Comp switches) and
@@ -2366,8 +2366,8 @@ A11Y-4 of docs/accessibility_plan.md; `crates/orb-ui/src/a11y/nav.rs`, tests
 
 - **Sections.** The panel's controls are drawn into nine child `Ui`s, one per section, whose
   nodes have the role Group and the section's name (`nav::group`, egui's
-  `UiBuilder::accessibility_role` / `accessibility_label`): Transport, Bass Line 1, Bass Line 2,
-  TR-808, TR-909 (each with its pattern row and its mixer channel, decision A11Y-D3), Master and
+  `UiBuilder::accessibility_role` / `accessibility_label`): Transport, 303-1, 303-2,
+  808, 909 (each with its pattern row and its mixer channel, decision A11Y-D3), Master and
   compressor, PCF, Delay, Distortion. A control's node is a child of its section's group (the
   parent of a node is the `Ui` its widget was made in); the 303's edit step label gets a
   hover-only widget for that. The drawing order is unchanged. A screen reader names the group
@@ -2411,7 +2411,7 @@ tests `crates/orb-ui/tests/a11y_announce.rs`.
     "Select patterns from keyboard" (said again when chosen again);
   - what a key of the original's map did (`App::act`, `announce::key_effect`), from the
     state before and after it: "Playing", "Stopped", "Song mode", "Pattern mode", "Recording
-    on", "Loop off", "Tempo 141 BPM", "Bar 5", "Bass Line 1 pattern A2", joined in one message
+    on", "Loop off", "Tempo 141 BPM", "Bar 5", "303-1 pattern A2", joined in one message
     when one key did several ("Stopped, recording off"). A change shown by the control that has
     the focus is left out, because the screen reader speaks that control's own value change
     (the tempo spin button for the tempo, the row's pattern selector for its pattern, the
@@ -2435,7 +2435,7 @@ tests `crates/orb-ui/tests/a11y_announce.rs`.
   off they do nothing, as before:
   - F2: the pattern row of the section the focus is in (a machine's pattern section, the
     machine or its mixer channel), else (the focus elsewhere, in a window or nowhere) of the
-    row that has the row focus: "Bass Line 1,
+    row that has the row focus: "303-1,
     pattern A1, 16 steps, shuffle off", with ", pattern section off" when the row's power
     switch is off. On a 303, its steps follow (task-190, section 20.5); on a drum machine's
     row, its steps (task-191, section 20.6).
@@ -2495,7 +2495,7 @@ tests `crates/orb-ui/tests/a11y_step303.rs`. In screen reader mode only; with th
 edit step display stays the label "Edit step 5" of section 20.
 
 - **The node.** Each 303's edit step display (`tb303_N.edit_step`) is the "Step editor": a
-  focusable Slider (vertical: Up and Down move it) in its Bass Line's section, in the focus order after the 303's
+  focusable Slider (vertical: Up and Down move it) in its 303's section, in the focus order after the 303's
   knobs, before Step forward and Step back. Its value is the edit step and what the step holds:
   "Step 5 of 16: C sharp, octave up, accent, slide". A rest says so first and keeps its note and
   flags, which the panel's lights also show: "Step 6 of 16: rest, C". ", pitch mode" ends the
@@ -2568,15 +2568,15 @@ edit step display stays the label "Edit step 5" of section 20.
   mode button ("Pitch mode on, step 1 of 16: C", "Pitch mode off") and Clear ("Pattern A1
   cleared"). Tap (Ctrl+Tab) announces nothing.
 - **F2** on a 303's section: the row read-out of section 20.3, then the pattern's steps in its
-  length, compactly: "Bass Line 1, pattern A1, 16 steps, shuffle off. 1 E accent, 2 rest, 3 D
+  length, compactly: "303-1, pattern A1, 16 steps, shuffle off. 1 E accent, 2 rest, 3 D
   sharp octave up slide, 4 high C octave down, ..." (`step303::read_303_pattern`). A rest reads
   "rest" alone. The steps are those of the editor's pattern; when playback has moved the row
-  to another pattern, that is said before them: "Bass Line 1, pattern A4, 16 steps, shuffle
+  to another pattern, that is said before them: "303-1, pattern A4, 16 steps, shuffle
   off. Step editor on pattern A1: 1 rest, ...".
 
 **Programming a 303 pattern with a screen reader** (Program Synth mode, Ctrl+F, the default):
 
-1. F6 to "Bass Line 1" (or 2): the row focus goes to that 303. Choose the pattern on the
+1. F6 to "303-1" (or 2): the row focus goes to that 303. Choose the pattern on the
    section's first control, the pattern selector (Up and Down).
 2. Tab to "Step editor", after the knobs. It says the step and what it holds: "Step 1 of 16:
    rest, C".
@@ -2670,23 +2670,23 @@ reader mode only; with the mode off there is no grid and every key is as before.
     stays for whoever expects the mouse's modifier. Shift with Ctrl or Alt is not the grid's.
 - **F2** on a drum machine's row (the focus on the grid or anywhere in the machine's section,
   else the row focus) reads the pattern row, then each instrument that has steps within the
-  pattern's length with its steps: "TR-808, pattern A1, 16 steps, shuffle off. Accent: 9.
+  pattern's length with its steps: "808, pattern A1, 16 steps, shuffle off. Accent: 9.
   Bass drum: 1, 5, 9, 13. Closed hi-hat: 3, 7, 11, 15"; a 909 step that is not a plain note
   says what it is ("5 accent", "9 flam"); an empty pattern "No steps"
   (`announce::read_drum_pattern`, `grid::drum_readout`). The steps are those of the grid's
   pattern; when playback has moved the row to another one, that is said before them:
-  "TR-808, pattern A2, 16 steps, shuffle off. Grid on pattern A1: Bass drum: 1".
+  "808, pattern A2, 16 steps, shuffle off. Grid on pattern A1: Bass drum: 1".
 
 **Programming a drum pattern with a screen reader:**
 
-1. F6 to "TR-808" (or "TR-909"). Choose the pattern on the section's first control, the
+1. F6 to "808" (or "909"). Choose the pattern on the section's first control, the
    pattern selector (Up and Down).
 2. Tab to "Steps", after the machine's knobs and switches. It says the cell under the cursor:
    "Bass drum, step 1, off".
 3. Up and Down choose the instrument (Accent first); the panel's selection frame goes with
    it. Left and Right go to the step before or after, Home and End to step 1 and the
    pattern's last step.
-4. Space sets the step on or off. On the TR-909 it goes round off, note, accent, as a click
+4. Space sets the step on or off. On the 909 it goes round off, note, accent, as a click
    does; Ctrl+Space sets a plain note on or off, Shift+Space an accent (Alt+Space too, but
    Windows then also opens the system menu), Ctrl+Alt+Space a flam. The cell then says its
    new state.

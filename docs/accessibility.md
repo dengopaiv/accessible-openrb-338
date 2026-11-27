@@ -192,18 +192,18 @@ later for one purpose if live regions turn out too slow for some announcement.
 
 F6 and Shift+F6 move between sections, as in other Windows programs; Tab and Shift+Tab move
 between the controls of a section. Entering a machine's section gives that machine the row
-focus, so the synth and tap keys go to it, and says so ("Bass Line 2, keyboard focus").
+focus, so the synth and tap keys go to it, and says so ("303-2, keyboard focus").
 
 1. Transport: Play, Stop, Record, Loop on/off, song/pattern mode, tempo, shuffle, bar, loop
    start, loop length, rewind and fast forward.
-2. Bass Line 1 (the first 303): its pattern row (pattern selector, row on/off, shuffle,
+2. 303-1 (the first 303): its pattern row (pattern selector, row on/off, shuffle,
    length), waveform, tune, cutoff, resonance, envelope mod, decay, accent, the step editor,
    and its mixer channel (level, pan, delay send, PCF and compressor assignment, distortion,
    mute).
-3. Bass Line 2: the same.
-4. TR-808: pattern row, accent level, the 11 voices' knobs, the 5 slot switches, the step grid,
+3. 303-2: the same.
+4. 808: pattern row, accent level, the 11 voices' knobs, the 5 slot switches, the step grid,
    mixer channel.
-5. TR-909: pattern row, accent level, the voices' knobs, flam, the step grid, mixer channel.
+5. 909: pattern row, accent level, the voices' knobs, flam, the step grid, mixer channel.
 6. Master and compressor.
 7. PCF.
 8. Delay.
@@ -604,7 +604,7 @@ by type, named:
      1  Menu, False
      1  Pane, False
 can take the focus: 194, of them with a name: 194
-names: Transport | Shuffle amount | Tempo | Mode | Play | ... | Bass Line 1 | Pattern section on
+names: Transport | Shuffle amount | Tempo | Mode | Play | ... | 303-1 | Pattern section on
   | Pattern | ...
 ```
 

@@ -38,7 +38,7 @@ The document has three parts:
 | A11Y-8 | TASK-193 | Dialogs and windows: roles, focus, announcements | 988bcd5 |
 | A11Y-6 | TASK-190 | The 303 step editor, spoken | 7c09ffa |
 | A11Y-7 | TASK-191 | The drum grids, navigable and readable | d05000d |
-| (new) | TASK-210 | Shift+Space as the accent key on a TR-909 grid | 7267c55 |
+| (new) | TASK-210 | Shift+Space as the accent key on a 909 grid | 7267c55 |
 | A11Y-10 | TASK-195 | A mod chooser with a filter | 6cc85ab |
 | A11Y-12 | TASK-196 | Documentation of screen reader mode | df4d002 |
 | A11Y-13 | TASK-197 | The NVDA pass by the user: all 22 checklist items work | (backlog) |
@@ -150,7 +150,7 @@ records the choice and the date; the options that were weighed are in its descri
   do nothing on the step editor. The same for the drum grids (where Left / Right move the step
   and Up / Down the instrument).
 - **TASK-208 (found in TASK-191): Alt+Space opens Windows' system menu.** Option B: Shift+Space
-  is an accent key on the TR-909 grid as well, Alt+Space stays (the user, 2026-11-06, "Add
+  is an accent key on the 909 grid as well, Alt+Space stays (the user, 2026-11-06, "Add
   shift+space"; built as TASK-210).
 - **TASK-195's own choices (2026-11-07):** Ctrl+M opens the mod chooser; the filter and the list
   are two focus stops; the list is a tree with the variants under their name; Ctrl+I shows
@@ -192,8 +192,8 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   pattern; TASK-205's keys); each row's 8 pattern and 4 bank buttons are one pattern selector
   ("Pattern B3"). Every change goes through the same panel call as a click, so the engine and
   recording hear the same. (docs/ui_spec.md 20.1.)
-- **A11Y-4 = TASK-188, sections, focus order, keys.** The sections (Transport, Bass Line 1 and 2,
-  TR-808, TR-909, each with its pattern row and mixer channel, Master and compressor, PCF, Delay,
+- **A11Y-4 = TASK-188, sections, focus order, keys.** The sections (Transport, 303-1 and 303-2,
+  808, 909, each with its pattern row and mixer channel, Master and compressor, PCF, Delay,
   Distortion) are named groups; F6 / Shift+F6 and Tab / Shift+Tab walk them; the row focus
   follows the machine section entered; D6's key map, D2's Space and TASK-207's Enter. (docs/ui_spec.md
   20.2 and section 10.)
@@ -213,10 +213,10 @@ With screen reader mode off, every item leaves the app as upstream (but TASK-202
   original: TASK-211 adds the option Pitch Keys Make Notes.
 - **A11Y-7 = TASK-191, the drum grids.** In each drum section a grid of the instruments by the
   steps: Up / Down the instrument, Left / Right the step, Space sets the step as a click does
-  (on the TR-909 with Ctrl, Alt, Ctrl+Alt, and Shift+Space from TASK-210); each cell reads
+  (on the 909 with Ctrl, Alt, Ctrl+Alt, and Shift+Space from TASK-210); each cell reads
   "Bass drum, step 5, on"; F2 reads the instruments that have steps; TASK-209's setting covers
   the grids. A how-to is in docs/ui_spec.md 20.6.
-- **TASK-210, Shift+Space.** On a TR-909 grid Shift+Space sets an accent without the system
+- **TASK-210, Shift+Space.** On a 909 grid Shift+Space sets an accent without the system
   menu that Alt+Space also opens (TASK-208).
 - **A11Y-10 = TASK-195, the mod chooser.** In screen reader mode, Mods > Choose Mod... or Ctrl+M
   opens a dialog with a filter field and a tree of the Mods menu's entries in the menu's order
@@ -310,7 +310,7 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
    toggles it and does not play. F9 Record, F11 Loop and F12 mode are spoken when pressed.
    (The user's note: Loop is F11, F12 is song and pattern; recording is in song mode.) (x)
 6. F3 reads the transport while playing and while stopped. (x)
-7. In Bass Line 1: set the cutoff with the arrows and with NVDA's own slider commands; set the
+7. In 303-1: set the cutoff with the arrows and with NVDA's own slider commands; set the
    waveform; mute channel 1; choose pattern B3. (x)
 8. Program a 303 pattern with the keys alone; each step is spoken; F2 reads it back
    (TASK-190's deferred check, docs/ui_spec.md 20.5). On the focused "Step editor": each
@@ -321,7 +321,7 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
    that order, neither cut off. Play a song in song mode with the editor focused: nothing is
    spoken when the song moves to another pattern, with Options > Step Editor Follows Playback
    off and on; F2 says "Step editor on pattern ..." while off. (x)
-9. In the TR-808: walk the grid, set a bass drum on steps 1, 5, 9, 13, F2 reads it back; same
+9. In the 808: walk the grid, set a bass drum on steps 1, 5, 9, 13, F2 reads it back; same
    on the 909 with an accent and a flam. (TASK-191 checked the tree headless: the grid's active
    cell, its name after each key, F2's text.) By ear: Tab onto the grid speaks "Steps" and the
    cell ("Bass drum, step 1, off"); each Up, Down, Left and Right speaks the new cell; each
@@ -404,7 +404,7 @@ Marks: (x) works, ( ) fails or not yet confirmed, no mark: not yet tried.
     (`b`) is saved as `b.flac`. Restart the program: the dialog still offers FLAC first. With
     the mode off the in-app browser starts on WAV as before. ( )
 27. TASK-213's jump to the next value that sounds different, in screen reader mode (Speak Raw
-    Values off): focus the TR-808 Bass drum tone and press Up repeatedly from 0: every press
+    Values off): focus the 808 Bass drum tone and press Up repeatedly from 0: every press
     is spoken with a new value ("42.9 hertz", then the next one), and Down comes back the same
     way; Page Up lands on a different value; in the top group of values (120 to 127) Up and Page Up
     do not move.

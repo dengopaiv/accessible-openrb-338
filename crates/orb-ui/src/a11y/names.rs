@@ -19,10 +19,10 @@ use crate::model::Panel;
 pub fn section_name(section: &str) -> Option<&'static str> {
     Some(match section {
         "transport" => "Transport",
-        "pattern1" | "tb303_1" | "mixer1" => "Bass Line 1",
-        "pattern2" | "tb303_2" | "mixer2" => "Bass Line 2",
-        "pattern3" | "tr808" | "mixer3" => "TR-808",
-        "pattern4" | "tr909" | "mixer4" => "TR-909",
+        "pattern1" | "tb303_1" | "mixer1" => "303-1",
+        "pattern2" | "tb303_2" | "mixer2" => "303-2",
+        "pattern3" | "tr808" | "mixer3" => "808",
+        "pattern4" | "tr909" | "mixer4" => "909",
         "master" | "comp" => "Master and compressor",
         "pcf" => "PCF",
         "delay" => "Delay",
@@ -116,7 +116,7 @@ const NAMES: &[(&str, &str)] = &[
     // the step's Rest LED of upstream's redesign (task-179; merged by task-230); like every
     // LED it has no node in the tree, the name keeps the table complete
     ("tb303.rest_led", "Rest light"),
-    // TR-808
+    // 808
     ("tr808.ac_level", "Accent level"),
     ("tr808.bd_level", "Bass drum level"),
     ("tr808.bd_tone", "Bass drum tone"),
@@ -146,7 +146,7 @@ const NAMES: &[(&str, &str)] = &[
     ("tr808.slot7_switch", "Hand clap or maracas switch"),
     ("tr808.mod_view", "Mod picture"),
     ("tr808.select_bd", "Instrument selection"),
-    // TR-909
+    // 909
     ("tr909.ac_level", "Accent level"),
     ("tr909.bd_tune", "Bass drum tune"),
     ("tr909.bd_attack", "Bass drum attack"),
@@ -457,30 +457,21 @@ mod tests {
                 .unwrap();
             (section_name(&c.section).unwrap(), name(&c).unwrap())
         };
-        assert_eq!(
-            get("tb303_2.cutoff", "knob"),
-            ("Bass Line 2", "Cutoff".into())
-        );
-        assert_eq!(
-            get("tb303_1.accent", "knob"),
-            ("Bass Line 1", "Accent".into())
-        );
+        assert_eq!(get("tb303_2.cutoff", "knob"), ("303-2", "Cutoff".into()));
+        assert_eq!(get("tb303_1.accent", "knob"), ("303-1", "Accent".into()));
         assert_eq!(
             get("tb303_1.accent", "trigger"),
-            ("Bass Line 1", "Step accent".into())
+            ("303-1", "Step accent".into())
         );
         assert_eq!(
             get("tb303_1.key6", "trigger"),
-            ("Bass Line 1", "Key F sharp".into())
+            ("303-1", "Key F sharp".into())
         );
-        assert_eq!(
-            get("mixer3.mute", "toggle"),
-            ("TR-808", "Channel 3 on".into())
-        );
-        assert_eq!(get("pattern4.bankC", "grid"), ("TR-909", "Bank C".into()));
+        assert_eq!(get("mixer3.mute", "toggle"), ("808", "Channel 3 on".into()));
+        assert_eq!(get("pattern4.bankC", "grid"), ("909", "Bank C".into()));
         assert_eq!(
             get("tr808.bd_level", "knob"),
-            ("TR-808", "Bass drum level".into())
+            ("808", "Bass drum level".into())
         );
         assert_eq!(
             get("comp.threshold", "knob"),
