@@ -657,7 +657,7 @@ See OB-8 for the unclean buffer.
 - **Corpus.** None (no corpus song reaches ReWire).
 - **orb.** The plugin models it (task-300): a device unchecked under Options > Output Routing >
   To Mix-L/R skips the smoothing and the mix loop as here, so its gains freeze and glide back
-  when it is checked again (`Frame::block_taps`, `docs/plugin.md` section 13.1). Not in the CLI
+  when it is checked again (`Frame::block_taps`, upstream's plugin document (removed, task-231) section 13.1). Not in the CLI
   or the standalone app (no routing there).
 - **Home.** `docs/rewire.md` section 4.
 

@@ -16,7 +16,7 @@ path = "src/main.rs"
 required-features = ["app"]
 
 # `app`: the standalone window on eframe (the binary, `impl eframe::App for App`). The panel
-# itself needs only egui, so the plugin's editor (orb-plugin, task-201) takes the library
+# itself needs only egui, so the plugin's editor (the removed plugin crate, task-201) takes the library
 # without it and links no eframe or winit.
 [features]
 default = ["app"]
@@ -64,8 +64,8 @@ winit = { version = "0.30.13", default-features = false }
 
 # The pattern as JSON on the clipboard (task-287).
 serde_json = "1"
-# The plugin's direct clipboard read (task-287; egui-baseview reads the clipboard only on a
-# paste key, which a plugin leaves to the host). The version egui-winit already links. No
+# The plugin's direct clipboard read (task-287; upstream's plugin window, removed in this fork,
+# task-231, read the clipboard only on a paste key). The version egui-winit already links. No
 # default features: the image support is not needed. On Linux it speaks X11 only (a pure
 # Wayland session without XWayland reads nothing, and Paste shows "holds no pattern").
 arboard = { version = "3.7", default-features = false }

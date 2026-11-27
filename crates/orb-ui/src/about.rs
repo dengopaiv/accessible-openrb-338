@@ -77,7 +77,7 @@ pub fn copy_confirmation_shows(ctx: &Context) -> bool {
 
 /// The icon-only copy button (task-279): two overlapping sheets, a check mark for 1.5 s after a
 /// click, a "Copy version" tooltip. A click copies `VERSION` through `ctx.copy_text`, which
-/// egui-baseview also writes to the system clipboard in the plugin.
+/// eframe writes to the system clipboard.
 fn copy_button(ui: &mut egui::Ui) {
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(COPY_SIZE, COPY_SIZE), egui::Sense::click());

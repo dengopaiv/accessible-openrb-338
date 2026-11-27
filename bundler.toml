@@ -1,3 +1,0 @@
-# The plugin bundles' names (`cargo xtask bundle orb-plugin --release`, docs/plugin.md).
-[orb-plugin]
-name = "OpenRB-338"

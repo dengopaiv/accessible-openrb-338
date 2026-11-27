@@ -40,7 +40,7 @@ esac
 # The dist profile of Cargo.toml: fat LTO, one codegen unit, stripped (task-132). Its binaries
 # are in target/<target>/dist/.
 profile=dist
-cargo_args=(--profile "$profile" --locked --target "$target" -p orb-cli -p orb-ui -p orb-plugin)
+cargo_args=(--profile "$profile" --locked --target "$target" -p orb-cli -p orb-ui)
 target_dir=${CARGO_TARGET_DIR:-$root/target}
 
 build_docker() {
@@ -76,10 +76,6 @@ build_docker() {
             exit 1
         }
     done
-    [ -e "$dist/$target/plugins/OpenRB-338.vst3" ] || {
-        echo "docker build finished but $dist/$target/plugins/OpenRB-338.vst3 is missing" >&2
-        exit 1
-    }
     echo "built $target -> $bin_dir"
 }
 
@@ -143,20 +139,4 @@ for b in orb OpenRB-338; do
     cp "$target_dir/$target/$profile/$b$exe" "$bin_dir/$b$exe"
 done
 
-# The plugin (task-204): the library was built with the apps above; the xtask only lays out
-# OpenRB-338.vst3 (docs/plugin.md section 7; the macOS bundle is signed ad hoc by the bundler)
-# and it is copied to dist/<target>/plugins/, which package.sh and
-# package-dmg.sh pack. The xtask is a host tool: `cargo xtask` builds it for the host.
-# target/bundled is shared by all targets, so the bundler could meet the leftovers of another
-# target: start empty
-rm -rf "$target_dir/bundled"
-plugin_dir=$dist/$target/plugins
-rm -rf "$plugin_dir"
-mkdir -p "$plugin_dir"
-(cd "$root" && cargo xtask bundle orb-plugin --no-build --profile "$profile" --target "$target")
-p=OpenRB-338.vst3
-[ -e "$target_dir/bundled/$p" ] || { echo "the bundler made no $p" >&2; exit 1; }
-# -R: a bundle is a folder (cp -R keeps a macOS bundle's signature files)
-cp -R "$target_dir/bundled/$p" "$plugin_dir/$p"
-echo "bundled the plugin -> $plugin_dir"
 echo "built $target -> $bin_dir"

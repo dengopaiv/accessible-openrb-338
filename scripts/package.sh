@@ -6,8 +6,8 @@
 #
 #   scripts/package.sh TARGET
 #
-# SKIP_BUILD=1 packs the binaries already in dist/<target>/bin/. The installers and bundles
-# of task-110 (dmg), task-111 (Windows installer) and task-112 (AppImage) start from the same
+# SKIP_BUILD=1 packs the binaries already in dist/<target>/bin/. The packages
+# of task-110 (dmg) and task-112 (AppImage) start from the same
 # dist/<target>/bin/ and the same version (`scripts/version.sh`).
 set -euo pipefail
 
@@ -26,25 +26,16 @@ rm -rf "$dist/$target/stage"
 mkdir -p "$stage"
 cp "$dist/$target/bin/"* "$stage/"
 cp "$root/LICENSE" "$stage/LICENSE"
-# the plugin bundle (task-204; scripts/build.sh made it)
-p=OpenRB-338.vst3
-[ -e "$dist/$target/plugins/$p" ] || { echo "missing $dist/$target/plugins/$p" >&2; exit 1; }
 case $target in
     *-windows-*)
-        # portable by default (task-289): the app, the plugin as the single file (the binary
-        # of the bundle, which hosts on Windows accept as it is) and the portable marker in one
-        # folder; no OpenRB-338.toml, so unzipping over an old folder keeps its settings (task-295)
-        cp "$dist/$target/plugins/$p"/Contents/*-win/"$p" "$stage/$p"
+        # portable by default (task-289): the app and the portable marker in one folder; no
+        # OpenRB-338.toml, so unzipping over an old folder keeps its settings (task-295)
         printf '%s\n' 'Portable mode is on while this file exists (see README.txt). Its content is ignored.' \
             > "$stage/OpenRB-338.portable"
         # the ASIO SDK's license and notices (task-193): ASIO is in the x86_64 build only
         case $target in
             x86_64-*) "$root/scripts/asio-notices.sh" "$stage/THIRD-PARTY-NOTICES.txt" ;;
         esac
-        ;;
-    *)
-        mkdir -p "$stage/plugins"
-        cp -R "$dist/$target/plugins/$p" "$stage/plugins/"
         ;;
 esac
 
@@ -100,50 +91,20 @@ $(cat "$root/scripts/fork-readme.txt")
 
 $unsigned
 Licensed under the GNU General Public License, version 3 only (GPL-3.0-only; see LICENSE).
-
-Plugin (VST 3 instrument)
--------------------------
-
 EOF
-case $target in
-    *-windows-*) ;;
-    *) cat >> "$stage/README.txt" <<'EOF'
-plugins/ holds OpenRB-338.vst3. Copy it into a plugin folder, then rescan plugins in the host:
-EOF
-    ;;
-esac
-case $target in
-    *-linux-*) plugin_dirs='  VST3: ~/.vst3/   (or /usr/lib/vst3)' ;;
-    *-windows-*) plugin_dirs='The plugin is the file OpenRB-338.vst3 in this same folder as OpenRB-338.exe. Point the host'"'"'s VST3
-plugin path (its custom VST3 folder setting) at this folder and rescan plugins; the plugin is then
-portable (see below). Or copy the file into a plugin folder, where it is not portable:
-
-  VST3: %COMMONPROGRAMFILES%\VST3\
-  (or %LOCALAPPDATA%\Programs\Common\VST3\ for the current user only)
-  The installer (OpenRB-338-*-setup.exe) can do this for you: its "VST3 plugin" component, on by
-  default, copies the bundle to the %COMMONPROGRAMFILES% folder above (the installer is for all
-  users and asks for administrator rights); the uninstaller removes it.' ;;
-    *-apple-darwin) plugin_dirs='  VST3: ~/Library/Audio/Plug-Ins/VST3/
-  (or the same under /Library for all users). The bundle is signed ad hoc only; if the host
-  refuses it after a download, run in this folder (and again, with sudo, on the copy in
-  /Library if you installed it there): xattr -dr com.apple.quarantine OpenRB-338.vst3' ;;
-esac
-printf '%s\n' "$plugin_dirs" >> "$stage/README.txt"
 case $target in
     *-windows-*)
         cat >> "$stage/README.txt" <<'EOF'
 
 Portable mode
 -------------
-The file OpenRB-338.portable in this folder makes OpenRB-338.exe and the plugin file next to it
-portable while it exists (its content is ignored): they keep their settings in OpenRB-338.toml
-here, and the crash logs and the plugin's log (turned on by a file plugin.log in logs\) in the
-logs\ folder here, and write nothing in your user profile. The app and the plugin share the one
-OpenRB-338.toml. It is not in the zip: the first start copies your per-user settings
+The file OpenRB-338.portable in this folder makes OpenRB-338.exe portable while it exists (its
+content is ignored): it keeps its settings in OpenRB-338.toml here, and the crash logs in the
+logs\ folder here, and writes nothing in your user profile. It is not in the zip: the first start
+copies your per-user settings
 (%APPDATA%\OpenRB-338\OpenRB-338.toml, or the older ui.toml there when there is no
 OpenRB-338.toml yet) into it, so the settings you have come along; the per-user files are not
-changed. The plugin is portable only when the host loads it from this folder (the host's custom
-VST3 path); a copy in a plugin folder uses the per-user settings.
+changed.
 
 The songs and mods folders you choose inside this folder are remembered relative to it, so they
 still work when a USB stick gets another drive letter; folders elsewhere are remembered as full

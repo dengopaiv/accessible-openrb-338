@@ -29,7 +29,7 @@
 //! time budget (at least one message per call); the player drains every queued command.
 //!
 //! A player made with [`Player::with_call_frames`] runs calls of another size: the plugin
-//! (`orb-plugin`, task-197) runs 64-frame calls, one engine block each, through
+//! (the removed plugin crate, task-197) runs 64-frame calls, one engine block each, through
 //! [`Audio::drain`], [`Audio::apply_now`] and [`Audio::render_call`].
 //!
 //! # Songs
@@ -159,7 +159,7 @@ pub enum Command {
     Locate(u32),
     /// The position alone, in ticks (`sub_1001F8B0`, as the TopHat host sync sets it each
     /// audio call; [`Engine::set_position`]): no chase, no relocate, the last tick kept. The
-    /// plugin's host sync (`orb-plugin`, task-198).
+    /// plugin's host sync (the removed plugin crate, task-198).
     Position(f64),
     /// The note-mode clock ([`Engine::set_note_clock`]): the tick the inserts (the PCF) see
     /// while the song is stopped, at the host's position or free-running. The plugin's note

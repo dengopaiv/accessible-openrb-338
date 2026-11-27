@@ -96,8 +96,6 @@ pub enum Cmd {
     KeyHelp,
     /// Options > Audio Output... (the standalone app only, task-191).
     AudioOutput,
-    /// Help > Plugin Usage (a plugin's editor only, task-221).
-    PluginUsage,
     /// Options > Output Routing... (a plugin's editor only, task-300).
     OutputRouting,
     /// Help > About.
@@ -1064,11 +1062,6 @@ impl App {
             Cmd::Info => self.show_info(),
             Cmd::KeyHelp => self.show_key_help(),
             Cmd::AudioOutput => self.show_audio(),
-            Cmd::PluginUsage => {
-                if self.is_plugin() {
-                    self.show_plugin_usage();
-                }
-            }
             Cmd::OutputRouting => self.show_routing(),
             Cmd::About => self.show_about(),
             Cmd::ChooseModFile => self.open_browser(Mode::ChooseMod),
@@ -1775,8 +1768,8 @@ impl App {
         ui.data_mut(|d| d.insert_temp(bar_id(), bar));
         match cmd {
             // the system clipboard's text comes back as a Paste event, as for Ctrl/Cmd+V. A
-            // plugin's window (egui-baseview 0.9) does not answer `RequestPaste` (it reads the
-            // clipboard only on a paste key, which the plugin leaves to the host), so there the
+            // plugin's window (upstream's, removed in this fork, task-231) did not answer
+            // `RequestPaste` (it read the clipboard only on a paste key), so there the
             // item reads the system clipboard directly (task-274, task-287)
             Some(Cmd::PastePattern) if !self.is_plugin() => {
                 ui.ctx()
@@ -2116,10 +2109,6 @@ impl App {
         note_button(bar, &options.response);
         // Last in the bar. An item is one line of `HELP_ITEMS`.
         let help = ui.menu_button("Help", |ui| {
-            // the plugin's guide (task-221); the standalone's menu is unchanged
-            if plugin && item(ui, "Plugin Usage...", None) {
-                *cmd = Some(Cmd::PluginUsage);
-            }
             for (text, c) in HELP_ITEMS {
                 // no Keyboard Shortcuts in a plugin's editor (task-201)
                 if plugin && *c == Cmd::KeyHelp {

@@ -5,7 +5,7 @@ ReBirth 2.01 talks to a ReWire mixer through seven exports of `ReBirth.dll` name
 no ReWire code). This document describes the audio side: the device the DLL declares, the
 structure the host passes on each audio call, and where each of the 18 channels takes its signal.
 It was written for task-257 from the disassembly of `ReBirth.dll` (addresses `0x10xxxxxx`); the
-host sync is in `docs/plugin.md` 8.1. orb does not implement ReWire; what the plugin replicates
+host sync is in upstream's plugin document (removed, task-231) 8.1. orb does not implement ReWire; what the plugin replicates
 of it was decided in task-259 (section 6).
 
 [C] is checked in the disassembly; [G] is a reading of the values without the host's code (the
@@ -62,7 +62,7 @@ Only pair 0 is flagged as stereo: every other channel is mono, and there is no d
 2. Clears the 64 bytes `drive+0x1188..+0x11C7` and the dword `drive+0x1184` (0x1001B846..0x1001B865).
 3. Try-locks the engine (`sub_10009450` on `dword_1011D0B0+0x370`); if that fails, returns with
    nothing written (every channel's "written" byte stays 0).
-4. `sub_1001C0F4(drive)`: the host's transport in (`docs/plugin.md` 8.1).
+4. `sub_1001C0F4(drive)`: the host's transport in (upstream's plugin document (removed, task-231) 8.1).
 5. `sub_1001CC40(drive+0x944)`: drains the message port, time-budgeted by the frame count (as
    `sub_100139E0` does in the export path, `docs/export_state.md` 2.3).
 6. `sub_1001C204(drive)`: renders (`sub_10013240(song, drive)`, 0x1001C22B), then the transport out.
@@ -208,7 +208,7 @@ models already form (orb-engine `drums.rs`, `tr808.rs`, `tr909.rs`) before they 
 ## 6. Compared with the plugin's per-device outputs (task-256)
 
 task-256 gives the plugin a stereo Mix and four stereo aux outputs, 303-1, 303-2, 808 and 909
-(`docs/plugin.md` 13). The differences from ReWire:
+(upstream's plugin document (removed, task-231) 13). The differences from ReWire:
 
 | | ReWire (original) | Plugin (task-256) |
 |---|---|---|
@@ -237,4 +237,4 @@ Options > Output Routing takes a device out of Mix-L/R as an enabled ReWire devi
 bus as an enabled instrument channel does, with one output per instrument instead of ReWire's six
 groups (808: BD, SD, LT, MT, HT, RS, CP, CB, OH, CH, CY; 909: BD, SD, LT, MT, HT, RS, CP, CH, OH,
 CC, RC), 22 more stereo buses after the four. With every box checked the buses stay copies and the
-Mix is unchanged. `docs/plugin.md` section 13.1.
+Mix is unchanged. upstream's plugin document (removed, task-231) section 13.1.

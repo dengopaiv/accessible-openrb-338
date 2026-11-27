@@ -112,7 +112,6 @@ BEGIN {
     listed++
 }
 END {
-    printf "The plugin is a VST 3 instrument. The CLAP format was dropped: the Windows installer and the macOS plugin installer delete the OpenRB-338.clap of an earlier release, and with the .dmg or an archive you delete it by hand (docs/plugin.md section 7). A project saved with the CLAP plugin needs the plugin replaced by its VST3 by hand in the host.\n\n"
     printf "Changes %s up to %s: %d commits, %d listed (backlog commits are left out).\n",
         from, new, total, listed
     for (k = 1; k <= n; k++) {

@@ -3,8 +3,6 @@
 # version is the UTC build time, scripts/version.sh; task-110, task-136): a single-architecture
 # OpenRB-338.app with the CLI inside, an /Applications link for drag-install, the license and a
 # readme. One image per architecture, Apple silicon and Intel; there is no universal binary.
-# The plugins are not in the image: scripts/package-pkg.sh makes their installer, a release
-# asset of its own (task-238).
 #
 #   scripts/package-dmg.sh aarch64-apple-darwin|x86_64-apple-darwin
 #
@@ -61,12 +59,6 @@ the developer cannot be verified"). Pick one:
   - macOS 14 and older: right-click the app, choose Open, then Open.
   - Any version, in Terminal:
         xattr -dr com.apple.quarantine /Applications/OpenRB-338.app
-
-The plugin (a VST 3 instrument for a DAW) is not in this image: it comes as a separate
-installer, OpenRB-338-Plugins-$version-$target.pkg, from the same release. It is unsigned too
-(open it as the app above); it installs OpenRB-338.vst3 for all users into
-/Library/Audio/Plug-Ins/VST3, and its first page says how to open it and how to remove the
-plugin (delete that bundle).
 
 The command line tool orb is inside the app. To use it from a terminal:
     sudo ln -s /Applications/OpenRB-338.app/Contents/MacOS/orb /usr/local/bin/orb

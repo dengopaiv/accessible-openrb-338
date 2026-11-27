@@ -1,5 +1,6 @@
-//! The panel as the plugin's editor (task-201, docs/plugin.md section 10): what orb-plugin's
-//! editor gives the [`App`] ([`Embed`]) and how the panel differs in a plugin window.
+//! The panel as the plugin's editor (task-201, upstream's plugin document (removed, task-231)
+//! section 10): what the removed plugin crate's editor gives the [`App`] ([`Embed`]) and how the
+//! panel differs in a plugin window.
 //!
 //! The plugin's panel is the standalone's, drawn by the same code, except:
 //! - the transport has no Pattern/Song switch, Rewind, Fast forward, Record, bar arrows or loop,
@@ -53,8 +54,8 @@ pub struct SongView {
     pub snapshot: Snapshot,
 }
 
-/// The plugin's side of its editor (orb-plugin implements it): the song, the mod and the state
-/// that the standalone app keeps by itself.
+/// The plugin's side of its editor (the removed plugin crate implements it): the song, the mod and
+/// the state that the standalone app keeps by itself.
 pub trait Embed: Send {
     /// A number that changes when the plugin's song or state changes (a load, a state restore):
     /// the panel then shows it anew ([`Embed::view`]).
@@ -72,7 +73,7 @@ pub trait Embed: Send {
     fn take_error(&mut self) -> Option<String> {
         None
     }
-    /// The resize corner: asks the host for a window of `size` points (VST3
+    /// The resize corner: asks the host for a window of `size` points (a
     /// `IPlugFrame::resizeView`); the host then sizes the window.
     /// The plugin makes the request after the frame, not from this call (a host may resize the
     /// window at once, which must not happen inside the frame). `Some(_)` when the request
@@ -206,9 +207,9 @@ const BAR_TICKS: i32 = 768;
 
 /// What the Bar display shows: the host position's bar (from 1) while orb follows it
 /// (`host_sync`: pattern mode, orb and the host playing), where the engine's position is the
-/// host's (`docs/plugin.md` section 8.2); else nothing, the dark display of the standalone's
-/// pattern mode (note mode, or the host stopped: orb free-runs and has no host position). Bars
-/// of four quarter notes, whatever the host's time signature (task-206).
+/// host's (upstream's plugin document (removed, task-231) section 8.2); else nothing, the dark
+/// display of the standalone's pattern mode (note mode, or the host stopped: orb free-runs and has
+/// no host position). Bars of four quarter notes, whatever the host's time signature (task-206).
 pub fn host_position(s: &Snapshot) -> Option<i32> {
     if !s.host_sync {
         return None;
@@ -775,7 +776,7 @@ mod tests {
             window_height(700.0),
             ((700.0 - g) * 510.0 / 624.0).round() + m
         );
-        // docs/plugin.md section 10: round(1216 x 510 / 624) + 22
+        // upstream's plugin document (removed, task-231) section 10: round(1216 x 510 / 624) + 22
         assert_eq!(window_height(1248.0), 1016.0);
         // the exact fit: the panel fills the area within the margins, no band
         for w in [344.0, 656.0, 701.0, 1280.0] {

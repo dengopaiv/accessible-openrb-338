@@ -47,7 +47,7 @@ vertically when the window is lower than 510: the scroll bar is enabled when the
 height is below 460, with a line step of 14 px and a page step of 115 px (`sub_42AF63`).
 
 **The app's windows (task-283).** Song Information, Mod Information, About, Keyboard Shortcuts,
-Plugin Usage and the 303, 808 and 909 pattern editors are `egui::Window`s of the one app
+and the 303, 808 and 909 pattern editors are `egui::Window`s of the one app
 viewport (the plugin's too). Choosing the command of a window that is already open (a menu item
 or a shortcut) brings it to the front, above any window that covers it, and leaves its place,
 size and contents as they are (`App::raise_window`, `Context::move_to_top` at the end of the
@@ -1232,13 +1232,13 @@ read, and what it leaves out.
   or a window over the panel does not move the row focus (`App::focus_click`).
 - **The pattern on the clipboard** (task-287; `crates/orb-ui/src/pattern_json.rs`,
   `clipboard.rs`).
-  - **Copy** writes the text with `ctx.copy_text` at the end of the frame (eframe and
-    egui-baseview both write it to the system clipboard), from the pattern's bytes as the
+  - **Copy** writes the text with `ctx.copy_text` at the end of the frame (eframe writes
+    it to the system clipboard), from the pattern's bytes as the
     link holds them (`Link::pattern`: 98 bytes for a 303, 194 for an 808 or a 909).
   - **Paste** gets the text from egui's Paste event (Ctrl/Cmd+V, the standalone's Edit menu), or
     reads the system clipboard directly (`Clipboard::System`, arboard) where egui gives no
-    event: the plugin's Edit menu (egui-baseview reads the clipboard on a paste key only, which
-    a plugin leaves to the host) and the pattern editors' Paste buttons, which are always
+    event: the removed plugin's Edit menu (its window read the clipboard on a paste key only,
+    which a plugin leaves to the host) and the pattern editors' Paste buttons, which are always
     enabled (the clipboard is not read every frame). `App::clipboard` is a memory clipboard
     until the standalone binary (`main.rs`) and the plugin's editor (`EditorApp`) switch it to
     the system's, so no test touches the real clipboard; two apps of a test share one memory
@@ -1388,7 +1388,7 @@ starts with it open. The panel takes no key or click while a browser is open. Th
   minimum or the minimum exceeds what they need. The editors' sizes follow their content, not
   the window (only their place is stored), so no stored size can exceed the bounds. The user
   decided on 2026-11-25 to raise the minimum rather than bound or scroll the editors. The windows
-  that can be resized (Song Information, Keyboard Shortcuts, Plugin Usage) are not measured;
+  that can be resized (Song Information, Keyboard Shortcuts) are not measured;
   Mod Information is not resizable.
 - **Lists** folders first, then files, by name ignoring case; hidden names (a leading dot) are not
   shown; "All files" lifts the extension filter. Large folders are drawn by visible rows only.
@@ -1496,7 +1496,7 @@ the window, `App::menu`; the headless panel tests run without it) and the comman
 | Options | Pitch Keys Make Notes (shown in screen reader mode only) | `Settings::pitch_keys_make_notes` (false by default; the bool `pitch_keys_make_notes` of `OpenRB-338.toml`), saved at once (task-211): on, a 303's pitch key on a rest also makes it a note; section 20.5 |
 | Options | Step Editor Follows Playback (shown in screen reader mode only) | `Settings::step_editor_follows` (false by default; the bool `step_editor_follows` of `OpenRB-338.toml`), saved at once (task-190, decision task-209): on, a 303's step editor and a drum grid (task-191) move to the pattern playback selects, silently, at the next input; off, they stay on the pattern the user chose; sections 20.5 and 20.6 |
 | Options | Audio Output... | the window of Audio Output (below, task-191); the standalone app only: a plugin's audio is the host's, so its Options menu has no such item |
-| Options | Output Routing... | a plugin's editor only, after a separator (task-300; `crates/orb-ui/src/routing_window.rs`, `Embed::routing`): a centered, closable window (Escape closes it) with three columns of checkboxes, "To Mix-L/R" (303-1, 303-2, 808, 909), "To 808" (BD .. CY) and "To 909" (BD .. RC), each labeled with its output's name and with the tooltip "#N", the output's VST3 bus index (Mix 0, 303-1 #1, 808 BD #5, 909 RC #26); built from the drum machines' output tables (orb-engine `tr808::OUTPUTS`, `tr909::OUTPUTS`). A click sets the plugin's routing at once (`docs/plugin.md` section 13.1). It scrolls when the window is shorter than it; it fits the plugin's smallest window (536 x 485) |
+| Options | Output Routing... | a plugin's editor only, after a separator (task-300; `crates/orb-ui/src/routing_window.rs`, `Embed::routing`): a centered, closable window (Escape closes it) with three columns of checkboxes, "To Mix-L/R" (303-1, 303-2, 808, 909), "To 808" (BD .. CY) and "To 909" (BD .. RC), each labeled with its output's name and with the tooltip "#N", the output's bus index (Mix 0, 303-1 #1, 808 BD #5, 909 RC #26); built from the drum machines' output tables (orb-engine `tr808::OUTPUTS`, `tr909::OUTPUTS`). A click sets the plugin's routing at once (upstream's plugin document (removed, task-231) section 13.1). It scrolls when the window is shorter than it; it fits the plugin's smallest window (536 x 485) |
 | Options | Program Synth (Ctrl+F, Cmd+F on macOS), Select Patterns (Ctrl+G, Cmd+G) | `App::key_mode` (section 10, task-070) |
 | Help | Keyboard Shortcuts... | a centered, closable, scrollable window (Escape closes it) that lists every key orb-ui handles by group (menu shortcuts with Cmd on macOS, the global keys, mode-dependent transport keys, Program Synth with a 303 or a drum machine focused, Select Patterns, windows and the browser); it names the current keyboard mode and marks its groups (task-105; below) |
 | Help | About OpenRB-338... | a centered, closable window (Escape closes it) with the app icon (the `app_icon` part), the wordmark (the `logo` part, at 2x), `Version YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)` with an icon-only copy button (task-279) and the links https://pingw33n.github.io/OpenRB-338/, `Song collection:` https://github.com/pingw33n/rb-songs and `Mod collection:` https://github.com/pingw33n/rb-mods (task-102, task-138, laid out in task-115; since task-179 the wordmark sits on a gray plate, section 19; below) |
@@ -1664,9 +1664,8 @@ is one more entry.
   wordmark say it). The version line ends with a small icon-only copy button (task-279), 14 pt
   square, 4 pt after the text: two overlapping sheets drawn with the painter (no font glyph,
   no image), dim like the text and white on hover, with the tooltip "Copy version". A click
-  copies `VERSION` exactly (the text after `Version `) with `ctx.copy_text`, so the plugin
-  (egui-baseview writes `OutputCommand::CopyText` to the system clipboard) and the standalone
-  app both work; for 1.5 s the sheets turn into a white check mark and the tooltip says
+  copies `VERSION` exactly (the text after `Version `) with `ctx.copy_text`, so the standalone
+  app (and upstream's plugin (removed in this fork, task-231)) works; for 1.5 s the sheets turn into a white check mark and the tooltip says
   "Copied" (the window repaints once at the end by itself). `OpenRB-338 --about` opens it at the start (for `--screenshot`). The version is
   `YYYY.MMDD.HHMM (<[dev-]hash[-dirty]>)`, computed by `build.rs` into `ORB_UI_VERSION` (the
   pure formatting is `version.rs`, unit-tested): the number is the build time in UTC to the
@@ -2769,7 +2768,7 @@ is no menu item and Ctrl+M does nothing; the dialog closes if the mode goes off 
 
 ## 21. The panel as the plugin's editor (task-201)
 
-The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the same code
+The plugin (upstream's plugin document (removed, task-231) section 10) shows this panel, drawn by the same code
 (`crates/orb-ui/src/embed.rs`), with these differences; the standalone app is unchanged.
 
 - **The window** is the menu bar of section 18 (22 points, not scaled) and the panel under it,
@@ -2789,11 +2788,11 @@ The VST3 plugin (`docs/plugin.md` section 10) shows this panel, drawn by the sam
   303-1 Pattern Editor... and 303-2 Pattern Editor... (section 23), 808 Pattern Editor...
   (section 24) and 909 Pattern Editor... (section 25), in the same order, with the same names
   and the same behavior (the target pattern of section 18 too), but no
-  shortcut texts (the user's review of task-274, rounds 2 and 3). **The one exception**: the standalone's Initialize Loop and Initialize Song from Pattern Mode, and the separator after them, are not in it, since the plugin has no song mode (the user's decision of 2026-11-25, task-306; `crates/orb-plugin/tests/editor.rs` `the_edit_menu_has_the_standalones_items_without_shortcuts`). Undo is the one-level Undo,
+  shortcut texts (the user's review of task-274, rounds 2 and 3). **The one exception**: the standalone's Initialize Loop and Initialize Song from Pattern Mode, and the separator after them, are not in it, since the plugin has no song mode (the user's decision of 2026-11-25, task-306; the removed plugin crate's `tests/editor.rs` `the_edit_menu_has_the_standalones_items_without_shortcuts`). Undo is the one-level Undo,
   named after the change ("Undo Edit Pattern"). Copy and Cut put the pattern on the system
-  clipboard as JSON (egui-baseview 0.9 writes egui's `CopyText` to it; section 16, task-287),
-  so another instance or the standalone app pastes it. **One difference**: the plugin's window
-  does not answer egui's `RequestPaste` (egui-baseview reads the clipboard only on a paste key
+  clipboard as JSON (eframe writes egui's `CopyText` to it; section 16, task-287),
+  so another instance or the standalone app pastes it. **One difference**: the removed plugin's window
+  did not answer egui's `RequestPaste` (it read the clipboard only on a paste key
   event, and the plugin leaves keys to the host), so the plugin's Paste Pattern reads the
   system clipboard directly (arboard, `Clipboard::System`), as the pattern editors' Paste
   buttons do, and refuses any text that is no pattern of the row's device. On Linux arboard
@@ -3155,7 +3154,7 @@ note, slide, accent, up, down and rest). The 808 editor is section 24 (task-280)
 is section 25 (task-281). The window's frame is shared with them (`crates/orb-ui/src/editor_frame.rs`:
 the placing, the header's controls, the grid's geometry and painting). Code:
 `crates/orb-ui/src/pattern_editor.rs`; tests: `crates/orb-ui/tests/pattern_editor.rs`, the unit
-tests of the module, and `crates/orb-plugin/tests/editor.rs`
+tests of the module, and the removed plugin crate's `tests/editor.rs`
 `the_edit_menu_opens_the_303_pattern_editors_and_undoes_their_changes`.
 
 **The windows.** Two `egui::Window`s inside the main window, "303-1 Pattern Editor" and
@@ -3290,7 +3289,7 @@ shuffle flag, the length, and 16 steps of 12 bytes, one per instrument in RBS or
 LT/LC, MT/MC, HT/HC, RS/CL, CP/MA, CB, CY, OH, CH, each 0 or 1). Code:
 `crates/orb-ui/src/drum_editor.rs` (the drum-grid editor, `Machine::Tr808`; the 909's,
 task-281, is `Machine::Tr909` on it, section 25) on `crates/orb-ui/src/editor_frame.rs`; tests:
-`crates/orb-ui/tests/drum_editor.rs`, the unit tests of the module, and `crates/orb-plugin/tests/editor.rs`
+`crates/orb-ui/tests/drum_editor.rs`, the unit tests of the module, and the removed plugin crate's `tests/editor.rs`
 `the_edit_menu_opens_the_808_pattern_editor_and_undoes_its_changes`.
 
 **The window.** "808 Pattern Editor", an `egui::Window` like the 303's (draggable, closable,
@@ -3361,7 +3360,7 @@ CH, OH, CC, RC). A drum byte is 0 off, 1 low, 2 high, 3 flam (a low hit plus the
 retrigger); the AC byte is on/off with the stored "on" 2, as the panel writes it (section 7).
 Code: `crates/orb-ui/src/drum_editor.rs`, `Machine::Tr909` (with `Entry`, the entry switch);
 tests: `crates/orb-ui/tests/drum_editor.rs` (the `909` tests and
-`every_input_of_the_help_does_what_it_says`), the unit tests of the module, and `crates/orb-plugin/tests/editor.rs`
+`every_input_of_the_help_does_what_it_says`), the unit tests of the module, and the removed plugin crate's `tests/editor.rs`
 `the_edit_menu_opens_the_909_pattern_editor_and_undoes_its_changes`.
 
 **The window.** "909 Pattern Editor", its own window, separate from the 808's (the user's

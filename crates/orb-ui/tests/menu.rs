@@ -2722,24 +2722,6 @@ fn the_key_help_window_opens_centered_marks_the_mode_and_closes() {
     assert!(!h.app.key_help_is_open(), "the close button closes it");
 }
 
-/// task-221: Plugin Usage is the plugin's Help item only; the standalone's Help menu keeps its
-/// two items and the command does nothing there.
-#[test]
-fn the_standalone_has_no_plugin_usage() {
-    let mut h = Harness::with_menu();
-    h.app.command(Cmd::PluginUsage);
-    assert!(!h.app.plugin_usage_is_open());
-    // Help, found along the bar (the Edit menu moved it right)
-    open_menu_with(&mut h, "Keyboard Shortcuts...");
-    let mut shapes = String::new();
-    for _ in 0..3 {
-        shapes = h.frame_shapes(vec![]);
-    }
-    assert!(shapes.contains("Keyboard Shortcuts..."), "{shapes}");
-    assert!(shapes.contains("About OpenRB-338..."), "{shapes}");
-    assert!(!shapes.contains("Plugin Usage"), "{shapes}");
-}
-
 /// task-099: the startup sound plays only when the kit that plays after the change differs
 /// from the one before: a song open on the same mod, Demo Song of the current mod and File >
 /// New on the standard kit play nothing; a mod change and File > New from a mod song do.

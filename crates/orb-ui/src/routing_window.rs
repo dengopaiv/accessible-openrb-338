@@ -1,9 +1,9 @@
-//! Options > Output Routing... (task-300, a plugin's editor only; `docs/plugin.md` section 13):
-//! which of the plugin's aux outputs also go to Mix-L/R (the four devices) and to their drum
-//! machine's bus (each instrument), as the original's ReWire channels do
+//! Options > Output Routing... (task-300, a plugin's editor only; upstream's plugin document
+//! (removed, task-231) section 13): which of the plugin's aux outputs also go to Mix-L/R (the four
+//! devices) and to their drum machine's bus (each instrument), as the original's ReWire channels do
 //! (`docs/rewire.md` section 4). The boxes follow the drum machines' output tables
 //! ([`orb_engine::tr808::OUTPUTS`], [`orb_engine::tr909::OUTPUTS`]); each shows its output's
-//! name, and its tooltip the output's VST3 bus index, "#N" (Mix is bus 0, so 303-1 is #1 and
+//! name, and its tooltip the output's bus index, "#N" (Mix is bus 0, so 303-1 is #1 and
 //! 909 RC #26; the user's review of 2026-11-25: REAPER numbers its pins flat from 1, so a
 //! number on the label did not match REAPER's, and other hosts show the names).
 
@@ -20,7 +20,7 @@ pub const TITLE: &str = "Output Routing";
 /// The per-device outputs' names, the mixer's channels 0 to 3: outputs (1) to (4).
 pub const DEVICES: [&str; 4] = ["303-1", "303-2", "808", "909"];
 
-/// One column of the window: its heading and its boxes, each the output's VST3 bus index (from
+/// One column of the window: its heading and its boxes, each the output's bus index (from
 /// 1, after the Mix's 0) and its name.
 pub struct Column {
     pub heading: &'static str,
@@ -55,7 +55,7 @@ pub fn columns() -> [Column; 3] {
     ]
 }
 
-/// A box's tooltip: its output's VST3 bus index, "#7" for the 808's LT.
+/// A box's tooltip: its output's bus index, "#7" for the 808's LT.
 pub fn tooltip(number: usize) -> String {
     format!("#{number}")
 }

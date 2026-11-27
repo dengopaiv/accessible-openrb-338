@@ -109,12 +109,6 @@ fn windows() -> Vec<Win> {
             open: |a| a.command(Cmd::KeyHelp),
             id: |a| a.key_help_id(),
         },
-        // the plugin's window, which only a plugin's menu has
-        Win {
-            name: "Plugin Usage",
-            open: |a| a.show_plugin_usage(),
-            id: |a| a.plugin_usage_id(),
-        },
         Win {
             name: "303-1 Pattern Editor",
             open: |a| a.command(Cmd::PatternEditor(0)),

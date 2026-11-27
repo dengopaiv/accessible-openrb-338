@@ -1,10 +1,10 @@
 //! Where Edit > Paste Pattern and the pattern editors' Paste read the clipboard text from, and
 //! what a Copy also writes (task-287).
 //!
-//! A copy always goes out as `egui::Context::copy_text`, which eframe and egui-baseview write
+//! A copy always goes out as `egui::Context::copy_text`, which eframe writes
 //! to the system clipboard. A direct read is only needed where egui gives the text no other
-//! way: the plugin (egui-baseview reads the clipboard on a paste key only, and a plugin leaves
-//! keys to the host) and the pattern editors' Paste buttons. No test may touch the real
+//! way: upstream's plugin (removed in this fork, task-231; its window read the clipboard on a
+//! paste key only) and the pattern editors' Paste buttons. No test may touch the real
 //! clipboard, so an [`App`](crate::app::App) starts with [`Clipboard::Memory`], a clipboard of
 //! its own that tests share between two apps; the standalone binary and the plugin's editor
 //! switch to [`Clipboard::System`].

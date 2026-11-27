@@ -63,7 +63,7 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
   Standard Mapping (`StandardMapping`), which turns timed MIDI bytes into timed `Action`s, each
   with the player's `Command` (`Action::command`) or a view change (the shown bank, the focus,
   the selected drum instrument, the keyboard mode). It does not know where the bytes come from:
-  the VST3 plugin will feed it the host's events with their sample offsets, task-188 a MIDI
+  the plugin will feed it the host's events with their sample offsets, task-188 a MIDI
   port. Which 64-frame block applies an action is the caller's choice (the plugin: the first
   block that starts at or after its time, never an earlier one, task-227); the layer only
   keeps the time.
@@ -79,7 +79,7 @@ the defaults of the three shifted fields are [G]. On the test machine the MIDI s
   Mapping (task-188). No Remote MIDI Control on/off: the original's is off by default [G]
   (section 2), orb's layer acts whenever a source feeds it (a deliberate difference; the plugin
   and task-188 decide when to feed it). The layer's default channel is 1; the plugin
-  (`docs/plugin.md` section 8) feeds it only when its own Standard Mapping setting is on (off by
+  (upstream's plugin document (removed, task-231) section 8) feeds it only when its own Standard Mapping setting is on (off by
   default) and sets the channel to 16 by default, since channels 1..4 are the plugin's device
   channels (303-1, 303-2, 808, 909).
 - **Not mapped yet.** The Program Synth notes (step programming;
@@ -160,7 +160,7 @@ exe).
 
 ## 5. The plugin's note mapping (task-185, task-199)
 
-orb's own mapping of MIDI notes for the VST3 plugin (`docs/plugin.md`), decided in task-185
+orb's own mapping of MIDI notes for the plugin (upstream's plugin document (removed, task-231)), decided in task-185
 (2026-11-15/16; channels changed on 2026-11-16, task-207). It is not the original's: the
 original plays no device from notes (section 4), and its Standard Mapping
 (`docs/standard_midi_mapping.md`) stays as it is, on a channel of its own. Four features use
@@ -181,7 +181,7 @@ code named matches the corpus byte for byte.
 The same channels serve both modes and the drag-out. Channels 5..16 carry no device. The
 Standard Mapping is off by default in the plugin; turned on, it listens on one channel outside
 1..4, 16 by default, and a device channel is refused for it (task-207, which replaced the
-earlier 2..5 layout; `docs/plugin.md` 5 and 8.2). A keyboard on its default channel 1 plays
+earlier 2..5 layout; upstream's plugin document (removed, task-231) 5 and 8.2). A keyboard on its default channel 1 plays
 303-1 without setup.
 
 ### 5.2 Latch Pattern Mode: pattern selection
@@ -189,7 +189,7 @@ earlier 2..5 layout; `docs/plugin.md` 5 and 8.2). A keyboard on its default chan
 Notes 0..31 on a device's channel select that device's pattern n + 1, i.e. banks A-D x patterns
 1..8 (note 0 = A1, 7 = A8, 8 = B1, 31 = D8). Latched: the pattern changes at once and stays until
 the next note on that channel (or a panel change; the last write wins). A note-off, a velocity-0
-note-on and notes 32..127 do nothing. `docs/plugin.md` 8.2 has how it reaches the engine.
+note-on and notes 32..127 do nothing. upstream's plugin document (removed, task-231) 8.2 has how it reaches the engine.
 
 Pattern mode is a setting of the plugin's state since task-217 (no longer the host parameter
 `g1`), named Latch Pattern Mode since task-218: orb plays the patterns only while the host
@@ -200,7 +200,7 @@ is the host's transport stop; there is no stop note.
 ### 5.2.1 Gate Pattern Mode: a pattern while its note is held (task-218)
 
 The same notes 0..31 on the same channels, as gates (the user's design of 2026-11-16,
-`docs/plugin.md` section 11):
+upstream's plugin document (removed, task-231) section 11):
 
 - A section sounds only while a note 0..31 on its channel is held, and then plays pattern
   n + 1. The note-on starts it at once (at the first of the plugin's 64-frame blocks at or
@@ -223,13 +223,13 @@ The same notes 0..31 on the same channels, as gates (the user's design of 2026-1
 - The Standard Mapping's pattern notes (on the remote channel) only select, in both pattern
   modes: they open no gate.
 
-**The preview** (the panel's Play, task-217, `docs/plugin.md` 4.2) ignores every host MIDI
+**The preview** (the panel's Play, task-217, upstream's plugin document (removed, task-231) 4.2) ignores every host MIDI
 message on every channel (pattern selects, note-mode notes, the Standard Mapping) while it runs;
 the MIDI LED still blinks.
 
 ### 5.3 The 303 in note mode
 
-Implemented by task-200 (`docs/plugin.md` section 9: the held notes, the release, what the
+Implemented by task-200 (upstream's plugin document (removed, task-231) section 9: the held notes, the release, what the
 section's On/off does). In note mode orb's song is stopped and notes play the devices whatever
 the host's transport does (task-217: the no-sound-while-stopped rule is pattern mode's only).
 
@@ -314,7 +314,7 @@ does nothing (the drum voices run their own decay).
 the flam slices of the velocity bands (5.5) plays the hit and its flam; two notes in quick
 succession play as two hits.
 
-The drums' note mode is implemented by task-200 (`docs/plugin.md` section 9.2; the sounding
+The drums' note mode is implemented by task-200 (upstream's plugin document (removed, task-231) section 9.2; the sounding
 mask for the note-mode lights in 9.3).
 
 ### 5.5 Accent and velocity
@@ -362,7 +362,7 @@ note sets the flam's tick, `tick + (Flam * tempo) / 700000 + 1` in 32-bit intege
 (0x1002ABBC) with the Flam knob and the tempo of that block, and the first block whose tick is
 past it (signed) retriggers the instrument at `f32(accent * 1.5)` (0x1002B320,
 `dbl_10154350`), its accent recomputed from the note's AC byte, before the block's audio. The
-tick is the note-mode clock's (`docs/plugin.md` 9.5): at knob 54 and 120 BPM the retrigger is
+tick is the note-mode clock's (upstream's plugin document (removed, task-231) 9.5): at knob 54 and 120 BPM the retrigger is
 11 ticks (28.6 ms) after the note's block. The flam is per instrument: a later note of the same
 instrument in a plain band forgets it (as a new step disarms the step's flam), one in a flam
 slice re-arms it, and Stop, a reset or Play (slots 3 and 6) forget every one. Notes of one step
@@ -404,7 +404,7 @@ note of the voice the slot's switch selects when the clip is made (the LT/LC slo
 says tom, 64 when conga; RS/CL: 37 or 75; CP/MA: 39 or 70), as the pattern plays it. The 303's
 note is `36 + note + 12*up - 12*down` (Tune is applied at playback, as in the pattern).
 
-**The 303's notes follow its gate** (task-203; `crates/orb-plugin/src/clip.rs`, from the step
+**The 303's notes follow its gate** (task-203; the removed plugin crate's `src/clip.rs`, from the step
 function 0x100253A0, the note-on 0x10023CD4 and the note-off 0x10023C74, all [C] through
 `crates/orb-engine/src/tb303.rs`):
 - A played step opens the gate at its start. The gate closes 24 ticks (half a step) later

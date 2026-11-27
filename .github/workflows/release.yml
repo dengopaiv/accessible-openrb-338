@@ -1,7 +1,7 @@
 # Builds the packages of orb (the CLI) and OpenRB-338 (the UI) for the six targets on native
 # runners and uploads them as workflow artifacts (task-108). Runs on a release tag (v*), by
 # hand, or for a pull request. Needs no secret, and fetches no Propellerhead file: the standard
-# mod is in the repository (assets/Standard.rbm). The draft release, the installers, the .dmg
+# mod is in the repository (assets/Standard.rbm). The draft release, the .dmg
 # and the AppImages build on this file (tasks 110 to 113): `bin-<target>` holds the binaries
 # they pack.
 #
@@ -139,13 +139,6 @@ jobs:
           path: dist/${{ matrix.target }}/bin/
           retention-days: 1
           if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          # the plugin bundles (task-204), for the dmg job; the archive holds them too
-          name: plugins-${{ matrix.target }}
-          path: dist/${{ matrix.target }}/plugins/
-          retention-days: 1
-          if-no-files-found: error
 
   dmg:
     # The macOS .dmg (task-110, task-136): one per architecture, each an OpenRB-338.app of that
@@ -175,14 +168,8 @@ jobs:
         with:
           name: bin-${{ matrix.target }}
           path: dist/${{ matrix.target }}/bin
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: plugins-${{ matrix.target }}
-          path: dist/${{ matrix.target }}/plugins
-      - name: Make the binaries and the plugin libraries executable
-        run: |
-          chmod +x "dist/${{ matrix.target }}/bin/"*
-          chmod +x dist/${{ matrix.target }}/plugins/*/Contents/MacOS/*
+      - name: Make the binaries executable
+        run: chmod +x "dist/${{ matrix.target }}/bin/"*
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: dmg-${{ matrix.target }}
@@ -192,60 +179,6 @@ jobs:
         with:
           name: dmg-${{ matrix.target }}
           path: dist/${{ matrix.target }}/OpenRB-338-*.dmg
-          if-no-files-found: error
-      - name: Build the plugin .pkg
-        # task-238: the VST3 installer (it also deletes the old CLAP bundle, task-278), its own
-        # release asset (not in the .dmg); it needs the plugins-<target> bundles downloaded above
-        # and pkgbuild/productbuild (Xcode)
-        run: scripts/package-pkg.sh "${{ matrix.target }}"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: pkg-${{ matrix.target }}
-          path: dist/${{ matrix.target }}/OpenRB-338-Plugins-*.pkg
-          if-no-files-found: error
-
-  installer:
-    # The Windows installers (task-111): NSIS, one per architecture, from the Windows `bin-`
-    # and `plugins-` artifacts of the package jobs. makensis runs on Linux (apt install nsis),
-    # so the job needs no Windows runner and no Rust. The installers are not signed.
-    name: installer (${{ matrix.arch }})
-    needs: [prepare, package]
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: x86_64-pc-windows-msvc, arch: x64 }
-          - { target: aarch64-pc-windows-msvc, arch: arm64 }
-    env:
-      SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source_date_epoch }}
-      # Ubuntu's apt NSIS is 3.08 (windows-latest ships none: NSIS is not in the runner-images
-      # list), the script was checked with 3.13: no -WX here, so a warning of the older
-      # makensis does not stop a release.
-      MAKENSIS_FLAGS: ""
-    steps:
-      - name: Refuse an empty build time
-        run: '[ -n "$SOURCE_DATE_EPOCH" ] || { echo "empty SOURCE_DATE_EPOCH from prepare" >&2; exit 1; }'
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.BUILD_REF }}
-      - name: Install NSIS
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nsis
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: bin-${{ matrix.target }}
-          path: dist/${{ matrix.target }}/bin
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          # the optional VST3 component (task-237)
-          name: plugins-${{ matrix.target }}
-          path: dist/${{ matrix.target }}/plugins
-      - name: Build the installer
-        run: SKIP_BUILD=1 scripts/package-installer.sh "${{ matrix.target }}"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: installer-${{ matrix.arch }}
-          path: dist/${{ matrix.target }}/OpenRB-338-*-setup.exe
           if-no-files-found: error
 
   appimage:
@@ -302,7 +235,7 @@ jobs:
     # release already published is not touched.
     name: draft release
     if: github.ref_type == 'tag' && github.event_name != 'pull_request' && !inputs.pr
-    needs: [prepare, package, dmg, installer, appimage]
+    needs: [prepare, package, dmg, appimage]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -318,7 +251,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: "{package-*,dmg-*,pkg-*,installer-*,appimage-*}"
+          pattern: "{package-*,dmg-*,appimage-*}"
           path: release-in
           merge-multiple: true
       - name: Check the packages and write SHA256SUMS.txt

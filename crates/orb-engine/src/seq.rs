@@ -978,8 +978,8 @@ impl Sequencer {
     /// `sub_1001F8B0`, the position alone (`fild [esp+arg_0]; fstp qword ptr [ecx]`): no chase,
     /// no relocate, the last tick kept. The TopHat host sync (`sub_1001C2F4`, 0x1001C38F) sets
     /// the position so to the host's tick in each audio call while the host does not jump
-    /// (`docs/plugin.md` section 8). The original stores an integer tick; orb's plugin passes
-    /// the host's fractional tick.
+    /// (upstream's plugin document (removed, task-231) section 8). The original stores an integer
+    /// tick; orb's plugin passes the host's fractional tick.
     pub fn set_pos(&mut self, pos: f64) {
         self.pos = pos;
     }

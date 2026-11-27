@@ -1339,8 +1339,7 @@ mod tests {
 
     /// The user's rule: no TR-/TB- names in text a user can see (task-286). Scans the drum
     /// editors' texts, the row names of the status line and clipboard marker, and the Keyboard
-    /// Shortcuts help and the Plugin Usage page. It cannot see strings built inline in a menu or a
-    /// status format.
+    /// Shortcuts help. It cannot see strings built inline in a menu or a status format.
     #[test]
     fn no_hardware_names_in_user_visible_text() {
         let mut texts: Vec<String> = Vec::new();
@@ -1372,10 +1371,6 @@ mod tests {
                 .map(String::from),
             );
         }
-        // Help > Plugin Usage, the page as embedded (task-300: task-293 missed it)
-        let page = crate::plugin_usage::TEXT;
-        assert!(page.lines().count() > 50);
-        texts.extend(page.lines().map(String::from));
         assert!(texts.len() > 100, "{}", texts.len());
         for t in &texts {
             let up = t.to_uppercase();

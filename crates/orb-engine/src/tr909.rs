@@ -455,12 +455,13 @@ impl Tr909 {
     }
 
     /// Not in the original (task-245): the note-mode flams at the block's tick and tempo (the
-    /// note-mode clock's, `docs/plugin.md` 9.5), before the block's audio, where the step
-    /// function's flam runs in a playing song. A flam armed since the last block takes its tick
-    /// as the step does at 0x1002ABB0..0x1002ABC9: `tick + (flam * tempo) / 700000 + 1` (32-bit
-    /// `imul`, `idiv`), with the Flam knob of that block; a later block whose tick is past it
-    /// (signed, 0x1002AB87) retriggers the instrument at `f32(accent * 1.5)` with the note's AC
-    /// byte (the flam pass, 0x1002B320, `dbl_10154350`), columns from 11 down to 1 as there.
+    /// note-mode clock's, upstream's plugin document (removed, task-231) 9.5), before the block's
+    /// audio, where the step function's flam runs in a playing song. A flam armed since the last
+    /// block takes its tick as the step does at 0x1002ABB0..0x1002ABC9: `tick + (flam * tempo) /
+    /// 700000 + 1` (32-bit `imul`, `idiv`), with the Flam knob of that block; a later block whose
+    /// tick is past it (signed, 0x1002AB87) retriggers the instrument at `f32(accent * 1.5)` with
+    /// the note's AC byte (the flam pass, 0x1002B320, `dbl_10154350`), columns from 11 down to 1 as
+    /// there.
     pub fn note_flams(&mut self, tick: i32, tempo: i32) {
         for i in (1..=11).rev() {
             let Some(f) = self.note_flam[i] else {

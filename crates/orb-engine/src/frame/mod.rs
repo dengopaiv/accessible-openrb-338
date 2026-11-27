@@ -303,9 +303,10 @@ pub trait ChannelDevice: SongDevice {
     /// `+0x18DC`) becomes `samples`. The old table and the samples the voices held go into
     /// `retired`. The 303s and the placeholders have no table and do nothing.
     fn set_samples(&mut self, _samples: &Arc<SampleSet>, _retired: &mut Retired) {}
-    /// Not in the original (task-200, the plugin's note mode, `docs/plugin.md` section 9): a
-    /// MIDI note-on (`velocity` 1..127) plays the device through its own step machinery, by the
-    /// note mapping of `docs/midi.md` section 5. Only for a stopped song ([`Engine::live_note`]).
+    /// Not in the original (task-200, the plugin's note mode, upstream's plugin document (removed,
+    /// task-231) section 9): a MIDI note-on (`velocity` 1..127) plays the device through its own
+    /// step machinery, by the note mapping of `docs/midi.md` section 5. Only for a stopped song
+    /// ([`Engine::live_note`]).
     fn live_note_on(&mut self, _note: u8, _velocity: u8) {}
     /// Not in the original: a MIDI note-off for [`ChannelDevice::live_note_on`].
     fn live_note_off(&mut self, _note: u8) {}
@@ -376,8 +377,8 @@ pub(crate) fn gate_arm(p: &[u8], base: i32, c: &GateClock) -> Result<(), i32> {
 }
 
 /// The plugin's Gate Pattern Mode on one pattern section (not in the original; task-218,
-/// `docs/plugin.md` section 11): the section sounds only while the gate is open, and then plays
-/// the gate's pattern, from the moment it opens.
+/// upstream's plugin document (removed, task-231) section 11): the section sounds only while the
+/// gate is open, and then plays the gate's pattern, from the moment it opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Gate {
     /// The gate is in use; off (the default) is the original's behavior.

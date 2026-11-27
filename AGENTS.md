@@ -2,7 +2,7 @@
 
 OpenRB-338 (the command line tool is `orb`, the crates are `orb-*`, the environment variables
 `ORB_*`; the GitHub repository is `OpenRB-338`, renamed from `openrb-338` on 2026-11-12, and the local checkout folder is `openrb-338`) is a
-reimplementation in Rust of the audio engine of Propellerhead ReBirth RB-338 2.01. It renders an `.rbs` song, optionally with an `.rbm` mod, to audio. The rendered audio must match the original's "Export Loop as Audio File" output sample for sample, within a tolerance set by a `Decide:` task. A UI with a similar look and feel comes after the engine; it does not have to match the original exactly. MIDI is in scope in milestone m-7 (decided 2026-11-13; `docs/midi.md`, `docs/standard_midi_mapping.md`), together with the VST3 plugin (the CLAP format was dropped on 2026-11-22); ReWire is out of scope for now.
+reimplementation in Rust of the audio engine of Propellerhead ReBirth RB-338 2.01. It renders an `.rbs` song, optionally with an `.rbm` mod, to audio. The rendered audio must match the original's "Export Loop as Audio File" output sample for sample, within a tolerance set by a `Decide:` task. A UI with a similar look and feel comes after the engine; it does not have to match the original exactly. MIDI is in scope in milestone m-7 (decided 2026-11-13; `docs/midi.md`, `docs/standard_midi_mapping.md`); ReWire is out of scope for now. Upstream's VST3 plugin is not part of the fork (removed by task-231).
 
 The original program (`Rebirth.exe`, `ReBirth.dll`) is not in git: it is copyrighted, so it lives only on the user's machine, in their ReBirth installation, and in the test machine's setup. The user's local IDA databases of it (`Rebirth.exe.i64`, `ReBirth.dll.i64`) are not part of the repository either; agents open a copy through the idalib MCP tools (IDA needs no exe or dll next to the `.i64`). OpenRB-338 needs the program only for the reverse engineering; the tests take the same files from the CD image (`ORB_CD_ISO`, orb-testkit) and skip when it is not set. What is known about the engine is in `docs/initial_investigation.md`, and the official song format is in `docs/RBS42.txt`.
 
@@ -72,8 +72,9 @@ rebasing on upstream stays simple.
   upstream's task (github.com/pingw33n/openrb-338, `backlog/`), not the fork's. Upstream's edits
   to the tasks both share (below 176) come in as usual.
 - **Not taken from upstream (task-229).** The GitHub Pages landing page (`site/`, its workflow
-  and tools; nothing that goes online) was removed in the merge, task-230. The VST3/CLAP plugin
-  (`crates/orb-plugin` and its packaging) is removed by task-231.
+  and tools; nothing that goes online) was removed in the merge, task-230. Upstream's plugin
+  (the VST3 and CLAP plugin crate and its packaging) was removed by task-231; what orb-ui, orb-player
+  and orb-engine share with it stays.
 
 ## Where things are
 
@@ -192,7 +193,7 @@ Everything else goes into the task's notes or a knowledge document.
 
 ## Build and test
 
-The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crates/orb-engine`, `crates/orb-cli`, whose binary is `orb`, `orb-player`, `orb-ui`, `orb-ui-art`, `orb-testkit` and `orb-plugin`, the VST3 plugin, plus `xtask`, its bundler: `cargo xtask bundle orb-plugin --release`, docs/plugin.md; `rbs` and `rbm` keep their names because they are ReBirth's file formats). The toolchain is pinned in `rust-toolchain.toml`.
+The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crates/orb-engine`, `crates/orb-cli`, whose binary is `orb`, `orb-player`, `orb-ui`, `orb-ui-art`, and `orb-testkit`; `rbs` and `rbm` keep their names because they are ReBirth's file formats). The toolchain is pinned in `rust-toolchain.toml`.
 
 - Build: `cargo build --release`
 - Test: `cargo test`. It builds with `[profile.test]` of the workspace `Cargo.toml`: opt-level 3 with debug assertions and overflow checks kept (inherited from dev; `debug = "line-tables-only"`), for the workspace crates, the test binaries and the dependencies, so the corpus tests run their full workloads (the 41-minute shipped songs, all 164 export_equal entries, 400 merge cases; whole workspace about 1.5 minutes on this Mac, a clean build 3 minutes, against 4.5 and 7.5 minutes unoptimized, docs/building.md) and `cargo test --release` is only for the timing measurements marked `--ignored`. Nothing in a test branches on `debug_assertions`; there is no reduced workload. Tests that run `tools/*.py` find Python 3 through `tests/common/python.rs`: `ORB_PYTHON` (a program path, or a command split on whitespace such as `py -3`) if set, else `python3`, `python` or `py -3` on PATH; none is a failure naming `ORB_PYTHON`, not a skip.
@@ -209,8 +210,7 @@ The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crate
   PATH/ReBirth.dll --rebirth-exe CD-Rebirth.exe -o assets/Standard.rbm` rebuilds it byte for
   byte (the one command that reads ReBirth.dll and Rebirth.exe; `--iso` reads them from the CD
   image, and the gated test takes them from it; docs/rbm.md 13).
-- External test inputs: the tests read exactly four variables (`ORB_REAPER`, the REAPER
-  executable for the opt-in REAPER render test, docs/plugin.md 7.1, and the three below), and every test that needs one
+- External test inputs: the tests read exactly three variables (the three below), and every test that needs one
   skips with a message when it is not set (CI sets none). `ORB_CD_ISO` is the ReBirth 2.01 CD
   image: the crate `orb-testkit` takes from it, once per test process, the DAT, `ReBirth.dll`,
   `Rebirth.exe` and the four shipped mods (each checked against its pinned SHA-256) and the four
@@ -230,9 +230,6 @@ The Rust workspace is at the repository root (`crates/rbs`, `crates/rbm`, `crate
   regenerate it on the test machine with `tools/rbhost/thirdparty_songs.py --songs SONGS --mods
   MODS --rb20ful RB20FUL.DAT` (batched and resumable; docs/rbm.md 11.5). Not test
   inputs: `ORB_LIVE_OUT` (orb-player's live_messages: an output folder), `RBM_TEST_DAT` /
-  `RBM_TEST_MODS` (set by a cargo test for its child process only, `tools/rbm_test.py`) and
-  `ORB_PLUGIN_LOG` (the plugin's diagnostic log, set by the REAPER test for its REAPER child
-  only). Cargo's own `CARGO_TARGET_DIR` is read where set by the tests that find built files
-  (`exports.rs`, `reaper.rs`: the bundles and the scratch folders under the target folder).
+  `RBM_TEST_MODS` (set by a cargo test for its child process only, `tools/rbm_test.py`).
 - Song metadata: `orb info SONG.rbs [--mod-dir DIR] [--json]` prints the facts File > Info shows (format and version, title, text, web page, copyright, the mod and whether it is the built-in kit, a file of `--mod-dir` / `ORB_MOD_DIR`, missing, or not checked, tempo, shuffle, mode, loop, synth sound) for an RBS 4.x or a ReBirth 1.x song; `--json` keys are in `orb info --help`. The code is `crates/orb-cli/src/info.rs`, shared with orb-ui.
 - Corpus summary: `cargo run --release -p orb-cli -- compare --manifest tests/refs/manifest.json [--mod-dir DIR] [--set diag,app,shipped] [NAME...]` (the 11 mod songs need `--mod-dir` with the four recrypted shipped mods; `orb mod recrypt --iso "$ORB_CD_ISO" -o DIR` makes them from the CD image) prints per song `EQUAL` or the first difference (frame, time, bar, channel, both values) and exits 1 on any difference. One song: `orb compare SONG.rbs --reference REF.flac|REF.wav [--idle-blocks N]`.

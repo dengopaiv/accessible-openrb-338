@@ -14,7 +14,7 @@ section 10. Marks: [C] read in the disassembly, [G] guessed or inferred.
 orb: `crates/orb-player/src/midi.rs` (`StandardMapping`, `control_change`), tested in the module
 and in `crates/orb-ui/tests/midi.rs`.
 
-**The plugin's note mapping is a different one.** The VST3 plugin has orb's own note
+**The plugin's note mapping is a different one.** The plugin has orb's own note
 mapping (devices on MIDI channels 1..4, pattern notes 0..31, the 303 played by pitch, General
 MIDI drum notes, accent by velocity): `docs/midi.md` section 5. The two use different channels:
 the device channels are 1..4, and the Standard Mapping, off by default in the plugin, listens on
@@ -212,7 +212,7 @@ of the stored layout that was not traced), on Remote MIDI Control being on (defa
 dialog's radio, `sub_41E959` 0x41EABE / 0x41EACA), and on the keyboard mode (section 6).
 `docs/midi.md` has the settings. orb's layer listens to one channel (`StandardMapping::channel`,
 default 0 = channel 1), is on when its source feeds it, and has the mode. The plugin
-(`docs/plugin.md` section 8) feeds it only when its Remote MIDI setting is on (off by default)
+(upstream's plugin document (removed, task-231) section 8) feeds it only when its Remote MIDI setting is on (off by default)
 and sets the channel to 16 by default (channels 1..4 are its device channels).
 
 ## 9. Differences from the manual

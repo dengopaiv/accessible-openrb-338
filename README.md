@@ -40,9 +40,6 @@ and Windows.
   (Help > Keyboard Shortcuts).
 - **Pattern commands:** cut, copy, paste and duplicate a pattern, with one level of undo (the
   Edit menu).
-- **A VST 3 instrument plugin** with the same engine and panel (see The plugin below).
-  Besides the Mix it has outputs for the 303-1, 303-2, 808 and 909, tapped like ReBirth's
-  ReWire channels, after each channel's effects and before its level and pan.
 - **`orb`, a command-line tool,** to work with songs and mods from the terminal:
   - `orb render`: render a song's loop to WAV, FLAC or Ogg, far faster than real time (a
     five-minute song takes about a second and a half);
@@ -54,8 +51,7 @@ and Windows.
 
 ## Not implemented
 
-- ReWire, and MIDI input or sync in the standalone application (the VST 3 plugin below takes
-  the MIDI of its host).
+- ReWire, and MIDI input or sync in the standalone application.
 - Mod themes other than the classic panel: a mod's panel art is drawn as it is, with no
   higher-resolution sets.
 - The original's other Edit menu functions on patterns (clear, shift, randomize and the like).
@@ -172,14 +168,6 @@ without loading it, and Escape closes the dialog.
 - [docs/accessibility_plan.md](docs/accessibility_plan.md): the plan, as decisions and tasks,
   with the NVDA checklist that ends it.
 
-## The plugin
-
-OpenRB-338 upstream also comes as an instrument plugin in the VST 3 format
-(`OpenRB-338.vst3`), with the same engine and panel inside a DAW;
-[docs/plugin_usage.md](docs/plugin_usage.md) is the guide to its modes and MIDI mappings. This
-fork leaves the plugin out (the user's decision of 2026-11-18): it is being removed, and this
-section with it.
-
 ## Quick start
 
 1. **Download** from this fork's
@@ -195,7 +183,7 @@ section with it.
    |---|---|
    | macOS, Apple silicon | `OpenRB-338-<version>-aarch64-apple-darwin.dmg` |
    | macOS, Intel | `OpenRB-338-<version>-x86_64-apple-darwin.dmg` |
-   | Windows, ARM64 | `OpenRB-338-<version>-arm64-setup.exe` |
+   | Windows, ARM64 | upstream's `OpenRB-338-<version>-arm64-setup.exe` (an installer; this fork ships none) |
    | Linux, x86_64 | `OpenRB-338-<version>-x86_64.AppImage` |
    | Linux, ARM64 | `OpenRB-338-<version>-aarch64.AppImage` |
 
@@ -212,7 +200,6 @@ section with it.
      settings (`OpenRB-338.toml`) and the logs (the folder `logs`) are kept beside it, not in
      AppData, and the songs and mods folders chosen inside the folder are remembered relative
      to it, so they work under any drive letter. Delete the marker file to use AppData instead.
-   - Windows, OpenRB-338's installer: run it. It can add `orb` to the PATH.
    - Linux: make the AppImage executable (`chmod +x OpenRB-338-*.AppImage`).
      It holds its own icon and menu entry: for a menu item, open it with an AppImage tool such
      as Gear Lever or AppImageLauncher.

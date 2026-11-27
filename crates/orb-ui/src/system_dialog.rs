@@ -73,11 +73,6 @@ impl Parent {
     }
 }
 
-// SAFETY: the raw handles are identifiers of the app's own window, used only on the UI thread
-// that owns it (the dialog is modal over it). `Send` lets an `App` move to the thread that runs
-// it, as upstream's plugin editor does (task-230); the handles are refreshed every frame there.
-unsafe impl Send for Parent {}
-
 impl HasWindowHandle for Parent {
     fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
         // SAFETY: the handle is the app's own window, refreshed every frame, which outlives the
@@ -94,9 +89,8 @@ impl HasDisplayHandle for Parent {
 }
 
 /// Shows a dialog for the request, starting in the folder, owned by the window `parent` (None:
-/// no owner), and returns the chosen path (None: cancelled). `Send`, so an `App` can move to the
-/// thread that runs it (task-230).
-pub type Picker = Box<dyn FnMut(Request, &Path, Option<&Parent>) -> Option<PathBuf> + Send>;
+/// no owner), and returns the chosen path (None: cancelled).
+pub type Picker = Box<dyn FnMut(Request, &Path, Option<&Parent>) -> Option<PathBuf>>;
 
 /// The dialog of an app that has none to show (`App::new`): cancels every request, so only
 /// the real program (`App::use_system_services`) opens a dialog.

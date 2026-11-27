@@ -46,8 +46,8 @@ use orb_player::{Audio, CALL_FRAMES, Command, LiveBlock, Player, Preview, Snapsh
 use crate::model::{Event, Panel, Step303};
 
 /// What the link drives: the UI half of a player. The standalone app's is its own
-/// [`orb_player::Player`]; the plugin's editor (orb-plugin, task-201) has one that turns the
-/// panel's commands into the plugin's host parameters and calls.
+/// [`orb_player::Player`]; the plugin's editor (the removed plugin crate, task-201) has one that
+/// turns the panel's commands into the plugin's host parameters and calls.
 pub trait Port: Send {
     /// Queues a command; a full queue gives it back.
     fn send(&mut self, c: Command) -> Result<(), Command>;

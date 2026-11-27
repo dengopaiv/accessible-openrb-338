@@ -6,7 +6,7 @@
 //!
 //! # Use
 //!
-//! A source (a MIDI port of the standalone app, task-188; the host's events of the VST3
+//! A source (a MIDI port of the standalone app, task-188; the host's events of the
 //! plugin) hands [`StandardMapping::feed`] its bytes with a time each, in the source's own unit
 //! (the plugin: the frame of the event; a port: its timestamp). The layer gives back
 //! [`Timed`] [`Action`]s carrying the same time, in input order; [`Action::command`] is the

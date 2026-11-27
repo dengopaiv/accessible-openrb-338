@@ -39,6 +39,8 @@ It holds the work of OpenRB-338 taken into the fork on 2026-11-26.
   portable.txt and the folder data, stays portable and keeps its settings: the first start
   copies data\ui.toml into OpenRB-338.toml. The songs and mods folders inside the program's
   folder are still remembered relative to it, so a USB stick works under any drive letter.
+- **No plugin.** The plugin that OpenRB-338 offers for music programs is not part of this
+  fork, and the zip has no plugin file.
 
 ## 2026.1111.1330 (2026-11-11)
 

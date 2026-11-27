@@ -1,15 +1,16 @@
 //! Portable mode on Windows (task-289, GitHub issue 19; the marker, task-295): while a marker
 //! file `OpenRB-338.portable` (any content, even empty) is in the folder of the program, the
-//! file `OpenRB-338.toml` there keeps the settings, the crash logs and the plugin's log next to it
+//! file `OpenRB-338.toml` there keeps the settings and the crash logs next to it
 //! instead of in the user's profile.
 //!
 //! - The standalone app's folder is the one of its `OpenRB-338.exe`.
-//! - The plugin's folder is the one that holds the single file `OpenRB-338.vst3` (the zip), or the
-//!   `OpenRB-338.vst3` bundle (the installer; never inside it). Both are found the same way: the
-//!   folder of the module (exe or dll) that holds this code, from `GetModuleHandleExW` with the
-//!   address of a function here and `GetModuleFileNameW`; the plugin links this crate in, so its
-//!   module is the plugin's binary `OpenRB-338.vst3\Contents\x86_64-win\OpenRB-338.vst3`
-//!   ([`folder_of`] goes up to the bundle's parent) or the single file's own folder.
+//! - Kept from upstream as shared code (the fork's zip has no plugin, task-231): the folder of
+//!   upstream's plugin is the one that holds the single file `OpenRB-338.vst3`, or the
+//!   `OpenRB-338.vst3` bundle (never inside it). Both are found the same way: the folder of the
+//!   module (exe or dll) that holds this code, from `GetModuleHandleExW` with the address of a
+//!   function here and `GetModuleFileNameW`; the plugin links this crate in, so its module is the
+//!   plugin's binary `OpenRB-338.vst3\Contents\x86_64-win\OpenRB-338.vst3` ([`folder_of`] goes up
+//!   to the bundle's parent) or the single file's own folder.
 //! - [`folder`] is that folder when the marker is in it. macOS and Linux never have one.
 //!
 //! The fork (accessible-openrb-338) adds two things, the user's choice of 2026-11-26 when
