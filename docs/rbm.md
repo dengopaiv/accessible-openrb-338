@@ -378,6 +378,10 @@ such an entry like any other; `--check` skips it (it has nothing to recrypt) and
 that have an original, when `--orig` holds them. Written once, the entries of the 7 are not
 checked against an independent original: the reader of `tools/rbm.py` is the reference there.
 
+**The folder since 2026-11-26 (task-317).** 326 recrypted mods: `GreenMachine` and `SKYLINE` are
+new and have no original. `--keep` kept the 324 entries of the previous manifest and the two new
+ones are `"original": false` entries, so 9 entries have no original now and `--check` covers 317.
+
 **The check.** `tools/rbm.py check-dir DIR RB20FUL.DAT [--json]` (the reference: every mod's
 parse, key pages, every embedded file descrambled, the 46 slots' AIFFs, JPEG end markers,
 duplicate INFO names in the original's folder order) and the env-gated cargo test
@@ -567,7 +571,7 @@ in the list (0x415A90), deletes it and shows message 500128050 (`sub_475C12`). [
 ### 11.5 Every song against rbhost: the songs manifest (task-129, 2026-10-29)
 
 The collection moved to `~/rb-songs/songs` (songs, read recursively: the top level and the
-`CaveysRebirthStuff` archive) and `~/rb-mods/mods` (324 recrypted mods since 2026-11-25; 320 on 2026-10-31; 311 on
+`CaveysRebirthStuff` archive) and `~/rb-mods/mods` (326 recrypted mods since 2026-11-26; 324 on 2026-11-25; 320 on 2026-10-31; 311 on
 2026-10-30; 171 on 2026-10-29, after the user removed DJ Turn's 8-Track.rbm; 172 before). The
 user asked (2026-10-29) that all songs be handled recursively.
 
@@ -593,7 +597,7 @@ The gated `songs` test (`crates/orb-cli/tests/thirdparty.rs`) renders every list
 `orb render --idle-blocks N --mod-dir ORB_THIRDPARTY_MODS_DIR --standard-kit` and requires the
 WAV's SHA-256 to equal the manifest's; a song file of the folder the manifest does not list fails
 it, and so does a run without `ORB_THIRDPARTY_MODS_DIR` when the manifest lists a song with a
-third-party mod (2693 of them), so a green run has compared all 4834. Regenerate the manifest when
+third-party mod (3054 of them), so a green run has compared all 5685. Regenerate the manifest when
 the collection changes.
 
 **Positions that wrap.** The reader adds the deltas in u32 (`docs/song_load.md` section 10), so
@@ -651,6 +655,7 @@ still opened by the path the file system gives), so a regenerated manifest equal
 names: on the collection above it would write the same 1270 names as the manifest's in NFC,
 and differ from the committed raw strings in exactly those 4 paths (checked by importing the
 tool with its test-machine client stubbed, 2026-11-05).
+
 **The run of 2026-11-25 (task-311).** The user grew the folder to 4834 song files, 4834
 distinct (new sites: propellerheads.se, caveman.demon.nl, dance.nl, rotorkopf.dk, mrt.u-net.com,
 tb303.com, ...; 46 songs of the old manifest are gone from it, duplicates removed). The stale
@@ -661,6 +666,26 @@ or to a mod whose hash changed, over all songs) found 3612 new songs and no reso
 render`** (the thirdparty test: 2 passed in 510 s); 584 ReBirth 1.x (243 of 3.1, 341 of 3.2)
 and 4250 RBS (3493 of 4.2, 746 of 4.1, 11 of 4.0); 2693 RBS play a mod, 135 mods in all; 2141
 play the built-in kit, 2123 of them `Standard ReBirth` and 18 a name no mod has.
+
+**The run of 2026-11-26 (task-317).** The user changed the songs folder again (852 songs added,
+`peff/epriori.rbs` deleted, 188 moved unchanged, 4 moved and changed: `MS1311-Arrhythmia.RBS`,
+`The Purest Ecstasy (Tribal mix).rbs`, `3 April.rbs`, `ReBirth_Theme.rbs`): 5685 song files, 5685
+distinct, no skipped. The stale check found 856 songs the manifest lacks (the 852 and the 4
+changed), no resolution change and no changed pinned mod; the 5 songs of the manifest that are
+gone from the folder (the 4 old versions and `epriori`) were dropped. One new name has a
+non-ASCII character (`wave.al.ru/№1.rbs`); the tool and the test handle it. `thirdparty_songs.py
+--remote-dir t317` rendered the 856 on the machine (one permit, about 32 min).
+Result: **5685 rendered by rbhost, 0 skipped, all equal `orb render`**; 754 ReBirth 1.x (269 of
+3.1, 485 of 3.2) and 4931 RBS (3879 of 4.2, 1040 of 4.1, 12 of 4.0); 3054 RBS play a mod, 135 mods
+in all (the two new mods are used by no song); 1877 RBS play the built-in kit, 1772 of them
+`Standard ReBirth`.
+
+**A run on Windows with the public collections (2026-11-27, the accessible-openrb-338 fork,
+task-240).** The clones pulled to rb-mods bfbd8c9 and rb-songs 6e0b92e (both 2026-11-26), with
+the manifests of upstream's task-317 above. `cargo test --release -p orb-cli --test thirdparty`:
+3 passed in 1188 s. `mods`: 326 load, 0 fail. `songs`: 5685 distinct, all equal rbhost's
+renders, 0 not compared. The manifest's 4 decomposed paths matched their composed names on disk
+through `same_path`, as in the run of 2026-11-05.
 
 **The run of 2026-10-29.** 1242 song files (a name containing `.rbs`), 1242 distinct:
 - 426 ReBirth 1.x (built-in kit) and 813 RBS: 436 of 4.2, 369 of 4.1, 8 of 4.0. 510 RBS play a

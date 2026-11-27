@@ -40,7 +40,7 @@ rebasing on upstream stays simple.
 - **The third-party collections.** Upstream's public mod and song collections
   (github.com/pingw33n/rb-mods, github.com/pingw33n/rb-songs) are cloned next to this checkout,
   never into it (the user's decision, 2026-11-05: 1.1 GB of third-party files with no stated
-  license): `C:\GIT\music\rb-collections\rb-mods\mods` (320 recrypted mods) and
+  license): `C:\GIT\music\rb-collections\rb-mods\mods` (326 recrypted mods) and
   `C:\GIT\music\rb-collections\rb-songs\songs`. Point `ORB_THIRDPARTY_MODS_DIR` and
   `ORB_THIRDPARTY_SONGS_DIR` at them for the gated tests (docs/rbm.md section 11.5, the run of
   2026-11-05).
