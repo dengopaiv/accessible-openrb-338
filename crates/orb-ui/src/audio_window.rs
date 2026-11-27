@@ -12,7 +12,8 @@ use orb_player::control::Event;
 use orb_player::devices::{self, Caps, DeviceInfo};
 use orb_player::output::InUse;
 
-use crate::app::App;
+use crate::a11y::window as win;
+use crate::app::{App, Win, focus_into_window};
 use crate::layout::DIALOG_MARGIN;
 use crate::palette::INK_DIM;
 use crate::settings::AudioChoice;
@@ -176,6 +177,121 @@ pub fn frames_text(frames: u32, rate: u32) -> String {
     )
 }
 
+/// Screen reader mode: gives the combo box `r` the name `name` (what it chooses); the selected
+/// text is its value. The label beside it in the grid is not what a screen reader reads.
+fn name_combo(ctx: &Context, on: bool, r: &egui::Response, name: &str) {
+    if on {
+        ctx.accesskit_node_builder(r.id, |b| b.set_label(name));
+    }
+}
+
+/// One row of the In use list: the label, and the text as a line that takes the focus in screen
+/// reader mode and is read as "label: text" (`win::line`). Without the mode two plain labels.
+fn in_use_row(ui: &mut egui::Ui, on: bool, label: &str, text: impl Into<String>) {
+    let text = text.into();
+    ui.label(label);
+    let spoken = format!("{label}: {text}");
+    win::line(ui, on, RichText::new(text), false, Some(&spoken));
+    ui.end_row();
+}
+
+/// What the user is told after the stream was reopened on `new` while `old` was the choice:
+/// each of the four settings that differ, as "Driver: WASAPI", "Device: System default",
+/// "Sample rate: 48000 Hz" and "Buffer size: 512 frames (10.7 ms)"; `None` when none differs.
+/// Said once per change, never for the periodic In use refresh.
+pub fn change_text(old: &AudioChoice, new: &AudioChoice, drivers: &[String]) -> Option<String> {
+    let mut v: Vec<String> = Vec::new();
+    if old.driver != new.driver {
+        v.push(format!("Driver: {}", driver_of(drivers, new)));
+    }
+    if old.device != new.device {
+        let d = match (&new.device, &new.device_name) {
+            (None, _) => SYSTEM_DEFAULT,
+            (Some(_), Some(n)) => n,
+            (Some(id), None) => id,
+        };
+        v.push(format!("Device: {d}"));
+    }
+    if old.rate != new.rate {
+        v.push(match new.rate {
+            None => format!("Sample rate: {DEVICE_DEFAULT}"),
+            Some(r) => format!("Sample rate: {r} Hz"),
+        });
+    }
+    if old.buffer != new.buffer && !buffer_is_the_drivers(driver_of(drivers, new)) {
+        let rate = new.rate.unwrap_or(orb_player::RATE);
+        v.push(format!("Buffer size: {}", frames_text(new.buffer, rate)));
+    }
+    (!v.is_empty()).then(|| v.join(". "))
+}
+
+/// The rows of the In use grid: what the stream is on, or why there is no sound.
+fn in_use_rows(ui: &mut egui::Ui, sr: bool, in_use: &Option<InUse>, running: bool) {
+    match in_use {
+        Some(u) => {
+            in_use_row(ui, sr, "Device", format!("{}: {}", u.driver, u.device));
+            in_use_row(
+                ui,
+                sr,
+                "Sample rate",
+                if u.resampled {
+                    format!("{} Hz, resampled from 44100 Hz", u.rate)
+                } else {
+                    format!("{} Hz, not resampled", u.rate)
+                },
+            );
+            in_use_row(
+                ui,
+                sr,
+                "Format",
+                format!("{} channels, {}", u.channels, u.format),
+            );
+            // only the first callback's size: what was asked for is the
+            // Buffer size list's selection
+            in_use_row(
+                ui,
+                sr,
+                "Buffer",
+                match u.granted {
+                    Some(g) => frames_text(g, u.rate),
+                    None => "no callback yet".to_string(),
+                },
+            );
+            // what the host measured: playback time minus call time
+            if let Some(ns) = u.output_latency_ns {
+                in_use_row(
+                    ui,
+                    sr,
+                    "Output latency",
+                    format!("{:.1} ms (measured by the driver)", ns as f64 / 1e6),
+                );
+            }
+            in_use_row(ui, sr, "Underruns", u.underruns.to_string());
+        }
+        None => in_use_row(
+            ui,
+            sr,
+            "Output",
+            if running {
+                "no sound: the stream did not open"
+            } else {
+                "no audio output"
+            },
+        ),
+    }
+}
+
+/// The announcement of a change and the controller's notes of the same apply: one text, the
+/// change first (`None` when there is neither).
+pub fn join_said(change: Option<String>, notes: &[String]) -> Option<String> {
+    let all: Vec<&str> = change
+        .iter()
+        .map(String::as_str)
+        .chain(notes.iter().map(String::as_str))
+        .collect();
+    (!all.is_empty()).then(|| all.join(". "))
+}
+
 /// The id of the window of an open (`App::audio_serial`).
 pub fn audio_window_id(serial: u32) -> egui::Id {
     egui::Id::unique(("orb_audio_output_window", serial))
@@ -200,6 +316,22 @@ impl App {
         audio_window_id(self.audio_serial)
     }
 
+    /// Opens the window like [`App::show_audio`] but with the given lists, and never asks the
+    /// drivers: no device is read (for tests of how the window is read).
+    #[doc(hidden)]
+    pub fn audio_open_for_test(
+        &mut self,
+        drivers: Vec<String>,
+        devices: Vec<DeviceInfo>,
+        caps: Option<Caps>,
+    ) {
+        self.audio_serial += 1;
+        self.audio_ui.drivers = drivers;
+        self.audio_ui.devices = devices;
+        self.audio_ui.caps = caps;
+        self.audio_open = true;
+    }
+
     /// Whether the window is open.
     pub fn audio_is_open(&self) -> bool {
         self.audio_open
@@ -214,22 +346,38 @@ impl App {
         };
         let events = c.apply(choice.request());
         let now = AudioChoice::from_request(c.request());
+        // what the stream ended up on, once (task-234); the controller's notes follow
+        let said = change_text(&self.settings.audio, &now, &self.audio_ui.drivers);
         self.settings.set_audio(now.clone());
         if let Err(e) = self.settings.save() {
             self.fail(e);
         }
-        self.audio_events(events);
+        self.audio_events_after(said, events);
         self.audio_ui.refresh(&now);
     }
 
     /// Tells the user what the controller reports: a note in the status line, an error in the
     /// box.
     pub fn audio_events(&mut self, events: Vec<Event>) {
+        self.audio_events_after(None, events);
+    }
+
+    /// [`App::audio_events`] after a change said as `change`: the notes go to the status line
+    /// and, with the change first, are announced as one utterance (a second message would
+    /// replace the first).
+    fn audio_events_after(&mut self, change: Option<String>, events: Vec<Event>) {
+        let mut notes = Vec::new();
         for e in events {
             match e {
-                Event::Note(n) => self.set_status(n),
+                Event::Note(n) => {
+                    self.status = Some(n.clone());
+                    notes.push(n);
+                }
                 Event::Error(e) => self.fail(e),
             }
+        }
+        if let Some(t) = join_said(change, &notes) {
+            self.announce(t);
         }
     }
 
@@ -238,10 +386,16 @@ impl App {
         if !self.audio_open {
             return;
         }
-        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        let sr = self.screen_reader_mode();
+        // in screen reader mode Escape closes an open list first (the keyboard's way out of a
+        // combo box), the window on the next press
+        let list_open = sr && egui::Popup::is_any_open(ctx);
+        if !list_open && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
             self.audio_open = false;
             return;
         }
+        let due = self.window_focus_due(Win::Audio);
+        let id = audio_window_id(self.audio_serial);
         let mut open = true;
         let mut chosen: Option<AudioChoice> = None;
         // which lists to read again after this frame: the Device list opened, or a list of the
@@ -269,6 +423,8 @@ impl App {
             // "In use" rows need (task-297): the rest scrolls
             .max_width(screen.width() - 2.0 * DIALOG_MARGIN)
             .show(ctx, |ui| {
+                focus_into_window(ui, due);
+                win::window(ui, sr, id, "Audio Output");
                 egui::ScrollArea::vertical()
                     .auto_shrink([true, true])
                     .max_height((screen.height() - 2.0 * DIALOG_MARGIN - 50.0).max(60.0))
@@ -280,7 +436,7 @@ impl App {
                                 // Driver
                                 let driver = driver_of(&ui_state.drivers, &choice).to_string();
                                 ui.label("Driver");
-                                egui::ComboBox::from_id_salt("audio_driver")
+                                let r = egui::ComboBox::from_id_salt("audio_driver")
                                     .selected_text(driver.clone())
                                     .width(280.0)
                                     .show_ui(ui, |ui| {
@@ -292,6 +448,7 @@ impl App {
                                             }
                                         }
                                     });
+                                name_combo(ctx, sr, &r.response, "Driver");
                                 ui.end_row();
                                 // Device
                                 ui.label("Device");
@@ -343,6 +500,7 @@ impl App {
                                             }
                                         }
                                     });
+                                name_combo(ctx, sr, &r.response, "Device");
                                 refresh_devices |= r.response.clicked();
                                 ui.end_row();
                                 // Sample rate
@@ -377,13 +535,20 @@ impl App {
                                             }
                                         }
                                     });
+                                name_combo(ctx, sr, &r.response, "Sample rate");
                                 refresh_caps |= r.response.clicked();
                                 ui.end_row();
                                 // Buffer size
                                 ui.label("Buffer size");
                                 if buffer_is_the_drivers(&driver) {
                                     // task-193: ASIO sets the buffer in its own panel
-                                    ui.label("Set in the driver's own control panel");
+                                    win::line(
+                                        ui,
+                                        sr,
+                                        RichText::new("Set in the driver's own control panel"),
+                                        false,
+                                        Some("Buffer size: set in the driver's own control panel"),
+                                    );
                                 } else {
                                     let r = egui::ComboBox::from_id_salt("audio_buffer")
                                         .selected_text(frames_text(shown_buffer, rate))
@@ -403,13 +568,14 @@ impl App {
                                                 }
                                             }
                                         });
+                                    name_combo(ctx, sr, &r.response, "Buffer size");
                                     refresh_caps |= r.response.clicked();
                                 }
                                 ui.end_row();
                             });
                         if let Some(p) = &ui_state.problem {
                             ui.add_space(4.0);
-                            ui.label(RichText::new(p).color(INK_DIM));
+                            win::line(ui, sr, RichText::new(p).color(INK_DIM), true, None);
                         }
                         ui.add_space(6.0);
                         ui.separator();
@@ -418,52 +584,7 @@ impl App {
                         egui::Grid::new("audio_in_use")
                             .num_columns(2)
                             .spacing([12.0, 4.0])
-                            .show(ui, |ui| match &in_use {
-                                Some(u) => {
-                                    ui.label("Device");
-                                    ui.label(format!("{}: {}", u.driver, u.device));
-                                    ui.end_row();
-                                    ui.label("Sample rate");
-                                    ui.label(if u.resampled {
-                                        format!("{} Hz, resampled from 44100 Hz", u.rate)
-                                    } else {
-                                        format!("{} Hz, not resampled", u.rate)
-                                    });
-                                    ui.end_row();
-                                    ui.label("Format");
-                                    ui.label(format!("{} channels, {}", u.channels, u.format));
-                                    ui.end_row();
-                                    ui.label("Buffer");
-                                    // only the first callback's size: what was asked for is the
-                                    // Buffer size list's selection
-                                    ui.label(match u.granted {
-                                        Some(g) => frames_text(g, u.rate),
-                                        None => "no callback yet".to_string(),
-                                    });
-                                    ui.end_row();
-                                    // what the host measured: playback time minus call time
-                                    if let Some(ns) = u.output_latency_ns {
-                                        ui.label("Output latency");
-                                        ui.label(format!(
-                                            "{:.1} ms (measured by the driver)",
-                                            ns as f64 / 1e6
-                                        ));
-                                        ui.end_row();
-                                    }
-                                    ui.label("Underruns");
-                                    ui.label(u.underruns.to_string());
-                                    ui.end_row();
-                                }
-                                None => {
-                                    ui.label("Output");
-                                    ui.label(if running {
-                                        "no sound: the stream did not open"
-                                    } else {
-                                        "no audio output"
-                                    });
-                                    ui.end_row();
-                                }
-                            });
+                            .show(ui, |ui| in_use_rows(ui, sr, &in_use, running));
                         // the underruns count up while the window is open
                         ctx.request_repaint_after(Duration::from_millis(500));
                     });
@@ -621,5 +742,150 @@ mod tests {
         for d in ["CoreAudio", "WASAPI", "ALSA"] {
             assert!(!buffer_is_the_drivers(d));
         }
+    }
+}
+
+#[cfg(test)]
+mod a11y_tests {
+    use super::*;
+
+    fn reading() -> InUse {
+        InUse {
+            driver: "WASAPI".into(),
+            device: "Speakers".into(),
+            follows_default: true,
+            rate: 48000,
+            resampled: true,
+            channels: 2,
+            format: "f32".into(),
+            requested: Some(2048),
+            granted: Some(2048),
+            output_latency_ns: Some(21_300_000),
+            underruns: 3,
+        }
+    }
+
+    /// The In use rows in screen reader mode are lines that take the focus, read as
+    /// "label: text"; without the mode they are plain labels that cannot be focused.
+    #[test]
+    fn the_in_use_rows_are_lines_a_screen_reader_reads() {
+        for sr in [true, false] {
+            let ctx = Context::default();
+            ctx.enable_accesskit();
+            let mut out = Default::default();
+            // the grid's first frame is a sizing pass that registers no widgets
+            for t in [0.0, 0.1, 0.2] {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(600.0, 400.0),
+                    )),
+                    time: Some(t),
+                    focused: true,
+                    ..Default::default()
+                };
+                out = ctx.run_ui(input, |ui| {
+                    egui::Grid::new("g").show(ui, |ui| {
+                        in_use_rows(ui, sr, &Some(reading()), true);
+                    });
+                });
+            }
+            let update = out.platform_output.accesskit_update.take().unwrap();
+            let values: Vec<String> = update
+                .nodes
+                .iter()
+                .filter_map(|(_, n)| n.value().map(str::to_string))
+                .collect();
+            let want = [
+                "Device: WASAPI: Speakers",
+                "Sample rate: 48000 Hz, resampled from 44100 Hz",
+                "Format: 2 channels, f32",
+                "Buffer: 2048 frames (42.7 ms)",
+                "Output latency: 21.3 ms (measured by the driver)",
+                "Underruns: 3",
+            ];
+            if sr {
+                for w in want {
+                    assert!(values.iter().any(|v| v == w), "{w}: {values:?}");
+                }
+            } else {
+                // only egui's own text of each label, no "label: text" line
+                for w in want {
+                    assert!(!values.iter().any(|v| v == w), "{w}: {values:?}");
+                }
+            }
+        }
+    }
+
+    fn dev_info(id: &str) -> DeviceInfo {
+        DeviceInfo {
+            id: id.into(),
+            name: format!("Name {id}"),
+        }
+    }
+
+    #[test]
+    fn a_change_and_the_notes_are_one_text_change_first() {
+        let note = "Audio device X is not available; using System default".to_string();
+        assert_eq!(join_said(None, &[]), None);
+        assert_eq!(
+            join_said(Some("Device: X".into()), &[]).as_deref(),
+            Some("Device: X")
+        );
+        assert_eq!(
+            join_said(None, std::slice::from_ref(&note)).as_deref(),
+            Some(note.as_str())
+        );
+        assert_eq!(
+            join_said(Some("Device: X".into()), &[note.clone(), "More".into()]).as_deref(),
+            Some("Device: X. Audio device X is not available; using System default. More")
+        );
+    }
+
+    #[test]
+    fn a_change_is_said_with_what_changed() {
+        let drivers = vec!["WASAPI".to_string(), "ASIO".to_string()];
+        let old = AudioChoice::default();
+        assert_eq!(change_text(&old, &old, &drivers), None);
+        let asio = after_driver(&drivers, "ASIO");
+        assert_eq!(
+            change_text(&old, &asio, &drivers).as_deref(),
+            Some("Driver: ASIO")
+        );
+        let dev = after_device(&old, Some(&dev_info("a")), None);
+        assert_eq!(
+            change_text(&old, &dev, &drivers).as_deref(),
+            Some("Device: Name a")
+        );
+        assert_eq!(
+            change_text(&dev, &old, &drivers).as_deref(),
+            Some("Device: System default")
+        );
+        let rate = AudioChoice {
+            rate: Some(48000),
+            ..old.clone()
+        };
+        assert_eq!(
+            change_text(&old, &rate, &drivers).as_deref(),
+            Some("Sample rate: 48000 Hz")
+        );
+        assert_eq!(
+            change_text(&rate, &old, &drivers).as_deref(),
+            Some("Sample rate: Device default")
+        );
+        let buf = AudioChoice {
+            buffer: 512,
+            ..old.clone()
+        };
+        assert_eq!(
+            change_text(&old, &buf, &drivers).as_deref(),
+            Some("Buffer size: 512 frames (11.6 ms)")
+        );
+        // ASIO's buffer is the driver's own: not said as a choice
+        let asio_buf = AudioChoice {
+            buffer: 512,
+            ..asio.clone()
+        };
+        assert_eq!(change_text(&asio, &asio_buf, &drivers), None);
     }
 }

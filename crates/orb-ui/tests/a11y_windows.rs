@@ -377,3 +377,161 @@ fn the_init_song_question_takes_the_focus_on_initialize_and_gives_it_back() {
             .all(|(_, n)| n.description().is_none())
     );
 }
+
+/// Opens Audio Output with fixed lists: no driver or device is asked.
+fn open_audio(a: &mut AppTree) {
+    use orb_player::devices::{Caps, DeviceInfo, SupportedBufferSize};
+    a.app.audio_open_for_test(
+        vec!["WASAPI".into(), "ASIO".into()],
+        vec![DeviceInfo {
+            id: "a".into(),
+            name: "Speakers".into(),
+        }],
+        Some(Caps {
+            rates: vec![44100, 48000],
+            buffers: vec![256, 512, 1024],
+            range: SupportedBufferSize::Range {
+                min: 256,
+                max: 1024,
+            },
+        }),
+    );
+}
+
+/// Options > Audio Output (task-234): a named Dialog, the focus goes in on the Driver combo box
+/// and comes back on close (Escape), every combo box says what it chooses and holds the chosen
+/// value, and the In use line can be reached.
+#[test]
+fn audio_output_takes_the_focus_and_names_its_combo_boxes() {
+    let mut a = app(true);
+    let play = focus_play(&mut a);
+    open_audio(&mut a);
+    settle(&mut a);
+    assert!(a.app.audio_is_open());
+    assert_eq!(dialogs(&a, Role::Dialog), vec!["Audio Output"]);
+    // the four combo boxes, by name, with the chosen value
+    let mut combos: Vec<(String, String)> = a
+        .tree()
+        .by_role(Role::ComboBox)
+        .map(|(_, n)| {
+            (
+                a11y::name(n).unwrap_or_default().to_string(),
+                a11y::value(n).unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    combos.sort();
+    let names: Vec<&str> = combos.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(
+        names,
+        ["Buffer size", "Device", "Driver", "Sample rate"],
+        "{combos:?}"
+    );
+    // the 2048 asked for is clamped into the device's range (up to 1024)
+    assert!(combos[0].1.starts_with("1024 frames"), "{combos:?}");
+    assert_eq!(combos[1].1, "System default");
+    assert_eq!(combos[2].1, "WASAPI");
+    assert_eq!(combos[3].1, "Device default");
+    // the focus is in the window, on the first combo box
+    let f = focused(&a);
+    assert_eq!(role_of(&a, f), Role::ComboBox);
+    assert_eq!(a11y::name(a.tree().node(f).unwrap()), Some("Driver"));
+    // Tab walks the combo boxes and then the In use line
+    let mut seen = vec![];
+    for _ in 0..6 {
+        a.key(Key::Tab);
+        let n = a.tree().node(focused(&a)).unwrap();
+        seen.push(spoken(&a, focused(&a)));
+        let _ = n;
+    }
+    for want in [
+        "Device",
+        "Sample rate",
+        "Buffer size",
+        "Output: no audio output",
+    ] {
+        assert!(seen.iter().any(|s| s == want), "{want}: {seen:?}");
+    }
+    // Escape closes it and the focus is back
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert!(!a.app.audio_is_open());
+    assert!(dialogs(&a, Role::Dialog).is_empty());
+    assert_eq!(focused(&a), play.accesskit_id(), "the focus is back");
+}
+
+/// The window open for seconds (the 500 ms In use refresh, the repaints) says nothing; a change
+/// is one message with what changed.
+#[test]
+fn audio_output_says_a_change_once_and_never_the_refresh() {
+    let mut a = app(true);
+    open_audio(&mut a);
+    settle(&mut a);
+    let before = a.app.announcer.serial();
+    // many frames (the In use sampling is timed by the wall clock and has its own unit
+    // tests; here no repaint or input says anything)
+    for _ in 0..130 {
+        a.frame(vec![]);
+    }
+    assert_eq!(a.app.announcer.serial(), before, "the refresh is silent");
+    let old = orb_ui::settings::AudioChoice::default();
+    let new = orb_ui::settings::AudioChoice {
+        rate: Some(48000),
+        ..old.clone()
+    };
+    let t = orb_ui::audio_window::change_text(&old, &new, &["WASAPI".to_string()]);
+    assert_eq!(t.as_deref(), Some("Sample rate: 48000 Hz"));
+}
+
+/// With the mode off the window is egui's: a Window, no Dialog, no named combo boxes, and Escape
+/// closes it.
+#[test]
+fn with_the_mode_off_audio_output_is_as_before() {
+    let mut a = app(false);
+    open_audio(&mut a);
+    settle(&mut a);
+    assert!(dialogs(&a, Role::Dialog).is_empty());
+    assert!(
+        a.tree()
+            .by_role(Role::Window)
+            .any(|(_, n)| a11y::name(n) == Some("Audio Output"))
+    );
+    assert!(a.tree().by_name("Driver").next().is_none());
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert!(!a.app.audio_is_open());
+}
+
+/// Escape in screen reader mode closes an open list first; the window stays. The second Escape
+/// closes the window and the focus returns.
+#[test]
+fn audio_output_escape_closes_the_list_then_the_window() {
+    let mut a = app(true);
+    let play = focus_play(&mut a);
+    open_audio(&mut a);
+    settle(&mut a);
+    let driver = a
+        .tree()
+        .by_name("Driver")
+        .next()
+        .map(|(i, _)| i)
+        .expect("Driver");
+    assert_eq!(focused(&a), driver);
+    a.key(Key::Enter);
+    settle(&mut a);
+    assert!(
+        a.tree().by_role(Role::ListBox).next().is_some(),
+        "the list is open"
+    );
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert!(
+        a.tree().by_role(Role::ListBox).next().is_none(),
+        "the list closed"
+    );
+    assert!(a.app.audio_is_open(), "the window stays");
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert!(!a.app.audio_is_open());
+    assert_eq!(focused(&a), play.accesskit_id(), "the focus is back");
+}

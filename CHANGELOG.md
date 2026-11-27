@@ -13,6 +13,12 @@ This section holds the changes made since the last release.
 - **Edit > Initialize Song from Pattern Mode**, in screen reader mode: the question takes the
   focus on Initialize and is read with its text; Tab reaches Cancel, and the focus goes back
   to where it was after the answer.
+- **Options > Audio Output**, in screen reader mode: the window is made for screen readers.
+  The focus goes into it and comes back when it closes. Driver, Device, Sample rate and Buffer
+  size are named and say what is chosen; the "In use" numbers are lines you can reach with Tab
+  and read. A change of driver, device, rate or buffer is announced once; the numbers that
+  refresh twice a second are never announced. Escape closes an open list first, then the
+  window. The 2026.1127.2013 release listed this window as not yet made for screen readers.
 
 ## 2026.1127.2013 (2026-11-27)
 

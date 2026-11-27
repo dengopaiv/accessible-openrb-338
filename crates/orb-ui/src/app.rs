@@ -84,15 +84,18 @@ pub(crate) enum Win {
     ModInfo,
     /// The mod chooser (task-195).
     Chooser,
+    /// Options > Audio Output (task-234).
+    Audio,
 }
 
 impl Win {
-    pub(crate) const ALL: [Win; 5] = [
+    pub(crate) const ALL: [Win; 6] = [
         Win::KeyHelp,
         Win::Info,
         Win::About,
         Win::ModInfo,
         Win::Chooser,
+        Win::Audio,
     ];
 }
 
@@ -1722,6 +1725,7 @@ impl App {
             Win::About => self.about_open,
             Win::ModInfo => self.mod_info_open,
             Win::Chooser => self.chooser.is_some(),
+            Win::Audio => self.audio_open,
         }
     }
 

@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-27T21:55:00Z'
-updated_date: '2026-11-27T22:19:00Z'
+updated_date: '2026-11-27T22:44:00Z'
 labels:
   - ui
   - tests
@@ -28,4 +28,5 @@ How: the user runs OpenRB-338 with NVDA in screen reader mode and goes through t
 <!-- AC:BEGIN -->
 - [ ] #1 Task-237: Edit > Initialize Song from Pattern Mode in screen reader mode: NVDA reads the title and the original's text with Initialize when the question opens; Tab reaches Cancel; after either answer the focus is back where it was.
 - [ ] #2 By ear with NVDA (TASK-239): F6 through the sections says 303-1, 303-2, 808, 909 (not Bass Line 1/2, TR-808, TR-909); F2 on a drum grid starts with 808 or 909; Help > Keyboard Shortcuts in screen reader mode shows the same names
+- [ ] #3 Options > Audio Output (task-234), by ear in NVDA: the window is announced as Audio Output and the focus lands on Driver; Driver, Device, Sample rate and Buffer size are each read with their name and the chosen value; Down/Up/Enter in an open list changes it and NVDA says what changed once (e.g. Sample rate: 48000 Hz); Tab reaches the In use lines and reads them as label: value; the numbers refreshing every 500 ms are never spoken; Escape closes an open list first, then the window, and the focus returns
 <!-- AC:END -->
