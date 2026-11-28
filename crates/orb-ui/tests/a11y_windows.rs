@@ -1010,3 +1010,115 @@ fn audio_output_space_chooses_the_highlighted_entry() {
     assert_eq!(a.app.announcer.text(), Some("Sample rate: 44100 Hz"));
     assert_eq!(focused(&a), rate);
 }
+
+/// ASIO on System default whose first driver did not open (task-251): the controller runs the
+/// next driver named; the Driver and Device boxes show it, and only the one error is said.
+#[test]
+fn audio_output_shows_the_asio_driver_that_opened_after_a_refusal() {
+    use orb_player::control::Controller;
+    use orb_player::devices::DeviceRef;
+    let mut a = app(true);
+    a.app.settings.audio = orb_ui::settings::AudioChoice {
+        driver: Some("ASIO".into()),
+        ..Default::default()
+    };
+    a.app.audio_open_for_test(
+        vec!["WASAPI".into(), "ASIO".into()],
+        vec![
+            orb_player::devices::DeviceInfo {
+                id: "asio:MiniFuse".into(),
+                name: "MiniFuse ASIO Driver".into(),
+            },
+            orb_player::devices::DeviceInfo {
+                id: "asio:Realtek ASIO".into(),
+                name: "Realtek ASIO".into(),
+            },
+        ],
+        None,
+    );
+    settle(&mut a);
+    // the controller's own open_chain runs, with fake drivers: the first refuses, the second opens
+    let drivers = ["MiniFuse ASIO Driver", "Realtek ASIO"]
+        .iter()
+        .map(|n| DeviceRef {
+            id: format!("asio:{n}"),
+            name: n.to_string(),
+        })
+        .collect();
+    a.app.audio = Some(Controller::for_test_opener(
+        Default::default(),
+        Ok(drivers),
+        |r| match &r.device {
+            Some(d) if d.name == "Realtek ASIO" => Ok(()),
+            _ => Err(orb_player::output::Error(
+                "the output stream: sample clock or rate cannot be determined or is not present"
+                    .into(),
+            )),
+        },
+    ));
+    a.app.audio_choose(orb_ui::settings::AudioChoice {
+        driver: Some("ASIO".into()),
+        ..Default::default()
+    });
+    let said = a.app.errors.iter().cloned().collect::<Vec<_>>();
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].starts_with("Audio output: MiniFuse ASIO Driver did not open"),
+        "{said:?}"
+    );
+    assert!(said[0].ends_with("Using Realtek ASIO."), "{said:?}");
+    let c = a.app.audio_choice();
+    assert_eq!(c.driver.as_deref(), Some("ASIO"));
+    assert_eq!(c.device_name.as_deref(), Some("Realtek ASIO"));
+    // what is saved is the pick, ASIO at System default: the next start tries the drivers in turn
+    assert_eq!(a.app.settings.audio.driver.as_deref(), Some("ASIO"));
+    assert_eq!(a.app.settings.audio.device, None);
+    assert_eq!(a.app.settings.audio.device_name, None);
+    settle(&mut a);
+    let value = a
+        .tree()
+        .by_name("Device")
+        .filter_map(|(_, n)| a11y::value(n).map(str::to_string))
+        .next();
+    assert_eq!(value.as_deref(), Some("Realtek ASIO"));
+}
+
+/// A pick of ASIO at System default that no driver opens (TASK-251) is saved as that pick, and
+/// the window shows what plays; a pick of another driver saves what the stream ended up on.
+#[test]
+fn an_asio_pick_that_falls_back_is_saved_as_the_pick() {
+    use orb_player::control::Controller;
+    use orb_player::devices::DeviceRef;
+    use orb_ui::settings::AudioChoice;
+    let mut a = app(true);
+    a.app
+        .audio_open_for_test(vec!["WASAPI".into(), "ASIO".into()], vec![], None);
+    let drivers = vec![DeviceRef {
+        id: "asio:ReaRoute".into(),
+        name: "ReaRoute ASIO (x64)".into(),
+    }];
+    a.app.audio = Some(Controller::for_test_opener(
+        Default::default(),
+        Ok(drivers),
+        |r| match r.driver {
+            None => Ok(()),
+            Some(_) => Err(orb_player::output::Error("no clock".into())),
+        },
+    ));
+    a.app.audio_choose(AudioChoice {
+        driver: Some("ASIO".into()),
+        ..Default::default()
+    });
+    assert_eq!(a.app.settings.audio.driver.as_deref(), Some("ASIO"));
+    assert_eq!(a.app.settings.audio.device, None);
+    assert_eq!(a.app.audio_choice().driver, None, "the window shows WASAPI");
+    let said = a.app.errors.iter().cloned().collect::<Vec<_>>();
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].contains("ReaRoute ASIO (x64) did not open (no clock)"),
+        "{said:?}"
+    );
+    // another pick saves what the stream ended up on
+    a.app.audio_choose(AudioChoice::default());
+    assert_eq!(a.app.settings.audio, AudioChoice::default());
+}

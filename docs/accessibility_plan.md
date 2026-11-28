@@ -244,6 +244,11 @@ the README's screen reader section to match. No NVDA check.
   (Part 2.2, choice 1).
 - **The names (TASK-239).** The spoken names say 808, 909, 303-1 and 303-2 (they were TR-808,
   TR-909, Bass Line 1 and 2), in the sections, F2, and Help > Keyboard Shortcuts.
+- **ASIO's System default (TASK-251).** ASIO has no default device, so System default opens
+  the first listed driver that opens; a driver that refuses (ASIO's "no clock": its device is
+  not connected, or the program it needs is not running) is skipped and one error names it,
+  the reason and what was done. The Driver and Device boxes show what is in use. A pick of
+  ASIO at System default is saved as that, not as the driver that opened (item 40).
 
 Also done along the way, outside m-7:
 - TASK-176: the third-party songs test compares paths in NFC.
@@ -323,10 +328,15 @@ built when the user says so:
   its node is disabled, and Enter or Space on it says its reason once and runs nothing.
 - TASK-251 (item 31): Driver set to ASIO gave "Audio output: the output stream: sample clock or
   rate cannot be determined or is not present; using the System default with the default
-  settings". ASIO has no default device, so the program took the first installed driver, the
-  MiniFuse ASIO Driver, whose device is not connected (ASIO's own "no clock" error). The fix:
-  System default on ASIO opens the first driver that opens (Realtek ASIO on the user's PC),
-  and a message names the driver that failed and says what the program did instead.
+  settings". ASIO has no default device, so the program took the first driver cpal lists. The
+  first reading of the cause (the MiniFuse ASIO Driver, device not connected) was wrong: the
+  by-hand check found that cpal lists only "ReaRoute ASIO (x64)" on that PC, and it refused
+  with ASIO's "no clock" error because REAPER was not running. MiniFuse and Realtek ASIO are
+  not listed by cpal there; the cause is not yet known. The fix: System default on ASIO opens
+  the first listed driver that opens, and a message names the driver that failed and says what
+  the program did instead. Built (TASK-251), waiting for item 40: the drivers are tried in
+  turn, a refusing one skipped, the Driver and Device boxes show the one in use. A pick of
+  ASIO at System default is saved as that (not as the driver that opened).
 
 **Faults found by ear on 2026-11-28, the first report**, each now a bug task (Part 2.3), each
 adding its own by-ear check to TASK-244 when it is built:
@@ -404,7 +414,7 @@ The 808 and 909 Pattern Editor windows (task-236):
 | Task | Priority | What | State |
 |---|---|---|---|
 | TASK-250 | high | Menu items that are off: reached by Up and Down, read as unavailable, Enter says why (items 26, 29, 38) | for an agent, when the user says so |
-| TASK-251 | medium | ASIO's System default opens the first driver that opens; a failure names the driver (item 31) | for an agent, when the user says so |
+| TASK-251 | medium | ASIO's System default opens the first driver that opens; a failure names the driver (item 31) | built, waiting for item 40 |
 | TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 37 and the second half of 38 left | waiting for the user |
 | TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
@@ -617,7 +627,8 @@ how to report).
       TASK-248 fixed both (item 37); hear this item again with it. (!) 2026-11-28: Driver set
       to ASIO said "Audio output: the output stream: sample clock or rate cannot be determined
       or is not present; using the System default with the default settings". The first ASIO
-      driver, the MiniFuse's, has no device connected (TASK-251). The rest of the item is
+      driver cpal lists, ReaRoute's, needs REAPER running (TASK-251; the first reading, the
+      MiniFuse's missing device, was wrong). The rest of the item is
       waiting: hear it on WASAPI. ( )
 32. The classic look (TASK-238):
     - with View > Classic in screen reader mode, F6 and Tab go through the sections and
@@ -702,6 +713,18 @@ how to report).
     - Press F12 for song mode: the Export and Initialize items are read without
       "unavailable", and Enter runs them. ( )
     - With the screen reader mode off, Up and Down skip such items as before. ( )
+40. ASIO's System default (TASK-251), on the user's PC, where cpal lists only ReaRoute ASIO
+    (x64) (MiniFuse and Realtek ASIO are not listed, cause not yet known). Keep the volume low:
+    - With REAPER not running: Options > Audio Output, Driver: ASIO, Device: System default.
+      NVDA says once "Audio output: ReaRoute ASIO (x64) did not open (sample clock or rate
+      cannot be determined or is not present; is its device connected, or the program it
+      needs running?). Back on WASAPI, System default." The Driver box then reads WASAPI and
+      the Device box System default, and the song plays. ( )
+    - With REAPER running, the same choice opens ReaRoute: no message, the Driver box reads
+      ASIO, the Device box System default, the In use lines read ASIO: ReaRoute ASIO (x64).
+      ( )
+    - After a restart the saved Driver is still ASIO with Device System default (it is not
+      replaced by the driver that opened). ( )
 
 ---
 
@@ -715,7 +738,11 @@ how to report).
   - every start writes a run log (TASK-214);
   - Windows prefers DirectX 12 before Vulkan (TASK-217);
   - the numpad's keys have the original's meaning in every mode (TASK-225), while the main
-    keyboard's keys do not change.
+    keyboard's keys do not change;
+  - a bug fix that applies with the mode off too (TASK-251): on ASIO at System default the
+    drivers are tried in turn, a driver that does not open gets its own message (its name, the
+    reason, what was done), and after a fallback the Driver and Device boxes read what is in
+    use.
 
   The existing tests of `crates/orb-ui/tests` (keyboard.rs in particular) pass unchanged.
 - Every accessible action goes through the same call as the mouse or the original's key:

@@ -93,7 +93,7 @@ plan's Part 2.4).
 | Dialogs, the error box, the unsaved-changes prompt | Does, heard (15, 16, 22) | 3.6 |
 | The Initialize Song question | Does, not yet heard (29) | 3.6 |
 | Options > Audio Output | Does, not yet heard (31, 35, 37) | 3.6 |
-| Audio Output on ASIO's System default | Fault heard (31): TASK-251 | 3.6 |
+| Audio Output on ASIO's System default | Built (TASK-251), not yet heard (40) | 3.6 |
 | The 303 Pattern Editor windows | Does, heard (33) | 3.7 |
 | The 808 and 909 Pattern Editor windows | Does, heard (34) | 3.7 |
 | The classic look | Does, heard (32) | 3.8 |
@@ -384,12 +384,26 @@ has not been read.
     use, not the lost one, and that is never saved over the user's choice (TASK-234,
     TASK-245);
   - **Fault heard (31): TASK-251.** ASIO has no default device, so Device at System default
-    on ASIO opens the first installed driver. On the user's PC that is the MiniFuse ASIO
-    Driver, whose device is not connected, and the user heard "Audio output: the output
+    on ASIO opens the first driver cpal lists. The user heard "Audio output: the output
     stream: sample clock or rate cannot be determined or is not present; using the System
     default with the default settings" (ASIO's own "no clock" error), after which the program
-    played on WASAPI. Will do (TASK-251): System default on ASIO opens the first driver that
-    opens, and a failure names the driver and says what the program did instead.
+    played on WASAPI. The first reading of the cause (the MiniFuse ASIO Driver, installed
+    first, with no device connected) was wrong: the by-hand check of TASK-251 on that PC found
+    that cpal lists only "ReaRoute ASIO (x64)", which refuses while REAPER is not running.
+    MiniFuse and Realtek ASIO are not listed by cpal there; the cause is not yet known (likely
+    cpal's `Devices::next` skipping a driver that fails to load or to report channels or a
+    buffer range). Built (TASK-251), waiting for item 40: System default on ASIO opens the
+    first listed driver that opens; one that refuses is skipped (one driver is loaded at a
+    time and a refusing one is dropped before the next). The error says which driver did not
+    open, the driver's reason and what was done: with REAPER off, on that PC, "Audio output:
+    ReaRoute ASIO (x64) did not open (sample clock or rate cannot be determined or is not
+    present; is its device connected, or the program it needs running?). Back on WASAPI,
+    System default."; after a skip to another driver, "... Using NAME."; a named ASIO device
+    that refuses gets the same kind of message. After it the Driver and Device boxes and the
+    In use lines read what is in use. What is saved: a pick of ASIO at System default is saved
+    as that (every start tries the drivers in turn), whichever driver opened or even if none
+    did, and the window shows what is in use; any other pick saves what the stream ended up on (TASK-234). A later
+    fallback of the controller itself is shown and not saved (TASK-245).
 
 ### 3.7 The pattern editor windows
 

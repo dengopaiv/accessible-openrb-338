@@ -113,3 +113,28 @@ fn the_default_request_refused_is_one_error_and_no_fallback_loop() {
         assert!(errors(&events)[0].contains("runs without sound"));
     }
 }
+
+/// By hand only (`cargo test --release -p orb-player --test fallbacks -- --ignored --nocapture`,
+/// task-251): ASIO with System default opens the first installed driver that opens and says
+/// which ones did not. The engine is idle, so nothing is heard.
+#[test]
+#[ignore = "needs ASIO drivers; run by hand"]
+fn asio_system_default_opens_the_first_driver_that_opens() {
+    let (_p, audio) = Player::new(tables(), Some(samples()));
+    let req = Request {
+        driver: Some("ASIO".into()),
+        ..Request::default()
+    };
+    eprintln!(
+        "ASIO devices: {:?}",
+        orb_player::devices::list_devices(Some("ASIO"))
+    );
+    let (mut c, events) = Controller::start(audio, req);
+    eprintln!("events: {events:?}");
+    eprintln!("request: {:?}", c.request());
+    if let Some(u) = c.in_use() {
+        eprintln!("in use: {} / {}", u.driver, u.device);
+    }
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    drop(c.apply(Request::default()));
+}

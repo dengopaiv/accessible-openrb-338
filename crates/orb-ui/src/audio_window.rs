@@ -66,6 +66,21 @@ fn same_setup(a: &InUse, b: &InUse) -> bool {
     blank(a) == blank(b)
 }
 
+/// What a pick saves: what the stream ended up on (`now`, task-234), except that a pick of ASIO
+/// with System default is saved as that (the rate and the buffer from `now`), whichever driver
+/// opened or even if none did, so that every start tries the drivers in turn (task-251).
+pub fn choice_to_save(picked: &AudioChoice, now: &AudioChoice) -> AudioChoice {
+    if devices::is_asio(picked.driver.as_deref()) && picked.device.is_none() {
+        return AudioChoice {
+            driver: picked.driver.clone(),
+            device: None,
+            device_name: None,
+            ..now.clone()
+        };
+    }
+    now.clone()
+}
+
 /// Whether `driver`'s buffer is set in the driver's own control panel and not asked for by
 /// the program (ASIO, task-193).
 pub fn buffer_is_the_drivers(driver: &str) -> bool {
@@ -595,16 +610,19 @@ impl App {
         let Some(c) = &mut self.audio else {
             return;
         };
-        let (events, now) = if fixed {
-            (Vec::new(), choice)
+        // (a controller with fake drivers, `Controller::for_test_opener`, is run all the same)
+        let (events, now) = if fixed && !c.has_fake_drivers() {
+            (Vec::new(), choice.clone())
         } else {
             let events = c.apply(choice.request());
             (events, AudioChoice::from_request(c.request()))
         };
         // what the stream ended up on, once (task-234); the controller's notes follow
         let said = change_text(&self.audio_choice(), &now, &self.audio_ui.drivers);
-        self.settings.set_audio(now.clone());
-        self.audio_ui.in_use_choice = None;
+        let saved = choice_to_save(&choice, &now);
+        self.settings.set_audio(saved.clone());
+        // the window shows the driver in use when that is not what is saved
+        self.audio_ui.in_use_choice = (now != saved).then(|| now.clone());
         self.audio_ui.refresh_pending = false;
         if let Err(e) = self.settings.save() {
             self.fail(e);

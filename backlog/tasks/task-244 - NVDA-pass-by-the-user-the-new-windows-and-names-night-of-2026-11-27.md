@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-27T21:55:00Z'
-updated_date: '2026-11-28T11:05:00Z'
+updated_date: '2026-11-28T12:04:00Z'
 labels:
   - ui
   - tests
@@ -37,6 +37,7 @@ How: the user runs OpenRB-338 with NVDA in screen reader mode and goes through t
 - [ ] #9 By ear with NVDA (TASK-248): in Options > Audio Output in screen reader mode, NVDA reads each of Driver, Device, Sample rate and Buffer size with its value and then 'Alt+Down opens the list'; Alt+Down, Enter and Space open the list; Up and Down in the open list say each entry once and choose nothing; Enter or Alt+Up choose the highlighted entry, said once ('Sample rate: 48000 Hz'), and NVDA reads the box again; Escape closes the list, keeps the choice and NVDA reads the box again, a second Escape closes the window and the focus returns; on a closed box Up, Down, Home and End choose the previous, next, first and last entry at once, each said once; Help > Keyboard Shortcuts in screen reader mode has the line for these keys (checklist item 37)
 - [ ] #10 By ear with NVDA (TASK-249): in screen reader mode, File > New chosen from the menu with unsaved changes (F10, Down, Enter) opens the question 'Save changes to ...?' and NVDA reads it, with the focus on Save: nothing is saved and no Save As opens until you answer (S or Enter on Save, D, or Escape); the same with Edit > Initialize Song from Pattern Mode (in song mode): NVDA reads the question and nothing is initialized until you press Enter on Initialize or Escape; Ctrl+N asks as before (checklist item 38)
 - [ ] #11 By ear with NVDA (TASK-250): in screen reader mode, in pattern mode, Up and Down in File and Edit reach Export Loop as Audio File, Initialize Song and Initialize Loop from Pattern Mode and Undo; NVDA reads each as unavailable; Enter or Space says why once ('Needs song mode; F12 switches', 'Nothing to undo'), runs nothing and the menu stays open on the item; after F12 the items are read without unavailable and run (checklist item 39)
+- [ ] #12 By ear, checklist item 40 (docs/accessibility_plan.md, TASK-251): ASIO's System default names a driver that did not open, says what the program did, and the Driver and Device boxes read what is in use
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -62,4 +63,6 @@ The user's second report, 2026-11-28 (checklist numbers of docs/accessibility_pl
 - Item 38 (criterion 10): File > New works; the Initialize Song half could not be found (task-250). Criterion 10 stays open for that half.
 - Items 35 and 37 (criteria 7 and 9): not reported.
 The user chose Windows' way for items that are off (reached by Up and Down, read as unavailable, Enter says why), recorded in task-250. The checklist's items 26, 29 and 38 now say to press F12 for song mode first.
+
+Correction (TASK-251 review, 2026-11-28): item 31's ASIO message came from ReaRoute ASIO (x64), the only driver cpal lists on the user's PC (it needs REAPER running), not from the MiniFuse driver as first written. Item 40 is rewritten for that.
 <!-- SECTION:NOTES:END -->

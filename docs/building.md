@@ -310,6 +310,11 @@ ASIO is a trademark and software of Steinberg Media Technologies GmbH.
   while a stream holds a driver the window lists the devices of the last enumeration
   (`orb_player::devices::all_devices`). A driver that fails to open (busy, or it refuses the
   rate) shows the error box and the output falls back to the defaults, as for any driver.
+  With Device at System default the first driver that opens stands for it (task-251): the
+  drivers are tried in the installed order, each as a named device, and a driver whose device
+  is not connected, or the program it needs is not running (ASIO's "no clock"), is skipped
+  with a message naming it ("... is its device connected, or the program it needs running?"). Each refused try
+  drops its driver before the next loads, so asio-sys's one-driver rule holds.
 - **ASIO4ALL hangs the process at exit when its panel is open (round 2, 2026-11-24).** The user
   closed OpenRB-338 with ASIO4ALL's configuration window open (opened from the driver's own tray
   icon, which lives in our process); the window went, the process stayed, "Not Responding", with
