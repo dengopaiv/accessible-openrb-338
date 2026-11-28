@@ -82,16 +82,18 @@ plan's Part 2.4).
 | The numpad apart from the main keys | Does, heard (28) | 3.4 |
 | Announcements and the read-outs F2 to F4 | Does, heard (6, 21) | 3.5 |
 | The menu bar | Does, heard (13 to 17) | 3.6 |
-| Left and Right from menu to menu | Does, not yet heard (36) | 3.6 |
-| A question opened from the menu | Does, not yet heard (38) | 3.6 |
+| Left and Right from menu to menu | Does, heard (36) | 3.6 |
+| A question opened from the menu | Does, heard for File > New (38); Initialize Song not yet | 3.6 |
+| Menu items that are off | Fault heard (26, 29, 38): TASK-250 | 3.6 |
 | The focus back after the menu bar | Does, heard (23) | 3.6 |
-| The Mods menu's checked entry | Does, not yet heard (25) | 3.6 |
+| The Mods menu's checked entry | Does, heard (25) | 3.6 |
 | System file dialogs | Does, heard (11, 20) | 3.6 |
 | The Export format kept | Does, not yet heard (26) | 3.6 |
 | The mod chooser | Does, heard (12) | 3.6 |
 | Dialogs, the error box, the unsaved-changes prompt | Does, heard (15, 16, 22) | 3.6 |
 | The Initialize Song question | Does, not yet heard (29) | 3.6 |
 | Options > Audio Output | Does, not yet heard (31, 35, 37) | 3.6 |
+| Audio Output on ASIO's System default | Fault heard (31): TASK-251 | 3.6 |
 | The 303 Pattern Editor windows | Does, heard (33) | 3.7 |
 | The 808 and 909 Pattern Editor windows | Does, heard (34) | 3.7 |
 | The classic look | Does, heard (32) | 3.8 |
@@ -297,16 +299,25 @@ has not been read.
   from upstream in 2026-11). The arrows walk the bar and the menus, Enter chooses, and Escape
   closes. The Options menu's checkboxes and radio items, and View's Classic and Modern, carry
   their state (docs/ui_spec.md 18.2).
-- **Left and Right between the menus. Does, not yet heard (36).** The fault heard on
+- **Left and Right between the menus. Does, heard (36).** The fault heard on
   2026-11-28 was that egui's spatial focus took Left in an open menu back to the title, after
   which the other menus could not be reached, and Right from Help left the bar for the
   Transport section. TASK-247 makes them go from menu to menu, wrapping, as in Windows, in
-  screen reader mode (docs/ui_spec.md 18.2).
+  screen reader mode (docs/ui_spec.md 18.2). Heard working on 2026-11-28.
+- **Menu items that are off. Fault heard (26, 29, 38): TASK-250.** An item that is turned
+  off (Export and the two Initialize items in pattern mode; Info, the pattern commands and the
+  pattern editors without a song; Undo with nothing to undo) cannot take the focus in egui, so
+  Up and Down skip it and NVDA never says it is there. On 2026-11-28 the user could not find
+  Export or Initialize Song. Will do (TASK-250), the user's choice of Windows' way: in screen
+  reader mode such an item is reached by Up and Down and read as "unavailable", and Enter on
+  it runs nothing and says why ("Needs song mode; F12 switches"). With the mode off, nothing
+  changes.
 - **The focus after the menu bar. Does, heard (23).** Leaving the bar (Escape, an item
   that opens no window, F10 or Alt again) gives the focus back to the control that had it. A
   window opened from a menu returns it there when it closes (TASK-212).
-- **The Mods menu's mark. Does, not yet heard (25).** The playing kit's entry reads as
-  checked, and so does the submenu of a playing variant (TASK-201).
+- **The Mods menu's mark. Does, heard (25).** The playing kit's entry reads as checked, and
+  so does the submenu of a playing variant (TASK-201). Heard on 2026-11-28 with no mods
+  installed (the Standard ReBirth entry); the submenu of a variant has not been heard.
 - **File dialogs. Does, heard (11, 20).** In the mode, Open, Save As, Export and Mods > Choose
   file use the system's dialog. Options > Set Songs Folder... and Set Mods Folder... replace
   the in-app browser's "Use as" buttons. A name the dialog did not confirm, of a file that
@@ -314,7 +325,7 @@ has not been read.
   in-app browser is as upstream's.
 - **The Export format. Does, not yet heard (26).** The system Export dialog offers the format
   last exported first, and a name typed without an extension gets it. It is kept across
-  restarts (TASK-204).
+  restarts (TASK-204). Export works in song mode only (F12 switches), as in the original.
 - **The mod chooser. Does, heard (12).** Mods > Choose Mod... or Ctrl+M opens a dialog with a
   filter field and a tree of the Mods menu's entries, in the menu's order ("Standard ReBirth"
   first). Each entry is read with "variants: N", "has demo", "current". Right and Left open and
@@ -327,18 +338,20 @@ has not been read.
   alert named "Error", with the focus on OK. The unsaved-changes prompt is a dialog named by
   its question, with the focus on Save. The focus moves in when one opens, and comes back where
   it was when it closes (docs/ui_spec.md 20.4).
-- **A question opened from the menu. Does, not yet heard (38).** With unsaved changes, File >
+- **A question opened from the menu. Does, heard for File > New (38).** With unsaved changes, File >
   New chosen from the menu opened Save As at once, while Ctrl+N asked first (the fault the user
   heard on 2026-11-28). The Enter that chose the item was in the frame that draws the question
   and answered it (Save; on Initialize Song's question Enter is Initialize). Fixed in
   TASK-249, with the mode on and off: a question takes no key in the frame that draws it
   first, and then only new presses, not a held key's repeats (`answer_key` in `menu.rs`).
   Headless tests walk the bar with F10, the arrows and Enter for File > New, Edit >
-  Initialize Song and File > Open (`tests/a11y_menu_question.rs`).
+  Initialize Song and File > Open (`tests/a11y_menu_question.rs`). File > New was heard
+  working on 2026-11-28; Initialize Song could not be found (TASK-250, above).
 - **The Initialize Song question. Does, not yet heard (29).** Edit > Initialize Song from
   Pattern Mode asks first. In the mode the question is a dialog named by its title, with the
   original's text as its description and the focus on Initialize; Tab reaches Cancel. After
-  either answer, the focus goes back where it was (TASK-237).
+  either answer, the focus goes back where it was (TASK-237). The item is on in song mode
+  only (F12 switches), as in the original.
 - **Options > Audio Output. Does, not yet heard (31, 35, 37).**
   In the mode the window is a dialog named Audio Output, with the focus on Driver as it opens:
   - Driver, Device, Sample rate and Buffer size are named lists that say what is chosen;
@@ -358,7 +371,14 @@ has not been read.
     that is gone) Down goes to the first entry and Up to the last;
   - after the program falls back from a device that is gone, the window shows the device in
     use, not the lost one, and that is never saved over the user's choice (TASK-234,
-    TASK-245).
+    TASK-245);
+  - **Fault heard (31): TASK-251.** ASIO has no default device, so Device at System default
+    on ASIO opens the first installed driver. On the user's PC that is the MiniFuse ASIO
+    Driver, whose device is not connected, and the user heard "Audio output: the output
+    stream: sample clock or rate cannot be determined or is not present; using the System
+    default with the default settings" (ASIO's own "no clock" error), after which the program
+    played on WASAPI. Will do (TASK-251): System default on ASIO opens the first driver that
+    opens, and a failure names the driver and says what the program did instead.
 
 ### 3.7 The pattern editor windows
 

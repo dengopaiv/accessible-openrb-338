@@ -296,20 +296,36 @@ in Part 3's marks, and in the backlog (TASK-244).
 
 | Item | What to hear | Task |
 |---|---|---|
-| 25 | The Mods menu reads the playing kit's entry as checked (with no mods installed, the Standard ReBirth entry) | TASK-201 |
-| 26 | The Export dialog offers the format last used, also after a restart | TASK-204 |
-| 29 | The Initialize Song question is read, and the focus comes back (it can be heard now that 38 is fixed) | TASK-237 |
-| 31 | Options > Audio Output as a whole, once more (its faults were fixed; 37 is the new keys) | TASK-234 |
+| 26 | The Export dialog offers the format last used, also after a restart (press F12 for song mode first) | TASK-204 |
+| 29 | The Initialize Song question is read, and the focus comes back (in song mode: F12 first) | TASK-237 |
+| 31 | Options > Audio Output as a whole, on WASAPI (the ASIO fault is TASK-251) | TASK-234 |
 | 35 | Audio Output after a lost device reads the device in use | TASK-245 |
-| 36 | Left and Right go from menu to menu in the bar, wrapping, never out of it | TASK-247 |
 | 37 | Audio Output's lists: the spoken hint, Alt+Down, Up and Down, Escape keeping the focus | TASK-248 |
-| 38 | File > New and Edit > Initialize Song chosen from the menu ask their question, which NVDA reads, and wait for your answer | TASK-249 |
+| 38 | The second half: Edit > Initialize Song chosen from the menu (in song mode: F12 first) asks its question and waits | TASK-249 |
 
 **Heard working on 2026-11-28:** items 23 (TASK-212), 24 (TASK-211), 27 (TASK-213), 28
-(TASK-225), 30 (TASK-239), 32 (TASK-238), 33 (TASK-235) and 34 (TASK-236).
+(TASK-225), 30 (TASK-239), 32 (TASK-238), 33 (TASK-235) and 34 (TASK-236); in the second
+report of the day, items 25 (TASK-201, the Standard ReBirth entry, no mods installed), 36
+(TASK-247) and the File > New half of 38 (TASK-249).
 
-**Faults found by ear on 2026-11-28**, each now a bug task (Part 2.3), each adding its own
-by-ear check to TASK-244 when it is built:
+**Faults found by ear on 2026-11-28, the second report**, each a bug task (Part 2.3), to be
+built when the user says so:
+
+- TASK-250 (items 26, 29 and 38): File > Export Loop as Audio File and Edit > Initialize Song
+  from Pattern Mode could not be found. They are turned off in pattern mode, and an item that is
+  off cannot take the focus, so Up and Down skipped it and NVDA never said it was there. The
+  checklist did not say to press F12 for song mode first; it does now. The user chose Windows'
+  way: in screen reader mode an item that is off is reached by Up and Down, read as
+  "unavailable", and Enter on it says why ("Needs song mode; F12 switches").
+- TASK-251 (item 31): Driver set to ASIO gave "Audio output: the output stream: sample clock or
+  rate cannot be determined or is not present; using the System default with the default
+  settings". ASIO has no default device, so the program took the first installed driver, the
+  MiniFuse ASIO Driver, whose device is not connected (ASIO's own "no clock" error). The fix:
+  System default on ASIO opens the first driver that opens (Realtek ASIO on the user's PC),
+  and a message names the driver that failed and says what the program did instead.
+
+**Faults found by ear on 2026-11-28, the first report**, each now a bug task (Part 2.3), each
+adding its own by-ear check to TASK-244 when it is built:
 
 - TASK-247 (reported in item 26's place; item 26 itself waits), built, waiting for item 36: in
   an open menu Left went back to the bar and the other menus could not then be reached, and
@@ -328,8 +344,9 @@ by-ear check to TASK-244 when it is built:
   and for every question the menu opens.
 
 For Claude's bookkeeping: items 29, 31 and 35 to 38 are TASK-244's acceptance criteria 1, 3
-and 7 to 10, and TASK-244 is Done when they are heard. Items 25 and 26 have no open task: their
-tasks are Done, and only this checklist holds their marks.
+and 7 to 10 (criterion 8, item 36, is checked), and TASK-244 is Done when they are heard.
+Items 25 and 26 have no open task: their tasks are Done, and only this checklist holds their
+marks.
 
 **Worth repeating.** Items 1 to 22 were heard on 2026-11-07. The merges of 2026-11-18 and
 2026-11-26 moved the screen reader code into upstream's `controller.rs` and changed the menu
@@ -382,7 +399,9 @@ The 808 and 909 Pattern Editor windows (task-236):
 
 | Task | Priority | What | State |
 |---|---|---|---|
-| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 36, 37 and 38 left | waiting for the user |
+| TASK-250 | high | Menu items that are off: reached by Up and Down, read as unavailable, Enter says why (items 26, 29, 38) | for an agent, when the user says so |
+| TASK-251 | medium | ASIO's System default opens the first driver that opens; a failure names the driver (item 31) | for an agent, when the user says so |
+| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 37 and the second half of 38 left | waiting for the user |
 | TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
 | TASK-206 | low | A system file dialog that cannot open reads as a cancel (Linux) | on hold: Windows only |
@@ -425,9 +444,11 @@ Run it with NVDA (note its version) and the release build, with screen reader mo
 - (!): a fault was heard; its bug task is named;
 - ( ): waiting.
 
-Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23, 24, 27, 28, 30 and 32 to 34 on
-2026-11-28. Item 31 had faults (TASK-248, now fixed). Items 25, 26, 29, 31 and 35 to 38 are
-waiting (Part 2.1, which says how to report).
+Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23 to 25, 27, 28, 30, 32 to 34 and
+36 on 2026-11-28. Faults heard on 2026-11-28: item 31 (TASK-248, fixed; then ASIO,
+TASK-251), items 26, 29 and 38 (TASK-250: the items that are off in pattern mode cannot be
+reached). Items 26, 29, 31, 35, 37 and the second half of 38 are waiting (Part 2.1, which says
+how to report).
 
 1. Start the program: the window title is spoken, and the focus is on the first control of the
    Transport section. (x)
@@ -537,14 +558,18 @@ waiting (Part 2.1, which says how to report).
     menu and walk it with Up and Down. NVDA reads the playing kit's entry as a checked menu
     item ("Zed, menu item, checked") and every other mod entry as not checked; the Standard
     ReBirth entry is checked when the built-in kit plays. A mod of a shared name: the name's
-    entry (a submenu, read as a button) and, inside it, the playing file read as checked. ( )
-26. The Export format (TASK-204), in screen reader mode with a song in song mode:
+    entry (a submenu, read as a button) and, inside it, the playing file read as checked. (x)
+    Heard 2026-11-28 with no mods installed (the Standard ReBirth entry).
+26. The Export format (TASK-204), in screen reader mode with a song in song mode (press F12;
+    F3 says the mode):
     - File > Export Loop as Audio File opens the system dialog with WAV as the type;
     - save as `a.flac` (pick FLAC in the type list or type the extension);
     - export again: the type list offers FLAC first, and NVDA reads it as the file type;
     - a name typed without an extension (`b`) is saved as `b.flac`;
     - restart the program: the dialog still offers FLAC first;
-    - with the mode off, the in-app browser starts on WAV as before. ( )
+    - with the mode off, the in-app browser starts on WAV as before. (!) 2026-11-28: the item
+      could not be found. It is off in pattern mode, and Up and Down skip an item that is off
+      (TASK-250). In song mode it can be heard now; hear it again in song mode. ( )
 27. The next value that sounds different (TASK-213), in screen reader mode with Speak Raw
     Values off:
     - focus the 808 Bass drum tone and press Up repeatedly from 0: every press is spoken with
@@ -567,9 +592,11 @@ waiting (Part 2.1, which says how to report).
     - with Num Lock off, NVDA's desktop layout takes the numpad (numpad + is its Say all with
       review), and the digits become Insert, End and the arrows, as Help > Keyboard Shortcuts
       says. (x)
-29. Edit > Initialize Song from Pattern Mode (TASK-237), in screen reader mode: NVDA reads the
-    title and the original's text with Initialize when the question opens; Tab reaches Cancel;
-    after either answer the focus is back where it was. ( )
+29. Edit > Initialize Song from Pattern Mode (TASK-237), in screen reader mode, in song mode
+    (press F12; the item is off in pattern mode): NVDA reads the title and the original's text
+    with Initialize when the question opens; Tab reaches Cancel; after either answer the focus
+    is back where it was. (!) 2026-11-28: the item could not be found, because it was off and
+    skipped (TASK-250). Hear it again in song mode. ( )
 30. The names (TASK-239): F6 through the sections says 303-1, 303-2, 808, 909 (not Bass Line
     1 / 2, TR-808, TR-909); F2 on a drum grid starts with 808 or 909; Help > Keyboard
     Shortcuts in screen reader mode shows the same names. (x)
@@ -583,7 +610,11 @@ waiting (Part 2.1, which says how to report).
     - the numbers refreshing every 500 ms are never spoken;
     - Escape closes an open list first, then the window, and the focus returns. (!) The lists
       opened only with Space, which nothing said, and Escape out of a list lost the focus:
-      TASK-248 fixed both (item 37); hear this item again with it. ( )
+      TASK-248 fixed both (item 37); hear this item again with it. (!) 2026-11-28: Driver set
+      to ASIO said "Audio output: the output stream: sample clock or rate cannot be determined
+      or is not present; using the System default with the default settings". The first ASIO
+      driver, the MiniFuse's, has no device connected (TASK-251). The rest of the item is
+      waiting: hear it on WASAPI. ( )
 32. The classic look (TASK-238):
     - with View > Classic in screen reader mode, F6 and Tab go through the sections and
       controls with the same names as the modern look;
@@ -627,7 +658,7 @@ waiting (Part 2.1, which says how to report).
     control of the panel. With a menu open (Down on a name), Right and Left close it and open
     the next or previous one, and NVDA says that menu's first item once; in the Mods menu,
     Right on a name that is a list of files opens the list and says its first file, Left
-    closes it and says the name again. ( )
+    closes it and says the name again. (x)
 37. Audio Output's lists as a Windows combo box (TASK-248, docs/ui_spec.md, Options > Audio
     Output), in screen reader mode:
     - NVDA reads each of Driver, Device, Sample rate and Buffer size with its value, then
@@ -649,8 +680,13 @@ waiting (Part 2.1, which says how to report).
     - F10, Down, Enter on File > New: NVDA reads the question "Save changes to ...?" with the
       focus on Save. Nothing is saved and no Save As opens until you answer: Enter or S on
       Save, D on Don't Save, Escape to cancel; Ctrl+N asks the same;
-    - in song mode, Edit > Initialize Song from Pattern Mode the same way: NVDA reads the
-      question and nothing is initialized until you press Enter on Initialize or Escape. ( )
+    - in song mode (press F12 first), Edit > Initialize Song from Pattern Mode the same way:
+      NVDA reads the question and nothing is initialized until you press Enter on Initialize or
+      Escape.
+
+    2026-11-28: File > New heard working. The Initialize item could not be found, because it
+    was off in pattern mode and skipped (TASK-250). The second half is waiting: hear it in song
+    mode. ( )
 
 ---
 

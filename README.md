@@ -68,10 +68,13 @@ with a screen reader, NVDA on Windows first.
 implemented and tested through the accessibility tree (every control has a name, a role and a
 value; every Tab stop is named). A blind user went through the checklist with NVDA on Windows on
 2026-11-07 and found it working. A second pass on 2026-11-28 heard the pattern editor windows,
-the classic look and most of the follow-ups working, and found three faults now being fixed:
-Left and Right in the menus, Options > Audio Output's lists, and File > New chosen from the menu
-with unsaved changes. Still to be heard: the Initialize Song question, the Mods menu's checked
-entry, the Export format kept, and Audio Output after a lost device (the plan's Part 2.1). Other
+the classic look and most of the follow-ups working. It found three faults, since fixed: Left
+and Right in the menus (heard working since), Options > Audio Output's lists, and File > New
+chosen from the menu with unsaved changes (heard working since). It also found two faults still
+to fix: menu items that are off (Export and Initialize Song in pattern mode) cannot be reached
+with the arrows, and ASIO's System default can pick a driver whose device is not connected.
+Still to be heard: the Initialize Song question, the Export format kept, Audio Output's new
+keys, and Audio Output after a lost device (the plan's Part 2.1). Other
 screen readers and systems are less tested; the fork is built for Windows only. With the mode
 off, OpenRB-338 behaves as upstream, with three exceptions in both modes: the panel's keys wait
 while a menu is in use, and on Windows the program prefers DirectX 12 for its graphics and
