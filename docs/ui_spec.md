@@ -1627,6 +1627,12 @@ is one more entry.
   automation will be cleared.") and the buttons Initialize and Cancel; Enter is Initialize (the
   original's default button), Escape is Cancel. While it is open the panel takes no keys and no
   clicks (`App::asking`). Cancel changes nothing and leaves the song unmodified.
+  A question opened from a menu waits for a new key (task-249): the unsaved-changes prompt
+  and this question take their keys (S, Y, D, N, Enter, Escape) only from the second frame
+  they are drawn and only as new presses, not a held key's repeats (`menu::answer_key`,
+  `App::prompt_armed` and `init_armed`, both cleared by an answer). The Enter that chose
+  File > New or Edit > Initialize Song is in the frame that opens the question and used to
+  answer it (Save, or Initialize). The same in both modes; clicks and Ctrl+N are as before.
   `crates/orb-ui/tests/edit_init.rs` runs both commands from the Edit menu on
   `tests/songs/edit_init` and compares the saves with the original's.
 

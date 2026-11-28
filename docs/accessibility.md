@@ -83,7 +83,7 @@ plan's Part 2.4).
 | Announcements and the read-outs F2 to F4 | Does, heard (6, 21) | 3.5 |
 | The menu bar | Does, heard (13 to 17) | 3.6 |
 | Left and Right from menu to menu | Does, not yet heard (36) | 3.6 |
-| A question opened from the menu | Fault heard: TASK-249 | 3.6 |
+| A question opened from the menu | Does, not yet heard (38) | 3.6 |
 | The focus back after the menu bar | Does, heard (23) | 3.6 |
 | The Mods menu's checked entry | Does, not yet heard (25) | 3.6 |
 | System file dialogs | Does, heard (11, 20) | 3.6 |
@@ -327,9 +327,14 @@ has not been read.
   alert named "Error", with the focus on OK. The unsaved-changes prompt is a dialog named by
   its question, with the focus on Save. The focus moves in when one opens, and comes back where
   it was when it closes (docs/ui_spec.md 20.4).
-- **A question opened from the menu. Fault heard: TASK-249.** With unsaved changes, File >
-  New chosen from the menu opens Save As at once, while Ctrl+N asks first. The Enter that chose
-  the item seems to answer the question it opens; TASK-249 checks every menu item that asks.
+- **A question opened from the menu. Does, not yet heard (38).** With unsaved changes, File >
+  New chosen from the menu opened Save As at once, while Ctrl+N asked first (the fault the user
+  heard on 2026-11-28). The Enter that chose the item was in the frame that draws the question
+  and answered it (Save; on Initialize Song's question Enter is Initialize). Fixed in
+  TASK-249, with the mode on and off: a question takes no key in the frame that draws it
+  first, and then only new presses, not a held key's repeats (`answer_key` in `menu.rs`).
+  Headless tests walk the bar with F10, the arrows and Enter for File > New, Edit >
+  Initialize Song and File > Open (`tests/a11y_menu_question.rs`).
 - **The Initialize Song question. Does, not yet heard (29).** Edit > Initialize Song from
   Pattern Mode asks first. In the mode the question is a dialog named by its title, with the
   original's text as its description and the focus on Initialize; Tab reaches Cancel. After

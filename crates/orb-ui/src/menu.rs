@@ -1387,10 +1387,13 @@ impl App {
     pub fn init_song_ui(&mut self, ctx: &Context) {
         if !self.confirm_init {
             self.init_focused = false;
+            self.init_armed = false;
             return;
         }
         let sr = self.screen_reader_mode();
-        let key = |k: Key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, k));
+        // the keys wait for a new press, as the unsaved-changes prompt's (task-249)
+        let armed = std::mem::replace(&mut self.init_armed, true);
+        let key = |k: Key| answer_key(ctx, armed, k);
         let mut answer = None;
         if key(Key::Enter) {
             answer = Some(true);
@@ -1441,6 +1444,7 @@ impl App {
             });
         if let Some(yes) = answer {
             self.confirm_init = false;
+            self.init_armed = false;
             if yes {
                 self.init_from_pattern(true);
             }
@@ -1551,6 +1555,9 @@ impl App {
         let Some(then) = self.prompt.take() else {
             return;
         };
+        // the next question, opened from the menu in the next frame, is a new one: it waits
+        // for its own new key (task-249)
+        self.prompt_armed = false;
         match answer {
             Answer::Cancel => {}
             Answer::DontSave => self.proceed(then),
@@ -1573,13 +1580,18 @@ impl App {
     }
 
     /// Draws the prompt and takes its keys: S or Enter saves, D or N does not, Esc cancels.
+    /// The keys wait for a new press ([`answer_key`]): the Enter that chose the menu item which
+    /// opened the question is in the frame that draws it first, and does not answer it
+    /// (task-249).
     pub fn prompt_ui(&mut self, ctx: &Context) {
         let Some(then) = self.prompt.clone() else {
             self.prompt_focused = false;
+            self.prompt_armed = false;
             return;
         };
         let sr = self.screen_reader_mode();
-        let key = |k: Key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, k));
+        let armed = std::mem::replace(&mut self.prompt_armed, true);
+        let key = |k: Key| answer_key(ctx, armed, k);
         let mut answer = None;
         if key(Key::S) || key(Key::Y) || key(Key::Enter) {
             answer = Some(Answer::Save);
@@ -2287,6 +2299,19 @@ pub fn mod_name_order(a: &str, b: &str) -> std::cmp::Ordering {
     fold(a)
         .cmp(&fold(b))
         .then_with(|| b.as_bytes().cmp(a.as_bytes()))
+}
+
+/// Takes the key `k` as a question's answer: only a new press (not a repeat of a held key)
+/// in a frame after the one that drew the question first (`armed`). The key is taken away
+/// from the rest of the app either way. A question opened from a menu was chosen with Enter,
+/// and that Enter is still in the frame that opens it (task-249).
+fn answer_key(ctx: &Context, armed: bool, k: Key) -> bool {
+    ctx.input_mut(|i| {
+        let fresh = i.events.iter().any(|e| {
+            matches!(e, egui::Event::Key { key, pressed: true, repeat: false, .. } if *key == k)
+        });
+        i.consume_key(Modifiers::NONE, k) && armed && fresh
+    })
 }
 
 #[cfg(test)]

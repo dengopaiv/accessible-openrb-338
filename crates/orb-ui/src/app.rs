@@ -355,6 +355,11 @@ pub struct App {
     pub(crate) prompt_focused: bool,
     /// Initialize Song's question has taken the focus on Initialize (screen reader mode).
     pub(crate) init_focused: bool,
+    /// The question's keys are taken from its second frame on, and only as new presses: the
+    /// Enter that chose the menu item which opened it must not answer it (task-249).
+    pub(crate) prompt_armed: bool,
+    /// As `prompt_armed`, for Initialize Song's question.
+    pub(crate) init_armed: bool,
     pub(crate) error_focused: bool,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
@@ -465,6 +470,8 @@ impl App {
             modal_was: 0,
             prompt_focused: false,
             init_focused: false,
+            prompt_armed: false,
+            init_armed: false,
             error_focused: false,
             shot,
             frame_stats: FrameStats::from_env(),
