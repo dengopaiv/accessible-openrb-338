@@ -124,7 +124,7 @@ off, every task leaves the app as upstream, except where Part 4's ground rules s
 
 | Task | What | Commit | By ear |
 |---|---|---|---|
-| TASK-247 | Menu bar: Left and Right from menu to menu, as in Windows, never out of the bar | (see git log) | waiting, 36 |
+| TASK-247 | Menu bar: Left and Right from menu to menu, as in Windows, never out of the bar | (see git log) | heard, 36 |
 | TASK-212 | After the menu bar, the focus returns to the control that had it | 3f3fdc7 | heard, 23 |
 | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 | heard, 24 |
 | TASK-201 | The Mods menu reads the playing kit's entry as checked | 78129ba | waiting, 25 |
@@ -413,9 +413,8 @@ The 808 and 909 Pattern Editor windows (task-236):
 
 | Task | Priority | What | State |
 |---|---|---|---|
-| TASK-250 | high | Menu items that are off: reached by Up and Down, read as unavailable, Enter says why (items 26, 29, 38) | for an agent, when the user says so |
-| TASK-251 | medium | ASIO's System default opens the first driver that opens; a failure names the driver (item 31) | built, waiting for item 40 |
-| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 37 and the second half of 38 left | waiting for the user |
+| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 37, the second half of 38, 39 and 40 left | waiting for the user |
+| TASK-252 | low | ASIO: find why cpal lists only ReaRoute ASIO on the user's PC, not Realtek ASIO or the MiniFuse driver | for an agent, when the user says so |
 | TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
 | TASK-206 | low | A system file dialog that cannot open reads as a cancel (Linux) | on hold: Windows only |
