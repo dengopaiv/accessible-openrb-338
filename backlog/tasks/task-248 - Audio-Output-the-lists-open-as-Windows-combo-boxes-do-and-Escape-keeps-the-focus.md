@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@agent-worker'
 created_date: '2026-11-28T06:51:00Z'
-updated_date: '2026-11-28T08:26:00Z'
+updated_date: '2026-11-28T09:17:00Z'
 labels:
   - ui
 milestone: m-7
@@ -78,6 +78,8 @@ Review round 1 (send back), fixed in the amended commit:
 6. The state paragraph of accessibility_plan.md is reflowed.
 
 Review round 2 (agent-reviewer): send back for one line, key_help.rs:395 at 104 columns (a string literal rustfmt does not wrap). The supervisor split it by hand (the same text), checked key_help's 13 unit tests and nightly fmt, and amended; then merge.
+
+The user, 2026-11-28, on the two calls left for them: keep both. Home and End also move the highlight in an open list; on a box whose chosen entry is not in the list, Down goes to the first entry and Up to the last.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
