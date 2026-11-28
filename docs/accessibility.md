@@ -353,6 +353,9 @@ has not been read.
     closed box Up, Down, Home and End choose at once, no wrap, each announced once as a
     change through the list is; the focus stays on the box after every close, and a second
     Escape closes the window; Help > Keyboard Shortcuts has a line for these keys;
+  - two details the user kept as built (2026-11-28): Home and End work in the open list as
+    well as on the closed box, and on a box whose chosen entry is not in the list (a device
+    that is gone) Down goes to the first entry and Up to the last;
   - after the program falls back from a device that is gone, the window shows the device in
     use, not the lost one, and that is never saved over the user's choice (TASK-234,
     TASK-245).

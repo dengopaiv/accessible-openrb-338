@@ -85,6 +85,7 @@ milestone that shaped it (marked "outside m-7"), and one work task's own choices
 | TASK-232 (outside m-7) | 2026-11-26 | From upstream's 120 commits: everything new comes in, and each new window gets its own m-7 task. The portable modes are combined. The spoken names say 808, 909 and 303 (TASK-239). |
 | TASK-242 | 2026-11-27 | The 303 pattern editor in the mode: the whole window. The header's controls are buttons and fields, and the notes are a list of 16 steps with the panel step editor's keys. |
 | TASK-243 | 2026-11-27 | The 808 and 909 pattern editors in the mode: the whole window. The header's controls are buttons and fields, and the grid has the panel drum grid's keys. |
+| (TASK-248, the user's answer) | 2026-11-28 | Audio Output's lists: Home and End also move the highlight in an open list, and on a box whose chosen entry is not in the list (a device that is gone) Down goes to the first entry and Up to the last. Both kept as built. |
 
 TASK-220 (2026-11-10) took upstream's pull request 4, Save writes the engine's tracks. It is
 not part of m-7.
@@ -284,20 +285,25 @@ and do not compare one to one. Repeating the real-window count after the merges 
 ### 2.1 Checks by ear, and the faults they found
 
 Agents cannot hear NVDA, so each of these was checked by tests only. The steps for each are in
-the checklist (Part 3).
+the checklist (Part 3), under the same number.
 
-**Waiting for the user.**
+**How to report.** This document is the place to work from; the backlog is not needed. Keep a
+Notepad document beside it, write each item's number and what you heard ("36: works", "37:
+Escape still loses the focus"), and paste it into the chat. Claude records the results here,
+in Part 3's marks, and in the backlog (TASK-244).
 
-| Item | Task | What to hear |
+**Waiting for the user**, in the order of Part 3:
+
+| Item | What to hear | Task |
 |---|---|---|
-| 25 | TASK-201 | The Mods menu reads the playing kit's entry as checked (with no mods installed, the Standard ReBirth entry) |
-| 26 | TASK-204 | The Export dialog offers the format last used, also after a restart |
-| 29 | TASK-244, criterion 1 (TASK-237) | The Initialize Song question is read, and the focus comes back; TASK-249 is built, so it can be heard now |
-| 38 | TASK-244, criterion 10 (TASK-249) | File > New and Edit > Initialize Song chosen from the menu ask their question, which NVDA reads, and wait for your answer |
-| 31 | TASK-244, criterion 3 (TASK-234) | Options > Audio Output, once more (the user heard faults there; TASK-248 fixed them, 37 is the new keys) |
-| 35 | TASK-244, criterion 7 (TASK-245) | Audio Output after a lost device reads the device in use |
-| 36 | TASK-244, criterion 8 (TASK-247) | Left and Right go from menu to menu in the bar, wrapping |
-| 37 | TASK-244, criterion 9 (TASK-248) | Audio Output's lists: the spoken hint, Alt+Down, Up and Down, Escape keeping the focus |
+| 25 | The Mods menu reads the playing kit's entry as checked (with no mods installed, the Standard ReBirth entry) | TASK-201 |
+| 26 | The Export dialog offers the format last used, also after a restart | TASK-204 |
+| 29 | The Initialize Song question is read, and the focus comes back (it can be heard now that 38 is fixed) | TASK-237 |
+| 31 | Options > Audio Output as a whole, once more (its faults were fixed; 37 is the new keys) | TASK-234 |
+| 35 | Audio Output after a lost device reads the device in use | TASK-245 |
+| 36 | Left and Right go from menu to menu in the bar, wrapping, never out of it | TASK-247 |
+| 37 | Audio Output's lists: the spoken hint, Alt+Down, Up and Down, Escape keeping the focus | TASK-248 |
+| 38 | File > New and Edit > Initialize Song chosen from the menu ask their question, which NVDA reads, and wait for your answer | TASK-249 |
 
 **Heard working on 2026-11-28:** items 23 (TASK-212), 24 (TASK-211), 27 (TASK-213), 28
 (TASK-225), 30 (TASK-239), 32 (TASK-238), 33 (TASK-235) and 34 (TASK-236).
@@ -321,9 +327,9 @@ by-ear check to TASK-244 when it is built:
   it first, and only new presses after it, not a held key's repeats. It holds in both modes
   and for every question the menu opens.
 
-Items 29, 31 and 35 are TASK-244's acceptance criteria. When they are heard, the user checks
-them there and TASK-244 is Done. Items 25 and 26 have no open task: their tasks are Done, and
-only this checklist holds their marks.
+For Claude's bookkeeping: items 29, 31 and 35 to 38 are TASK-244's acceptance criteria 1, 3
+and 7 to 10, and TASK-244 is Done when they are heard. Items 25 and 26 have no open task: their
+tasks are Done, and only this checklist holds their marks.
 
 **Worth repeating.** Items 1 to 22 were heard on 2026-11-07. The merges of 2026-11-18 and
 2026-11-26 moved the screen reader code into upstream's `controller.rs` and changed the menu
@@ -332,10 +338,10 @@ through them again in the same pass would show anything the tests do not catch.
 
 ### 2.2 Choices waiting for the user
 
-The agents of task-235, task-236 and task-238 had to settle these to finish, and recorded
-them in their tasks' notes for the user's review. Each is built as described. The user answers
-in a session: a choice kept is recorded as decided, and a choice changed
-becomes a task.
+The agents of task-235, task-236 and task-238 had to settle these to finish. Each is built as
+described. Answer them as the checks are answered, by number in the chat ("1: keep", "4:
+change, only in Program Synth mode"). A choice kept moves to the decisions in Part 1.1; a
+choice changed becomes a task.
 
 The classic look (task-238):
 
@@ -420,7 +426,8 @@ Run it with NVDA (note its version) and the release build, with screen reader mo
 - ( ): waiting.
 
 Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23, 24, 27, 28, 30 and 32 to 34 on
-2026-11-28. Item 31 had faults (TASK-248, built); 25, 26, 29, 31, 35, 36, 37 and 38 are waiting (Part 2.1).
+2026-11-28. Item 31 had faults (TASK-248, now fixed). Items 25, 26, 29, 31 and 35 to 38 are
+waiting (Part 2.1, which says how to report).
 
 1. Start the program: the window title is spoken, and the focus is on the first control of the
    Transport section. (x)
