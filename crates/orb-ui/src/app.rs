@@ -88,10 +88,12 @@ pub(crate) enum Win {
     Audio,
     /// The 303-1 (0) or 303-2 (1) Pattern Editor (task-235).
     Editor303(usize),
+    /// The 808 or 909 Pattern Editor (task-236).
+    EditorDrum(crate::drum_editor::Machine),
 }
 
 impl Win {
-    pub(crate) const ALL: [Win; 8] = [
+    pub(crate) const ALL: [Win; 10] = [
         Win::KeyHelp,
         Win::Info,
         Win::About,
@@ -100,6 +102,8 @@ impl Win {
         Win::Audio,
         Win::Editor303(0),
         Win::Editor303(1),
+        Win::EditorDrum(crate::drum_editor::Machine::Tr808),
+        Win::EditorDrum(crate::drum_editor::Machine::Tr909),
     ];
 }
 
@@ -1731,6 +1735,7 @@ impl App {
             Win::Chooser => self.chooser.is_some(),
             Win::Audio => self.audio_open,
             Win::Editor303(k) => self.editors[k.min(1)].open,
+            Win::EditorDrum(m) => self.drum_editors[m.index()].open,
         }
     }
 

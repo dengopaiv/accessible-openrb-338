@@ -14,10 +14,15 @@
 //! path, `crate::link::Link::set_pattern`), as in the 303 editor (`crate::pattern_editor`): it
 //! is heard, marks the song modified, shows on the panel and is undone by the one-level Undo. A
 //! drag is one change. The window's frame is `crate::editor_frame`, shared with the 303 editor.
+//!
+//! In the fork's screen reader mode the window's content is `crate::a11y::editor_drum`'s
+//! (task-236, decision task-243): named controls and the steps as a grid with the panel grid's
+//! keys, through the same [`DrumAct`]s.
 
 use egui::{Color32, Context, CornerRadius, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
-use crate::app::App;
+use crate::a11y::{editor_drum, grid};
+use crate::app::{App, Win};
 use crate::behavior::{self, Mods};
 pub use crate::editor_frame::step_pattern;
 use crate::editor_frame::{
@@ -520,6 +525,13 @@ pub enum DrumAct {
     },
     /// The mouse went up: the end of a drag.
     Release,
+    /// Screen reader mode: Space on the grid's cell of instrument `column` (0 the AC row) and
+    /// step `step`, entering `entry` (task-236): one change, no drag.
+    CellKey {
+        column: usize,
+        step: usize,
+        entry: Entry,
+    },
 }
 
 /// A drag on the grid: the row, the value the first cell took, the last step painted, and
@@ -551,6 +563,11 @@ pub struct DrumEditor {
     drums_down: bool,
     ac_down: bool,
     hits: Hits,
+    /// Screen reader mode (task-236): the grid's row (the instrument, 0 Accent) and step.
+    pub(crate) sr_row: usize,
+    pub(crate) sr_step: usize,
+    /// Screen reader mode: a control of the window had the focus at the last frame.
+    pub(crate) sr_had_focus: bool,
 }
 
 /// Where the window drew its parts last.
@@ -610,11 +627,24 @@ impl App {
         }
         let pattern = self.panel.rows[m.row()].pattern;
         let e = &mut self.drum_editors[m.index()];
+        let was_open = e.open;
         e.pattern = pattern;
         e.win.open(e.open);
         e.open = true;
         e.gesture = None;
+        if !was_open {
+            // the grid starts on the first drum row, step 1
+            (e.sr_row, e.sr_step) = (1, 0);
+        }
         self.editor_focus = Some(m.row());
+        // screen reader mode: the pattern the machine's grid edits (`drum_follow`), and an open
+        // window takes the focus again (task-236)
+        if self.screen_reader_mode() {
+            self.drum_follow(m);
+            if was_open {
+                self.refocus_window(Win::EditorDrum(m));
+            }
+        }
     }
 
     /// Where the window drew instrument `column`'s cell (0 the AC row, 1..=11 the drum rows) of
@@ -664,8 +694,32 @@ impl App {
 
     /// The selection rule, in both modes: the editor shows the machine's selected pattern (a
     /// selection on the panel moves it, song playback's too; so does the switch of mode).
+    ///
+    /// In screen reader mode the editor shows the pattern the machine's grid edits
+    /// (`Panel::edit_pattern`, the pin of task-191): a selection on the panel or in the editor
+    /// moves it, playback does not (decision task-209, "move-along doesn't speak"; task-236).
     pub(crate) fn drum_follow(&mut self, m: Machine) {
-        self.drum_editors[m.index()].pattern = self.panel.rows[m.row()].pattern;
+        self.drum_editors[m.index()].pattern = if self.screen_reader_mode() {
+            self.panel.edit_pattern(m.row())
+        } else {
+            self.panel.rows[m.row()].pattern
+        };
+    }
+
+    /// The pattern the editor of `m` shows, as the link holds it (empty without a song).
+    fn drum_shown_bytes(&self, m: Machine) -> Vec<u8> {
+        self.link
+            .as_ref()
+            .map(|l| {
+                l.pattern(m.row(), self.drum_editors[m.index()].pattern)
+                    .to_vec()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The names of machine `m`'s 12 instruments as the panel's grid says them (Accent first).
+    pub(crate) fn drum_names(&self, m: Machine) -> editor_drum::Names {
+        std::array::from_fn(|i| grid::instrument_name(&self.panel, m == Machine::Tr808, i))
     }
 
     /// The editor's pattern as the link holds it, after the panel's pending events were noted
@@ -785,6 +839,21 @@ impl App {
                 });
             }
             DrumAct::Release => self.drum_editors[m.index()].gesture = None,
+            DrumAct::CellKey {
+                column,
+                step,
+                entry,
+            } => {
+                let (column, step) = (column.min(STEP_BYTES - 1), step.min(STEPS - 1));
+                self.drum_edit(m, EDIT, false, |b| {
+                    m.put(
+                        b,
+                        step,
+                        column,
+                        m.clicked(column, cell(b, step, column), entry),
+                    )
+                });
+            }
         }
     }
 
@@ -802,6 +871,7 @@ impl App {
         }
         if self.link.is_none() {
             self.drum_editors[i].open = false;
+            self.drum_editors[i].sr_had_focus = false;
             return;
         }
         self.drum_follow(m);
@@ -824,16 +894,39 @@ impl App {
         };
         let mut acts = Vec::new();
         let mut length_drag = false;
+        let sr = self.screen_reader_mode();
+        let due = sr && self.window_focus_due(Win::EditorDrum(m));
+        let names = self.drum_names(m);
+        let mut sr_out = editor_drum::Out::default();
         let mut win = std::mem::take(&mut self.drum_editors[i].win);
         let editor = &mut self.drum_editors[i];
+        let wid = egui::Id::unique(m.salt());
         let spec = frame::Spec {
-            id: egui::Id::unique(m.salt()),
+            id: wid,
             title: m.title(),
             saved: m.saved(&self.settings),
             guess: vec2(520.0, if m.has_entry() { 385.0 } else { 360.0 }),
         };
         let out = frame::show_window(ctx, spec, &mut win, |ui| {
-            length_drag = window_ui(ui, editor, &shown, &mut acts);
+            if sr {
+                // the fork's screen reader mode (task-236): named controls, the steps a grid;
+                // the held modifiers do not switch the entry (Space's own choose it)
+                editor.held = None;
+                let view = editor_drum::View {
+                    p: shown.pattern,
+                    bytes: &shown.bytes,
+                    names: &names,
+                    entry: editor.entry,
+                };
+                let state = editor_drum::State {
+                    row: &mut editor.sr_row,
+                    step: &mut editor.sr_step,
+                    had_focus: &mut editor.sr_had_focus,
+                };
+                sr_out = editor_drum::window_ui(ui, m, wid, m.title(), due, view, state);
+            } else {
+                length_drag = window_ui(ui, editor, &shown, &mut acts);
+            }
         });
         self.drum_editors[i].win = win;
         if out.pressed {
@@ -842,18 +935,36 @@ impl App {
         if !length_drag {
             self.drum_editors[i].length_wrote = false;
         }
+        let acted = !acts.is_empty() || !sr_out.acts.is_empty();
         for a in acts {
             self.drum_editor_act(m, a);
         }
+        // screen reader mode: each act is judged on the pattern just before and after it
+        // (`editor_drum::act_said`), so several keys of one frame are each said on their own
+        for a in sr_out.acts {
+            let before = self.drum_shown_bytes(m);
+            self.drum_editor_act(m, a);
+            let after = self.drum_shown_bytes(m);
+            let p = self.drum_editors[i].pattern;
+            if let Some(text) = editor_drum::act_said(&a, m, p, &names, &before, &after) {
+                self.announce(text);
+            }
+        }
+        if sr && acted {
+            // the values the acts changed show in the next frame, whatever else repaints
+            ctx.request_repaint();
+        }
+        let open = out.open && !sr_out.close;
         if let Some(pos) = out.save {
             m.save(&mut self.settings, pos);
             if let Err(e) = self.settings.save() {
                 self.fail(e);
             }
         }
-        if !out.open {
+        if !open {
             self.drum_editors[i].open = false;
             self.drum_editors[i].gesture = None;
+            self.drum_editors[i].sr_had_focus = false;
             self.editor_unfocus(r);
         }
     }

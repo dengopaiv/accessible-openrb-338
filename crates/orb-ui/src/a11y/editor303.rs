@@ -393,18 +393,23 @@ pub fn window_ui(
 /// A button named as `part`; whether it was clicked (the mouse, Space or Enter on it, a screen
 /// reader's Click).
 fn button(ui: &mut Ui, k: usize, part: Part) -> bool {
-    let bid = id(k, part);
-    let r = control(ui, bid, part.name(), false, 0.0);
-    ui.ctx().accesskit_node_builder(bid, |b| {
+    named_button(ui, id(k, part), part.name())
+}
+
+/// A button of egui id `id` named `name`; whether it was clicked (the drum pattern editors'
+/// too, task-236).
+pub(super) fn named_button(ui: &mut Ui, id: egui::Id, name: &str) -> bool {
+    let r = control(ui, id, name, false, 0.0);
+    ui.ctx().accesskit_node_builder(id, |b| {
         b.set_role(accesskit::Role::Button);
-        b.set_label(part.name());
+        b.set_label(name);
     });
     r.clicked()
 }
 
 /// A spin button's node: `name` with `value` as its text value (no numeric value: UI Automation
 /// would then raise two value changes for one key), Increment and Decrement as its Up and Down.
-fn spin_node(ui: &Ui, id: egui::Id, name: &str, value: &str) {
+pub(super) fn spin_node(ui: &Ui, id: egui::Id, name: &str, value: &str) {
     ui.ctx().accesskit_node_builder(id, |b| {
         b.set_role(accesskit::Role::SpinButton);
         b.set_label(name);
@@ -416,7 +421,7 @@ fn spin_node(ui: &Ui, id: egui::Id, name: &str, value: &str) {
 
 /// The value key on the focused spin button `r` (Up, Down, Page Up, Page Down, Home, End,
 /// auto-repeat included), else a screen reader's Increment or Decrement on it.
-fn value_key(ui: &mut Ui, r: &Response, id: egui::Id) -> Option<drive::Step> {
+pub(super) fn value_key(ui: &mut Ui, r: &Response, id: egui::Id) -> Option<drive::Step> {
     use drive::Step;
     if r.clicked() {
         r.request_focus();
@@ -444,7 +449,13 @@ fn value_key(ui: &mut Ui, r: &Response, id: egui::Id) -> Option<drive::Step> {
 
 /// A control of the window drawn as a button with `text` (at least `min_w` wide), lit when
 /// `selected`, with the focus outlined; interacted with as `id` (a click; it takes the focus).
-fn control(ui: &mut Ui, id: egui::Id, text: &str, selected: bool, min_w: f32) -> Response {
+pub(super) fn control(
+    ui: &mut Ui,
+    id: egui::Id,
+    text: &str,
+    selected: bool,
+    min_w: f32,
+) -> Response {
     let pad = ui.spacing().button_padding;
     let font = egui::TextStyle::Button.resolve(ui.style());
     let galley = ui

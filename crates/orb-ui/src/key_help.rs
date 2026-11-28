@@ -369,6 +369,19 @@ fn screen_reader_group(is_mac: bool) -> Group {
                 vec![],
             ),
             sr_row(
+                "In an 808 or 909 Pattern Editor",
+                "Edit > 808 or 909 Pattern Editor..., or Ctrl+E on that machine: the focus goes \
+                 to Pattern (as in a 303 Pattern Editor); Tab to Steps, the 909's Entry (Up / \
+                 Down: Cycle, Low, High, Flam), Length, Shuffle, Shift left and right, Copy, \
+                 Paste, Clear. Steps has the keys of the panel's drum grid: Up / Down the \
+                 instrument (Accent first), Left / Right the step, Home / End step 1 / the \
+                 last, Space sets the cell, and the cell is read: on the 808 Space toggles it \
+                 and the modifiers do nothing; on the 909 Space enters the Entry's value, \
+                 Ctrl+Space on, Shift+Space accent, Ctrl+Alt+Space flam. F2 reads the \
+                 pattern. Escape closes",
+                vec![],
+            ),
+            sr_row(
                 "Tab / Shift+Tab",
                 "The next / previous control of the panel, section by section (wraps). \
                  Entering a machine's section gives that machine the row focus",

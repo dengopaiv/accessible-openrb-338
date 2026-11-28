@@ -672,6 +672,7 @@ impl App {
         }
         if self.link.is_none() {
             self.editors[k].open = false;
+            self.editors[k].sr_had_focus = false;
             return;
         }
         self.editor_follow(k);

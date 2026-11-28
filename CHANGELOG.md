@@ -26,6 +26,12 @@ This section holds the changes made since the last release.
   Tab. The notes are a list of the 16 steps with the same keys as the panel's step editor:
   Up and Down move, the 303's keys program the step and it is read back, F2 reads the pattern.
   Nothing is spoken while the song plays.
+- **The 808 and 909 Pattern Editors**, in screen reader mode: the window takes the focus when it
+  opens (Edit menu or Ctrl+E) and gives it back when it closes (Escape). Pattern, the 909's
+  Entry, Length, Shuffle, Shift, Copy, Paste and Clear are named controls you reach with Tab.
+  The steps are a grid with the same keys and words as the panel's drum grid: the arrows move,
+  Space sets the cell and it is read back, F2 reads the pattern. Nothing is spoken while the
+  song plays.
 
 ## 2026.1127.2013 (2026-11-27)
 

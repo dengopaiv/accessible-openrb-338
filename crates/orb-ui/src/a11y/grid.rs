@@ -106,47 +106,67 @@ pub fn instrument_name(panel: &Panel, is808: bool, i: usize) -> String {
 /// accent row reads "on" for any value but 0.
 pub fn state_text(panel: &Panel, is808: bool, i: usize, step: usize) -> &'static str {
     if is808 {
-        return if panel.steps808[i][step] { "on" } else { "off" };
+        return state_word(true, i, u8::from(panel.steps808[i][step]));
     }
-    match (i, panel.steps909[i][step]) {
-        (_, 0) => "off",
-        (0, _) | (_, 1) => "on",
-        (_, 2) => "accent",
-        (_, 4) => "accent and flam",
+    state_word(false, i, panel.steps909[i][step])
+}
+
+/// The word of instrument `i`'s step byte `v` ([`state_text`]'s words): the panel's grid and
+/// the 808 and 909 pattern editors' (task-236) say a step alike. On the 808 any byte but 0 is
+/// "on".
+pub fn state_word(is808: bool, i: usize, v: u8) -> &'static str {
+    match (is808, i, v) {
+        (_, _, 0) => "off",
+        (true, _, _) | (false, 0, _) | (false, _, 1) => "on",
+        (false, _, 2) => "accent",
+        (false, _, 4) => "accent and flam",
         _ => "flam",
     }
 }
 
 /// A cell's text: "Bass drum, step 5, on".
 pub fn cell_text(panel: &Panel, is808: bool, i: usize, step: usize) -> String {
-    format!(
-        "{}, step {}, {}",
-        instrument_name(panel, is808, i),
-        step + 1,
-        state_text(panel, is808, i, step)
+    cell_words(
+        &instrument_name(panel, is808, i),
+        step,
+        state_text(panel, is808, i, step),
     )
+}
+
+/// A cell's text from the instrument's name, the step (0-based) and the state's word.
+pub fn cell_words(name: &str, step: usize, state: &str) -> String {
+    format!("{name}, step {}, {state}", step + 1)
 }
 
 /// F2's drum part: each instrument that has steps within the pattern's length, with its
 /// steps, "Bass drum: 1, 5, 9, 13. Closed hi-hat: 3, 7, 11, 15"; a 909 step that is not a plain
 /// note says what it is ("5 accent", "9 flam"). "No steps" for an empty pattern.
 pub fn drum_readout(panel: &Panel, is808: bool) -> String {
-    let n = length(panel, is808);
+    readout_of(
+        length(panel, is808),
+        |i| instrument_name(panel, is808, i),
+        |i, s| state_text(panel, is808, i, s),
+    )
+}
+
+/// [`drum_readout`] of any pattern: the steps `0..n` of the 12 instruments named by `name`,
+/// whose states `state` gives (the panel's grid and the drum pattern editors', task-236).
+pub fn readout_of(
+    n: usize,
+    name: impl Fn(usize) -> String,
+    state: impl Fn(usize, usize) -> &'static str,
+) -> String {
     let mut parts = Vec::new();
     for i in 0..ROWS {
         let steps: Vec<String> = (0..n)
-            .filter_map(|s| match state_text(panel, is808, i, s) {
+            .filter_map(|s| match state(i, s) {
                 "off" => None,
                 "on" => Some((s + 1).to_string()),
-                state => Some(format!("{} {state}", s + 1)),
+                st => Some(format!("{} {st}", s + 1)),
             })
             .collect();
         if !steps.is_empty() {
-            parts.push(format!(
-                "{}: {}",
-                instrument_name(panel, is808, i),
-                steps.join(", ")
-            ));
+            parts.push(format!("{}: {}", name(i), steps.join(", ")));
         }
     }
     if parts.is_empty() {
@@ -171,7 +191,13 @@ fn bounds(r: egui::Rect) -> accesskit::Rect {
 pub fn describe_grid(ctx: &egui::Context, panel: &Panel, is808: bool, step: usize, rect: Rect) {
     let n = length(panel, is808);
     let active = cell_id(is808, selected(panel, is808), step.min(n - 1));
-    ctx.accesskit_node_builder(grid_id(is808), |node| {
+    grid_node(ctx, grid_id(is808), n, active, rect);
+}
+
+/// A Grid node `id` named "Steps" of 12 rows and `n` columns over `rect`, whose active
+/// descendant is the cell `active` (the panel's grids and the drum pattern editors', task-236).
+pub fn grid_node(ctx: &egui::Context, id: egui::Id, n: usize, active: egui::Id, rect: Rect) {
+    ctx.accesskit_node_builder(id, |node| {
         node.set_role(accesskit::Role::Grid);
         node.set_label("Steps");
         node.set_row_count(ROWS);
@@ -191,7 +217,18 @@ pub fn describe_cell(
     rect: Rect,
 ) {
     let text = cell_text(panel, is808, i, step);
-    ctx.accesskit_node_builder(cell_id(is808, i, step), |node| {
+    cell_node(ctx, cell_id(is808, i, step), text, (i, step), rect);
+}
+
+/// A GridCell node `id` named `text`, at row `i` and column `step`, over `rect`.
+pub fn cell_node(
+    ctx: &egui::Context,
+    id: egui::Id,
+    text: String,
+    (i, step): (usize, usize),
+    rect: Rect,
+) {
+    ctx.accesskit_node_builder(id, |node| {
         node.set_role(accesskit::Role::GridCell);
         node.set_label(text);
         node.set_row_index(i);
@@ -262,13 +299,34 @@ pub fn key(panel: &mut Panel, is808: bool, step: &mut usize, k: GridKey) {
     *step = (*step).min(n - 1);
     let i = selected(panel, is808);
     match k {
-        GridKey::Up => panel.select_instrument(is808, i.saturating_sub(1)),
-        GridKey::Down => panel.select_instrument(is808, (i + 1).min(ROWS - 1)),
-        GridKey::Left => *step = step.saturating_sub(1),
-        GridKey::Right => *step = (*step + 1).min(n - 1),
-        GridKey::Home => *step = 0,
-        GridKey::End => *step = n - 1,
+        GridKey::Up | GridKey::Down => panel.select_instrument(is808, row_moved(i, k)),
         GridKey::Set(m) => set(panel, is808, *step, m),
+        _ => *step = step_moved(*step, k, n),
+    }
+}
+
+/// The row (instrument, 0 Accent) the key `k` moves to from `i`: Up the one before, Down the
+/// one after, stopping at Accent and at the last; any other key stays.
+pub fn row_moved(i: usize, k: GridKey) -> usize {
+    match k {
+        GridKey::Up => i.saturating_sub(1),
+        GridKey::Down => (i + 1).min(ROWS - 1),
+        _ => i,
+    }
+}
+
+/// The step the key `k` moves to from `step` in a pattern of `n` steps: Left and Right the one
+/// before and after, stopping at step 1 and at the last; Home step 1, End the last; any other
+/// key stays (within the length).
+pub fn step_moved(step: usize, k: GridKey, n: usize) -> usize {
+    let n = n.max(1);
+    let step = step.min(n - 1);
+    match k {
+        GridKey::Left => step.saturating_sub(1),
+        GridKey::Right => (step + 1).min(n - 1),
+        GridKey::Home => 0,
+        GridKey::End => n - 1,
+        _ => step,
     }
 }
 

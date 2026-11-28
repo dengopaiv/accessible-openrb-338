@@ -327,6 +327,17 @@ impl App {
                     self.announce(text);
                     return true;
                 }
+                // the focus in an 808 or 909 pattern editor's window: its pattern (task-236)
+                if let Some(m) = focused.and_then(super::editor_drum::owner)
+                    && self.drum_editor(m).open
+                    && let Some(link) = &self.link
+                {
+                    let p = self.drum_editor(m).pattern;
+                    let names = self.drum_names(m);
+                    let text = super::editor_drum::readout(m, p, &names, link.pattern(m.row(), p));
+                    self.announce(text);
+                    return true;
+                }
                 let r = focused
                     .and_then(focused_row)
                     .unwrap_or(self.panel.focus.min(3));

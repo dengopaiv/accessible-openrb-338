@@ -2824,6 +2824,70 @@ says (upstream's `window_ui`, untouched; no node of this section exists).
   plays. With Options > Step Editor Follows Playback on it moves to the playing pattern at the
   next input, silently, as the panel's step editor.
 
+### 20.9 The 808 and 909 pattern editor windows (task-236)
+
+The user's decision task-243 (2026-11-27), option A: the whole window. The code is
+`crates/orb-ui/src/a11y/editor_drum.rs`, drawn by `drum_editor.rs` in place of the header and
+the painted grid; the tests `crates/orb-ui/tests/a11y_drum_editor.rs` and the module's unit
+tests. Screen reader mode only: with the mode off the windows draw and act as sections 24 and
+25 say (upstream's `window_ui`, untouched; no node of this section exists).
+
+- **The window.** "808 Pattern Editor" and "909 Pattern Editor" open as in sections 24 and 25
+  (Edit menu, Ctrl+E with that machine's row focused, the focus on its grid or any control of
+  its section). Each is a Dialog named by its title and one of `App::window_focus`'s windows
+  (`Win::EditorDrum(m)`, the u16 mask's ninth and tenth): the focus goes to Pattern as it
+  opens, and back to the panel control that had it when it closes. The Edit menu's item or
+  Ctrl+E on a window that is open already brings the focus into it again
+  (`App::refocus_window`). Escape with the focus in the window closes it. While the focus is
+  in the window the panel's keys wait, as for the other windows.
+- **The controls, in their tab order** (`editor_drum::Part`, `Part::of`):
+  - **Pattern**, the 303 window's SpinButton (section 20.8): Up and Down the next and the
+    previous pattern (stopping at A1 and D8), Page Up and Page Down a bank, Home A1, End D8;
+    the pattern is selected on the panel too.
+  - **Steps**, a Grid as the panel's (section 20.6, `grid::grid_node`, `grid::cell_node`): a
+    child `Ui` that takes the focus (its id `editor_drum::id(m, Part::Steps)`), 12 rows,
+    Accent first then the window's 11 drum rows in RBS order (the row is the step byte), by the
+    pattern's length; the cell under the window's cursor (`DrumEditor::sr_row`, `sr_step`;
+    Bass drum, step 1, when the window opens) is its active descendant, so a screen reader
+    speaks it when the focus enters and each time the cursor moves. The cells' texts are the
+    panel grid's (`grid::state_word`, `grid::cell_words`, the names of `grid::instrument_name`,
+    the 808's slots by their switches): "Bass drum, step 5, on"; on the 909 "on" (byte 1,
+    the switch's Low), "accent" (2, High), "flam" (3, and 5..255), "accent and flam" (4), the
+    accent row "on" for any byte but 0. A small picture of the pattern is drawn under it, the
+    cursor's cell outlined.
+  - **Entry** (the 909's only), a SpinButton standing for the entry switch: "Cycle", "Low
+    (on)", "High (accent)", "Flam" (the switch's names with the grid's word of the value they
+    enter); Up and Down the next and the previous, stopping at the ends; Home Cycle, End Flam.
+    The modifiers held do not switch it in this mode (Space's own modifiers choose the entry).
+  - **Length**, the 303 window's SpinButton ("16 steps"); **Shuffle**, a CheckBox; **Shift
+    left**, **Shift right**, **Copy**, **Paste**, **Clear**: Buttons.
+- **The grid's keys** (`grid::GridKey::of`, `grid::row_moved`, `grid::step_moved`, the panel
+  grid's): Up and Down the instrument before and after (stopping at Accent and the last), Left
+  and Right the step before and after (stopping at 1 and the pattern's last), Home and End step
+  1 and the last; the moves repeat. Space sets the cell (`DrumAct::CellKey`), not repeated:
+  on the 808 a toggle (modifiers ignored); on the 909 the value `Machine::clicked` gives for the
+  entry: a plain Space the Entry's (Cycle: off, on, accent, off), Ctrl+Space Low (a note on /
+  off), Alt+Space or Shift+Space High (an accent on / off), Ctrl+Alt+Space Flam
+  (`editor_drum::key_entry`); the accent row toggles 0 <-> 2; a hi-hat entered clears the other
+  on its step (`Machine::put`). The window does not read the panel's Flam button (section 25).
+  The arrows do not move egui's focus (a focus lock filter).
+- **One edit path.** Every edit is a `DrumAct` of `App::drum_editor_act` through
+  `App::write_pattern`: heard the next time the step plays, the song modified, one Undo each
+  ("Edit Pattern" for a cell, "Shift Pattern", "Pattern Length", "Pattern Shuffle", ...).
+- **What is spoken.** The screen reader speaks the focused control's value as it changes: the
+  grid's active cell after a move or Space, Pattern, Entry, Length, Shuffle. The announcer
+  speaks only what a value cannot: Shift "Pattern A1 shifted right", or "Pattern A1 unchanged"
+  when the pattern's bytes are as they were (nothing is written then); a Space that leaves the
+  cell's text as it was says the cell (`editor_drum::act_said`, each act judged on the pattern
+  just before and after it). Copy, Paste and Clear speak their status line ("909: A1
+  copied"). The other hi-hat cleared by a hi-hat is not announced, as on the panel's grid.
+- **F2** with the focus in the window reads its pattern, in the panel's words: "909, pattern
+  A1, 16 steps, shuffle off. Accent: 1. Bass drum: 1, 5 accent" (`editor_drum::readout`,
+  `grid::readout_of`).
+- **Move-along doesn't speak.** In screen reader mode the window shows the pattern its
+  machine's grid edits (`Panel::edit_pattern`; `App::drum_follow`), not the one playback moves
+  the row to: nothing in the window speaks or changes by itself while the song plays.
+
 ## 21. The panel bitmaps and the classic skin (task-187, task-267)
 
 The bitmaps' places below were found for task-187's Theme Viewer, a view-only window that
@@ -3297,7 +3361,8 @@ shuffle flag, the length, and 16 steps of 12 bytes, one per instrument in RBS or
 LT/LC, MT/MC, HT/HC, RS/CL, CP/MA, CB, CY, OH, CH, each 0 or 1). Code:
 `crates/orb-ui/src/drum_editor.rs` (the drum-grid editor, `Machine::Tr808`; the 909's,
 task-281, is `Machine::Tr909` on it, section 25) on `crates/orb-ui/src/editor_frame.rs`; tests:
-`crates/orb-ui/tests/drum_editor.rs` and the unit tests of the module.
+`crates/orb-ui/tests/drum_editor.rs` and the unit tests of the module. In the fork's screen
+reader mode the window's content is section 20.9's (task-236).
 
 **The window.** "808 Pattern Editor", an `egui::Window` like the 303's (draggable, closable,
 not resizable or collapsible), separate from it:
@@ -3367,7 +3432,8 @@ CH, OH, CC, RC). A drum byte is 0 off, 1 low, 2 high, 3 flam (a low hit plus the
 retrigger); the AC byte is on/off with the stored "on" 2, as the panel writes it (section 7).
 Code: `crates/orb-ui/src/drum_editor.rs`, `Machine::Tr909` (with `Entry`, the entry switch);
 tests: `crates/orb-ui/tests/drum_editor.rs` (the `909` tests and
-`every_input_of_the_help_does_what_it_says`) and the unit tests of the module.
+`every_input_of_the_help_does_what_it_says`) and the unit tests of the module. In the fork's
+screen reader mode the window's content is section 20.9's (task-236).
 
 **The window.** "909 Pattern Editor", its own window, separate from the 808's (the user's
 decision: both can be open), otherwise as the 808's: opened by Edit > 909 Pattern Editor... (under the 808's) and Ctrl/Cmd+E with the TR-909
