@@ -428,7 +428,6 @@ Realtek ASIO (task-252 found it; TASK-253 holds the choice):
 |---|---|---|---|
 | TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 37, the second half of 38, 39 and 40 left | waiting for the user |
 | TASK-253 | low | Decide: patch cpal so Realtek ASIO is listed and opens (choice 13 in Part 2.2) | your choice |
-| TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
 | TASK-206 | low | A system file dialog that cannot open reads as a cancel (Linux) | on hold: Windows only |
 
