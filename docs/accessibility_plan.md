@@ -5,10 +5,11 @@ the menus, the dialogs, the mod chooser, and since the night of 2026-11-27 also 
 newer windows (Audio Output, the Initialize Song question, the four pattern editors) and the
 classic look. The user's NVDA passes heard items 1 to 22 of the checklist working on
 2026-11-07, and eight more on 2026-11-28. That second pass found three faults, now bug tasks
-TASK-247 to TASK-249 (Part 2.1). TASK-247 is built and waits for its check, item 36. What is
-left besides them is mostly the user's: 5 checks by ear, 12 design choices that agents made and the user has not confirmed (2.2), and the known
-gaps that have no task yet (2.4). One small test task is open, and two tasks for other systems
-are on hold (2.3).
+TASK-247 to TASK-249 (Part 2.1). TASK-247 and TASK-248 are built and wait for their checks,
+items 36 and 37. What is left besides them is mostly the user's: 7 checks by ear, 12 design
+choices that agents made and the user has not confirmed (2.2), and the known gaps that have no
+task yet (2.4). One small test task is open, and two tasks for other systems are on hold
+(2.3).
 
 The analysis behind the plan and a description of what the program does, part by part, are in
 [accessibility.md](accessibility.md). The behavior in detail is in docs/ui_spec.md section 20.
@@ -49,9 +50,9 @@ Not in scope:
   no task yet;
 - any web version: the fork is a local editor only (the user, 2026-11-05, TASK-198).
 
-**Done when** every task of m-7 is Done. Six are open on 2026-11-28: TASK-248 and
-TASK-249 (faults of the second NVDA pass; TASK-247, the third, is built), TASK-244 (that pass), TASK-227, and TASK-199 and
-TASK-206, which are on hold.
+**Done when** every task of m-7 is Done. Five are open on 2026-11-28: TASK-249 (a fault of
+the second NVDA pass; TASK-247 and TASK-248, the others, are built), TASK-244 (that pass),
+TASK-227, and TASK-199 and TASK-206, which are on hold.
 
 ---
 
@@ -171,11 +172,12 @@ these added one criterion to TASK-244, the user's open NVDA pass.
 |---|---|---|---|
 | TASK-237 | Edit > Initialize Song from Pattern Mode: the question is read and takes the focus | 74d9e13 | waiting, 29 (TASK-249 first) |
 | TASK-239 | The spoken names say 808, 909, 303-1 and 303-2, as upstream's visible text does | 10ee4a4 | heard, 30 |
-| TASK-234 | Options > Audio Output: named lists, the in-use lines, one announcement per change | 5d2d073 | fault heard, 31: TASK-248 |
+| TASK-234 | Options > Audio Output: named lists, the in-use lines, one announcement per change | 5d2d073 | fault heard, 31: TASK-248; waiting again, 31 |
 | TASK-238 | Screen reader mode with View > Classic, as with the modern look | d9f1d25 | heard, 32 |
 | TASK-235 | The 303-1 and 303-2 Pattern Editor windows | 05ba65b | heard, 33 |
 | TASK-236 | The 808 and 909 Pattern Editor windows | 224eae9 | heard, 34 |
 | TASK-245 | Audio Output shows the device in use after a fallback from a lost one | 59cc058 | waiting, 35 |
+| TASK-248 | Audio Output's lists as a Windows combo box: Alt+Down, Enter and Space open, Up and Down on a closed box choose, Escape keeps the focus, a spoken hint | (see git log) | waiting, 37 |
 
 **The documents (2026-11-28).** TASK-246 rewrote this plan into its done and to-do parts,
 docs/accessibility.md into a description of what the program does with each part's state, and
@@ -290,9 +292,10 @@ the checklist (Part 3).
 | 25 | TASK-201 | The Mods menu reads the playing kit's entry as checked (with no mods installed, the Standard ReBirth entry) |
 | 26 | TASK-204 | The Export dialog offers the format last used, also after a restart |
 | 29 | TASK-244, criterion 1 (TASK-237) | The Initialize Song question is read, and the focus comes back; best heard after TASK-249 |
-| 31 | TASK-244, criterion 3 (TASK-234) | Options > Audio Output, again after TASK-248 |
+| 31 | TASK-244, criterion 3 (TASK-234) | Options > Audio Output, once more (the user heard faults there; TASK-248 fixed them, 37 is the new keys) |
 | 35 | TASK-244, criterion 7 (TASK-245) | Audio Output after a lost device reads the device in use |
 | 36 | TASK-244, criterion 8 (TASK-247) | Left and Right go from menu to menu in the bar, wrapping |
+| 37 | TASK-244, criterion 9 (TASK-248) | Audio Output's lists: the spoken hint, Alt+Down, Up and Down, Escape keeping the focus |
 
 **Heard working on 2026-11-28:** items 23 (TASK-212), 24 (TASK-211), 27 (TASK-213), 28
 (TASK-225), 30 (TASK-239), 32 (TASK-238), 33 (TASK-235) and 34 (TASK-236).
@@ -304,9 +307,10 @@ by-ear check to TASK-244 when it is built:
   an open menu Left went back to the bar and the other menus could not then be reached, and
   Right from Help left the bar for the Transport section. The user chose Windows' way: Left
   and Right go from menu to menu, wrapping, never out of the bar.
-- TASK-248 (item 31): Audio Output's lists open only with Space, which nothing says, and
-  Escape out of an open list loses the focus. The user chose Windows' combo keys (Alt+Down,
-  Enter, Up and Down on a closed list), a spoken hint, and a line in Keyboard Shortcuts.
+- TASK-248 (item 31), built, waiting for item 37: Audio Output's lists opened only with
+  Space, which nothing said, and Escape out of an open list lost the focus. The user chose
+  Windows' combo keys (Alt+Down, Enter, Up and Down on a closed list), a spoken hint, and a
+  line in Keyboard Shortcuts; all three are in, and Escape keeps the focus on the box.
 - TASK-249: with unsaved changes, File > New chosen from the menu opens Save As at once;
   Ctrl+N asks first, as it should. The task checks every menu item that opens a question,
   Initialize Song among them, which is why item 29 waits for it.
@@ -367,8 +371,7 @@ The 808 and 909 Pattern Editor windows (task-236):
 | Task | Priority | What | State |
 |---|---|---|---|
 | TASK-249 | high | File > New from the menu opens Save As at once instead of asking; suspected: the Enter that chose a menu item answers the question it opens | for an agent |
-| TASK-248 | medium | Audio Output: Windows' combo keys, a spoken hint, Escape keeps the focus | for an agent |
-| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35 and 36 left | waiting for the user |
+| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 36 and 37 left | waiting for the user |
 | TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
 | TASK-206 | low | A system file dialog that cannot open reads as a cancel (Linux) | on hold: Windows only |
@@ -412,7 +415,7 @@ Run it with NVDA (note its version) and the release build, with screen reader mo
 - ( ): waiting.
 
 Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23, 24, 27, 28, 30 and 32 to 34 on
-2026-11-28. Item 31 had faults (TASK-248); 25, 26, 29 and 35 are waiting (Part 2.1).
+2026-11-28. Item 31 had faults (TASK-248, built); 25, 26, 29, 31, 35, 36 and 37 are waiting (Part 2.1).
 
 1. Start the program: the window title is spoken, and the focus is on the first control of the
    Transport section. (x)
@@ -567,8 +570,8 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23, 24, 27, 28, 30 and 
     - Tab reaches the In use lines and reads them as "label: value";
     - the numbers refreshing every 500 ms are never spoken;
     - Escape closes an open list first, then the window, and the focus returns. (!) The lists
-      open only with Space, which nothing says, and Escape out of a list loses the focus:
-      TASK-248.
+      opened only with Space, which nothing said, and Escape out of a list lost the focus:
+      TASK-248 fixed both (item 37); hear this item again with it. ( )
 32. The classic look (TASK-238):
     - with View > Classic in screen reader mode, F6 and Tab go through the sections and
       controls with the same names as the modern look;
@@ -613,6 +616,22 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23, 24, 27, 28, 30 and 
     the next or previous one, and NVDA says that menu's first item once; in the Mods menu,
     Right on a name that is a list of files opens the list and says its first file, Left
     closes it and says the name again. ( )
+37. Audio Output's lists as a Windows combo box (TASK-248, docs/ui_spec.md, Options > Audio
+    Output), in screen reader mode:
+    - NVDA reads each of Driver, Device, Sample rate and Buffer size with its value, then
+      "Alt+Down opens the list";
+    - Alt+Down, Enter and Space open the list; NVDA says the highlighted entry, which starts
+      on the chosen one;
+    - Up and Down in the list move the highlight and NVDA says each entry once; it chooses
+      nothing; at the ends it stays;
+    - Enter, Space or Alt+Up choose the highlighted entry: NVDA says the change once ("Sample rate:
+      48000 Hz") and reads the box again, because the focus stays on it;
+    - Escape closes the list, keeps the choice as it was, says nothing new, and NVDA reads the
+      box again; a second Escape closes the window and the focus returns to the panel;
+    - on a closed box Up, Down, Home and End choose the previous, next, first and last entry
+      at once, each said once, no wrap;
+    - Help > Keyboard Shortcuts in screen reader mode has a line "In Options > Audio Output"
+      with these keys. ( )
 
 ---
 

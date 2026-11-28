@@ -387,6 +387,16 @@ fn screen_reader_group(is_mac: bool) -> Group {
                 vec![],
             ),
             sr_row(
+                "In Options > Audio Output",
+                "On a list box (Driver, Device, Sample rate, Buffer size): Space, Enter or \
+                 Alt+Down open its list; Up / Down, Home / End on the closed box choose the \
+                 previous / next / first / last entry at once. In the open list Up / Down \
+                 move the highlight, Enter, Space or Alt+Up close it and choose the \
+                 highlighted entry, Escape closes it and keeps the choice; the focus stays on \
+                 the box. Escape again closes the window",
+                vec![],
+            ),
+            sr_row(
                 "Tab / Shift+Tab",
                 "The next / previous control of the panel, section by section (wraps). \
                  Entering a machine's section gives that machine the row focus",
@@ -1114,6 +1124,24 @@ mod tests {
             let sr = g.rows.iter().any(|r| !r.sr_binds.is_empty());
             assert_eq!(sr, g.title == "Screen reader mode", "{}", g.title);
         }
+    }
+
+    /// The Audio Output lists' keys have their line in screen reader mode only (task-248).
+    #[test]
+    fn the_audio_output_keys_have_a_line_in_screen_reader_mode() {
+        let line = |on| {
+            groups(false, on)
+                .into_iter()
+                .flat_map(|g| g.rows)
+                .find(|r| r.keys == "In Options > Audio Output")
+        };
+        assert!(line(false).is_none());
+        let r = line(true).expect("the line");
+        assert!(
+            r.what.contains("Alt+Down") && r.what.contains("Escape"),
+            "{}",
+            r.what
+        );
     }
 
     /// Every listed key of screen reader mode does what the window says.

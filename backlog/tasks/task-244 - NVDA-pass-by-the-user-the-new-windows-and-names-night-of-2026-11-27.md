@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-27T21:55:00Z'
-updated_date: '2026-11-28T07:03:00Z'
+updated_date: '2026-11-28T07:59:00Z'
 labels:
   - ui
   - tests
@@ -34,6 +34,7 @@ How: the user runs OpenRB-338 with NVDA in screen reader mode and goes through t
 - [x] #6 By ear with NVDA (TASK-236): Edit > 909 Pattern Editor... (and Ctrl+E on the 909's grid) in screen reader mode: NVDA says the window's title and lands on Pattern (A1); Tab reads Steps with its cell ('Bass drum, step 1, off'), Entry (Cycle), Length, Shuffle, Shift left and right, Copy, Paste and Clear by name; on Steps the arrows, Home and End read the new cell once; Space, Ctrl+Space, Shift+Space and Ctrl+Alt+Space read the cell's new state once (on, accent, flam); Entry Up/Down are read once ('High (accent)'); Shift right says 'Pattern A1 shifted right' (on an empty pattern 'Pattern A1 unchanged'); F2 reads the pattern; while the song plays nothing is spoken; Escape closes the window and NVDA is back on the panel control. The same in the 808 Pattern Editor (no Entry; Space toggles).
 - [ ] #7 After a device-lost fallback in Options > Audio Output, NVDA reads the Device combo box as the device in use (System default), not the lost one (task-245)
 - [ ] #8 By ear with NVDA (TASK-247): in screen reader mode, F10 then Right and Left on the menu names: NVDA says each name once, Right from Help says File and Left from File says Help, never a panel control; with a menu open, Right and Left close it and open the next or previous menu and NVDA says its first item once; in the Mods menu Right on a name that lists files opens the list and says its first file, Left closes it and says the name again (checklist item 36)
+- [ ] #9 By ear with NVDA (TASK-248): in Options > Audio Output in screen reader mode, NVDA reads each of Driver, Device, Sample rate and Buffer size with its value and then 'Alt+Down opens the list'; Alt+Down, Enter and Space open the list; Up and Down in the open list say each entry once and choose nothing; Enter or Alt+Up choose the highlighted entry, said once ('Sample rate: 48000 Hz'), and NVDA reads the box again; Escape closes the list, keeps the choice and NVDA reads the box again, a second Escape closes the window and the focus returns; on a closed box Up, Down, Home and End choose the previous, next, first and last entry at once, each said once; Help > Keyboard Shortcuts in screen reader mode has the line for these keys (checklist item 37)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -47,4 +48,6 @@ The user's NVDA pass, reported 2026-11-28 (checklist numbers of docs/accessibili
 - Item 31 (criterion 3, Audio Output): the lists open only with Space, which the user wants said, and Escape out of a list loses the focus: task-248.
 - New finding, reported in item 26's place: Left in an open menu returns to the bar and the other menus cannot then be reached; Right from Help leaves for the Transport section: task-247 (the user chose Windows' way).
 Criteria 1, 3 and 7 stay open until their checks pass.
+
+TASK-248 (this task's agent): criterion 9 added, checklist item 37; item 31 (criterion 3) stays open to be heard again.
 <!-- SECTION:NOTES:END -->

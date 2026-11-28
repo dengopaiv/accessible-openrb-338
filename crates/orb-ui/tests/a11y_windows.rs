@@ -7,7 +7,7 @@ mod a11y;
 
 use a11y::AppTree;
 use eframe::egui::accesskit::{Action, NodeId, Role};
-use eframe::egui::{Id, Key};
+use eframe::egui::{Id, Key, Modifiers};
 use orb_ui::app::App;
 use orb_ui::screen_reader::ScreenReaderSetting;
 
@@ -680,4 +680,333 @@ fn audio_output_escape_closes_the_list_then_the_window() {
     settle(&mut a);
     assert!(!a.app.audio_is_open());
     assert_eq!(focused(&a), play.accesskit_id(), "the focus is back");
+}
+
+/// Options > Audio Output with a controller that never opens a stream (the window's test seam
+/// applies a choice without asking a driver).
+fn open_audio_choosing(a: &mut AppTree) {
+    a.app.audio = Some(orb_player::control::Controller::for_test(
+        orb_ui::settings::AudioChoice::default().request(),
+    ));
+    open_audio(a);
+    settle(a);
+}
+
+fn combo_id(a: &AppTree, name: &str) -> NodeId {
+    a.tree()
+        .by_role(Role::ComboBox)
+        .find(|(_, n)| a11y::name(n) == Some(name))
+        .map(|(i, _)| i)
+        .expect(name)
+}
+
+fn list_open(a: &AppTree) -> bool {
+    a.tree().by_role(Role::ListBox).next().is_some()
+}
+
+/// Escape on an open list closes it and the focus stays on its combo box (task-248); the second
+/// Escape closes the window and the focus returns to the panel.
+#[test]
+fn audio_output_escape_keeps_the_focus_on_the_combo_box() {
+    let mut a = app(true);
+    let play = focus_play(&mut a);
+    open_audio_choosing(&mut a);
+    let driver = combo_id(&a, "Driver");
+    assert_eq!(focused(&a), driver);
+    // Space and Enter open it; Escape closes it at once, whatever the highlight did
+    for open in [Key::Space, Key::Enter] {
+        a.key(open);
+        settle(&mut a);
+        assert!(list_open(&a), "{open:?} opens");
+        a.key(Key::ArrowDown);
+        settle(&mut a);
+        a.key(Key::Escape);
+        settle(&mut a);
+        assert!(!list_open(&a));
+        assert!(a.app.audio_is_open());
+        assert_eq!(focused(&a), driver, "the focus stays on the combo box");
+        assert_eq!(a.app.settings.audio.driver, None, "the choice is as it was");
+    }
+    // the Sample rate box too
+    a.key(Key::Tab);
+    a.key(Key::Tab);
+    let rate = combo_id(&a, "Sample rate");
+    assert_eq!(focused(&a), rate);
+    a.key_with(Key::ArrowDown, Modifiers::ALT);
+    settle(&mut a);
+    assert!(list_open(&a));
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert_eq!(focused(&a), rate);
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert!(!a.app.audio_is_open());
+    assert_eq!(focused(&a), play.accesskit_id(), "the focus is back");
+}
+
+/// Alt+Down opens the list of the focused box; in the list Up and Down move the highlight (the
+/// focus), Enter and Alt+Up choose it, Escape keeps the choice (task-248).
+#[test]
+fn audio_output_lists_follow_a_windows_combo_box() {
+    let mut a = app(true);
+    open_audio_choosing(&mut a);
+    a.key(Key::Tab);
+    a.key(Key::Tab);
+    let rate = combo_id(&a, "Sample rate");
+    assert_eq!(focused(&a), rate);
+    let before = a.app.announcer.serial();
+    a.key_with(Key::ArrowDown, Modifiers::ALT);
+    settle(&mut a);
+    assert!(list_open(&a), "Alt+Down opens");
+    assert_eq!(a.app.announcer.serial(), before, "opening says nothing");
+    // the highlight starts on the chosen entry
+    assert_eq!(spoken(&a, focused(&a)), "Device default");
+    a.key(Key::ArrowDown);
+    assert_eq!(spoken(&a, focused(&a)), "44100 Hz");
+    a.key(Key::ArrowDown);
+    a.key(Key::ArrowDown);
+    assert_eq!(spoken(&a, focused(&a)), "48000 Hz", "no wrap at the end");
+    a.key(Key::ArrowUp);
+    assert_eq!(spoken(&a, focused(&a)), "44100 Hz");
+    // moving the highlight chooses nothing
+    assert_eq!(a.app.settings.audio.rate, None);
+    // Enter chooses it, once
+    a.key(Key::Enter);
+    settle(&mut a);
+    assert!(!list_open(&a));
+    assert_eq!(a.app.settings.audio.rate, Some(44100));
+    assert_eq!(a.app.announcer.serial(), before + 1);
+    assert_eq!(a.app.announcer.text(), Some("Sample rate: 44100 Hz"));
+    assert_eq!(focused(&a), rate, "the focus is on the combo box");
+    // Alt+Up chooses the highlighted entry and closes
+    a.key_with(Key::ArrowDown, Modifiers::ALT);
+    settle(&mut a);
+    assert_eq!(spoken(&a, focused(&a)), "44100 Hz");
+    a.key(Key::ArrowDown);
+    a.key_with(Key::ArrowUp, Modifiers::ALT);
+    settle(&mut a);
+    assert!(!list_open(&a));
+    assert_eq!(a.app.settings.audio.rate, Some(48000));
+    assert_eq!(a.app.announcer.serial(), before + 2);
+    assert_eq!(focused(&a), rate);
+    // Escape keeps it as it was, and says nothing
+    a.key_with(Key::ArrowDown, Modifiers::ALT);
+    settle(&mut a);
+    a.key(Key::Home);
+    assert_eq!(spoken(&a, focused(&a)), "Device default");
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert_eq!(a.app.settings.audio.rate, Some(48000));
+    assert_eq!(a.app.announcer.serial(), before + 2);
+    assert_eq!(focused(&a), rate);
+}
+
+/// Up, Down, Home and End on a closed box choose at once, one announcement each, no wrap
+/// (task-248).
+#[test]
+fn audio_output_closed_boxes_choose_with_the_arrows() {
+    let mut a = app(true);
+    open_audio_choosing(&mut a);
+    a.key(Key::Tab);
+    a.key(Key::Tab);
+    let rate = combo_id(&a, "Sample rate");
+    assert_eq!(focused(&a), rate);
+    let n = a.app.announcer.serial();
+    a.key(Key::ArrowDown);
+    settle(&mut a);
+    assert_eq!(a.app.settings.audio.rate, Some(44100));
+    assert_eq!(a.app.announcer.serial(), n + 1);
+    assert_eq!(a.app.announcer.text(), Some("Sample rate: 44100 Hz"));
+    a.key(Key::ArrowDown);
+    assert_eq!(a.app.settings.audio.rate, Some(48000));
+    assert_eq!(a.app.announcer.serial(), n + 2);
+    // the end: nothing changes, nothing is said
+    a.key(Key::ArrowDown);
+    a.key(Key::End);
+    assert_eq!(a.app.settings.audio.rate, Some(48000));
+    assert_eq!(a.app.announcer.serial(), n + 2);
+    a.key(Key::Home);
+    assert_eq!(a.app.settings.audio.rate, None);
+    assert_eq!(a.app.announcer.text(), Some("Sample rate: Device default"));
+    a.key(Key::ArrowUp);
+    assert_eq!(a.app.settings.audio.rate, None, "no wrap at the start");
+    assert_eq!(a.app.announcer.serial(), n + 3);
+    // the focus stays on the box through all of it, and the value shown follows
+    assert_eq!(focused(&a), rate);
+    assert!(!list_open(&a));
+    a.key(Key::End);
+    settle(&mut a);
+    assert_eq!(a11y::value(a.tree().node(rate).unwrap()), Some("48000 Hz"));
+    // the Buffer size box: the sizes, announced with their time
+    a.key(Key::Tab);
+    let buffer = combo_id(&a, "Buffer size");
+    assert_eq!(focused(&a), buffer);
+    a.key(Key::Home);
+    assert_eq!(a.app.settings.audio.buffer, 256);
+    assert!(
+        a.app
+            .announcer
+            .text()
+            .unwrap()
+            .starts_with("Buffer size: 256 frames"),
+        "{:?}",
+        a.app.announcer.text()
+    );
+}
+
+/// Each box says how to open it, and with the mode off nothing of this exists (task-248).
+#[test]
+fn audio_output_boxes_describe_how_to_open_them() {
+    let mut a = app(true);
+    open_audio_choosing(&mut a);
+    let combos: Vec<_> = a.tree().by_role(Role::ComboBox).collect();
+    assert_eq!(combos.len(), 4);
+    for (_, n) in combos {
+        assert_eq!(n.description(), Some("Alt+Down opens the list"), "{n:?}");
+    }
+    let mut b = app(false);
+    open_audio_choosing(&mut b);
+    assert!(
+        b.tree()
+            .by_role(Role::ComboBox)
+            .all(|(_, n)| n.description().is_none())
+    );
+    b.key(Key::Tab);
+    let before = b.app.settings.audio.clone();
+    b.key_with(Key::ArrowDown, Modifiers::ALT);
+    settle(&mut b);
+    assert!(!list_open(&b), "Alt+Down is for the screen reader mode");
+    assert_eq!(b.app.settings.audio, before);
+}
+
+/// A key with Alt or Shift held is not the plain key: Alt+Up, Alt+Down and Shift+arrows choose
+/// nothing on a closed box (task-248, review round 1).
+#[test]
+fn audio_output_modified_keys_are_not_the_plain_ones() {
+    let mut a = app(true);
+    open_audio_choosing(&mut a);
+    a.key(Key::Tab);
+    a.key(Key::Tab);
+    let rate = combo_id(&a, "Sample rate");
+    assert_eq!(focused(&a), rate);
+    let n = a.app.announcer.serial();
+    for (key, mods) in [
+        (Key::ArrowUp, Modifiers::ALT),
+        (Key::ArrowDown, Modifiers::SHIFT),
+        (Key::ArrowUp, Modifiers::SHIFT),
+        (Key::Home, Modifiers::SHIFT),
+        (Key::End, Modifiers::SHIFT),
+        (Key::End, Modifiers::ALT),
+    ] {
+        a.key_with(key, mods);
+        settle(&mut a);
+        assert_eq!(a.app.settings.audio.rate, None, "{key:?} {mods:?}");
+        assert_eq!(a.app.announcer.serial(), n, "{key:?} {mods:?}");
+        assert!(!list_open(&a));
+        assert_eq!(focused(&a), rate);
+    }
+    // Alt+Down opens the list and chooses nothing, also right after Tab
+    a.key_down(Key::Tab);
+    a.key_with(Key::Tab, Modifiers::SHIFT);
+    a.key_with(Key::ArrowDown, Modifiers::ALT);
+    settle(&mut a);
+    assert!(list_open(&a));
+    assert_eq!(a.app.settings.audio.rate, None);
+    assert_eq!(a.app.announcer.serial(), n);
+    // in the list the same: Shift+Down is not Down, Alt+Up is the choice
+    let item = spoken(&a, focused(&a));
+    a.key_with(Key::ArrowDown, Modifiers::SHIFT);
+    assert_eq!(spoken(&a, focused(&a)), item);
+}
+
+/// Device and Driver choose with the arrows through their own paths (task-248, review round 1).
+#[test]
+fn audio_output_device_and_driver_follow_the_arrows() {
+    use orb_player::devices::{Caps, DeviceInfo, SupportedBufferSize};
+    let mut a = app(true);
+    a.app.audio = Some(orb_player::control::Controller::for_test(
+        orb_ui::settings::AudioChoice::default().request(),
+    ));
+    let dev = |id: &str, name: &str| DeviceInfo {
+        id: id.into(),
+        name: name.into(),
+    };
+    a.app.audio_open_for_test(
+        vec!["WASAPI".into(), "ASIO".into()],
+        vec![
+            dev("a", "Speakers"),
+            dev("b", "Headphones"),
+            dev("c", "HDMI"),
+        ],
+        Some(Caps {
+            rates: vec![44100, 48000],
+            buffers: vec![256, 512],
+            range: SupportedBufferSize::Range { min: 256, max: 512 },
+        }),
+    );
+    settle(&mut a);
+    let n = a.app.announcer.serial();
+    // Driver: Down is the second driver, End and Down stay, Home goes back (stored as none)
+    assert_eq!(focused(&a), combo_id(&a, "Driver"));
+    a.key(Key::ArrowDown);
+    assert_eq!(a.app.settings.audio.driver.as_deref(), Some("ASIO"));
+    assert_eq!(a.app.announcer.text(), Some("Driver: ASIO"));
+    a.key(Key::End);
+    a.key(Key::ArrowDown);
+    assert_eq!(a.app.announcer.serial(), n + 1, "the end says nothing");
+    a.key(Key::Home);
+    assert_eq!(a.app.settings.audio.driver, None);
+    assert_eq!(a.app.announcer.text(), Some("Driver: WASAPI"));
+    assert_eq!(a.app.announcer.serial(), n + 2);
+    a.key(Key::ArrowUp);
+    assert_eq!(a.app.announcer.serial(), n + 2, "no wrap");
+    // Device: the entries are System default and the three devices. Tab, then Down at once
+    // (the frame after the focus came): the choice is made and the focus stays
+    a.key_down(Key::Tab);
+    a.key_down(Key::ArrowDown);
+    a.frame(vec![]);
+    let device = combo_id(&a, "Device");
+    assert_eq!(focused(&a), device, "the arrow did not also move the focus");
+    assert_eq!(a.app.settings.audio.device.as_deref(), Some("a"));
+    assert_eq!(
+        a.app.announcer.text(),
+        Some("Device: Speakers. Buffer size: 512 frames (11.6 ms)"),
+        "the size moves to what the device offers"
+    );
+    a.key(Key::ArrowDown);
+    assert_eq!(a.app.settings.audio.device.as_deref(), Some("b"));
+    assert_eq!(a.app.announcer.text(), Some("Device: Headphones"));
+    a.key(Key::End);
+    assert_eq!(a.app.settings.audio.device.as_deref(), Some("c"));
+    assert_eq!(a.app.announcer.text(), Some("Device: HDMI"));
+    let said = a.app.announcer.serial();
+    a.key(Key::ArrowDown);
+    assert_eq!(a.app.announcer.serial(), said, "no wrap at the end");
+    a.key(Key::Home);
+    assert_eq!(a.app.settings.audio.device, None);
+    assert_eq!(a.app.announcer.text(), Some("Device: System default"));
+    a.key(Key::ArrowUp);
+    assert_eq!(a.app.announcer.serial(), said + 1, "no wrap at the start");
+    assert_eq!(focused(&a), device);
+}
+
+/// Space on an entry of the open list chooses it, as Enter does (task-248, review round 1).
+#[test]
+fn audio_output_space_chooses_the_highlighted_entry() {
+    let mut a = app(true);
+    open_audio_choosing(&mut a);
+    a.key(Key::Tab);
+    a.key(Key::Tab);
+    let rate = combo_id(&a, "Sample rate");
+    a.key(Key::Space);
+    settle(&mut a);
+    assert!(list_open(&a));
+    a.key(Key::ArrowDown);
+    assert_eq!(spoken(&a, focused(&a)), "44100 Hz");
+    a.key(Key::Space);
+    settle(&mut a);
+    assert!(!list_open(&a));
+    assert_eq!(a.app.settings.audio.rate, Some(44100));
+    assert_eq!(a.app.announcer.text(), Some("Sample rate: 44100 Hz"));
+    assert_eq!(focused(&a), rate);
 }

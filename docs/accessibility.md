@@ -91,7 +91,7 @@ plan's Part 2.4).
 | The mod chooser | Does, heard (12) | 3.6 |
 | Dialogs, the error box, the unsaved-changes prompt | Does, heard (15, 16, 22) | 3.6 |
 | The Initialize Song question | Does, not yet heard (29) | 3.6 |
-| Options > Audio Output | Fault heard (31): TASK-248; 35 not yet heard | 3.6 |
+| Options > Audio Output | Does, not yet heard (31, 35, 37) | 3.6 |
 | The 303 Pattern Editor windows | Does, heard (33) | 3.7 |
 | The 808 and 909 Pattern Editor windows | Does, heard (34) | 3.7 |
 | The classic look | Does, heard (32) | 3.8 |
@@ -334,15 +334,20 @@ has not been read.
   Pattern Mode asks first. In the mode the question is a dialog named by its title, with the
   original's text as its description and the focus on Initialize; Tab reaches Cancel. After
   either answer, the focus goes back where it was (TASK-237).
-- **Options > Audio Output. Fault heard (31): TASK-248; the fallback (35) not yet heard.**
+- **Options > Audio Output. Does, not yet heard (31, 35, 37).**
   In the mode the window is a dialog named Audio Output, with the focus on Driver as it opens:
   - Driver, Device, Sample rate and Buffer size are named lists that say what is chosen;
   - a change is announced once ("Sample rate: 48000 Hz");
   - the "In use" numbers are lines Tab reaches ("label: value"), and their refresh every 500 ms
     is never spoken;
-  - Escape closes an open list first, then the window, but the focus is lost after the list
-    closes; and a list opens only with Space, which nothing says (TASK-248: Windows' combo
-    keys, a spoken hint, a line in Keyboard Shortcuts);
+  - the lists follow a Windows dialog's combo box (TASK-248; the user heard faults in item 31
+    and chose these keys): each box's description says "Alt+Down opens the list", read after
+    its value; Alt+Down, Enter and Space open the list, with the highlight on the chosen
+    entry; in the open list Up, Down, Home and End move the highlight (the focus, so NVDA
+    reads each entry), Enter, Space or Alt+Up choose it, Escape keeps the choice as it was; on a
+    closed box Up, Down, Home and End choose at once, no wrap, each announced once as a
+    change through the list is; the focus stays on the box after every close, and a second
+    Escape closes the window; Help > Keyboard Shortcuts has a line for these keys;
   - after the program falls back from a device that is gone, the window shows the device in
     use, not the lost one, and that is never saved over the user's choice (TASK-234,
     TASK-245).

@@ -47,6 +47,8 @@ pub struct AudioUi {
     /// A test seam, set only by `App::audio_open_for_test`: the lists are fixed and never
     /// read from the drivers. The real window never sets it.
     lists_fixed: bool,
+    /// The highlight of the open list in screen reader mode.
+    nav: ListNav,
 }
 
 /// How often the In use numbers (output latency, underruns, the granted size) are sampled: the
@@ -188,11 +190,227 @@ pub fn frames_text(frames: u32, rate: u32) -> String {
 }
 
 /// Screen reader mode: gives the combo box `r` the name `name` (what it chooses); the selected
-/// text is its value. The label beside it in the grid is not what a screen reader reads.
+/// text is its value, and its description says how to open it (task-248). The label beside it in
+/// the grid is not what a screen reader reads.
 fn name_combo(ctx: &Context, on: bool, r: &egui::Response, name: &str) {
     if on {
-        ctx.accesskit_node_builder(r.id, |b| b.set_label(name));
+        ctx.accesskit_node_builder(r.id, |b| {
+            b.set_label(name);
+            b.set_description(OPEN_HINT);
+        });
     }
+}
+
+/// How a combo box opens, read after its value in screen reader mode.
+pub const OPEN_HINT: &str = "Alt+Down opens the list";
+
+/// Takes a press of `key` with exactly the modifiers `mods` (egui's `consume_key` also matches
+/// an extra Alt or Shift, so Alt+Up would act as Up). True when there was one.
+fn consume_exact(i: &mut egui::InputState, mods: Modifiers, key: Key) -> bool {
+    let mut found = false;
+    i.events.retain(|e| match e {
+        egui::Event::Key {
+            key: k,
+            pressed: true,
+            modifiers,
+            ..
+        } if *k == key && modifiers.matches_exact(mods) => {
+            found = true;
+            false
+        }
+        _ => true,
+    });
+    found
+}
+
+/// What one of the window's lists offers: the text shown on its box, its entries and the one
+/// chosen now (`None`: the choice is not among the entries).
+struct ComboSpec<'a> {
+    salt: &'a str,
+    name: &'a str,
+    text: String,
+    labels: Vec<String>,
+    selected: Option<usize>,
+}
+
+/// What [`audio_combo`] found: the choice made by a click or a key, and whether a key opened
+/// the list (a click is the response's, as upstream's window reads it).
+struct ComboOut {
+    chosen: Option<AudioChoice>,
+    opened: bool,
+}
+
+/// Screen reader mode, where the highlight of the open list is: the list's open box, the
+/// highlighted entry, and the box that takes the focus back when the list closes. The open
+/// list's entries are real focus targets, so a screen reader reads the highlight.
+#[derive(Default)]
+pub struct ListNav {
+    open: Option<egui::Id>,
+    cursor: usize,
+    refocus: Option<egui::Id>,
+    /// The box that had the focus at the end of the last frame (by its list's id): the focus of
+    /// the response is known only once the box is drawn, and a list opens only before that.
+    focused: Option<egui::Id>,
+}
+
+/// What a combo box of a Windows dialog does with the keyboard, in screen reader mode (task-248):
+/// Alt+Down opens the list (Space and Enter do already); on a closed box Up and Down choose the
+/// previous and next entry, Home and End the first and last, at once and without wrapping;
+/// in the open list Up, Down, Home and End move the highlight, Enter, Space or Alt+Up choose it,
+/// and Escape closes the list and keeps the choice; the focus is on the box afterwards. Without the
+/// mode this is egui's `ComboBox` and its list with the clicks alone.
+fn audio_combo(
+    ui: &mut egui::Ui,
+    sr: bool,
+    nav: &mut ListNav,
+    spec: &ComboSpec,
+    resolve: &dyn Fn(usize) -> Option<AudioChoice>,
+) -> ComboOut {
+    let ctx = ui.ctx().clone();
+    let id = ui.make_persistent_id(egui::IdSalt::new(spec.salt));
+    let last = spec.labels.len().saturating_sub(1);
+    let mut out = ComboOut {
+        chosen: None,
+        opened: false,
+    };
+    let was_open = egui::ComboBox::is_open(&ctx, id);
+    if sr
+        && nav.focused == Some(id)
+        && !was_open
+        && ctx.input_mut(|i| consume_exact(i, Modifiers::ALT, Key::ArrowDown))
+    {
+        egui::Popup::open_id(&ctx, id.with("popup"));
+        out.opened = true;
+    }
+    let r = egui::ComboBox::from_id_salt(spec.salt)
+        .selected_text(spec.text.clone())
+        .width(280.0)
+        .show_ui(ui, |ui| {
+            let (up, down, home, end, alt_up, escape) = if sr {
+                ui.ctx().input_mut(|i| {
+                    (
+                        consume_exact(i, Modifiers::NONE, Key::ArrowUp),
+                        consume_exact(i, Modifiers::NONE, Key::ArrowDown),
+                        consume_exact(i, Modifiers::NONE, Key::Home),
+                        consume_exact(i, Modifiers::NONE, Key::End),
+                        consume_exact(i, Modifiers::ALT, Key::ArrowUp),
+                        i.key_pressed(Key::Escape),
+                    )
+                })
+            } else {
+                Default::default()
+            };
+            // the list just opened: the highlight starts on the chosen entry
+            let mut moved = sr && nav.open != Some(id);
+            if moved {
+                nav.open = Some(id);
+                nav.cursor = spec.selected.unwrap_or(0);
+            }
+            let was = nav.cursor;
+            if home {
+                nav.cursor = 0;
+            } else if end {
+                nav.cursor = last;
+            } else if up {
+                nav.cursor = nav.cursor.saturating_sub(1);
+            } else if down {
+                nav.cursor = (nav.cursor + 1).min(last);
+            }
+            moved |= nav.cursor != was;
+            let mut clicked = None;
+            for (i, label) in spec.labels.iter().enumerate() {
+                let item = ui.selectable_label(spec.selected == Some(i), label);
+                if item.clicked() {
+                    clicked = Some(i);
+                }
+                if sr {
+                    if moved {
+                        if i == nav.cursor {
+                            item.request_focus();
+                        }
+                    } else if item.has_focus() {
+                        // Tab or a click moved the focus: the highlight follows
+                        nav.cursor = i;
+                    }
+                    if item.has_focus() {
+                        // egui keeps the arrows and Escape off its own focus moves. It takes
+                        // the filter of a widget that had the focus last frame only, so a
+                        // key in the first frame after Tab is unguarded; tried in a test
+                        // (audio_output_device_and_driver_follow_the_arrows: Tab and Down in
+                        // consecutive frames) and nothing went wrong, and a person does not
+                        // type that fast
+                        let filter = egui::EventFilter {
+                            vertical_arrows: true,
+                            escape: true,
+                            ..Default::default()
+                        };
+                        ui.memory_mut(|m| m.set_focus_lock_filter(item.id, filter));
+                    }
+                }
+            }
+            if alt_up {
+                clicked = Some(nav.cursor);
+            }
+            if sr && clicked.is_some() {
+                // a key's choice does not close the list as a click does
+                ui.close();
+            }
+            if sr && (escape || clicked.is_some()) {
+                nav.refocus = Some(id);
+            }
+            clicked
+        });
+    if sr {
+        if !egui::ComboBox::is_open(&ctx, id) && nav.open == Some(id) {
+            nav.open = None;
+        }
+        if nav.refocus == Some(id) {
+            nav.refocus = None;
+            r.response.request_focus();
+        }
+        if r.response.has_focus() {
+            nav.focused = Some(id);
+            let filter = egui::EventFilter {
+                vertical_arrows: true,
+                escape: true,
+                ..Default::default()
+            };
+            ctx.memory_mut(|m| m.set_focus_lock_filter(r.response.id, filter));
+        } else if nav.focused == Some(id) {
+            nav.focused = None;
+        }
+    }
+    if sr && r.response.has_focus() && !was_open && !egui::ComboBox::is_open(&ctx, id) {
+        let (up, down, home, end) = ctx.input_mut(|i| {
+            (
+                consume_exact(i, Modifiers::NONE, Key::ArrowUp),
+                consume_exact(i, Modifiers::NONE, Key::ArrowDown),
+                consume_exact(i, Modifiers::NONE, Key::Home),
+                consume_exact(i, Modifiers::NONE, Key::End),
+            )
+        });
+        // no entry chosen: Down goes to the first, Up to the last
+        let to = match spec.selected {
+            _ if home => Some(0),
+            _ if end => Some(last),
+            Some(s) if up => Some(s.saturating_sub(1)),
+            Some(s) if down => Some((s + 1).min(last)),
+            None if up => Some(last),
+            None if down => Some(0),
+            _ => None,
+        };
+        if let Some(i) = to.filter(|&i| Some(i) != spec.selected && i < spec.labels.len()) {
+            out.chosen = resolve(i);
+        }
+    }
+    name_combo(&ctx, sr, &r.response, spec.name);
+    if let Some(i) = r.inner.flatten()
+        && spec.selected != Some(i)
+    {
+        out.chosen = resolve(i);
+    }
+    out.opened |= r.response.clicked();
+    out
 }
 
 /// One row of the In use list: the label, and the text as a line that takes the focus in screen
@@ -372,11 +590,17 @@ impl App {
     /// [`orb_player::control::Controller::open_chain`]), what the stream ended up on is saved,
     /// and the window's lists follow.
     pub fn audio_choose(&mut self, choice: AudioChoice) {
+        // the test seam (`lists_fixed`) never opens a stream and never asks a driver
+        let fixed = self.audio_ui.lists_fixed;
         let Some(c) = &mut self.audio else {
             return;
         };
-        let events = c.apply(choice.request());
-        let now = AudioChoice::from_request(c.request());
+        let (events, now) = if fixed {
+            (Vec::new(), choice)
+        } else {
+            let events = c.apply(choice.request());
+            (events, AudioChoice::from_request(c.request()))
+        };
         // what the stream ended up on, once (task-234); the controller's notes follow
         let said = change_text(&self.audio_choice(), &now, &self.audio_ui.drivers);
         self.settings.set_audio(now.clone());
@@ -386,7 +610,9 @@ impl App {
             self.fail(e);
         }
         self.audio_events_after(said, events);
-        self.audio_ui.refresh(&now);
+        if !fixed {
+            self.audio_ui.refresh(&now);
+        }
     }
 
     /// Tells the user what the controller reports: a note in the status line, an error in the
@@ -485,6 +711,7 @@ impl App {
         let in_use = self.audio_ui.sample(Instant::now(), live);
         let latency_rate = in_use.as_ref().map(|u| u.rate);
         let choice = self.audio_choice();
+        let mut nav = std::mem::take(&mut self.audio_ui.nav);
         let ui_state = &self.audio_ui;
         let running = self.audio.is_some();
         let screen = ctx.content_rect();
@@ -514,19 +741,17 @@ impl App {
                                 // Driver
                                 let driver = driver_of(&ui_state.drivers, &choice).to_string();
                                 ui.label("Driver");
-                                let r = egui::ComboBox::from_id_salt("audio_driver")
-                                    .selected_text(driver.clone())
-                                    .width(280.0)
-                                    .show_ui(ui, |ui| {
-                                        for d in &ui_state.drivers {
-                                            if ui.selectable_label(*d == driver, d).clicked()
-                                                && *d != driver
-                                            {
-                                                chosen = Some(after_driver(&ui_state.drivers, d));
-                                            }
-                                        }
-                                    });
-                                name_combo(ctx, sr, &r.response, "Driver");
+                                let spec = ComboSpec {
+                                    salt: "audio_driver",
+                                    name: "Driver",
+                                    text: driver.clone(),
+                                    labels: ui_state.drivers.clone(),
+                                    selected: ui_state.drivers.iter().position(|d| *d == driver),
+                                };
+                                let out = audio_combo(ui, sr, &mut nav, &spec, &|i| {
+                                    Some(after_driver(&ui_state.drivers, &ui_state.drivers[i]))
+                                });
+                                chosen = out.chosen.or(chosen.take());
                                 ui.end_row();
                                 // Device
                                 ui.label("Device");
@@ -544,42 +769,40 @@ impl App {
                                         .or_else(|| n.clone())
                                         .unwrap_or_else(|| id.clone()),
                                 };
-                                let r = egui::ComboBox::from_id_salt("audio_device")
-                                    .selected_text(shown)
-                                    .width(280.0)
-                                    .show_ui(ui, |ui| {
-                                        if ui
-                                            .selectable_label(
-                                                choice.device.is_none(),
-                                                SYSTEM_DEFAULT,
-                                            )
-                                            .clicked()
-                                            && choice.device.is_some()
-                                        {
-                                            let caps =
-                                                devices::caps(choice.driver.as_deref(), None).ok();
-                                            chosen =
-                                                Some(after_device(&choice, None, caps.as_ref()));
-                                        }
-                                        for d in &ui_state.devices {
-                                            let on =
-                                                choice.device.as_deref() == Some(d.id.as_str());
-                                            if ui.selectable_label(on, &d.name).clicked() && !on {
-                                                let caps = devices::caps(
-                                                    choice.driver.as_deref(),
-                                                    Some(&d.id),
-                                                )
-                                                .ok();
-                                                chosen = Some(after_device(
-                                                    &choice,
-                                                    Some(d),
-                                                    caps.as_ref(),
-                                                ));
-                                            }
-                                        }
-                                    });
-                                name_combo(ctx, sr, &r.response, "Device");
-                                refresh_devices |= r.response.clicked();
+                                // entry 0 is the system default, then the devices
+                                let mut labels = vec![SYSTEM_DEFAULT.to_string()];
+                                labels.extend(ui_state.devices.iter().map(|d| d.name.clone()));
+                                let selected = match &choice.device {
+                                    None => Some(0),
+                                    Some(id) => ui_state
+                                        .devices
+                                        .iter()
+                                        .position(|d| d.id == *id)
+                                        .map(|p| p + 1),
+                                };
+                                let spec = ComboSpec {
+                                    salt: "audio_device",
+                                    name: "Device",
+                                    text: shown,
+                                    labels,
+                                    selected,
+                                };
+                                let out = audio_combo(ui, sr, &mut nav, &spec, &|i| {
+                                    let dev = i.checked_sub(1).map(|p| &ui_state.devices[p]);
+                                    // the test seam never asks a driver
+                                    let caps = if ui_state.lists_fixed {
+                                        ui_state.caps.clone()
+                                    } else {
+                                        devices::caps(
+                                            choice.driver.as_deref(),
+                                            dev.map(|d| d.id.as_str()),
+                                        )
+                                        .ok()
+                                    };
+                                    Some(after_device(&choice, dev, caps.as_ref()))
+                                });
+                                chosen = out.chosen.or(chosen.take());
+                                refresh_devices |= out.opened;
                                 ui.end_row();
                                 // Sample rate
                                 ui.label("Sample rate");
@@ -587,34 +810,30 @@ impl App {
                                     None => DEVICE_DEFAULT.to_string(),
                                     Some(r) => format!("{r} Hz"),
                                 };
-                                let r = egui::ComboBox::from_id_salt("audio_rate")
-                                    .selected_text(rate_text)
-                                    .width(280.0)
-                                    .show_ui(ui, |ui| {
-                                        if ui
-                                            .selectable_label(choice.rate.is_none(), DEVICE_DEFAULT)
-                                            .clicked()
-                                            && choice.rate.is_some()
-                                        {
-                                            chosen = Some(AudioChoice {
-                                                rate: None,
-                                                ..choice.clone()
-                                            });
-                                        }
-                                        for &r in ui_state.rates() {
-                                            let on = choice.rate == Some(r);
-                                            if ui.selectable_label(on, format!("{r} Hz")).clicked()
-                                                && !on
-                                            {
-                                                chosen = Some(AudioChoice {
-                                                    rate: Some(r),
-                                                    ..choice.clone()
-                                                });
-                                            }
-                                        }
-                                    });
-                                name_combo(ctx, sr, &r.response, "Sample rate");
-                                refresh_caps |= r.response.clicked();
+                                // entry 0 is the device's default, then its rates
+                                let mut labels = vec![DEVICE_DEFAULT.to_string()];
+                                labels.extend(ui_state.rates().iter().map(|r| format!("{r} Hz")));
+                                let selected = match choice.rate {
+                                    None => Some(0),
+                                    Some(r) => {
+                                        ui_state.rates().iter().position(|x| *x == r).map(|p| p + 1)
+                                    }
+                                };
+                                let spec = ComboSpec {
+                                    salt: "audio_rate",
+                                    name: "Sample rate",
+                                    text: rate_text,
+                                    labels,
+                                    selected,
+                                };
+                                let out = audio_combo(ui, sr, &mut nav, &spec, &|i| {
+                                    Some(AudioChoice {
+                                        rate: i.checked_sub(1).map(|p| ui_state.rates()[p]),
+                                        ..choice.clone()
+                                    })
+                                });
+                                chosen = out.chosen.or(chosen.take());
+                                refresh_caps |= out.opened;
                                 ui.end_row();
                                 // Buffer size
                                 ui.label("Buffer size");
@@ -628,26 +847,25 @@ impl App {
                                         Some("Buffer size: set in the driver's own control panel"),
                                     );
                                 } else {
-                                    let r = egui::ComboBox::from_id_salt("audio_buffer")
-                                        .selected_text(frames_text(shown_buffer, rate))
-                                        .width(280.0)
-                                        .show_ui(ui, |ui| {
-                                            for n in ui_state.buffers() {
-                                                let on = shown_buffer == n;
-                                                if ui
-                                                    .selectable_label(on, frames_text(n, rate))
-                                                    .clicked()
-                                                    && !on
-                                                {
-                                                    chosen = Some(AudioChoice {
-                                                        buffer: n,
-                                                        ..choice.clone()
-                                                    });
-                                                }
-                                            }
-                                        });
-                                    name_combo(ctx, sr, &r.response, "Buffer size");
-                                    refresh_caps |= r.response.clicked();
+                                    let sizes = ui_state.buffers();
+                                    let spec = ComboSpec {
+                                        salt: "audio_buffer",
+                                        name: "Buffer size",
+                                        text: frames_text(shown_buffer, rate),
+                                        labels: sizes
+                                            .iter()
+                                            .map(|&n| frames_text(n, rate))
+                                            .collect(),
+                                        selected: sizes.iter().position(|&n| n == shown_buffer),
+                                    };
+                                    let out = audio_combo(ui, sr, &mut nav, &spec, &|i| {
+                                        Some(AudioChoice {
+                                            buffer: sizes[i],
+                                            ..choice.clone()
+                                        })
+                                    });
+                                    chosen = out.chosen.or(chosen.take());
+                                    refresh_caps |= out.opened;
                                 }
                                 ui.end_row();
                             });
@@ -667,8 +885,14 @@ impl App {
                         ctx.request_repaint_after(Duration::from_millis(500));
                     });
             });
+        self.audio_ui.nav = nav;
         if !open {
             self.audio_open = false;
+        }
+        // (the test seam's lists are fixed: no driver is asked)
+        if self.audio_ui.lists_fixed {
+            refresh_devices = false;
+            refresh_caps = false;
         }
         if refresh_devices {
             let c = self.audio_choice();

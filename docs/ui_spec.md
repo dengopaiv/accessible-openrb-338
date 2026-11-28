@@ -1534,6 +1534,21 @@ is one more entry.
     `OutputCallbackInfo` playback time minus its callback time, as the host measures it: on
     CoreAudio 49.6 ms for a 2048-frame buffer at 44.1 kHz, task-191), and the underruns since the stream opened (the stream's
     xrun errors and callback gaps over two buffers and 20 ms, `output::is_gap`).
+  - **Keys of the lists, in screen reader mode only** (task-248; `audio_combo`, `ListNav`; with
+    the mode off the lists are egui's, as upstream's). Each box's AccessKit description is
+    "Alt+Down opens the list" (`OPEN_HINT`). The keys are a Windows dialog's combo box:
+    Space, Enter or Alt+Down open the focused box's list, and the highlight, which is the
+    focus on an entry, starts on the chosen one; in the open list Up, Down, Home and End move
+    it (no wrap), Enter, Space or Alt+Up close the list and choose it, Escape closes it and keeps
+    the choice as it was; the keys must be exactly these (Alt+Up is not Up, Shift+Down is not
+    Down: `consume_exact`); on a closed box Up and Down choose the previous and next entry, Home and
+    End the first and last, at once, each press applying like a choice in the list
+    (`App::audio_choose`: a device or rate change restarts the stream) and announced once with
+    `change_text`; no wrap. After Escape or a choice by key the focus is on the list's box (a click
+    elsewhere takes it where it clicks);
+    Escape on the box (no list open) closes the window as before (the boxes and the list's
+    entries keep egui from taking the focus away on Escape and from moving it on the arrows,
+    `EventFilter`). Help > Keyboard Shortcuts has a line "In Options > Audio Output".
   - **A change applies at once** (`App::audio_choose`): the stream is stopped, the engine taken
     back (`Stream::stop`) and a new stream opened with it, so the song keeps playing after a short
     gap; the choice is saved in the settings file (`AudioChoice`). A request that fails to open

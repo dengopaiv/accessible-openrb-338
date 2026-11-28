@@ -121,12 +121,16 @@ pub fn set_value_request(target: Id, v: f64) -> Event {
 }
 
 fn key_event(key: Key, pressed: bool) -> Event {
+    key_event_with(key, pressed, Modifiers::NONE)
+}
+
+fn key_event_with(key: Key, pressed: bool, modifiers: Modifiers) -> Event {
     Event::Key {
         key,
         physical_key: Some(key),
         pressed,
         repeat: false,
-        modifiers: Modifiers::NONE,
+        modifiers,
     }
 }
 
@@ -207,6 +211,17 @@ impl AppTree {
     pub fn key(&mut self, key: Key) -> &Tree {
         self.frame(vec![key_event(key, true)]);
         self.frame(vec![key_event(key, false)])
+    }
+
+    /// Presses a key in one frame, with no release (two presses in two frames, as a fast typist).
+    pub fn key_down(&mut self, key: Key) -> &Tree {
+        self.frame(vec![key_event(key, true)])
+    }
+
+    /// [`AppTree::key`] with `modifiers` held (Alt+Down).
+    pub fn key_with(&mut self, key: Key, modifiers: Modifiers) -> &Tree {
+        self.frame(vec![key_event_with(key, true, modifiers)]);
+        self.frame(vec![key_event_with(key, false, modifiers)])
     }
 
     /// Sends a screen reader request and runs a second frame so the app has acted on it.
