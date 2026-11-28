@@ -369,10 +369,10 @@ through them again in the same pass would show anything the tests do not catch.
 
 ### 2.2 Choices waiting for the user
 
-The agents of task-235, task-236 and task-238 had to settle these to finish. Each is built as
-described. Answer them as the checks are answered, by number in the chat ("1: keep", "4:
-change, only in Program Synth mode"). A choice kept moves to the decisions in Part 1.1; a
-choice changed becomes a task.
+The agents of task-235, task-236 and task-238 had to settle choices 1 to 12 to finish. Each is
+built as described. Choice 13 is open: nothing is built until you choose. Answer them as the
+checks are answered, by number in the chat ("1: keep", "4: change, only in Program Synth
+mode"). A choice kept moves to the decisions in Part 1.1; a choice changed becomes a task.
 
 The classic look (task-238):
 
@@ -409,12 +409,25 @@ The 808 and 909 Pattern Editor windows (task-236):
     what is set, as on the panel.
 12. Setting one hi-hat clears the other without saying so, as on the panel.
 
+Realtek ASIO (task-252 found it; TASK-253 holds the choice):
+
+13. The Realtek ASIO driver on your PC is not offered under Driver: ASIO, because it answers
+    no sample rate (it reports 0 and refuses every rate question), and cpal, the audio library,
+    then drops it. Even listed, cpal would refuse to open it. The options:
+    - leave it: use WASAPI, or install an ASIO driver that answers (FlexASIO, ASIO4ALL);
+    - patch a copy of cpal kept in the fork so Realtek ASIO is listed and opens; whether it then
+      really plays, with NVDA sharing the device, would need your check by ear;
+    - tell cpal's authors and wait.
+
+    The recommendation is to leave it, and to tell cpal's authors if you agree (it is outside
+    the program, on their GitHub). The patch only if you want Realtek ASIO.
+
 ### 2.3 Open tasks
 
 | Task | Priority | What | State |
 |---|---|---|---|
 | TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35, 37, the second half of 38, 39 and 40 left | waiting for the user |
-| TASK-252 | low | ASIO: find why cpal lists only ReaRoute ASIO on the user's PC, not Realtek ASIO or the MiniFuse driver | for an agent, when the user says so |
+| TASK-253 | low | Decide: patch cpal so Realtek ASIO is listed and opens (choice 13 in Part 2.2) | your choice |
 | TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
 | TASK-206 | low | A system file dialog that cannot open reads as a cancel (Linux) | on hold: Windows only |
