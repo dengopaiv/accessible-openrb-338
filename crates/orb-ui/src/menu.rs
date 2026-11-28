@@ -1789,6 +1789,10 @@ impl App {
         bar: &mut Vec<(Id, Id)>,
         focus_file: bool,
     ) {
+        // screen reader mode (task-250): an item that is off stays in the arrows' order, and
+        // Enter on it says why (`said`) instead of running it
+        let sr = self.screen_reader_mode();
+        let mut said: Option<&'static str> = None;
         let file = ui.menu_button("File", |ui| {
             if item(ui, "New", Some(&shortcuts::NEW)) {
                 *cmd = Some(Cmd::New);
@@ -1803,20 +1807,44 @@ impl App {
                 *cmd = Some(Cmd::SaveAs);
             }
             // Ctrl/Cmd+I (task-310); disabled without a song
-            if item_if(ui, self.link.is_some(), "Info...", Some(&shortcuts::INFO)).clicked() {
+            let off = Off {
+                sr,
+                why: NEEDS_SONG,
+            };
+            let has_song = self.link.is_some();
+            if item_off_r(
+                ui,
+                has_song,
+                off,
+                "Info...",
+                Some(&shortcuts::INFO),
+                &mut said,
+            )
+            .1
+            {
                 *cmd = Some(Cmd::Info);
             }
             ui.separator();
             let ok = self.panel.transport.song_mode && !self.exporting();
-            let r = ui.add_enabled(ok, egui::Button::new("Export Loop as Audio File..."));
-            let r = if self.panel.transport.song_mode {
-                r
+            let why = if self.link.is_none() {
+                NEEDS_SONG
+            } else if self.panel.transport.song_mode {
+                EXPORT_RUNNING
             } else {
-                r.on_disabled_hover_text("Export needs song mode.")
+                NEEDS_SONG_MODE
             };
-            if r.clicked() {
+            let text = "Export Loop as Audio File...";
+            let (r, go) = item_off_r(ui, ok, Off { sr, why }, text, None, &mut said);
+            if !self.panel.transport.song_mode {
+                // the item is enabled in screen reader mode, so the plain hover text there
+                if sr {
+                    r.on_hover_text("Export needs song mode.");
+                } else {
+                    r.on_disabled_hover_text("Export needs song mode.");
+                }
+            }
+            if go {
                 *cmd = Some(Cmd::Export);
-                ui.close();
             }
         });
         if focus_file {
@@ -1828,17 +1856,24 @@ impl App {
             // "Undo Paste Pattern": the item names what it undoes (task-274)
             let what = self.undo_name().filter(|_| song);
             let text = what.map_or("Undo".into(), |w| format!("Undo {w}"));
-            let r = item_if(ui, what.is_some(), &text, Some(&shortcuts::UNDO));
+            let why = if song { NOTHING_TO_UNDO } else { NEEDS_SONG };
+            let off = Off { sr, why };
+            let sc = Some(&shortcuts::UNDO);
+            let (r, go) = item_off_r(ui, what.is_some(), off, &text, sc, &mut said);
             self.edit_items.push(("Undo", r.rect, what.is_some()));
-            if r.clicked() {
+            if go {
                 *cmd = Some(Cmd::Undo);
             }
             ui.separator();
             // the pattern commands
             for (text, sc, c) in EDIT_ITEMS {
-                let r = item_if(ui, song, text, sc);
+                let off = Off {
+                    sr,
+                    why: NEEDS_SONG,
+                };
+                let (r, go) = item_off_r(ui, song, off, text, sc, &mut said);
                 self.edit_items.push((text, r.rect, song));
-                if r.clicked() {
+                if go {
                     *cmd = Some(c);
                 }
             }
@@ -1846,14 +1881,17 @@ impl App {
             // the original's commands 306 and 307, enabled in song mode only (task-306)
             let on = self.can_init();
             for (text, c) in INIT_ITEMS {
-                let r = item_if(ui, on, text, None);
+                let why = if song { NEEDS_SONG_MODE } else { NEEDS_SONG };
+                let (r, go) = item_off_r(ui, on, Off { sr, why }, text, None, &mut said);
                 self.edit_items.push((text, r.rect, on));
-                let r = if on || !song {
-                    r
-                } else {
-                    r.on_disabled_hover_text("Needs song mode.")
-                };
-                if r.clicked() {
+                if !on && song {
+                    if sr {
+                        r.on_hover_text("Needs song mode.");
+                    } else {
+                        r.on_disabled_hover_text("Needs song mode.");
+                    }
+                }
+                if go {
                     *cmd = Some(c);
                 }
             }
@@ -1865,17 +1903,27 @@ impl App {
             let sc = Some(&shortcuts::PATTERN_EDITOR);
             for k in 0..2 {
                 let text = crate::pattern_editor::menu_item(k);
-                let r = item_if(ui, song, text, sc.filter(|_| focus == k));
+                let sc = sc.filter(|_| focus == k);
+                let off = Off {
+                    sr,
+                    why: NEEDS_SONG,
+                };
+                let (r, go) = item_off_r(ui, song, off, text, sc, &mut said);
                 self.edit_items.push((text, r.rect, song));
-                if r.clicked() {
+                if go {
                     *cmd = Some(Cmd::PatternEditor(k));
                 }
             }
             for m in crate::drum_editor::Machine::ALL {
                 let text = m.menu_item();
-                let r = item_if(ui, song, text, sc.filter(|_| focus == m.row()));
+                let sc = sc.filter(|_| focus == m.row());
+                let off = Off {
+                    sr,
+                    why: NEEDS_SONG,
+                };
+                let (r, go) = item_off_r(ui, song, off, text, sc, &mut said);
                 self.edit_items.push((text, r.rect, song));
-                if r.clicked() {
+                if go {
                     *cmd = Some(Cmd::DrumEditor(m));
                 }
             }
@@ -1963,10 +2011,9 @@ impl App {
             }
             ui.separator();
             let has_demo = self.has_demo();
-            let r = ui.add_enabled(has_demo, egui::Button::new("Demo Song"));
-            if r.clicked() {
+            let off = Off { sr, why: NO_DEMO };
+            if item_off_r(ui, has_demo, off, "Demo Song", None, &mut said).1 {
                 *cmd = Some(Cmd::DemoSong);
-                ui.close();
             }
             if item(ui, "Info...", None) {
                 *cmd = Some(Cmd::ModInfo);
@@ -2065,6 +2112,9 @@ impl App {
             }
         });
         note_button(bar, &help.response);
+        if let Some(why) = said {
+            self.announce(why);
+        }
     }
 }
 
@@ -2260,6 +2310,52 @@ fn checked_item(ui: &mut Ui, on: bool, text: impl Into<egui::WidgetText>) -> egu
         node.set_role(Role::MenuItemCheckBox);
     });
     r
+}
+
+const NEEDS_SONG: &str = "Needs a song";
+const NEEDS_SONG_MODE: &str = "Needs song mode; F12 switches";
+const EXPORT_RUNNING: &str = "An export is running";
+const NOTHING_TO_UNDO: &str = "Nothing to undo";
+const NO_DEMO: &str = "This mod has no demo song";
+
+/// How an item that is off is drawn: in screen reader mode (`sr`) it stays focusable, is
+/// marked disabled and says `why` on Enter (task-250).
+#[derive(Clone, Copy)]
+struct Off {
+    sr: bool,
+    why: &'static str,
+}
+
+/// [`item_if`] for a menu item that can be off. In screen reader mode an item that is off is
+/// still reached by the arrows (drawn enabled and grayed, its node marked disabled, which a
+/// screen reader reads as "unavailable"); Enter or a click on it runs nothing, keeps the menu
+/// open and puts the reason in `said`. The bool is true when the command is to run.
+fn item_off_r(
+    ui: &mut Ui,
+    enabled: bool,
+    off: Off,
+    text: &str,
+    shortcut: Option<&egui::KeyboardShortcut>,
+    said: &mut Option<&'static str>,
+) -> (egui::Response, bool) {
+    if !off.sr || enabled {
+        let r = item_if(ui, enabled, text, shortcut);
+        let go = r.clicked();
+        return (r, go);
+    }
+    let label = egui::RichText::new(text).color(ui.visuals().weak_text_color());
+    let mut b = egui::Button::new(label);
+    if let Some(sc) = shortcut {
+        b = b.shortcut_text(shortcuts::text(ui.ctx(), sc));
+    }
+    let r = ui.add(b);
+    ui.ctx().accesskit_node_builder(r.id, |node| {
+        node.set_disabled();
+    });
+    if r.clicked() {
+        *said = Some(off.why);
+    }
+    (r, false)
 }
 
 /// A menu item with its shortcut; true when clicked (the menu closes).

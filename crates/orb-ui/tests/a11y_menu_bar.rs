@@ -392,7 +392,8 @@ fn title(h: &AppTree, name: &str) -> bool {
 }
 
 /// The menu `menu` is open with the focus on its first item. Edit is the demo panel here (no
-/// player link), so all its items are disabled and the focus stays on the title.
+/// player link): in screen reader mode its items that are off are reached all the same, so the
+/// focus is on Undo (task-250).
 fn on_first_item(h: &AppTree, menu: &str) -> bool {
     let first = match menu {
         "File" => "New Ctrl+N",
@@ -400,6 +401,7 @@ fn on_first_item(h: &AppTree, menu: &str) -> bool {
         "Mods" => "Choose Mod... Ctrl+M",
         "Options" => "Vintage ReBirth Synth Sound",
         "Help" => "Keyboard Shortcuts...",
+        "Edit" => "Undo Ctrl+Z",
         _ => return menu_open(h) && title(h, menu),
     };
     menu_open(h) && focus(h).1 == first

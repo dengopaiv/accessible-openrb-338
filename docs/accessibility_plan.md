@@ -5,8 +5,8 @@ the menus, the dialogs, the mod chooser, and since the night of 2026-11-27 also 
 newer windows (Audio Output, the Initialize Song question, the four pattern editors) and the
 classic look. The user's NVDA passes heard items 1 to 22 of the checklist working on
 2026-11-07, and eight more on 2026-11-28. That second pass found three faults, now bug tasks
-TASK-247 to TASK-249 (Part 2.1). All three are built and wait for their checks, items 36,
-37 and 38. What is left besides them is mostly the user's: 7 checks by ear, 12 design
+TASK-247 to TASK-250 (Part 2.1). All four are built and wait for their checks, items 36,
+37, 38 and 39. What is left besides them is mostly the user's: 7 checks by ear, 12 design
 choices that agents made and the user has not confirmed (2.2), and the known gaps that have no
 task yet (2.4). One small test task is open, and two tasks for other systems are on hold
 (2.3).
@@ -51,7 +51,7 @@ Not in scope:
 - any web version: the fork is a local editor only (the user, 2026-11-05, TASK-198).
 
 **Done when** every task of m-7 is Done. Four are open on 2026-11-28: TASK-244 (the user's
-NVDA pass, which also waits for the checks of the three fault fixes TASK-247 to TASK-249,
+NVDA pass, which also waits for the checks of the four fault fixes TASK-247 to TASK-250,
 built), TASK-227, and TASK-199 and TASK-206, which are on hold.
 
 ---
@@ -179,6 +179,7 @@ these added one criterion to TASK-244, the user's open NVDA pass.
 | TASK-236 | The 808 and 909 Pattern Editor windows | 224eae9 | heard, 34 |
 | TASK-245 | Audio Output shows the device in use after a fallback from a lost one | 59cc058 | waiting, 35 |
 | TASK-248 | Audio Output's lists as a Windows combo box: Alt+Down, Enter and Space open, Up and Down on a closed box choose, Escape keeps the focus, a spoken hint | (see git log) | waiting, 37 |
+| TASK-250 | In a menu, an item that is off (Export, Initialize Song and Loop, Undo, the pattern commands and editors, Info, Demo Song) is reached by Up and Down, read as "unavailable"; Enter says why and runs nothing | (see git log) | waiting, 39 |
 | TASK-249 | A question opened from the menu (File > New, Edit > Initialize Song) waits for a new key: the Enter that chose the item no longer answers it | (see git log) | waiting, 38 |
 
 **The documents (2026-11-28).** TASK-246 rewrote this plan into its done and to-do parts,
@@ -302,6 +303,7 @@ in Part 3's marks, and in the backlog (TASK-244).
 | 35 | Audio Output after a lost device reads the device in use | TASK-245 |
 | 37 | Audio Output's lists: the spoken hint, Alt+Down, Up and Down, Escape keeping the focus | TASK-248 |
 | 38 | The second half: Edit > Initialize Song chosen from the menu (in song mode: F12 first) asks its question and waits | TASK-249 |
+| 39 | Items that are off are reached by Up and Down, read as unavailable, and Enter says why | TASK-250 |
 
 **Heard working on 2026-11-28:** items 23 (TASK-212), 24 (TASK-211), 27 (TASK-213), 28
 (TASK-225), 30 (TASK-239), 32 (TASK-238), 33 (TASK-235) and 34 (TASK-236); in the second
@@ -317,6 +319,8 @@ built when the user says so:
   checklist did not say to press F12 for song mode first; it does now. The user chose Windows'
   way: in screen reader mode an item that is off is reached by Up and Down, read as
   "unavailable", and Enter on it says why ("Needs song mode; F12 switches").
+  Built (TASK-250), waiting for item 39: every item that is off stays in the arrows' order,
+  its node is disabled, and Enter or Space on it says its reason once and runs nothing.
 - TASK-251 (item 31): Driver set to ASIO gave "Audio output: the output stream: sample clock or
   rate cannot be determined or is not present; using the System default with the default
   settings". ASIO has no default device, so the program took the first installed driver, the
@@ -687,6 +691,17 @@ how to report).
     2026-11-28: File > New heard working. The Initialize item could not be found, because it
     was off in pattern mode and skipped (TASK-250). The second half is waiting: hear it in song
     mode. ( )
+39. Menu items that are off (TASK-250), in screen reader mode, in pattern mode (F12 is not
+    pressed):
+    - F10, Down: File opens. Down to Export Loop as Audio File: NVDA reads it with
+      "unavailable". Enter or Space: NVDA says "Needs song mode; F12 switches" once, the menu
+      stays open, the focus stays on the item, no Save As opens. ( )
+    - F10, Right, Down to Initialize Song from Pattern Mode and Initialize Loop from Pattern
+      Mode: each read as unavailable, Enter says "Needs song mode; F12 switches". Undo with
+      nothing to undo reads as unavailable, Enter says "Nothing to undo". ( )
+    - Press F12 for song mode: the Export and Initialize items are read without
+      "unavailable", and Enter runs them. ( )
+    - With the screen reader mode off, Up and Down skip such items as before. ( )
 
 ---
 

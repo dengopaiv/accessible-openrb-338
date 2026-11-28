@@ -3,9 +3,10 @@ id: TASK-250
 title: >-
   Menu items that are off: reached by the arrows, read as unavailable, Enter
   says why
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-28T10:55:00Z'
+updated_date: '2026-11-28T11:30:00Z'
 labels:
   - ui
 milestone: m-7
@@ -39,9 +40,33 @@ Docs: docs/accessibility.md (the menus' part, marked "Does, not yet heard"), doc
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 In screen reader mode, Up and Down in an open menu reach every item that is off, in its place, and its AccessKit node is marked disabled (a test over the a11y tree, for File > Export in pattern mode and Edit > Initialize Song from Pattern Mode in pattern mode at least)
-- [ ] #2 In screen reader mode, Enter or Space on an item that is off runs nothing, keeps the menu open with the focus on the item, and announces the reason once (tests for Export and Initialize Song in pattern mode, and for one item that is off for lack of a song or of undo)
-- [ ] #3 With screen reader mode off the menus behave as before: items that are off are skipped and inert (a test)
-- [ ] #4 docs/accessibility.md, docs/accessibility_plan.md (Part 1.2, 2.1, a new Part 3 item) and docs/ui_spec.md describe it; TASK-244 has the by-ear check as a new criterion naming the checklist item
-- [ ] #5 cargo test, clippy -D warnings and nightly fmt --check pass
+- [x] #1 In screen reader mode, Up and Down in an open menu reach every item that is off, in its place, and its AccessKit node is marked disabled (a test over the a11y tree, for File > Export in pattern mode and Edit > Initialize Song from Pattern Mode in pattern mode at least)
+- [x] #2 In screen reader mode, Enter or Space on an item that is off runs nothing, keeps the menu open with the focus on the item, and announces the reason once (tests for Export and Initialize Song in pattern mode, and for one item that is off for lack of a song or of undo)
+- [x] #3 With screen reader mode off the menus behave as before: items that are off are skipped and inert (a test)
+- [x] #4 docs/accessibility.md, docs/accessibility_plan.md (Part 1.2, 2.1, a new Part 3 item) and docs/ui_spec.md describe it; TASK-244 has the by-ear check as a new criterion naming the checklist item
+- [x] #5 cargo test, clippy -D warnings and nightly fmt --check pass
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. menu.rs: item_off_r draws an item that is off enabled+grayed in screen reader mode, marks the AccessKit node disabled, and on click/Enter/Space sets a reason (not closing the menu); menu_items announces it once at the end. Applied to Info, Export, Undo, pattern commands/editors, Initialize items, Demo Song.
+2. Mouse still runs nothing (go=false). Mode off: unchanged path (item_if).
+3. Test tests/a11y_menu_off.rs. 4. Docs: accessibility.md, accessibility_plan.md (1.2, 2.1, item 39), ui_spec.md 18.2; TASK-244 criterion 11.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Branch: worktree-agent-af9f7314702c54e14
+
+Design: item_off_r (menu.rs). In screen reader mode an item that is off is drawn enabled in the weak text color (so egui gives it the focus), its AccessKit node gets set_disabled() (NVDA: unavailable), and click/Enter/Space sets a static reason, no command, no ui.close(); menu_items announces it once at the end via App::announce. Mouse click gets the same path, so nothing off runs. Mode off: the old item_if path, hover texts kept. Reasons: Needs a song / Needs song mode; F12 switches / An export is running / Nothing to undo / This mod has no demo song (Demo Song also treated, the only other item off in Mods/Options/Help). Existing test a11y_menu_bar on_first_item expected the focus to stay on the Edit title with no link; now Undo is the first reachable item in screen reader mode, test updated. Tests: tests/a11y_menu_off.rs (4). cargo test --release --workspace 1230 pass, clippy and nightly fmt clean.
+
+Review round 1 (send back), fixed: (1) Export with no song says 'Needs a song' (link None), 'An export is running' in song mode, else 'Needs song mode; F12 switches'; new test export_with_no_song_says_it_needs_a_song. (2) hover texts ('Export needs song mode.', 'Needs song mode.') now show in screen reader mode via on_hover_text; ui_spec 18.2 says so. (3) vacuous assertion removed from the mode-off test (the reach check is the direct one). orb-ui a11y_menu_off 5 and a11y_menu_bar 19 pass, clippy and nightly fmt clean.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+In screen reader mode every menu item that is off (File > Info, Export, Edit > Undo, pattern commands and editors, Initialize Song and Loop, Mods > Demo Song) stays in the Up/Down order, its node is disabled, and Enter or Space or a click runs nothing, keeps the menu open on the item and announces the reason once. Mode off unchanged. Code: crates/orb-ui/src/menu.rs (item_off_r); tests crates/orb-ui/tests/a11y_menu_off.rs, a11y_menu_bar.rs adjusted; docs accessibility.md, accessibility_plan.md (1.2, 2.1, item 39), ui_spec.md 18.2; TASK-244 criterion 11 added. cargo test --release --workspace 1230 pass, clippy -D warnings and nightly fmt --check clean. Branch worktree-agent-af9f7314702c54e14.
+<!-- SECTION:FINAL_SUMMARY:END -->

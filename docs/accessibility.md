@@ -347,6 +347,17 @@ has not been read.
   Headless tests walk the bar with F10, the arrows and Enter for File > New, Edit >
   Initialize Song and File > Open (`tests/a11y_menu_question.rs`). File > New was heard
   working on 2026-11-28; Initialize Song could not be found (TASK-250, above).
+- **Menu items that are off. Does, not yet heard (39).** In a Windows menu an item that is
+  grayed out is still reached by Up and Down and read as "unavailable". egui skips a disabled
+  widget, so File > Export Loop as Audio File and Edit > Initialize Song from Pattern Mode,
+  off in pattern mode, were never reached and the user could not find them (2026-11-28, items
+  26, 29 and 38). In screen reader mode (TASK-250) every item that is off (Info, Export,
+  Undo, the pattern commands and editors, the two Initialize items, Demo Song) is drawn
+  enabled and grayed, its node carries the disabled state, and Enter or Space on it runs
+  nothing, keeps the menu open with the focus on the item and says why once ("Needs song
+  mode; F12 switches", "Needs a song", "Nothing to undo", "An export is running", "This mod
+  has no demo song"). A mouse click on it does the same. With the mode off nothing changed.
+  Headless tests: `tests/a11y_menu_off.rs`.
 - **The Initialize Song question. Does, not yet heard (29).** Edit > Initialize Song from
   Pattern Mode asks first. In the mode the question is a dialog named by its title, with the
   original's text as its description and the focus on Initialize; Tab reaches Cancel. After

@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@dengopaiv'
 created_date: '2026-11-27T21:55:00Z'
-updated_date: '2026-11-28T10:57:00Z'
+updated_date: '2026-11-28T11:05:00Z'
 labels:
   - ui
   - tests
@@ -36,6 +36,7 @@ How: the user runs OpenRB-338 with NVDA in screen reader mode and goes through t
 - [x] #8 By ear with NVDA (TASK-247): in screen reader mode, F10 then Right and Left on the menu names: NVDA says each name once, Right from Help says File and Left from File says Help, never a panel control; with a menu open, Right and Left close it and open the next or previous menu and NVDA says its first item once; in the Mods menu Right on a name that lists files opens the list and says its first file, Left closes it and says the name again (checklist item 36)
 - [ ] #9 By ear with NVDA (TASK-248): in Options > Audio Output in screen reader mode, NVDA reads each of Driver, Device, Sample rate and Buffer size with its value and then 'Alt+Down opens the list'; Alt+Down, Enter and Space open the list; Up and Down in the open list say each entry once and choose nothing; Enter or Alt+Up choose the highlighted entry, said once ('Sample rate: 48000 Hz'), and NVDA reads the box again; Escape closes the list, keeps the choice and NVDA reads the box again, a second Escape closes the window and the focus returns; on a closed box Up, Down, Home and End choose the previous, next, first and last entry at once, each said once; Help > Keyboard Shortcuts in screen reader mode has the line for these keys (checklist item 37)
 - [ ] #10 By ear with NVDA (TASK-249): in screen reader mode, File > New chosen from the menu with unsaved changes (F10, Down, Enter) opens the question 'Save changes to ...?' and NVDA reads it, with the focus on Save: nothing is saved and no Save As opens until you answer (S or Enter on Save, D, or Escape); the same with Edit > Initialize Song from Pattern Mode (in song mode): NVDA reads the question and nothing is initialized until you press Enter on Initialize or Escape; Ctrl+N asks as before (checklist item 38)
+- [ ] #11 By ear with NVDA (TASK-250): in screen reader mode, in pattern mode, Up and Down in File and Edit reach Export Loop as Audio File, Initialize Song and Initialize Loop from Pattern Mode and Undo; NVDA reads each as unavailable; Enter or Space says why once ('Needs song mode; F12 switches', 'Nothing to undo'), runs nothing and the menu stays open on the item; after F12 the items are read without unavailable and run (checklist item 39)
 <!-- AC:END -->
 
 ## Implementation Notes

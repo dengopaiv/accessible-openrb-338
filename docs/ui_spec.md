@@ -2129,6 +2129,18 @@ What OpenRB-338 adds (`menu.rs`, `menu_bar_key`, `open_on_down`, `menu_has_keys`
   for the playing kit only, in both modes (`menu.rs` `checked_item`, task-201): NVDA reads
   "menu item, checked". They look and act as before (selectable labels). The button of a merged
   name's submenu stays a Button, with the Toggled state when one of its files plays.
+- Screen reader mode, items that are off as in Windows (task-250; `menu.rs` `item_off_r`).
+  egui gives no focus to a disabled widget, so Up and Down skipped File > Info, Export Loop
+  as Audio File, Edit > Undo, the pattern commands and editors, Initialize Song and Loop and
+  Mods > Demo Song when they are off. In screen reader mode such an item is drawn enabled (in
+  the weak text color), its AccessKit node gets the disabled state (NVDA reads "unavailable"),
+  and a click or Enter or Space on it runs nothing, does not close the menu and announces the
+  reason once: "Needs a song", "Needs song mode; F12 switches" (Export and Initialize, with
+  a song in pattern mode), "An export is running", "Nothing to undo", "This mod has no demo
+  song". With the mode off they are drawn disabled as before, skipped and inert, with their
+  hover texts, which show in screen reader mode too ("Export needs song mode.", "Needs song
+  mode."). Export with no song says "Needs a song". Tests:
+  `crates/orb-ui/tests/a11y_menu_off.rs`.
 - Screen reader mode, Left and Right as in Windows (task-247; `menu.rs` `bar_arrows`, which
   takes the arrow from egui's focus move before the bar is shown). On a focused title they go
   to the previous or next title, wrapping (File to Help, Help to File), and the focus never
