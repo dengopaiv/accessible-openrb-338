@@ -60,6 +60,19 @@ impl Controller {
         (c, events)
     }
 
+    /// A controller without a stream or an engine that holds `request`: a test of its owner
+    /// simulates a fallback with it, without a device.
+    #[doc(hidden)]
+    pub fn for_test(request: Request) -> Self {
+        Controller {
+            stream: None,
+            audio: None,
+            request,
+            checked: Instant::now(),
+            stall_reported: false,
+        }
+    }
+
     /// The request in use (after the fallbacks), or the last one that was.
     pub fn request(&self) -> &Request {
         &self.request

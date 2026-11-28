@@ -483,6 +483,152 @@ fn audio_output_says_a_change_once_and_never_the_refresh() {
     assert_eq!(t.as_deref(), Some("Sample rate: 48000 Hz"));
 }
 
+/// After the controller fell back from a lost device (task-245) the Device combo box shows
+/// System default, and only the controller's note is said.
+#[test]
+fn audio_output_follows_a_fallback_and_says_only_the_note() {
+    use orb_player::control::{Controller, Event};
+    for sr in [true, false] {
+        let mut a = app(sr);
+        a.app.settings.audio = orb_ui::settings::AudioChoice {
+            device: Some("a".into()),
+            device_name: Some("Speakers".into()),
+            rate: Some(48000),
+            ..Default::default()
+        };
+        open_audio(&mut a);
+        settle(&mut a);
+        let device_value = |a: &AppTree| {
+            a.tree()
+                .by_name("Device")
+                .filter_map(|(_, n)| a11y::value(n).map(str::to_string))
+                .next()
+        };
+        if sr {
+            assert_eq!(device_value(&a).as_deref(), Some("Speakers"));
+        }
+        // the controller ran the same request on the system default (rate kept)
+        let req = a.app.settings.audio.request().on_system_default();
+        assert_eq!(req.rate, Some(48000));
+        a.app.audio = Some(Controller::for_test(req));
+        let before = a.app.announcer.serial();
+        let note = "Audio device Speakers is not available; using System default";
+        a.app.audio_events(vec![Event::Note(note.into())]);
+        // one announcement, the controller's own note
+        assert_eq!(
+            a.app.announcer.serial() - before,
+            if sr { 1 } else { 0 },
+            "sr {sr}"
+        );
+        assert_eq!(a.app.status.as_deref(), Some(note));
+        // the window shows what runs; the saved choice is the user's
+        assert_eq!(a.app.audio_choice().device, None);
+        assert_eq!(a.app.audio_choice().rate, Some(48000));
+        assert_eq!(a.app.settings.audio.device.as_deref(), Some("a"));
+        settle(&mut a);
+        if sr {
+            assert_eq!(device_value(&a).as_deref(), Some("System default"));
+        }
+        // a later poll that reports nothing says nothing
+        let n = a.app.announcer.serial();
+        a.app.audio_events(vec![]);
+        assert_eq!(a.app.announcer.serial(), n);
+    }
+}
+
+/// The fallback is never saved: a later save of another setting keeps the saved device; a
+/// saved device missing at the start shows as System default (the real order of the start); the
+/// next start that finds the device shows it, with nothing written (task-245).
+#[test]
+fn a_fallback_is_shown_and_never_saved() {
+    use orb_player::control::Controller;
+    use orb_ui::settings::{AudioChoice, Settings, Theme};
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("OpenRB-338.toml");
+    let saved = AudioChoice {
+        device: Some("a".into()),
+        device_name: Some("Speakers".into()),
+        ..Default::default()
+    };
+    let mut s = Settings::load_from(&file);
+    s.set_audio(saved.clone());
+    s.save().unwrap();
+    // the start, as main.rs does it: App::new has the default settings, then the controller and
+    // the saved settings are adopted; the saved device was missing, the controller runs the
+    // system default
+    let mut a = AppTree::new();
+    let mut loaded = Settings::load_from(&file);
+    loaded.screen_reader = ScreenReaderSetting::On;
+    assert_eq!(loaded.audio, saved);
+    a.app.adopt_audio_and_settings(
+        Some(Controller::for_test(saved.request().on_system_default())),
+        loaded,
+    );
+    a.frame(vec![]);
+    open_audio(&mut a);
+    settle(&mut a);
+    let value = |a: &AppTree| {
+        a.tree()
+            .by_name("Device")
+            .filter_map(|(_, n)| a11y::value(n).map(str::to_string))
+            .next()
+    };
+    assert_eq!(value(&a).as_deref(), Some("System default"));
+    // another setting is saved: the file keeps the device
+    a.app.settings.set_theme(Theme::Classic);
+    a.app.settings.save().unwrap();
+    let back = Settings::load_from(&file);
+    assert_eq!(back.audio.device.as_deref(), Some("a"));
+    assert_eq!(back.theme, Theme::Classic);
+    // the next start finds the saved device: the window shows it, nothing was written
+    let mut b = AppTree::new();
+    let mut loaded = Settings::load_from(&file);
+    loaded.screen_reader = ScreenReaderSetting::On;
+    b.app
+        .adopt_audio_and_settings(Some(Controller::for_test(saved.request())), loaded);
+    b.frame(vec![]);
+    open_audio(&mut b);
+    settle(&mut b);
+    assert_eq!(value(&b).as_deref(), Some("Speakers"));
+    assert_eq!(
+        Settings::load_from(&file).audio.device.as_deref(),
+        Some("a")
+    );
+}
+
+/// A fallback while a list is open changes the chosen value but the list is read again only
+/// when it closes (task-245).
+#[test]
+fn a_fallback_waits_for_the_open_list() {
+    use orb_player::control::{Controller, Event};
+    let mut a = app(true);
+    a.app.settings.audio = orb_ui::settings::AudioChoice {
+        device: Some("a".into()),
+        device_name: Some("Speakers".into()),
+        ..Default::default()
+    };
+    open_audio(&mut a);
+    settle(&mut a);
+    // the focus is on the Driver combo box: Enter opens its list
+    a.key(Key::Enter);
+    settle(&mut a);
+    let req = a.app.settings.audio.request().on_system_default();
+    a.app.audio = Some(Controller::for_test(req));
+    a.app.audio_events(vec![Event::Note("x".into())]);
+    settle(&mut a);
+    assert!(
+        a.app.audio_refresh_pending_for_test(),
+        "the list is not replaced"
+    );
+    a.key(Key::Escape);
+    settle(&mut a);
+    assert!(a.app.audio_is_open(), "Escape closed only the list");
+    assert!(
+        !a.app.audio_refresh_pending_for_test(),
+        "read once the list closed"
+    );
+}
+
 /// With the mode off the window is egui's: a Window, no Dialog, no named combo boxes, and Escape
 /// closes it.
 #[test]

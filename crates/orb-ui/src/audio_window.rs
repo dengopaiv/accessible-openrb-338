@@ -37,6 +37,16 @@ pub struct AudioUi {
     problem: Option<String>,
     /// The In use numbers as last sampled and when ([`AudioUi::sample`]).
     shown: Option<(Instant, InUse)>,
+    /// What the controller runs when that is not the saved choice (a fallback from a lost
+    /// device, task-245): the window shows it as its chosen values. Never saved: the saved
+    /// choice changes only when the user picks in the window.
+    in_use_choice: Option<AudioChoice>,
+    /// The lists are to be read again for [`AudioUi::in_use_choice`] as soon as no list is open
+    /// (a list is not replaced under the user).
+    refresh_pending: bool,
+    /// A test seam, set only by `App::audio_open_for_test`: the lists are fixed and never
+    /// read from the drivers. The real window never sets it.
+    lists_fixed: bool,
 }
 
 /// How often the In use numbers (output latency, underruns, the granted size) are sampled: the
@@ -303,12 +313,26 @@ impl App {
         if !self.audio_open {
             // a new id: no stored place, so the window opens at its default, the center
             self.audio_serial += 1;
-            let choice = self.settings.audio.clone();
+            let choice = self.audio_choice();
             self.audio_ui.refresh(&choice);
+            self.audio_ui.refresh_pending = false;
         } else {
             self.raise_window(self.audio_id());
         }
         self.audio_open = true;
+    }
+
+    /// The start of the program: the controller and the saved settings are taken, in this order
+    /// (the window compares what runs with the saved choice), so that a saved device that was
+    /// missing at the start shows as the system default in Options > Audio Output.
+    pub fn adopt_audio_and_settings(
+        &mut self,
+        controller: Option<orb_player::control::Controller>,
+        settings: crate::settings::Settings,
+    ) {
+        self.audio = controller;
+        self.settings = settings;
+        self.audio_follow_controller();
     }
 
     /// The id of the window now (for tests).
@@ -329,7 +353,14 @@ impl App {
         self.audio_ui.drivers = drivers;
         self.audio_ui.devices = devices;
         self.audio_ui.caps = caps;
+        self.audio_ui.lists_fixed = true;
         self.audio_open = true;
+    }
+
+    /// Whether the lists wait for an open list to close (for tests).
+    #[doc(hidden)]
+    pub fn audio_refresh_pending_for_test(&self) -> bool {
+        self.audio_ui.refresh_pending
     }
 
     /// Whether the window is open.
@@ -347,8 +378,10 @@ impl App {
         let events = c.apply(choice.request());
         let now = AudioChoice::from_request(c.request());
         // what the stream ended up on, once (task-234); the controller's notes follow
-        let said = change_text(&self.settings.audio, &now, &self.audio_ui.drivers);
+        let said = change_text(&self.audio_choice(), &now, &self.audio_ui.drivers);
         self.settings.set_audio(now.clone());
+        self.audio_ui.in_use_choice = None;
+        self.audio_ui.refresh_pending = false;
         if let Err(e) = self.settings.save() {
             self.fail(e);
         }
@@ -358,8 +391,45 @@ impl App {
 
     /// Tells the user what the controller reports: a note in the status line, an error in the
     /// box.
+    ///
+    /// The controller may have fallen back (a lost device opens the system default): the
+    /// window's choice then follows what it runs now, so the Device (and a changed rate or
+    /// size) shows what is in use. It is said by the controller's own note only, and not saved:
+    /// the saved choice stays the user's until they pick in the window. The controller never
+    /// goes back to the saved device by itself (its retry opens the system default only), so
+    /// the window shows System default until the user picks, or until the next start finds the
+    /// saved device again.
     pub fn audio_events(&mut self, events: Vec<Event>) {
+        if events.is_empty() {
+            return;
+        }
         self.audio_events_after(None, events);
+        self.audio_follow_controller();
+    }
+
+    /// The choice the window shows: what the controller runs after a fallback, else the saved
+    /// choice.
+    pub fn audio_choice(&self) -> AudioChoice {
+        self.audio_ui
+            .in_use_choice
+            .clone()
+            .unwrap_or_else(|| self.settings.audio.clone())
+    }
+
+    /// Makes the window show what the controller runs, silently, when that is not the saved
+    /// choice (a fallback). The saved choice is not touched, so no save writes the fallback to
+    /// the file. The lists are read again when no list is open. Called at the start (through
+    /// [`App::adopt_audio_and_settings`]) and after the controller's events.
+    pub fn audio_follow_controller(&mut self) {
+        let Some(c) = &self.audio else {
+            return;
+        };
+        let now = AudioChoice::from_request(c.request());
+        let before = self.audio_choice();
+        self.audio_ui.in_use_choice = (now != self.settings.audio).then_some(now.clone());
+        if now != before && self.audio_open {
+            self.audio_ui.refresh_pending = true;
+        }
     }
 
     /// [`App::audio_events`] after a change said as `change`: the notes go to the status line
@@ -387,6 +457,14 @@ impl App {
             return;
         }
         let sr = self.screen_reader_mode();
+        // a fallback changed the chosen values: the lists follow once no list is open
+        if self.audio_ui.refresh_pending && !egui::Popup::is_any_open(ctx) {
+            self.audio_ui.refresh_pending = false;
+            if !self.audio_ui.lists_fixed {
+                let c = self.audio_choice();
+                self.audio_ui.refresh_devices(&c);
+            }
+        }
         // in screen reader mode Escape closes an open list first (the keyboard's way out of a
         // combo box), the window on the next press
         let list_open = sr && egui::Popup::is_any_open(ctx);
@@ -406,7 +484,7 @@ impl App {
         let live = self.audio.as_ref().and_then(|c| c.in_use());
         let in_use = self.audio_ui.sample(Instant::now(), live);
         let latency_rate = in_use.as_ref().map(|u| u.rate);
-        let choice = self.settings.audio.clone();
+        let choice = self.audio_choice();
         let ui_state = &self.audio_ui;
         let running = self.audio.is_some();
         let screen = ctx.content_rect();
@@ -593,10 +671,10 @@ impl App {
             self.audio_open = false;
         }
         if refresh_devices {
-            let c = self.settings.audio.clone();
+            let c = self.audio_choice();
             self.audio_ui.refresh_devices(&c);
         } else if refresh_caps {
-            let c = self.settings.audio.clone();
+            let c = self.audio_choice();
             self.audio_ui.refresh_caps(&c);
         }
         if let Some(c) = chosen {

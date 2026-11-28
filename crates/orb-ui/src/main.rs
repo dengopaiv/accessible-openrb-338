@@ -472,10 +472,10 @@ fn main() -> ExitCode {
             };
             app.clipboard = orb_ui::clipboard::Clipboard::System;
             app.samples = app_samples;
-            app.audio = controller;
+            // (after the settings: the window shows what runs when the saved device was missing)
+            app.adopt_audio_and_settings(controller, settings);
             app.menu = true;
             app.enable_logo_anim();
-            app.settings = settings;
             // the real screen reader check and the system's file dialogs (task-194)
             app.use_system_services();
             if let Some(n) = start_notes.pop() {
