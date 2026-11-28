@@ -3,11 +3,12 @@
 **State on 2026-11-28.** Everything built so far is merged and covered by tests: the panel,
 the menus, the dialogs, the mod chooser, and since the night of 2026-11-27 also upstream's
 newer windows (Audio Output, the Initialize Song question, the four pattern editors) and the
-classic look.
-The user's first NVDA pass (TASK-197, 2026-11-07) heard items 1 to 22 of the checklist working.
-What is left is mostly the user's: 13 checks by ear (Part 2.1), 12 design choices that agents
-made and the user has not confirmed (2.2), and the known gaps that have no task yet (2.4). One
-small test task is open, and two tasks for other systems are on hold (2.3).
+classic look. The user's NVDA passes heard items 1 to 22 of the checklist working on
+2026-11-07, and eight more on 2026-11-28. That second pass found three faults, now bug tasks
+TASK-247 to TASK-249 (Part 2.1). What is left besides them is mostly the user's: 5 checks by
+ear, 12 design choices that agents made and the user has not confirmed (2.2), and the known
+gaps that have no task yet (2.4). One small test task is open, and two tasks for other systems
+are on hold (2.3).
 
 The analysis behind the plan and a description of what the program does, part by part, are in
 [accessibility.md](accessibility.md). The behavior in detail is in docs/ui_spec.md section 20.
@@ -48,8 +49,9 @@ Not in scope:
   no task yet;
 - any web version: the fork is a local editor only (the user, 2026-11-05, TASK-198).
 
-**Done when** every task of m-7 is Done. Four are open on 2026-11-28: TASK-244 (the user's
-NVDA pass), TASK-227, and TASK-199 and TASK-206, which are on hold.
+**Done when** every task of m-7 is Done. Seven are open on 2026-11-28: TASK-247, TASK-248 and
+TASK-249 (the faults of the second NVDA pass), TASK-244 (that pass), TASK-227, and TASK-199 and
+TASK-206, which are on hold.
 
 ---
 
@@ -118,12 +120,12 @@ off, every task leaves the app as upstream, except where Part 4's ground rules s
 
 | Task | What | Commit | By ear |
 |---|---|---|---|
-| TASK-212 | After the menu bar, the focus returns to the control that had it | 3f3fdc7 | waiting, 23 |
-| TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 | waiting, 24 |
+| TASK-212 | After the menu bar, the focus returns to the control that had it | 3f3fdc7 | heard, 23 |
+| TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 | heard, 24 |
 | TASK-201 | The Mods menu reads the playing kit's entry as checked | 78129ba | waiting, 25 |
 | TASK-204 | The system Export dialog keeps the format last used | 771ce7c | waiting, 26 |
-| TASK-213 | An arrow key on a knob always moves to a value that sounds different | 3b5c2bd | waiting, 27 |
-| TASK-225 | The numpad's keys apart from the main keyboard's (a Windows message hook) | e909060 | waiting, 28 |
+| TASK-213 | An arrow key on a knob always moves to a value that sounds different | 3b5c2bd | heard, 27 |
+| TASK-225 | The numpad's keys apart from the main keyboard's (a Windows message hook) | e909060 | heard, 28 |
 
 **Round 3: starting on more Windows PCs (2026-11-07).** The program did not start on the
 user's Windows 10 PC. None of these tasks needed an NVDA check: the user's check was that the
@@ -164,12 +166,12 @@ these added one criterion to TASK-244, the user's open NVDA pass.
 
 | Task | What | Commit | By ear |
 |---|---|---|---|
-| TASK-237 | Edit > Initialize Song from Pattern Mode: the question is read and takes the focus | 74d9e13 | waiting, 29 |
-| TASK-239 | The spoken names say 808, 909, 303-1 and 303-2, as upstream's visible text does | 10ee4a4 | waiting, 30 |
-| TASK-234 | Options > Audio Output: named lists, the in-use lines, one announcement per change | 5d2d073 | waiting, 31 |
-| TASK-238 | Screen reader mode with View > Classic, as with the modern look | d9f1d25 | waiting, 32 |
-| TASK-235 | The 303-1 and 303-2 Pattern Editor windows | 05ba65b | waiting, 33 |
-| TASK-236 | The 808 and 909 Pattern Editor windows | 224eae9 | waiting, 34 |
+| TASK-237 | Edit > Initialize Song from Pattern Mode: the question is read and takes the focus | 74d9e13 | waiting, 29 (TASK-249 first) |
+| TASK-239 | The spoken names say 808, 909, 303-1 and 303-2, as upstream's visible text does | 10ee4a4 | heard, 30 |
+| TASK-234 | Options > Audio Output: named lists, the in-use lines, one announcement per change | 5d2d073 | fault heard, 31: TASK-248 |
+| TASK-238 | Screen reader mode with View > Classic, as with the modern look | d9f1d25 | heard, 32 |
+| TASK-235 | The 303-1 and 303-2 Pattern Editor windows | 05ba65b | heard, 33 |
+| TASK-236 | The 808 and 909 Pattern Editor windows | 224eae9 | heard, 34 |
 | TASK-245 | Audio Output shows the device in use after a fallback from a lost one | 59cc058 | waiting, 35 |
 
 **The documents (2026-11-28).** TASK-246 rewrote this plan into its done and to-do parts,
@@ -273,30 +275,41 @@ and do not compare one to one. Repeating the real-window count after the merges 
 
 ## Part 2: To do
 
-### 2.1 Checks by ear, waiting for the user
+### 2.1 Checks by ear, and the faults they found
 
 Agents cannot hear NVDA, so each of these was checked by tests only. The steps for each are in
 the checklist (Part 3).
 
+**Waiting for the user.**
+
 | Item | Task | What to hear |
 |---|---|---|
-| 23 | TASK-212 | Leaving the menu bar returns the focus to the control, and NVDA reads it |
-| 24 | TASK-211 | Pitch Keys Make Notes turns a rest into a note, and is saved |
-| 25 | TASK-201 | The Mods menu reads the playing kit's entry as checked |
+| 25 | TASK-201 | The Mods menu reads the playing kit's entry as checked (with no mods installed, the Standard ReBirth entry) |
 | 26 | TASK-204 | The Export dialog offers the format last used, also after a restart |
-| 27 | TASK-213 | Each Up on the 808's Bass drum tone says a new value |
-| 28 | TASK-225 | The numpad's transport keys, with Num Lock on and off |
-| 29 | TASK-244, criterion 1 (TASK-237) | The Initialize Song question is read, and the focus comes back |
-| 30 | TASK-244, criterion 2 (TASK-239) | The names 808, 909, 303-1 and 303-2 |
-| 31 | TASK-244, criterion 3 (TASK-234) | Options > Audio Output: the lists, the in-use lines, one announcement per change |
-| 32 | TASK-244, criterion 4 (TASK-238) | View > Classic reads as the modern look |
-| 33 | TASK-244, criterion 5 (TASK-235) | The 303 Pattern Editor windows |
-| 34 | TASK-244, criterion 6 (TASK-236) | The 808 and 909 Pattern Editor windows |
+| 29 | TASK-244, criterion 1 (TASK-237) | The Initialize Song question is read, and the focus comes back; best heard after TASK-249 |
+| 31 | TASK-244, criterion 3 (TASK-234) | Options > Audio Output, again after TASK-248 |
 | 35 | TASK-244, criterion 7 (TASK-245) | Audio Output after a lost device reads the device in use |
 
-Items 29 to 35 are TASK-244's acceptance criteria. When they are heard, the user checks them
-there and TASK-244 is Done. Items 23 to 28 have no open task: their tasks are Done, and only
-this checklist holds their marks.
+**Heard working on 2026-11-28:** items 23 (TASK-212), 24 (TASK-211), 27 (TASK-213), 28
+(TASK-225), 30 (TASK-239), 32 (TASK-238), 33 (TASK-235) and 34 (TASK-236).
+
+**Faults found by ear on 2026-11-28**, each now a bug task (Part 2.3), each adding its own
+by-ear check to TASK-244 when it is built:
+
+- TASK-247 (reported in item 26's place; item 26 itself waits): in an open menu Left goes back
+  to the bar and the other menus cannot then be reached, and Right from Help leaves the bar for
+  the Transport section. The user chose Windows' way: Left and Right go from menu to menu,
+  wrapping, never out of the bar.
+- TASK-248 (item 31): Audio Output's lists open only with Space, which nothing says, and
+  Escape out of an open list loses the focus. The user chose Windows' combo keys (Alt+Down,
+  Enter, Up and Down on a closed list), a spoken hint, and a line in Keyboard Shortcuts.
+- TASK-249: with unsaved changes, File > New chosen from the menu opens Save As at once;
+  Ctrl+N asks first, as it should. The task checks every menu item that opens a question,
+  Initialize Song among them, which is why item 29 waits for it.
+
+Items 29, 31 and 35 are TASK-244's acceptance criteria. When they are heard, the user checks
+them there and TASK-244 is Done. Items 25 and 26 have no open task: their tasks are Done, and
+only this checklist holds their marks.
 
 **Worth repeating.** Items 1 to 22 were heard on 2026-11-07. The merges of 2026-11-18 and
 2026-11-26 moved the screen reader code into upstream's `controller.rs` and changed the menu
@@ -349,7 +362,10 @@ The 808 and 909 Pattern Editor windows (task-236):
 
 | Task | Priority | What | State |
 |---|---|---|---|
-| TASK-244 | medium | The user's NVDA pass of the night's work: items 29 to 35 | waiting for the user |
+| TASK-249 | high | File > New from the menu opens Save As at once instead of asking; suspected: the Enter that chose a menu item answers the question it opens | for an agent |
+| TASK-247 | medium | Menu bar: Left and Right from menu to menu, as in Windows, never out of the bar | for an agent |
+| TASK-248 | medium | Audio Output: Windows' combo keys, a spoken hint, Escape keeps the focus | for an agent |
+| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31 and 35 left | waiting for the user |
 | TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
 | TASK-206 | low | A system file dialog that cannot open reads as a cancel (Linux) | on hold: Windows only |
@@ -389,9 +405,11 @@ named. None has a task. The user decides whether each becomes one.
 Run it with NVDA (note its version) and the release build, with screen reader mode on
 (Automatic turns it on while NVDA runs). Marks:
 - (x): heard working;
+- (!): a fault was heard; its bug task is named;
 - ( ): waiting.
 
-Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (Part 2.1).
+Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23, 24, 27, 28, 30 and 32 to 34 on
+2026-11-28. Item 31 had faults (TASK-248); 25, 26, 29 and 35 are waiting (Part 2.1).
 
 1. Start the program: the window title is spoken, and the focus is on the first control of the
    Transport section. (x)
@@ -485,7 +503,7 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
       closes, and NVDA reads the control;
     - Options > Step Editor Follows Playback chosen with Enter: the control is read;
     - Help > Keyboard Shortcuts: the window is read, and Escape returns to the control, not to
-      "window". ( )
+      "window". (x)
 24. Pitch Keys Make Notes (TASK-211, docs/ui_spec.md 20.5), in screen reader mode on a 303's
     step editor on an empty pattern:
     - with Options > Pitch Keys Make Notes off (the default), the pitch key `V` answers "Step 1:
@@ -496,7 +514,7 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
     - in pitch mode each key makes its step a note, the step it set is said, and F5 plays all
       of them;
     - a step that is already a note only changes its note, and Clear makes every step a rest;
-    - the item is saved: restart, and it is still on. ( )
+    - the item is saved: restart, and it is still on. (x)
 25. The Mods menu's marks (TASK-201), with a mod playing (or the built-in kit): open the Mods
     menu and walk it with Up and Down. NVDA reads the playing kit's entry as a checked menu
     item ("Zed, menu item, checked") and every other mod entry as not checked; the Standard
@@ -518,7 +536,7 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
     - the 303's Cutoff moves one position per press;
     - with Options > Speak Raw Values on, each press moves one position and speaks the number.
 
-    With the mode off, none of this applies. ( )
+    With the mode off, none of this applies. (x)
 28. The numpad keys (TASK-225), with Num Lock on, in screen reader mode and Program Synth mode
     (the default):
     - numpad - lowers the tempo and numpad + raises it, and the new tempo is announced as for
@@ -530,13 +548,13 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
       main-row digits select patterns;
     - with Num Lock off, NVDA's desktop layout takes the numpad (numpad + is its Say all with
       review), and the digits become Insert, End and the arrows, as Help > Keyboard Shortcuts
-      says. ( )
+      says. (x)
 29. Edit > Initialize Song from Pattern Mode (TASK-237), in screen reader mode: NVDA reads the
     title and the original's text with Initialize when the question opens; Tab reaches Cancel;
     after either answer the focus is back where it was. ( )
 30. The names (TASK-239): F6 through the sections says 303-1, 303-2, 808, 909 (not Bass Line
     1 / 2, TR-808, TR-909); F2 on a drum grid starts with 808 or 909; Help > Keyboard
-    Shortcuts in screen reader mode shows the same names. ( )
+    Shortcuts in screen reader mode shows the same names. (x)
 31. Options > Audio Output (TASK-234):
     - the window is announced as Audio Output, and the focus lands on Driver;
     - Driver, Device, Sample rate and Buffer size are each read with their name and the chosen
@@ -545,7 +563,9 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
       rate: 48000 Hz");
     - Tab reaches the In use lines and reads them as "label: value";
     - the numbers refreshing every 500 ms are never spoken;
-    - Escape closes an open list first, then the window, and the focus returns. ( )
+    - Escape closes an open list first, then the window, and the focus returns. (!) The lists
+      open only with Space, which nothing says, and Escape out of a list loses the focus:
+      TASK-248.
 32. The classic look (TASK-238):
     - with View > Classic in screen reader mode, F6 and Tab go through the sections and
       controls with the same names as the modern look;
@@ -553,7 +573,7 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
     - the 808's round instrument knob is not read (Up and Down on the drum grid choose the
       instrument);
     - View > Classic and View > Modern each say only the menu item, and the focus stays on the
-      control it was on. ( )
+      control it was on. (x)
 33. The 303 Pattern Editor (TASK-235): Edit > 303-1 Pattern Editor... (and Ctrl+E on a 303) in
     screen reader mode:
     - NVDA says the window's title and lands on Pattern (A1);
@@ -564,7 +584,7 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
     - C on a rest says "Step 1: rest, C" once; `-` and P are read once as the new value;
     - Pattern and Length changes are read once; Transpose up says "Pattern A1 transposed up";
     - F2 reads the pattern; while the song plays nothing is spoken;
-    - Escape closes the window, and NVDA is back on the panel control. ( )
+    - Escape closes the window, and NVDA is back on the panel control. (x)
 34. The 808 and 909 Pattern Editors (TASK-236): Edit > 909 Pattern Editor... (and Ctrl+E on the
     909's grid) in screen reader mode:
     - NVDA says the window's title and lands on Pattern (A1);
@@ -579,7 +599,7 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197). Items 23 to 35 are waiting (P
     - F2 reads the pattern; while the song plays nothing is spoken;
     - Escape closes the window, and NVDA is back on the panel control.
 
-    The same in the 808 Pattern Editor, which has no Entry and where Space toggles. ( )
+    The same in the 808 Pattern Editor, which has no Entry and where Space toggles. (x)
 35. Audio Output after a lost device (TASK-245): after the program falls back from a device
     that is gone, NVDA reads the Device list as the device in use (System default), not the
     lost one. ( )

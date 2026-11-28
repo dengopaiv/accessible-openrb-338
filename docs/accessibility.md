@@ -4,10 +4,12 @@ This document describes what OpenRB-338's screen reader mode does, part by part,
 2026-11-28, and marks each part by its state:
 
 - **Does, heard (N):** built, covered by tests, and heard working with NVDA by the user
-  (checklist item N of [accessibility_plan.md](accessibility_plan.md), Part 3; the pass of
-  2026-11-07).
+  (checklist item N of [accessibility_plan.md](accessibility_plan.md), Part 3; the passes of
+  2026-11-07 and 2026-11-28).
 - **Does, not yet heard (N):** built and covered by tests; the by-ear check, item N, waits for
   the user (the plan's Part 2.1).
+- **Fault heard (N): TASK-NNN:** built, but the user heard it go wrong; the bug task fixes
+  it. A fault found outside the checklist's items has no N.
 - **Will do (TASK-NNN):** an open task in the backlog.
 - **Not built:** no task yet (the plan's Part 2.4 lists them for the user to decide).
 - **Not tried** or **Not checked:** it may work, since it reads the same tree, but no one has
@@ -71,27 +73,29 @@ plan's Part 2.4).
 | Nine sections, F6 and Tab | Does, heard (2, 3) | 3.2 |
 | The row focus spoken | Not built | 3.2 |
 | Knobs and faders in physical units | Does, heard (7) | 3.3 |
-| An arrow key always changes what is heard | Does, not yet heard (27) | 3.3 |
+| An arrow key always changes what is heard | Does, heard (27) | 3.3 |
 | Spin buttons and pattern selectors | Does, heard (4, 7) | 3.3 |
 | The 303 step editor | Does, heard (8) | 3.3 |
-| Pitch Keys Make Notes | Does, not yet heard (24) | 3.3 |
+| Pitch Keys Make Notes | Does, heard (24) | 3.3 |
 | The drum grids | Does, heard (9) | 3.3 |
 | The key map of the mode | Does, heard (5) | 3.4 |
-| The numpad apart from the main keys | Does, not yet heard (28) | 3.4 |
+| The numpad apart from the main keys | Does, heard (28) | 3.4 |
 | Announcements and the read-outs F2 to F4 | Does, heard (6, 21) | 3.5 |
 | The menu bar | Does, heard (13 to 17) | 3.6 |
-| The focus back after the menu bar | Does, not yet heard (23) | 3.6 |
+| Left and Right from menu to menu | Fault heard: TASK-247 | 3.6 |
+| A question opened from the menu | Fault heard: TASK-249 | 3.6 |
+| The focus back after the menu bar | Does, heard (23) | 3.6 |
 | The Mods menu's checked entry | Does, not yet heard (25) | 3.6 |
 | System file dialogs | Does, heard (11, 20) | 3.6 |
 | The Export format kept | Does, not yet heard (26) | 3.6 |
 | The mod chooser | Does, heard (12) | 3.6 |
 | Dialogs, the error box, the unsaved-changes prompt | Does, heard (15, 16, 22) | 3.6 |
 | The Initialize Song question | Does, not yet heard (29) | 3.6 |
-| Options > Audio Output | Does, not yet heard (31, 35) | 3.6 |
-| The 303 Pattern Editor windows | Does, not yet heard (33) | 3.7 |
-| The 808 and 909 Pattern Editor windows | Does, not yet heard (34) | 3.7 |
-| The classic look | Does, not yet heard (32) | 3.8 |
-| The names 808, 909, 303-1, 303-2 | Does, not yet heard (30) | 3.2 |
+| Options > Audio Output | Fault heard (31): TASK-248; 35 not yet heard | 3.6 |
+| The 303 Pattern Editor windows | Does, heard (33) | 3.7 |
+| The 808 and 909 Pattern Editor windows | Does, heard (34) | 3.7 |
+| The classic look | Does, heard (32) | 3.8 |
+| The names 808, 909, 303-1, 303-2 | Does, heard (30) | 3.2 |
 | With the mode off, as upstream | Does, heard (18) | 3.9 |
 | Narrator, JAWS | Not tried | 3.10 |
 | Braille | Not checked | 3.10 |
@@ -162,7 +166,7 @@ channel is in the machine's section, because in ReBirth a row is one machine wit
 (decision TASK-179). Entering a machine's section gives that machine the row focus, so the
 synth and drum keys go to it (docs/ui_spec.md 20.2 and section 10).
 
-**Does, not yet heard (30).** The names say 808, 909, 303-1 and 303-2, as upstream's visible
+**Does, heard (30).** The names say 808, 909, 303-1 and 303-2, as upstream's visible
 text does (TASK-239). They were TR-808, TR-909 and Bass Line 1 and 2.
 
 **Not built.** The row focus is not spoken. Entering a machine's section says only the
@@ -178,7 +182,7 @@ row focus silently. The proposal of 2026-11-05 meant both to be announced.
   "center", "left 20", "right 20". Options > Speak Raw Values adds the stored number. Home and
   End go to 0 and 127, and NVDA's own slider commands use the Increment, Decrement and SetValue
   actions.
-- **The next value that sounds different. Does, not yet heard (27).** On many knobs
+- **The next value that sounds different. Does, heard (27).** On many knobs
   neighboring positions sound the same (the 808's bass drum tone has 8 values over 128
   positions). Up and Down go to the next position whose spoken value differs, and Page Up and
   Page Down at least 8 positions, on to a different value. Where no different value lies that
@@ -204,7 +208,7 @@ row focus silently. The proposal of 2026-11-05 meant both to be announced.
   - it edits its own pattern: playback moving the row to another pattern never changes it.
     Options > Step Editor Follows Playback (off by default) makes it move along, silently, at
     the next key (docs/ui_spec.md 20.5).
-- **Pitch Keys Make Notes. Does, not yet heard (24).** As in the original, a pitch key on a
+- **Pitch Keys Make Notes. Does, heard (24).** As in the original, a pitch key on a
   rest sets its note but leaves it a rest. The Options item Pitch Keys Make Notes (off by
   default, screen reader mode only) makes a pitch key turn a rest into a note (TASK-211).
 - **The drum grids. Does, heard (9).** In the 808 and 909 sections, a grid named "Steps" of 12
@@ -254,7 +258,7 @@ Every other key of the original keeps its meaning, whatever has the focus, so th
 keyboard still plays and programs the synths (Ctrl+F) or selects patterns (Ctrl+G). The panel's
 keys wait while a menu, a dialog or a window has the focus (TASK-202).
 
-**Does, not yet heard (28).** On Windows the numpad's keys are told apart from the main
+**Does, heard (28).** On Windows the numpad's keys are told apart from the main
 keyboard's (a message hook, TASK-225), so they keep the original's transport meaning in every
 mode: numpad - and + change the tempo, numpad Enter plays, numpad * is Record. With Num Lock
 off, NVDA's desktop layout takes the numpad.
@@ -293,7 +297,11 @@ has not been read.
   from upstream in 2026-11). The arrows walk the bar and the menus, Enter chooses, and Escape
   closes. The Options menu's checkboxes and radio items, and View's Classic and Modern, carry
   their state (docs/ui_spec.md 18.2).
-- **The focus after the menu bar. Does, not yet heard (23).** Leaving the bar (Escape, an item
+- **Left and Right between the menus. Fault heard: TASK-247.** They are egui's spatial focus:
+  in an open menu Left goes back to the title, and the other menus cannot then be reached; on
+  the last title, Help, Right leaves the bar for the Transport section. TASK-247 makes them go
+  from menu to menu, wrapping, as in Windows, in screen reader mode.
+- **The focus after the menu bar. Does, heard (23).** Leaving the bar (Escape, an item
   that opens no window, F10 or Alt again) gives the focus back to the control that had it. A
   window opened from a menu returns it there when it closes (TASK-212).
 - **The Mods menu's mark. Does, not yet heard (25).** The playing kit's entry reads as
@@ -318,17 +326,22 @@ has not been read.
   alert named "Error", with the focus on OK. The unsaved-changes prompt is a dialog named by
   its question, with the focus on Save. The focus moves in when one opens, and comes back where
   it was when it closes (docs/ui_spec.md 20.4).
+- **A question opened from the menu. Fault heard: TASK-249.** With unsaved changes, File >
+  New chosen from the menu opens Save As at once, while Ctrl+N asks first. The Enter that chose
+  the item seems to answer the question it opens; TASK-249 checks every menu item that asks.
 - **The Initialize Song question. Does, not yet heard (29).** Edit > Initialize Song from
   Pattern Mode asks first. In the mode the question is a dialog named by its title, with the
   original's text as its description and the focus on Initialize; Tab reaches Cancel. After
   either answer, the focus goes back where it was (TASK-237).
-- **Options > Audio Output. Does, not yet heard (31, 35).** In the mode the window is a dialog
-  named Audio Output, with the focus on Driver as it opens:
+- **Options > Audio Output. Fault heard (31): TASK-248; the fallback (35) not yet heard.**
+  In the mode the window is a dialog named Audio Output, with the focus on Driver as it opens:
   - Driver, Device, Sample rate and Buffer size are named lists that say what is chosen;
   - a change is announced once ("Sample rate: 48000 Hz");
   - the "In use" numbers are lines Tab reaches ("label: value"), and their refresh every 500 ms
     is never spoken;
-  - Escape closes an open list first, then the window;
+  - Escape closes an open list first, then the window, but the focus is lost after the list
+    closes; and a list opens only with Space, which nothing says (TASK-248: Windows' combo
+    keys, a spoken hint, a line in Keyboard Shortcuts);
   - after the program falls back from a device that is gone, the window shows the device in
     use, not the lost one, and that is never saved over the user's choice (TASK-234,
     TASK-245).
@@ -342,12 +355,12 @@ Playback neither moves the window to another pattern nor makes it speak. Every e
 through the window's own calls, so it is heard, marks the song modified, and is one Undo step.
 With the mode off the windows are upstream's.
 
-- **The 303 windows. Does, not yet heard (33).** The controls, in Tab order: Pattern (a spin
+- **The 303 windows. Does, heard (33).** The controls, in Tab order: Pattern (a spin
   button, A1 to D8), Step editor, Length, Shuffle, Transpose up and down, Shift left and right,
   Copy, Paste and Clear. The Step editor is a list of the 16 steps with the panel step editor's
   keys and words, Pitch Keys Make Notes included. Transpose and Shift say what they did
   ("Pattern A1 transposed up"), and F2 reads the pattern (TASK-235, docs/ui_spec.md 20.8).
-- **The 808 and 909 windows. Does, not yet heard (34).** The controls, in Tab order: Pattern,
+- **The 808 and 909 windows. Does, heard (34).** The controls, in Tab order: Pattern,
   Steps (a grid with the panel drum grid's keys and words), the 909's Entry (Cycle, Low (on),
   High (accent), Flam), Length, Shuffle, Shift left and right, Copy, Paste and Clear. Shift
   says "Pattern A1 shifted right", or "Pattern A1 unchanged" when nothing moved, and F2 reads
@@ -359,7 +372,7 @@ window's own cursor, the Tab order, the Entry words (the plan's Part 2.2).
 
 ### 3.8 The classic look
 
-**Does, not yet heard (32).** With View > Classic (the original panel drawn from the mod's
+**Does, heard (32).** With View > Classic (the original panel drawn from the mod's
 pictures), screen reader mode reads and works as with the modern look: the same names,
 sections, Tab order, pattern selectors, drum grids and step editor. Switching between the looks
 keeps the focus where it is and says nothing. The classic panel's round 808 instrument knob is

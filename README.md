@@ -67,14 +67,16 @@ with a screen reader, NVDA on Windows first.
 **Where it stands (2026-11-28): built, mostly heard with NVDA.** Screen reader mode is
 implemented and tested through the accessibility tree (every control has a name, a role and a
 value; every Tab stop is named). A blind user went through the checklist with NVDA on Windows on
-2026-11-07 and found it working. Built since then and checked by tests, but not yet heard with
-NVDA: the pattern editor windows, Options > Audio Output, the classic look, the Initialize Song
-question, and a few smaller follow-ups (the plan's Part 2.1 lists them). Other screen readers
-and systems are less tested; the fork is built for Windows only. With the mode off, OpenRB-338
-behaves as upstream, with three exceptions in both modes: the panel's keys wait while a menu is
-in use, and on Windows the program prefers DirectX 12 for its graphics and writes a run log of
-each start (both so it starts on more PCs; a start that fails is described in
-[docs/building.md](docs/building.md)). The sound engine is not touched, so the output stays
+2026-11-07 and found it working. A second pass on 2026-11-28 heard the pattern editor windows,
+the classic look and most of the follow-ups working, and found three faults now being fixed:
+Left and Right in the menus, Options > Audio Output's lists, and File > New chosen from the menu
+with unsaved changes. Still to be heard: the Initialize Song question, the Mods menu's checked
+entry, the Export format kept, and Audio Output after a lost device (the plan's Part 2.1). Other
+screen readers and systems are less tested; the fork is built for Windows only. With the mode
+off, OpenRB-338 behaves as upstream, with three exceptions in both modes: the panel's keys wait
+while a menu is in use, and on Windows the program prefers DirectX 12 for its graphics and
+writes a run log of each start (both so it starts on more PCs; a start that fails is described
+in [docs/building.md](docs/building.md)). The sound engine is not touched, so the output stays
 identical to the original's. The `orb` command line tool (render, play, info, mods) needs no
 mode. What changed in each release of the fork is in [CHANGELOG.md](CHANGELOG.md).
 
