@@ -32,11 +32,15 @@ rebasing on upstream stays simple.
 - **The queue.** m-7 (screen reader accessibility) is the fork's first open milestone. Upstream
   work merged in later does not go ahead of it unless the user says so.
 - **The fork's purpose.** Screen reader accessibility of the desktop UI, NVDA on Windows first.
-  `docs/accessibility.md` is the analysis (measured state, options, proposal, egui's
-  accessibility API, how to measure), `docs/accessibility_plan.md` the plan: milestone m-7 with
-  its decisions and tasks, written so each entry can be created in the backlog as it stands.
-  With screen reader mode off, the app must behave exactly as upstream, except where the user
-  decided otherwise (listed in docs/accessibility_plan.md, part 3, "Ground rules").
+  `docs/accessibility.md` says what screen reader mode does, part by part, each marked as heard
+  with NVDA, tested only, to do or not built, with the measurements, egui's accessibility API,
+  how to measure, and the history (the state before the work, the options weighed).
+  `docs/accessibility_plan.md` is the plan of milestone m-7: what is done (the decisions and
+  the work, round by round), what is to do (the user's checks by ear, the choices waiting for
+  the user, the open tasks, the known gaps), and the NVDA checklist. A task that adds or
+  changes screen reader behavior updates both. With screen reader mode off, the app must
+  behave exactly as upstream, except where the user decided otherwise (listed in
+  docs/accessibility_plan.md, part 4, "Ground rules").
 - **The third-party collections.** Upstream's public mod and song collections
   (github.com/pingw33n/rb-mods, github.com/pingw33n/rb-songs) are cloned next to this checkout,
   never into it (the user's decision, 2026-11-05: 1.1 GB of third-party files with no stated

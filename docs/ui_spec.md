@@ -2443,10 +2443,12 @@ tests `crates/orb-ui/tests/a11y_announce.rs`.
     off" when the loop is off, "loop bar 3" for a one-bar loop); in pattern mode, where the
     bar, the loop and Record do nothing, "Playing, 140 BPM, pattern mode".
   - F4: the levels as the panel shows them: "Master left 7 of 10, right 6 of 10, gain reduction
-    2 of 4", the lit segments of the master meters and a count of the gain-reduction LEDs lit
-    left of the compressor's "0" LED (a count of lit LEDs, not an amount: the LEDs hold their
-    last state, so a stopped song can read "1 of 4"). A meter the engine has not reported yet
-    reads "no reading" ("Master left no reading, ..."), not 0. Numbers, not decibels: the meter
+    5 of 9", the lit segments of the master meters and the lit LEDs of the compressor's
+    nine-LED gain-reduction bar (`model::gr_lit` of the engine's gain byte, upstream's task-252;
+    a count of lit LEDs, not an amount). A meter the engine has not reported yet, and a gain
+    byte of 0 (a compressor with no audio), read "no reading" ("Master left no reading, ..."),
+    not 0. Before the merge of upstream's f83c54f (task-233) the bar was four LEDs and F4 said
+    "N of 4". Numbers, not decibels: the meter
     scale was not read in the original ([G], section 16, `sub_424220` and `sub_424A7E`), and
     A11Y-14 gives the knobs' and faders' units, not the meters'.
 - Help > Keyboard Shortcuts lists F2, F3 and F4 in its screen reader group

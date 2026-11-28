@@ -64,17 +64,19 @@ This repository, accessible-openrb-338, is a fork of
 [OpenRB-338](https://github.com/pingw33n/openrb-338) whose aim is to make OpenRB-338 usable
 with a screen reader, NVDA on Windows first.
 
-**Where it stands (2026-11-09): built and checked with NVDA.** Screen reader mode is
+**Where it stands (2026-11-28): built, mostly heard with NVDA.** Screen reader mode is
 implemented and tested through the accessibility tree (every control has a name, a role and a
-value; Tab stops at 198 places, all named), and a blind user went through the whole checklist
-with NVDA on Windows and found it working. Other screen readers and systems are less tested;
-the fork is built for Windows only. With the mode off, OpenRB-338 behaves as upstream, with
-three exceptions in both modes: the panel's keys wait while a menu is in use, and on Windows
-the program prefers DirectX 12 for its graphics and writes a run log of each start (both so it
-starts on more PCs; a start that fails is described in [docs/building.md](docs/building.md)).
-The sound engine is not touched, so the output stays identical to the original's. The `orb`
-command line tool (render, play, info, mods) needs no mode. What changed in each release of the
-fork is in [CHANGELOG.md](CHANGELOG.md).
+value; every Tab stop is named). A blind user went through the checklist with NVDA on Windows on
+2026-11-07 and found it working. Built since then and checked by tests, but not yet heard with
+NVDA: the pattern editor windows, Options > Audio Output, the classic look, the Initialize Song
+question, and a few smaller follow-ups (the plan's Part 2.1 lists them). Other screen readers
+and systems are less tested; the fork is built for Windows only. With the mode off, OpenRB-338
+behaves as upstream, with three exceptions in both modes: the panel's keys wait while a menu is
+in use, and on Windows the program prefers DirectX 12 for its graphics and writes a run log of
+each start (both so it starts on more PCs; a start that fails is described in
+[docs/building.md](docs/building.md)). The sound engine is not touched, so the output stays
+identical to the original's. The `orb` command line tool (render, play, info, mods) needs no
+mode. What changed in each release of the fork is in [CHANGELOG.md](CHANGELOG.md).
 
 ### Using OpenRB-338 with a screen reader
 
@@ -117,6 +119,8 @@ and programs the synths (Ctrl+F) or selects patterns (Ctrl+G).
 | Ctrl+Up / Ctrl+Down | Moves the row focus to the previous / next row without moving where you are |
 | Ctrl+Tab / Ctrl+Shift+Tab | Program Synth mode, a 303 in focus: the playing step becomes a note / a rest |
 | Ctrl+M | Choose Mod (below) |
+| Ctrl+E | The pattern editor window of the row you are on (below) |
+| Ctrl+I | File > Info; in Choose Mod, Mod Info of the selected mod |
 | Escape | Closes a window, a dialog or a menu |
 
 Knobs and faders are spoken in physical units, such as "350 milliseconds" or "minus 6.5
@@ -150,23 +154,43 @@ Right opens a mod that has variants and Left closes it. Enter chooses the select
 mod with variants the preferred one, or the variant selected), Ctrl+I shows its Mod Info
 without loading it, and Escape closes the dialog.
 
+**The pattern editor windows.** Edit > 303-1, 303-2, 808 or 909 Pattern Editor... (or Ctrl+E
+on that machine's section) opens a window for one pattern. The focus goes to its first
+control, Pattern, and Escape closes the window and brings you back. Tab reaches the other
+controls by name: Length, Shuffle, Shift, Copy, Paste, Clear, and on a 303 Transpose, on the
+909 Entry. The 303's "Step editor" has the same keys and words as the panel's step editor;
+the drum machines' "Steps" grid has the same keys and words as the panel's drum grid. F2 reads
+the window's pattern. Nothing is spoken while the song plays.
+
 **Files.** File > Open, Save As and Export use the system's own file dialogs in this mode.
+
+**Other windows.** Help > Keyboard Shortcuts, File > Info, Help > About and Mods > Info are read
+line by line with Tab. Options > Audio Output names its four lists (Driver, Device, Sample
+rate, Buffer size), says a change once, and its "In use" lines are reached with Tab. A question
+(unsaved changes, Replace, Initialize Song from Pattern Mode) takes the focus on its default
+answer. When a window closes the focus goes back where it was.
+
+**The classic look.** View > Classic reads and works the same as View > Modern; switching keeps
+your place and says nothing. The classic panel's round 808 instrument knob is skipped: Up and
+Down on the drum grid choose the instrument.
 
 **Known limits.**
 - It has been checked by ear with NVDA on Windows by the person it is made for (2026-11-07,
-  the checklist in [docs/accessibility_plan.md](docs/accessibility_plan.md)); outside what the
-  checklist covers, expect rough places.
+  the checklist in [docs/accessibility_plan.md](docs/accessibility_plan.md)). What was built
+  later waits for the next pass; outside what the checklist covers, expect rough places.
 - Detection of a running screen reader in Automatic is Windows only. Narrator, JAWS,
-  VoiceOver and Orca are not tested.
+  VoiceOver and Orca are not tested, and neither is braille.
+- Moving the row focus (Ctrl+Up / Ctrl+Down, or entering a machine's section) is not spoken.
 - The drum grids are not a real table to the screen reader: each cell carries its
   instrument and step in its own text, and the arrow keys are the program's.
 - The meters are read as lit segments (F4), not decibels.
-- The original's pattern functions (copy, paste, clear a bar, undo) are not implemented.
 
-- [docs/accessibility.md](docs/accessibility.md): what a screen reader gets today (measured),
-  the options, the proposal, and notes for developers.
-- [docs/accessibility_plan.md](docs/accessibility_plan.md): the plan, as decisions and tasks,
-  with the NVDA checklist that ends it.
+- [docs/accessibility.md](docs/accessibility.md): what screen reader mode does, part by part,
+  each marked as heard with NVDA, tested only, to do or not built; the history; and notes for
+  developers.
+- [docs/accessibility_plan.md](docs/accessibility_plan.md): the plan: what is done, what is
+  still to do (the checks by ear, the choices to confirm, the open tasks), and the NVDA
+  checklist.
 
 ## Quick start
 

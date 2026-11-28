@@ -260,12 +260,11 @@ pub fn transport_readout(panel: &Panel) -> String {
     parts.join(", ")
 }
 
-/// F4: the levels as the panel shows them: the master meters' lit segments of 10 and a count
-/// of the compressor's gain-reduction LEDs lit left of its "0" LED, of 4 (a count of lit LEDs,
-/// not an amount; they hold their last state). Numbers, not decibels: the meters' scale was
-/// not read in the original ([G], docs/ui_spec.md section 16). A meter the engine has not
-/// reported yet (no `Link` sync since the panel was made; the "0" LED is lit by every sync)
-/// reads "no reading", not 0.
+/// F4: the levels as the panel shows them: the master meters' lit segments of 10 and the lit
+/// LEDs of the compressor's gain-reduction bar, of 9 (`model::gr_lit`; a count of lit LEDs, not
+/// an amount). Numbers, not decibels: the meters' scale was not read in the original ([G],
+/// docs/ui_spec.md section 16). A meter the engine has not reported yet (no `Link` sync since
+/// the panel was made) and a gain byte of 0 read "no reading", not 0.
 pub fn levels_readout(panel: &Panel) -> String {
     let m = |id: &str| match panel.meters.get(id) {
         Some(v) => format!("{} of 10", v.min(&10)),
