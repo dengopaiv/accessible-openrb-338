@@ -1711,8 +1711,19 @@ impl App {
             self.bar_active = false;
         }
         let mut bar: Vec<(Id, Id)> = vec![];
+        // the submenu buttons of the last frame; this frame's are noted again as they are shown
+        // (screen reader mode only: with the mode off nothing here is touched)
+        let subs: Vec<Id> = if sr {
+            ui.data_mut(|d| d.remove_temp(subs_id()))
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
         if enabled {
             open_on_down(ui);
+            if sr {
+                bar_arrows(ui, &subs);
+            }
         }
         egui::Panel::top("orb_menu")
             .exact_size(MENU_H)
@@ -1902,7 +1913,7 @@ impl App {
                                         Kit::Standard => None,
                                     };
                                     let pref = self.preferred_variant(e);
-                                    b.ui(ui, |ui| {
+                                    let (button, _) = b.ui(ui, |ui| {
                                         for v in &e.variants {
                                             let mut t = v.label();
                                             if pref.is_some_and(|p| p == v) {
@@ -1915,6 +1926,9 @@ impl App {
                                             }
                                         }
                                     });
+                                    if self.screen_reader_mode() {
+                                        note_submenu(ui, button.id);
+                                    }
                                     continue;
                                 }
                                 if checked_item(ui, on, &e.name).clicked() {
@@ -2049,6 +2063,79 @@ fn bar_id() -> Id {
 
 fn note_button(bar: &mut Vec<(Id, Id)>, button: &egui::Response) {
     bar.push((button.id, egui::Popup::menu(button).get_id()));
+}
+
+/// Where the submenu buttons shown this frame are noted (`bar_arrows` reads the last frame's).
+fn subs_id() -> Id {
+    Id::unique("orb_menu_submenu_buttons")
+}
+
+fn note_submenu(ui: &Ui, button: Id) {
+    ui.data_mut(|d| d.get_temp_mut_or_default::<Vec<Id>>(subs_id()).push(button));
+}
+
+/// Left and Right in the bar, in screen reader mode, as in Windows (task-247). On a focused
+/// title they go to the previous or next title, wrapping; in an open menu they close it and
+/// open the previous or next menu with the focus on its first item, wrapping. The focus never
+/// leaves the bar for the panel. A submenu button (`subs`) keeps egui's Right (opens it, the
+/// focus on its first file) and inside a submenu egui's Left (back to the button); Right on a
+/// file goes on to the next menu. The arrow is taken from egui's own focus move here.
+fn bar_arrows(ui: &Ui, subs: &[Id]) {
+    let ctx = ui.ctx();
+    let (left, right) = ui.input(|i| {
+        (
+            i.modifiers.is_none() && i.key_pressed(Key::ArrowLeft),
+            i.modifiers.is_none() && i.key_pressed(Key::ArrowRight),
+        )
+    });
+    if left == right {
+        return;
+    }
+    let bar: Vec<(Id, Id)> = ctx.data(|d| d.get_temp(bar_id())).unwrap_or_default();
+    let n = bar.len();
+    if n == 0 {
+        return;
+    }
+    let focused = ctx.memory(|m| m.focused());
+    let open = bar
+        .iter()
+        .position(|(_, p)| egui::Popup::is_id_open(ctx, *p));
+    let title = bar.iter().position(|(b, _)| Some(*b) == focused);
+    let from = match (open, title) {
+        (Some(o), _) => o,
+        (None, Some(t)) => t,
+        (None, None) => return,
+    };
+    if open.is_some() {
+        // the focus on an item of an open submenu, or on a submenu's button
+        let layer = focused
+            .and_then(|f| ctx.read_response(f))
+            .map(|r| r.layer_id.id);
+        let in_sub = layer.is_some_and(|l| {
+            subs.iter()
+                .any(|s| egui::containers::menu::SubMenu::id_from_widget_id(*s) == l)
+        });
+        let on_sub = focused.is_some_and(|f| subs.contains(&f));
+        if (in_sub && left) || (on_sub && right) {
+            return; // egui's own
+        }
+    }
+    let to = if right {
+        (from + 1) % n
+    } else {
+        (from + n - 1) % n
+    };
+    ctx.memory_mut(|m| {
+        m.move_focus(egui::FocusDirection::None);
+        m.request_focus(bar[to].0);
+    });
+    if open.is_some() {
+        // the next menu opens as Down on its title does: the focus goes to its first item
+        egui::Popup::close_all(ctx);
+        egui::Popup::open_id(ctx, bar[to].1);
+        ctx.data_mut(|d| d.insert_temp(Id::unique("orb_menu_down_pending"), true));
+    }
+    ctx.request_repaint();
 }
 
 /// True when the keyboard focus is on a button of the menu bar or a menu is open: the panel

@@ -375,3 +375,149 @@ fn an_item_that_opens_a_window_returns_to_the_control_when_it_closes() {
     assert!(!h.app.key_help_is_open(), "Escape closed the window");
     assert!(has_play(&h), "{:?}", focus(&h));
 }
+
+// ---- task-247: Left and Right between the menus, as in Windows ----------------------------
+
+const TITLES: [&str; 6] = ["File", "Edit", "View", "Mods", "Options", "Help"];
+
+fn sr_app() -> AppTree {
+    let mut h = AppTree::new();
+    h.app.settings.screen_reader = orb_ui::screen_reader::ScreenReaderSetting::On;
+    h.frame(vec![]);
+    h
+}
+
+fn title(h: &AppTree, name: &str) -> bool {
+    is(h, Role::Button, name)
+}
+
+/// The menu `menu` is open with the focus on its first item. Edit is the demo panel here (no
+/// player link), so all its items are disabled and the focus stays on the title.
+fn on_first_item(h: &AppTree, menu: &str) -> bool {
+    let first = match menu {
+        "File" => "New Ctrl+N",
+        "View" => "Classic",
+        "Mods" => "Choose Mod... Ctrl+M",
+        "Options" => "Vintage ReBirth Synth Sound",
+        "Help" => "Keyboard Shortcuts...",
+        _ => return menu_open(h) && title(h, menu),
+    };
+    menu_open(h) && focus(h).1 == first
+}
+
+#[test]
+fn left_and_right_on_a_title_wrap_and_never_leave_the_bar() {
+    let mut h = sr_app();
+    h.key(Key::F10);
+    assert!(title(&h, "File"));
+    for t in &TITLES[1..] {
+        h.key(Key::ArrowRight);
+        assert!(title(&h, t), "{:?}", focus(&h));
+    }
+    // Right from Help: File, not the Transport section
+    h.key(Key::ArrowRight);
+    assert!(title(&h, "File"), "{:?}", focus(&h));
+    assert!(!menu_open(&h));
+    // Left from File: Help; and back through all six
+    h.key(Key::ArrowLeft);
+    assert!(title(&h, "Help"), "{:?}", focus(&h));
+    for t in TITLES[..5].iter().rev() {
+        h.key(Key::ArrowLeft);
+        assert!(title(&h, t), "{:?}", focus(&h));
+    }
+}
+
+#[test]
+fn left_and_right_in_an_open_menu_open_the_neighbor_with_its_first_item() {
+    let mut h = sr_app();
+    h.key(Key::F10);
+    open_with_down(&mut h);
+    assert!(on_first_item(&h, "File"), "{:?}", focus(&h));
+    // right through all six menus and round to File
+    for t in TITLES[1..].iter().chain(&TITLES[..1]) {
+        h.key(Key::ArrowRight);
+        h.frame(vec![]);
+        assert!(on_first_item(&h, t), "{t}: {:?}", focus(&h));
+    }
+    // left: File -> Help, and back
+    h.key(Key::ArrowLeft);
+    h.frame(vec![]);
+    assert!(on_first_item(&h, "Help"), "{:?}", focus(&h));
+    for t in TITLES[..5].iter().rev() {
+        h.key(Key::ArrowLeft);
+        h.frame(vec![]);
+        assert!(on_first_item(&h, t), "{t}: {:?}", focus(&h));
+    }
+    // after a walk down the items, Right still goes to the next menu's first item
+    h.key(Key::ArrowDown);
+    h.key(Key::ArrowRight);
+    h.frame(vec![]);
+    assert!(on_first_item(&h, "Edit"), "{:?}", focus(&h));
+    h.key(Key::Escape);
+    assert!(!menu_open(&h));
+}
+
+#[test]
+fn right_from_the_help_menu_goes_to_file_not_to_the_panel() {
+    let mut h = sr_app();
+    h.key(Key::F10);
+    for _ in 0..5 {
+        h.key(Key::ArrowRight);
+    }
+    open_with_down(&mut h);
+    assert!(on_first_item(&h, "Help"), "{:?}", focus(&h));
+    h.key(Key::ArrowRight);
+    h.frame(vec![]);
+    assert!(on_first_item(&h, "File"), "{:?}", focus(&h));
+}
+
+#[test]
+fn with_the_mode_off_the_bar_keys_are_eguis() {
+    let mut h = AppTree::new();
+    h.key(Key::F10);
+    for _ in 0..5 {
+        h.key(Key::ArrowRight);
+    }
+    assert!(title(&h, "Help"));
+    h.key(Key::ArrowRight);
+    assert!(!title(&h, "File"), "no wrap: {:?}", focus(&h));
+    assert!(
+        !title(&h, "Help"),
+        "the focus left the bar: {:?}",
+        focus(&h)
+    );
+}
+
+#[test]
+fn escape_after_moves_between_menus_gives_the_focus_back() {
+    let mut h = on_play();
+    h.key(Key::F10);
+    open_with_down(&mut h);
+    h.key(Key::ArrowRight);
+    h.frame(vec![]);
+    h.key(Key::ArrowRight);
+    h.frame(vec![]);
+    assert!(menu_open(&h));
+    h.key(Key::Escape);
+    h.frame(vec![]);
+    assert!(!menu_open(&h));
+    assert!(has_play(&h), "{:?}", focus(&h));
+}
+
+/// Left alone wraps: File to Help on the title, and in File's open menu to Help's first item.
+#[test]
+fn left_from_file_wraps_to_help() {
+    let mut h = sr_app();
+    h.key(Key::F10);
+    h.key(Key::ArrowLeft);
+    assert!(title(&h, "Help"), "{:?}", focus(&h));
+    assert!(!menu_open(&h));
+
+    let mut h = sr_app();
+    h.key(Key::F10);
+    open_with_down(&mut h);
+    assert!(on_first_item(&h, "File"), "{:?}", focus(&h));
+    h.key(Key::ArrowLeft);
+    h.frame(vec![]);
+    assert!(on_first_item(&h, "Help"), "{:?}", focus(&h));
+}

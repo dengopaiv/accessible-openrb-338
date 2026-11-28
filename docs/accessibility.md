@@ -82,7 +82,7 @@ plan's Part 2.4).
 | The numpad apart from the main keys | Does, heard (28) | 3.4 |
 | Announcements and the read-outs F2 to F4 | Does, heard (6, 21) | 3.5 |
 | The menu bar | Does, heard (13 to 17) | 3.6 |
-| Left and Right from menu to menu | Fault heard: TASK-247 | 3.6 |
+| Left and Right from menu to menu | Does, not yet heard (36) | 3.6 |
 | A question opened from the menu | Fault heard: TASK-249 | 3.6 |
 | The focus back after the menu bar | Does, heard (23) | 3.6 |
 | The Mods menu's checked entry | Does, not yet heard (25) | 3.6 |
@@ -297,10 +297,11 @@ has not been read.
   from upstream in 2026-11). The arrows walk the bar and the menus, Enter chooses, and Escape
   closes. The Options menu's checkboxes and radio items, and View's Classic and Modern, carry
   their state (docs/ui_spec.md 18.2).
-- **Left and Right between the menus. Fault heard: TASK-247.** They are egui's spatial focus:
-  in an open menu Left goes back to the title, and the other menus cannot then be reached; on
-  the last title, Help, Right leaves the bar for the Transport section. TASK-247 makes them go
-  from menu to menu, wrapping, as in Windows, in screen reader mode.
+- **Left and Right between the menus. Does, not yet heard (36).** The fault heard on
+  2026-11-28 was that egui's spatial focus took Left in an open menu back to the title, after
+  which the other menus could not be reached, and Right from Help left the bar for the
+  Transport section. TASK-247 makes them go from menu to menu, wrapping, as in Windows, in
+  screen reader mode (docs/ui_spec.md 18.2).
 - **The focus after the menu bar. Does, heard (23).** Leaving the bar (Escape, an item
   that opens no window, F10 or Alt again) gives the focus back to the control that had it. A
   window opened from a menu returns it there when it closes (TASK-212).

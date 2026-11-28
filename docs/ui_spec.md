@@ -2061,7 +2061,7 @@ mod's sound, mixed as the player mixes it, none with the preference off) and
 What egui 0.37 does by itself (`containers/menu.rs`, `popup.rs`; measured headless with the
 accessibility test harness, `crates/orb-ui/tests/a11y_menu_bar.rs`):
 
-- Nothing focuses the bar: no Alt, no F10. The four titles are focusable buttons, reached only
+- Nothing focuses the bar: no Alt, no F10. The titles are focusable buttons, reached only
   by Tab, and the panel's controls come before them in the tab order (the bar is drawn last),
   so Tab from the start lands on a panel control.
 - On a focused title, Enter or Space opens the menu and leaves the focus on the title
@@ -2108,9 +2108,27 @@ What OpenRB-338 adds (`menu.rs`, `menu_bar_key`, `open_on_down`, `menu_has_keys`
   for the playing kit only, in both modes (`menu.rs` `checked_item`, task-201): NVDA reads
   "menu item, checked". They look and act as before (selectable labels). The button of a merged
   name's submenu stays a Button, with the Toggled state when one of its files plays.
-- Since the merge of upstream's 6858253 (task-230) the bar has five titles: upstream's Edit
-  menu (Undo and the pattern commands, section 18) sits between File and Mods, and is walked
-  like the others (`menu_items` notes each title for `menu_has_keys` and the focus back).
+- Screen reader mode, Left and Right as in Windows (task-247; `menu.rs` `bar_arrows`, which
+  takes the arrow from egui's focus move before the bar is shown). On a focused title they go
+  to the previous or next title, wrapping (File to Help, Help to File), and the focus never
+  leaves the bar for the panel (egui's spatial focus did, from Help to the Transport section).
+  In an open menu they close it and open the previous or next menu, wrapping, with the focus
+  on its first item (the same two-frame opening as Down on a title; a menu whose items are all
+  disabled, Edit in the demo panel with no player link, leaves the focus on its title). A submenu button of the Mods
+  menu (a merged name; `note_submenu`) keeps egui's Right, which opens it with the focus on its
+  first file; inside the submenu Left is egui's, back to its button; Right on a file goes on
+  to the next menu. Up, Down, Enter, Escape, F10 and Alt are as before, the focus back included.
+  A move between titles is one focus move. A move between open menus puts the focus on the new
+  title in one frame and on its first item in the next (`open_on_down`'s two-frame opening, as
+  on the Down path); the speech of that pair is for the user's pass to confirm (checklist item
+  36). With the
+  mode off egui's keys stay (Left of File does not wrap, Right of Help leaves the bar, Left in
+  a menu returns to its title). Tests: `a11y_menu_bar.rs`, `a11y_mod_chooser.rs`
+  (`the_mods_submenu_opens_with_right_and_left_closes_it`).
+- Since the merge of upstream's 6858253 (task-230) the bar has six titles (task-233 added View
+  after Edit): File, Edit, View, Mods, Options and Help. Upstream's Edit menu (Undo and the
+  pattern commands, section 18) sits between File and View, and is walked like the others
+  (`menu_items` notes each title for `menu_has_keys` and the focus back).
 
 ## 19. OpenRB-338's panel art and placement (task-179)
 

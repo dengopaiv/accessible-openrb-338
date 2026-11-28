@@ -5,8 +5,8 @@ the menus, the dialogs, the mod chooser, and since the night of 2026-11-27 also 
 newer windows (Audio Output, the Initialize Song question, the four pattern editors) and the
 classic look. The user's NVDA passes heard items 1 to 22 of the checklist working on
 2026-11-07, and eight more on 2026-11-28. That second pass found three faults, now bug tasks
-TASK-247 to TASK-249 (Part 2.1). What is left besides them is mostly the user's: 5 checks by
-ear, 12 design choices that agents made and the user has not confirmed (2.2), and the known
+TASK-247 to TASK-249 (Part 2.1). TASK-247 is built and waits for its check, item 36. What is
+left besides them is mostly the user's: 5 checks by ear, 12 design choices that agents made and the user has not confirmed (2.2), and the known
 gaps that have no task yet (2.4). One small test task is open, and two tasks for other systems
 are on hold (2.3).
 
@@ -49,8 +49,8 @@ Not in scope:
   no task yet;
 - any web version: the fork is a local editor only (the user, 2026-11-05, TASK-198).
 
-**Done when** every task of m-7 is Done. Seven are open on 2026-11-28: TASK-247, TASK-248 and
-TASK-249 (the faults of the second NVDA pass), TASK-244 (that pass), TASK-227, and TASK-199 and
+**Done when** every task of m-7 is Done. Six are open on 2026-11-28: TASK-248 and
+TASK-249 (faults of the second NVDA pass; TASK-247, the third, is built), TASK-244 (that pass), TASK-227, and TASK-199 and
 TASK-206, which are on hold.
 
 ---
@@ -90,7 +90,9 @@ not part of m-7.
 
 ### 1.2 The work, round by round
 
-Each row says what the task gives the user and whether its by-ear check is heard. "Heard" means
+Rows from TASK-246 on give no hash, because a task's commit is amended as it lands; find it
+with `git log --grep "Task: task-NNN"`. Each row says what the task gives the user and whether
+its by-ear check is heard. "Heard" means
 the user heard it working with NVDA, and the number is its checklist item (Part 3). "Waiting"
 means the check is in Part 2.1. "None" means there is nothing to hear. With screen reader mode
 off, every task leaves the app as upstream, except where Part 4's ground rules say otherwise.
@@ -120,6 +122,7 @@ off, every task leaves the app as upstream, except where Part 4's ground rules s
 
 | Task | What | Commit | By ear |
 |---|---|---|---|
+| TASK-247 | Menu bar: Left and Right from menu to menu, as in Windows, never out of the bar | (see git log) | waiting, 36 |
 | TASK-212 | After the menu bar, the focus returns to the control that had it | 3f3fdc7 | heard, 23 |
 | TASK-211 | Options > Pitch Keys Make Notes: a 303 pitch key turns a rest into a note | b8adbc9 | heard, 24 |
 | TASK-201 | The Mods menu reads the playing kit's entry as checked | 78129ba | waiting, 25 |
@@ -289,6 +292,7 @@ the checklist (Part 3).
 | 29 | TASK-244, criterion 1 (TASK-237) | The Initialize Song question is read, and the focus comes back; best heard after TASK-249 |
 | 31 | TASK-244, criterion 3 (TASK-234) | Options > Audio Output, again after TASK-248 |
 | 35 | TASK-244, criterion 7 (TASK-245) | Audio Output after a lost device reads the device in use |
+| 36 | TASK-244, criterion 8 (TASK-247) | Left and Right go from menu to menu in the bar, wrapping |
 
 **Heard working on 2026-11-28:** items 23 (TASK-212), 24 (TASK-211), 27 (TASK-213), 28
 (TASK-225), 30 (TASK-239), 32 (TASK-238), 33 (TASK-235) and 34 (TASK-236).
@@ -296,10 +300,10 @@ the checklist (Part 3).
 **Faults found by ear on 2026-11-28**, each now a bug task (Part 2.3), each adding its own
 by-ear check to TASK-244 when it is built:
 
-- TASK-247 (reported in item 26's place; item 26 itself waits): in an open menu Left goes back
-  to the bar and the other menus cannot then be reached, and Right from Help leaves the bar for
-  the Transport section. The user chose Windows' way: Left and Right go from menu to menu,
-  wrapping, never out of the bar.
+- TASK-247 (reported in item 26's place; item 26 itself waits), built, waiting for item 36: in
+  an open menu Left went back to the bar and the other menus could not then be reached, and
+  Right from Help left the bar for the Transport section. The user chose Windows' way: Left
+  and Right go from menu to menu, wrapping, never out of the bar.
 - TASK-248 (item 31): Audio Output's lists open only with Space, which nothing says, and
   Escape out of an open list loses the focus. The user chose Windows' combo keys (Alt+Down,
   Enter, Up and Down on a closed list), a spoken hint, and a line in Keyboard Shortcuts.
@@ -363,9 +367,8 @@ The 808 and 909 Pattern Editor windows (task-236):
 | Task | Priority | What | State |
 |---|---|---|---|
 | TASK-249 | high | File > New from the menu opens Save As at once instead of asking; suspected: the Enter that chose a menu item answers the question it opens | for an agent |
-| TASK-247 | medium | Menu bar: Left and Right from menu to menu, as in Windows, never out of the bar | for an agent |
 | TASK-248 | medium | Audio Output: Windows' combo keys, a spoken hint, Escape keeps the focus | for an agent |
-| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31 and 35 left | waiting for the user |
+| TASK-244 | medium | The user's NVDA pass of the night's work: items 29, 31, 35 and 36 left | waiting for the user |
 | TASK-227 | low | App-level tests of the numpad hook's queue (a key held while a dialog is open; numpad * Record; numpad Enter with a 303 focused) | for an agent |
 | TASK-199 | low | Screen reader detection on macOS (VoiceOver) and Linux (AT-SPI) | on hold: Windows only |
 | TASK-206 | low | A system file dialog that cannot open reads as a cancel (Linux) | on hold: Windows only |
@@ -603,6 +606,13 @@ Items 1 to 22 were heard on 2026-11-07 (TASK-197), items 23, 24, 27, 28, 30 and 
 35. Audio Output after a lost device (TASK-245): after the program falls back from a device
     that is gone, NVDA reads the Device list as the device in use (System default), not the
     lost one. ( )
+36. Left and Right in the menu bar (TASK-247, docs/ui_spec.md 18.2), in screen reader mode:
+    F10, then Right and Left on the menu names: NVDA says each name once (File, Edit, View,
+    Mods, Options, Help), and Right from Help says File, Left from File says Help, never a
+    control of the panel. With a menu open (Down on a name), Right and Left close it and open
+    the next or previous one, and NVDA says that menu's first item once; in the Mods menu,
+    Right on a name that is a list of files opens the list and says its first file, Left
+    closes it and says the name again. ( )
 
 ---
 

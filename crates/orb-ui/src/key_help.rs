@@ -314,7 +314,12 @@ fn screen_reader_group(is_mac: bool) -> Group {
                 "Record (Insert too)",
                 vec![sr(Key::F9, Any, press("transport.record"))],
             ),
-            sr_row("F10  or  Alt alone", "The menu bar; again, back", vec![]),
+            sr_row(
+                "F10  or  Alt alone",
+                "The menu bar; again, back. In the bar, Left and Right go to the previous or next \
+                 menu, wrapping, also from an open menu",
+                vec![],
+            ),
             sr_row(
                 "C F V G B N J M K , L . /",
                 "A 303's pitch keys set the step's note only (a rest stays a rest, as in the \

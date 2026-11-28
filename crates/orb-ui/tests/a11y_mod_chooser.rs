@@ -741,3 +741,34 @@ fn the_mods_menu_marks_the_playing_kit() {
         .collect();
     assert_eq!(other, [Some(Toggled::False)]);
 }
+
+// ---- task-247: Left and Right in the Mods menu's submenu ----------------------------------
+
+/// Right on a submenu button opens it with the focus on its first file, Left inside it goes
+/// back to the button, Right on a file goes on to the next menu (Options).
+#[test]
+fn the_mods_submenu_opens_with_right_and_left_closes_it() {
+    let dir = folder(&FILES);
+    let mut h = H::new(true, Some(dir.path()));
+    h.open_mods_menu();
+    while h.focused().1 != "Shared" {
+        h.press(Key::ArrowDown);
+    }
+    h.press(Key::ArrowRight);
+    assert_eq!(h.focused().1, "3.rbm  1.0.0", "the first file");
+    h.press(Key::ArrowDown);
+    assert_eq!(h.focused().1, "4.rbm  1.0.0");
+    h.press(Key::ArrowLeft);
+    assert_eq!(h.focused().1, "Shared", "back on its item");
+    assert!(Popup::is_any_open(&h.f.ctx), "the Mods menu stays open");
+    // into the submenu again; Right on a file goes on to the next menu
+    h.press(Key::ArrowRight);
+    assert_eq!(h.focused().1, "3.rbm  1.0.0");
+    h.press(Key::ArrowRight);
+    h.settle(1);
+    assert_eq!(h.focused().1, "Vintage ReBirth Synth Sound");
+    // Left on a top-level item goes back to Mods, on its first item
+    h.press(Key::ArrowLeft);
+    h.settle(1);
+    assert_eq!(h.focused().1, "Choose Mod... Ctrl+M");
+}
