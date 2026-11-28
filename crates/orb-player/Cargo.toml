@@ -23,6 +23,10 @@ rubato = { version = "5.0.1", default-features = false }
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
 cpal = { version = "0.18.2", features = ["asio"] }
 
+# The ASIO probe test (tests/asio_probe.rs, task-252) calls asio-sys directly.
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dev-dependencies]
+asio-sys = "0.4.0"
+
 [dev-dependencies]
 rbs = { path = "../rbs" }
 # The recrypted mods of the mod-change sessions (tests/live_messages.rs).

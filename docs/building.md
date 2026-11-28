@@ -315,6 +315,44 @@ ASIO is a trademark and software of Steinberg Media Technologies GmbH.
   is not connected, or the program it needs is not running (ASIO's "no clock"), is skipped
   with a message naming it ("... is its device connected, or the program it needs running?"). Each refused try
   drops its driver before the next loads, so asio-sys's one-driver rule holds.
+- **Why only one of the user's three drivers is listed (task-252, 2026-11-28, the user's PC,
+  cpal 0.18.2, asio-sys 0.4.0).** HKLM\SOFTWARE\ASIO has "MiniFuse ASIO Driver", "Realtek
+  ASIO" and "ReaRoute ASIO (x64)"; the Audio Output window lists only ReaRoute. The ignored
+  test `crates/orb-player/tests/asio_probe.rs` (`cargo test --release -p orb-player --test asio_probe --
+  --ignored --nocapture`; `ORB_ASIO_PROBE_START=1` also starts each driver for 1.5 s on its own
+  buffers, no program audio) loads each driver through asio-sys, one at a time, and logs each
+  step cpal's `Devices::next` takes:
+  - *MiniFuse ASIO Driver*: `load_driver` fails in `ASIOInit` with ASE_NotPresent (asio-sys
+    `InitializationFailed(NoDrivers)`, "hardware input or output is not present"): no MiniFuse
+    is connected. `Devices::next` skips it silently. As expected; nothing to fix.
+  - *Realtek ASIO*: loads and initializes, 2 in / 2 out, buffer 1024 (min = max), Int24LSB, and
+    it can create its buffers and start. But it reports a sample rate of 0.0 (also while
+    running) and answers every `canSampleRate` and `setSampleRate` with ASE_NotPresent. cpal's
+    `Devices::next` accepts the 0.0 (a comment there names this driver) but then keeps only the
+    common rates for which `can_sample_rate` says Ok(true): none, so the device has no
+    supported configuration, and `HostTrait::output_devices` filters it out
+    (`DeviceTrait::supports_output`). It is dropped after `Devices::next`, at that filter, not
+    by a load or init error. Even if it were listed, cpal's `build_output_stream`
+    (asio/stream.rs, around line 1150) compares the requested rate with the driver's 0.0, asks
+    `can_sample_rate` and fails with the same error, so a patch of the listing alone would not
+    play. Whether the driver answers differently when its device is not shared with NVDA's
+    WASAPI output was not tried (it would silence NVDA).
+  - *ReaRoute ASIO (x64)*: loads, 16 in / 16 out, 48000 Hz, buffer 1024, Int32LSB, all four
+    common rates Ok(true); listed. It also prepares and starts with REAPER not running in this
+    probe; the earlier refusal ("sample clock or rate cannot be determined or is not
+    present", ASE_NoClock) comes from cpal building the real stream. ReaRoute is a routing
+    driver for REAPER: it is not a sound card.
+
+  What a user can do here: ReaRoute is listed but opens only while REAPER runs (it routes
+  through REAPER); otherwise the stream refuses with the no-clock error and the program goes
+  back to WASAPI with the message task-251 gives. Realtek ASIO is rejected by its own rate
+  answers (rate 0.0, every `can_sample_rate` ASE_NotPresent); it is not shown to be a busy
+  device, because that was not tested (it would silence NVDA). So in the program use the WASAPI
+  default (which NVDA also uses) or install a driver that answers `canSampleRate` (FlexASIO,
+  ASIO4ALL, a real interface's own; ASIO4ALL has the exit hang described in the next item). A
+  change that lists and opens a Realtek-style driver (treat ASE_NotPresent on the rate calls as
+  "rate unknown, accept the driver's own") needs a patch of cpal; it is proposed as task-253,
+  not made here.
 - **ASIO4ALL hangs the process at exit when its panel is open (round 2, 2026-11-24).** The user
   closed OpenRB-338 with ASIO4ALL's configuration window open (opened from the driver's own tray
   icon, which lives in our process); the window went, the process stayed, "Not Responding", with
